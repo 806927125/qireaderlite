@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# node
+node_modules/
+package-lock.json
+
+# 打包产物
+*.ipa
+*.dSYM.zip
+
+# 签名证书：私钥绝不能进仓库
+ios-certificate/*.p12
+ios-certificate/*.mobileprovision
+ios-certificate/*.cer
+ios-certificate/*.p8

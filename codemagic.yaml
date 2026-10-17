@@ -1,0 +1,97 @@
+# Codemagic —— 云端 macOS 出包，用你自己的证书签名
+#
+# ⚠️ 证书只有一种放法，别混用（混用会报「找不到 p12」）：
+#
+#   方案 A（推荐）：网页端上传
+#     codemagic.io → Team settings → Code signing → iOS certificates
+#     传 .p12 + .mobileprovision，密码填那儿
+#     → 保持本文件里 p12_file_path / provisioning_profile_path **注释掉**
+#
+#   方案 B：文件进仓库
+#     把 development.p12 / development.mobileprovision 传到 ios-certificate/ 目录
+#     → 取消下面那两行注释，并在 Codemagic 的环境变量里加 P12_PASSWORD
+#     （注意 .gitignore 已排除 *.p12，传了也传不上去，得先去掉那行）
+#
+# 免费额度 500 分钟/月，一次构建 3~5 分钟。
+
+name: 轻阅 Lite
+type: ios
+
+environment:
+  ios_signing:
+    distribution: manual
+
+    # 装自己手机用 development 或 ad_hoc；上 TestFlight / App Store 改 app_store
+    ios_method: development
+
+    # ── 方案 A：注释掉这三行，走网页上传 ──
+    # p12_file_path: "ios-certificate/development.p12"
+    # p12_password: ${P12_PASSWORD}
+    # provisioning_profile_path: "ios-certificate/development.mobileprovision"
+
+    # ── bundle id 必须和 profile 里那个一字不差 ──
+    # 不一致 → No profile matching 'xxx' found
+    # 改这里的同时，要改 project.pbxproj 里的 PRODUCT_BUNDLE_IDENTIFIER
+    bundle_identifier: com.qireaderlite.app
+
+configs:
+  ipa:
+    name: 已签名 IPA
+    mode: release
+
+    settings:
+      base:
+        ENABLE_BITCODE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.qireaderlite.app
+        # 版本号，跟 App Store Connect 上传时保持一致
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+
+    scripts:
+      - name: 编译并签名
+        script: |
+          set -e
+          xcodebuild \
+            -project QiReaderLite.xcodeproj \
+            -scheme QiReaderLite \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/dd \
+            -allowProvisioningUpdates \
+            ENABLE_BITCODE=NO \
+            build
+
+      - name: 核对签名
+        script: |
+          set -e
+          APP="build/dd/Build/Products/Release-iphoneos/QingYue.app"
+          test -d "$APP" || { echo "❌ 没找到 $APP"; exit 1; }
+          echo "--- profile 名称 ---"
+          security cms -D -i "$APP/embedded.mobileprovision" 2>/dev/null \
+            | plutil -extract Name raw - 2>/dev/null || echo "(读不出，可能没签上)"
+          echo "--- team / bundle id ---"
+          security cms -D -i "$APP/embedded.mobileprovision" 2>/dev/null \
+            | plutil -extract TeamIdentifier.0 raw - 2>/dev/null || true
+          codesign -dv "$APP" 2>&1 | grep -E "Identifier|Authority" || true
+          echo "--- 引擎文件是否进包 ---"
+          ls "$APP" | head -30
+          if [ -f "$APP/engine.html" ]; then
+            echo "✅ engine.html 在 bundle 根"
+          else
+            echo "⚠️ engine.html 不在根目录，查 ResourcesLocator 的候选路径"
+          fi
+
+      - name: 组装 IPA
+        script: |
+          set -e
+          APP="build/dd/Build/Products/Release-iphoneos/QingYue.app"
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          cd build/ipa
+          zip -qry "../QingYue-signed-$(date +%Y%m%d).ipa" Payload
+          cd ../..
+          echo "✅ build/QingYue-signed-$(date +%Y%m%d).ipa"
+
+    artifacts:
+      - build/*.ipa
+      - build/dd/Logs/**/*.xcactivitylog

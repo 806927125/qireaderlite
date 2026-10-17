@@ -1,0 +1,734 @@
+/* ============================================================
+ * engine.js —— 对外的操作入口
+ *
+ * Swift 侧只调 window.__qrInvoke(op, payload)，全部逻辑在这。
+ * 返回值一律是可 JSON 序列化的普通对象，Promise 会被 callAsyncJavaScript 自动 await。
+ * ============================================================ */
+(function (g) {
+  'use strict';
+  var QR = g.QR = g.QR || {};
+  var dom = QR.dom;
+  var rule = QR.rule;
+
+  // 每次调用带上当前书源，java.* 和规则里的 source 都靠它
+  var runtime = { source: null, baseUrl: '', page: 1 };
+  QR.runtime = runtime;
+
+  /* ---------------------------------------------------------
+   * jsLib：每个书源可能有自定义 JS 库，规则里能直接调它的函数
+   * ------------------------------------------------------- */
+
+  var libLoaded = {};
+
+  function ensureJsLib(source) {
+    if (!source || !source.jsLib) return Promise.resolve();
+    var key = source.bookSourceUrl || source.bookSourceName || 'anon';
+    if (libLoaded[key]) return Promise.resolve();
+    libLoaded[key] = true;
+    var code = String(source.jsLib);
+    try {
+      /* jshint evil:true */
+      new Function('java', 'org', 'cache', 'cookie', 'source', 'book', 'chapter', code)
+        .call(g, g.java, g.org, g.cache, g.cookie, source, undefined, undefined);
+    } catch (e) {
+      QR.java.log('[jsLib 出错] ' + (source.bookSourceName || key) + ': ' + e.message);
+    }
+    return Promise.resolve();
+  }
+
+  /* ---------------------------------------------------------
+   * URL 模板
+   * ------------------------------------------------------- */
+
+  /**
+   * 生成请求地址。
+   *   搜索:   "https://x.com/s?q={{keyword}}&p={{page}}"
+   *   带头:   "https://x.com/a,{\"headers\":{\"Referer\":\"...\"}}"
+   *   动态:   "@js:java.ajax(base).toString()"
+   */
+  /**
+   * 构造请求 URL —— 严格按 Legado 的三步顺序：
+   *   ① analyzeJs()        执行 URL 里内嵌的 @js: / <js></js>
+   *   ② replaceKeyPageJs() 展开 {{表达式}}（当 JS 求值）+ <1,2,3> 页码占位
+   *   ③ analyzeUrl()       切 ,{json} 后缀 → 拼 method/body/headers
+   *
+   * 顺序不能换：Legado 注释写明「先替换内嵌规则再替换页数规则，
+   * 避免内嵌规则中存在大于小于号时，规则被切错」。
+   */
+  function buildUrl(ruleStr, ctx) {
+    var s = String(ruleStr == null ? '' : ruleStr).trim();
+    if (!s) return Promise.resolve({ url: '', method: 'GET', body: '', headers: {} });
+
+    s = analyzeJsInUrl(s, ctx);
+    s = replaceKeyPageJs(s, ctx);
+    return Promise.resolve(analyzeUrl(s, ctx));
+  }
+
+  /** URL 里的 JS 作用域：key=搜索词，page=页码，baseUrl，source */
+  function urlJsScope(ctx, result) {
+    var scope = rule.makeScope({
+      result: result == null ? '' : result,
+      key: ctx.keyword || '',
+      keyword: ctx.keyword || '',
+      page: ctx.page || 1,
+      baseUrl: ctx.baseUrl || '',
+      source: ctx.source
+    });
+    return scope;
+  }
+
+  /** ① analyzeJs：执行 URL 里内嵌的 @js:（贪婪到末尾）/ <js></js> */
+  function analyzeJsInUrl(url, ctx) {
+    var re = /@js:([\s\S]*)|<js>([\s\S]*?)<\/js>/g;
+    var m, last = 0, out = '', acc = url;
+    while ((m = re.exec(url)) !== null) {
+      var before = url.slice(last, m.index).trim();
+      if (before) out += before.replace(/@result/g, acc);
+      var code = (m[1] !== undefined) ? m[1] : m[2];
+      var scope = urlJsScope(ctx, acc);
+      var v;
+      try { v = rule.evalExpr(code, scope); } catch (e) { v = ''; }
+      if (v === null || v === undefined) v = '';
+      acc = String(v);
+      out += acc;
+      last = m.index + m[0].length;
+      if (m[1] !== undefined) { last = url.length; break; }   // @js: 贪婪到末尾
+    }
+    var tail = url.slice(last).trim();
+    if (tail) out += tail.replace(/@result/g, acc);
+    return out || acc;
+  }
+
+  /** ② replaceKeyPageJs：{{表达式}} 按 JS 求值，<1,2,3> 是页码占位 */
+  function replaceKeyPageJs(url, ctx) {
+    var out = url;
+    if (out.indexOf('{{') >= 0 && out.indexOf('}}') > out.indexOf('{{')) {
+      out = out.replace(/\{\{([\s\S]*?)\}\}/g, function (m, expr) {
+        var scope = urlJsScope(ctx, out);
+        var v;
+        try { v = rule.evalExpr(expr, scope); } catch (e) { v = ''; }
+        return (v === null || v === undefined) ? '' : String(v);
+      });
+    }
+    // <1,2,3>：第 N 页用第 N 个，页数超了就用最后一个
+    if (ctx.page != null) {
+      out = out.replace(/<(\d+(?:\s*,\s*\d+)*)>/g, function (m, g) {
+        var pages = g.split(',').map(function (x) { return x.trim(); });
+        var i = Math.min(ctx.page, pages.length) - 1;
+        if (i < 0) i = pages.length - 1;
+        return pages[i];
+      });
+    }
+    return out;
+  }
+
+  /** ③ analyzeUrl：切 ,{json} 后缀，解析 method/body/headers */
+  function analyzeUrl(url, ctx) {
+    // paramPattern: ,\s*(?=\{)
+    var m = /,\s*(?=\{)/.exec(url);
+    var urlNoOption = m ? url.slice(0, m.index) : url;
+    var opt = {};
+    if (m) {
+      try { opt = JSON.parse(url.slice(m.index + 1)) || {}; } catch (e) { opt = {}; }
+    }
+
+    var abs = dom.absolutize(urlNoOption, ctx.baseUrl);
+    var method = String(opt.method || 'GET').toUpperCase();
+    var headers = {};
+    for (var hk in (opt.headers || {})) headers[hk] = String(opt.headers[hk]);
+    var body = opt.body != null ? String(opt.body) : '';
+
+    if (method === 'GET' && abs.indexOf('?') > 0) {
+      // GET 的 query 走 analyzeQuery 重新编码（keyword 这类中文要变 %E6%96%97）
+      var qi = abs.indexOf('?');
+      abs = abs.slice(0, qi) + '?' + encodeFields(abs.slice(qi + 1));
+      body = '';
+    } else if (method === 'POST' && body && !/^[[{]/.test(body.trim())) {
+      // Legado: 非 JSON/XML 的 form body 走 analyzeFields 编码
+      body = encodeFields(body);
+    }
+
+    // Legado: 解析后用新 URL 的目录更新 baseUrl，后续相对路径才找得到
+    var newBase = dirOf(abs);
+
+    return {
+      url: abs,
+      method: method,
+      body: body,
+      headers: headers,
+      baseUrl: newBase
+    };
+  }
+
+  /**
+   * query / form body 的字段编码 —— 对齐 Legado 的 analyzeFields / analyzeQuery。
+   * 关键：已经有 %XX 的不重复编码，**字面量 + 要保留**（form 编码里 + 就是空格）。
+   */
+  function encField(v) {
+    var s = String(v == null ? '' : v), out = '', i = 0;
+    while (i < s.length) {
+      if (s.charAt(i) === '%' && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) {
+        out += s.substr(i, 3); i += 3; continue;
+      }
+      var c = s.charAt(i);
+      if (/[A-Za-z0-9_.\-~!*'()]/.test(c)) out += c;
+      else if (c === '+') out += '+';
+      else out += encodeURIComponent(c);
+      i++;
+    }
+    return out;
+  }
+
+  /** 把 a=1&b=2 形式的串重新编码 */
+  function encodeFields(text) {
+    return String(text).split('&').map(function (part) {
+      var i = part.indexOf('=');
+      if (i < 0) return encField(part);
+      return encField(part.slice(0, i)) + '=' + encField(part.slice(i + 1));
+    }).join('&');
+  }
+
+  /** 取 URL 的目录部分：https://x.com/a/b.html → https://x.com/a/ */
+  function dirOf(u) {
+    try {
+      var url = new URL(String(u));
+      url.hash = ''; url.search = '';
+      var p = url.pathname;
+      url.pathname = p.replace(/[^/]*$/, '');
+      return url.href;
+    } catch (e) { return String(u || ''); }
+  }
+
+  /** 逗号后跟 { 才是头部的 JSON 分隔符，普通 URL 里的逗号不能误伤 */
+  function findHeaderSeparator(s) {
+    for (var i = 0; i < s.length; i++) {
+      if (s[i] === ',') {
+        var rest = s.slice(i + 1).trim();
+        if (rest.startsWith('{')) return i;
+      }
+    }
+    return -1;
+  }
+
+  function enc(s) { try { return encodeURIComponent(String(s)); } catch (e) { return s; } }
+
+  /* ---------------------------------------------------------
+   * 抓页面
+   * ------------------------------------------------------- */
+
+  /** 抓完响应后标记内容类型：Legado 的 isJSON 决定整条规则链用什么解析器 */
+  function markContent(ctx, page) {
+    if (ctx) {
+      ctx.isJSON = QR.rule.isJSONText(page.text);
+      ctx.baseUrl = page.url;
+    }
+    return ctx;
+  }
+
+  function fetchPage(target, ctx) {
+    return QR.java.rawRequest(target.url, target.method || 'GET',
+                              target.headers || {}, target.body || '',
+                              target.timeout || 20000)
+      .then(function (resp) {
+        runtime.baseUrl = resp.url || target.url;
+        return {
+          resp: resp,
+          doc: dom.parseHTML(resp._body, runtime.baseUrl),
+          text: resp._body,
+          url: runtime.baseUrl
+        };
+      });
+  }
+
+  /* ---------------------------------------------------------
+   * 通用：从规则里取一批书
+   * ------------------------------------------------------- */
+
+  function ruleText(rv) {
+    if (rv == null) return '';
+    if (typeof rv === 'string') return rv;
+    if (Array.isArray(rv)) return rv.filter(function (x) { return typeof x === 'string'; }).join('\n');
+    if (rv.raw != null) return rv.raw || '';
+    return '';
+  }
+
+  function firstValue(rv) {
+    var t = ruleText(rv);
+    if (!t) return '';
+    return t.split('\n')[0];
+  }
+
+  /**
+   * Legado 的「正则式列表规则」：
+   *   bookList: ":<tr…>(.*?)</a>…"
+   *   name: "$2"          ← 引用 bookList 那个正则的第 2 个捕获组
+   *   bookUrl: "$1"
+   * 普通选择器写不出这种跨字段的组引用，必须单独处理。
+   */
+  function looksLikeRegexRule(s) {
+    var t = String(s || '').trim();
+    if (!t) return false;
+    if (t.indexOf('@js:') === 0 || t.indexOf('<js>') === 0 || t.indexOf('##') === 0) return false;
+    if (t.charAt(0) === ':') return true;                        // Legado 的正则标记
+    return /\[\\s\\S\]|\\d|<\/|\(\?:/.test(t);
+  }
+
+  function regexMatches(text, ruleStr) {
+    var pat = String(ruleStr).trim();
+    if (pat.charAt(0) === ':') pat = pat.slice(1);   // 冒号是标记，不是正则的一部分
+    var re;
+    try { re = new RegExp(pat, 'g'); } catch (e) { return []; }
+    var out = [], m, guard = 0;
+    var src = String(text || '');
+    while ((m = re.exec(src)) !== null && guard++ < 20000) {
+      out.push(m);
+      if (m.index === re.lastIndex) re.lastIndex++;
+    }
+    return out;
+  }
+
+  /** $N 取出来的组里常常裹着 <font color=…> 之类标签，抹掉 */
+  function cleanGroup(v) {
+    var t = String(v == null ? '' : v);
+    if (t.indexOf('<') >= 0) return dom.htmlToText(t);
+    return t.trim();
+  }
+
+  /**
+   * 正则匹配出来的片段要放回合法的表格上下文里再解析，
+   * 否则 <tr>/<td> 会被 HTML 解析器直接丢掉（它们不能是 body 的直接子元素）。
+   */
+  function fragmentFor(matchText, baseUrl) {
+    var t = String(matchText || '');
+    var head = t.replace(/^\s+/, '');
+    var wrapped;
+    if (/<tr[\s>]/i.test(head)) wrapped = '<table><tbody>' + t + '</tbody></table>';
+    else if (/<t[dh][\s>]/i.test(head)) wrapped = '<table><tbody><tr>' + t + '</tr></tbody></table>';
+    else if (/<(ul|ol)[\s>]/i.test(head)) wrapped = '<body>' + t + '</body>';
+    else wrapped = '<body>' + t + '</body>';
+    return dom.parseHTML(wrapped, baseUrl);
+  }
+
+  function extractBooks(page, listRule, ctx, opts) {
+    opts = opts || {};
+    var listRuleStr = ruleText(listRule.bookList);
+    if (!listRuleStr) return Promise.resolve({ books: [], nextUrl: '' });
+
+    // ★ JSON 响应：列表项是 JSON 对象，字段规则要针对每个对象单独求值
+    if (ctx && ctx.isJSON) {
+      var kind = rule.classify(listRuleStr, ctx);
+      var body = rule.stripModePrefix(listRuleStr, kind);
+      var items = [];
+      if (kind === 'jsonpath') {
+        try { items = QR.jsonpath.select(JSON.parse(page.text), body) || []; } catch (e) { items = []; }
+      } else {
+        try { items = rule.getElements(listRuleStr, page.doc, ctx).values || []; } catch (e) { items = []; }
+      }
+      var jbooks = [];
+      var jchain = items.reduce(function (acc, item) {
+        return acc.then(function (list) {
+          return extractOneBook(item, listRule, ctx, page.url, {}).then(function (b) {
+            if (b && b.name) list.push(b);
+            return list;
+          });
+        });
+      }, Promise.resolve([]));
+      return jchain.then(function (list) {
+        return { books: list, nextUrl: extractNextUrl(page, listRule, page.url) };
+      });
+    }
+
+    if (looksLikeRegexRule(listRuleStr)) {
+      var ms = regexMatches(page.text, listRuleStr);
+      var books = [];
+      var chain = ms.reduce(function (p, mm) {
+        return p.then(function (acc) {
+          var frag = fragmentFor(mm[0], page.url);
+          return extractOneBook(frag.body, listRule, ctx, page.url, { groups: mm })
+            .then(function (b) { if (b && b.name) acc.push(b); return acc; });
+        });
+      }, Promise.resolve([]));
+      return chain.then(function (list) {
+        return { books: list, nextUrl: extractNextUrl(page, listRule, page.url) };
+      });
+    }
+
+    var nodes = [];
+    var bySelector = false;
+    try {
+      var parsed = dom.parseChain(listRuleStr);
+      if (parsed.selector) { bySelector = true; nodes = dom.resolve(page.doc, listRuleStr).nodes; }
+    } catch (e) { bySelector = false; }
+
+    var bases = bySelector && nodes.length ? nodes : [page.doc];
+    var acc = bases.reduce(function (p, base) {
+      return p.then(function (list) {
+        return extractOneBook(base, listRule, ctx, page.url, opts)
+          .then(function (b) { if (b && b.name) list.push(b); return list; });
+      });
+    }, Promise.resolve([]));
+    return acc.then(function (list) {
+      return { books: list, nextUrl: extractNextUrl(page, listRule, page.url) };
+    });
+  }
+
+  function extractOneBook(base, listRule, ctx, pageUrl, opts) {
+    opts = opts || {};
+    function f(rv) {
+      var t = ruleText(rv).trim();
+      // "$1" / "$2" → 引用列表正则的捕获组
+      var g = /^\$(\d+)$/.exec(t);
+      if (g && opts.groups) {
+        var v = opts.groups[Number(g[1])];
+        return Promise.resolve(cleanGroup(v));
+      }
+      return rule.getValue(t, base, ctx);
+    }
+    return Promise.all([
+      f(listRule.name),
+      f(listRule.author),
+      f(listRule.intro),
+      f(listRule.kind),
+      f(listRule.lastChapter),
+      f(listRule.coverUrl),
+      f(listRule.bookUrl),
+      f(listRule.wordCount)
+    ]).then(function (v) {
+      var name = (v[0] || '').trim();
+      if (!name && !(opts.requireUrl)) return null;
+      var bookUrl = (v[6] || '').trim();
+      // 列表页不直接给 bookUrl 时，用详情页 URL 兜底
+      if (!bookUrl) bookUrl = (pageUrl || '').split('#')[0];
+      return {
+        name: name,
+        author: v[1] || '',
+        intro: v[2] || '',
+        kind: v[3] || '',
+        lastChapter: v[4] || '',
+        coverUrl: absolutizeMaybe(v[5], pageUrl),
+        bookUrl: absolutizeMaybe(bookUrl, pageUrl),
+        wordCount: v[7] || ''
+      };
+    });
+  }
+
+  function absolutizeMaybe(u, base) {
+    var s = String(u == null ? '' : u).trim();
+    if (!s) return '';
+    if (/^data:|^blob:|^qireaderlite:/i.test(s)) return s;
+    return dom.absolutize(s, base);
+  }
+
+  function extractNextUrl(page, listRule, pageUrl) {
+    var spec = ruleText(listRule.exploreUrl) || ruleText(listRule.searchUrl);
+    if (!spec) return '';
+    return findNextPage(page.doc, pageUrl);
+  }
+
+  function findNextPage(doc, base) {
+    var cands = ['a.next@href', 'a:contains(下一页)@href', 'a:contains(下页)@href',
+      'a:contains(next)@href', 'div.page a:last-child@href', 'a[rel=next]@href'];
+    for (var i = 0; i < cands.length; i++) {
+      var v = dom.value(doc, cands[i], base);
+      if (v) return v;
+    }
+    return '';
+  }
+
+  /* ---------------------------------------------------------
+   * OPS
+   * ------------------------------------------------------- */
+
+  var OPS = {
+
+    ping: function () { return { ok: true, version: 1 }; },
+
+    /** 搜索 */
+    search: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        // searchUrl 在**顶层**（实测 7339 条顶层 / 0 条在 ruleSearch 里）
+        var spec = ruleText(src.searchUrl) || ruleText(src.ruleSearch && src.ruleSearch.searchUrl);
+        if (!spec) return { books: [], total: 0, error: '该书源没有搜索规则' };
+        var ctx = { baseUrl: src.bookSourceUrl, keyword: p.keyword || '', page: p.page || 1, source: src };
+        return buildUrl(spec, ctx).then(function (target) {
+          if (!target.url) return { books: [], total: 0, error: '搜索 URL 生成失败' };
+          return fetchPage(target, ctx).then(function (page) {
+            markContent(ctx, page);
+            return extractBooks(page, src.ruleSearch || {}, ctx, { requireUrl: true });
+          });
+        });
+      }).then(function (r) {
+        return { books: r.books, total: r.books.length, nextUrl: r.nextUrl || '' };
+      }).catch(function (e) {
+        return { books: [], total: 0, error: String(e && e.message || e) };
+      });
+    },
+
+    /** 发现页的分类列表 */
+    exploreKinds: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        // exploreUrl 同样在顶层
+        var spec = ruleText(src.exploreUrl) || ruleText(src.ruleExplore && src.ruleExplore.exploreUrl);
+        if (!spec) return { kinds: [], error: '该书源没有发现规则' };
+        var ctx = { baseUrl: src.bookSourceUrl, source: src };
+        // exploreUrl 常是 @js:，可能返回数组，也可能返回 JSON 字符串
+        if (rule.classify(spec) === rule.T.JS) {
+          var scope = rule.makeScope({ baseUrl: ctx.baseUrl, source: src });
+          // JS 里常内嵌 {{$.xxx}} / {{page}}，要先展开再跑
+          var jsCode = rule.interpolate(rule.stripJsWrapper(spec), scope);
+          return rule.runJs(jsCode, scope).then(function (r) {
+            var arr = r;
+            if (typeof arr === 'string') {
+              var t = arr.trim();
+              if (t.startsWith('[') || t.startsWith('{')) {
+                try { arr = JSON.parse(t); } catch (e) { arr = []; }
+              } else {
+                // 纯文本分类："玄幻::/type/xh\n仙侠::/type/xx"
+                arr = t.split('\n').map(function (l) { return l.trim(); }).filter(Boolean)
+                  .map(function (l) { var q = l.split('::'); return { title: q[0], url: q[1] || '' }; });
+              }
+            }
+            if (!Array.isArray(arr)) arr = (arr && arr.exploreKind) ? arr.exploreKind : [];
+            return { kinds: normalizeKinds(arr, ctx.baseUrl) };
+          }).catch(function (e) {
+            return { kinds: [], error: String(e && e.message || e) };
+          });
+        }
+        // 静态写法：每行 "分类名::url"
+        var kinds = String(spec).split('\n').map(function (l) { return l.trim(); }).filter(Boolean)
+          .map(function (l) {
+            var p2 = l.split('::');
+            return { title: p2[0], url: dom.absolutize((p2[1] || '').trim(), ctx.baseUrl), style: '' };
+          });
+        return { kinds: kinds };
+      });
+    },
+
+    /** 发现页某一分类的书列表 */
+    explore: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var ctx = { baseUrl: src.bookSourceUrl, page: p.page || 1, source: src };
+        return buildUrl(p.kindUrl || '', ctx).then(function (target) {
+          if (!target.url) return { books: [], total: 0, error: '分类 URL 为空' };
+          return fetchPage(target, ctx).then(function (page) {
+            markContent(ctx, page);
+            return extractBooks(page, src.ruleExplore || {}, ctx, { requireUrl: true });
+          });
+        });
+      }).then(function (r) {
+        return { books: r.books, total: r.books.length, nextUrl: r.nextUrl || '' };
+      }).catch(function (e) {
+        return { books: [], total: 0, error: String(e && e.message || e) };
+      });
+    },
+
+    /** 书籍详情 */
+    bookInfo: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var bi = src.ruleBookInfo || {};
+        var url = absolutizeMaybe(p.bookUrl, src.bookSourceUrl);
+        if (!url) return { book: null, error: '书籍 URL 为空' };
+        return fetchPage({ url: url, headers: {} }, { baseUrl: url }).then(function (page) {
+          var ctx = { baseUrl: page.url, source: src, book: p.book };
+          markContent(ctx, page);
+          function f(rv) { return rule.getValue(ruleText(rv), page.doc, ctx); }
+          // tocUrl 缺失时默认就是书籍页本身
+          return Promise.all([
+            f(bi.name), f(bi.author), f(bi.intro), f(bi.kind),
+            f(bi.lastChapter), f(bi.coverUrl), f(bi.tocUrl), f(bi.wordCount)
+          ]).then(function (v) {
+            return {
+              book: {
+                name: v[0] || (p.book && p.book.name) || '',
+                author: v[1] || '',
+                intro: v[2] || '',
+                kind: v[3] || '',
+                lastChapter: v[4] || '',
+                coverUrl: absolutizeMaybe(v[5], page.url),
+                tocUrl: absolutizeMaybe(v[6] || url, page.url),
+                wordCount: v[7] || ''
+              }
+            };
+          });
+        });
+      }).catch(function (e) {
+        return { book: null, error: String(e && e.message || e) };
+      });
+    },
+
+    /** 目录 */
+    toc: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var tr = src.ruleToc || {};
+        var url = absolutizeMaybe(p.tocUrl || p.bookUrl, src.bookSourceUrl);
+        if (!url) return { chapters: [], error: '目录 URL 为空' };
+        var ctx = { baseUrl: url, source: src, book: p.book };
+        var maxPages = Math.max(1, p.maxPages || 3);
+
+        /** 抓一页目录，返回 { list, nextUrl } */
+        function one(u, offset) {
+          return fetchPage({ url: u, headers: {} }, ctx).then(function (page) {
+            markContent(ctx, page);
+            var spec = ruleText(tr.chapterList);
+            return rule.getElements(spec, page.doc, ctx).then(function () {
+              var nodes = [];
+              try { nodes = dom.resolve(page.doc, spec).nodes; } catch (e) {}
+              var bases = nodes.length ? nodes : [page.doc];
+              var idx = offset;
+              return bases.reduce(function (acc, base) {
+                return acc.then(function (out) {
+                  return Promise.all([
+                    rule.getValue(ruleText(tr.chapterName), base, ctx),
+                    rule.getValue(ruleText(tr.chapterUrl), base, ctx)
+                  ]).then(function (v) {
+                    var title = (v[0] || '').trim();
+                    if (!title) return out;
+                    out.push({
+                      url: absolutizeMaybe(v[1], page.url),
+                      title: title,
+                      index: idx++,
+                      isVolume: /卷|部|篇/.test(title) && !/第\s*\d+/.test(title),
+                      tag: ''
+                    });
+                    return out;
+                  });
+                });
+              }, Promise.resolve([]));
+            }).then(function (list) {
+              // 站方给了 nextTocUrl 就用它，否则自己找「下一页」链接
+              var explicit = '';
+              if (tr.nextTocUrl && ruleText(tr.nextTocUrl).trim()) {
+                try { explicit = dom.value(page.doc, ruleText(tr.nextTocUrl), page.url); } catch (e) {}
+              }
+              var nextUrl = absolutizeMaybe(explicit || findNextPage(page.doc, page.url), page.url);
+              // 下一跳 URL 必须真的变了，否则会死循环
+              if (nextUrl && nextUrl === u) nextUrl = '';
+              return { list: list, nextUrl: nextUrl };
+            });
+          });
+        }
+
+        // 部分站目录要串行翻多页；下标跨页累计，别每页都从 0 开始
+        function loop(u, n, acc) {
+          if (!u || n >= maxPages) return Promise.resolve(acc);
+          return one(u, acc.length).then(function (r) {
+            var merged = acc.concat(r.list);
+            if (!r.list.length || !r.nextUrl) return merged;
+            return loop(r.nextUrl, n + 1, merged);
+          });
+        }
+
+        return loop(url, 0, []).then(function (chapters) {
+          return { chapters: chapters };
+        });
+      }).catch(function (e) {
+        return { chapters: [], error: String(e && e.message || e) };
+      });
+    },
+
+    /** 正文 */
+    content: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var cr = src.ruleContent || {};
+        var url = absolutizeMaybe(p.chapterUrl, src.bookSourceUrl);
+        if (!url) return { content: '', error: '章节 URL 为空' };
+        var ctx = { baseUrl: url, source: src, chapter: p.chapter };
+        return fetchPage({ url: url, headers: {} }, ctx).then(function (page) {
+          markContent(ctx, page);
+          // webJs：给站方解密/改写正文用，跑完拿它吐出的 HTML
+          var htmlP = Promise.resolve(page.text);
+          if (cr.webJs && String(cr.webJs).trim()) {
+            htmlP = rule.runJs(String(cr.webJs), rule.makeScope({
+              result: page.text, baseUrl: page.url, source: src, chapter: p.chapter,
+              page: QR.jsoup.Jsoup.parse(page.text, page.url)
+            })).then(function (r) {
+              if (typeof r === 'string' && r) return r;
+              if (r && r.html) return r.html;
+              return page.text;
+            }).catch(function (e) {
+              QR.java.log('[webJs 出错] ' + e.message);
+              return page.text;
+            });
+          }
+          return htmlP.then(function (html) {
+            var doc = dom.parseHTML(html, page.url);
+            return Promise.all([
+              rule.getValue(ruleText(cr.title), doc, ctx),
+              rule.getValue(ruleText(cr.content), doc, ctx),
+              rule.getValue(ruleText(cr.nextContentUrl), doc, ctx)
+            ]).then(function (v) {
+              var content = v[1] || '';
+              // 阅读器是纯文本渲染，HTML 一律转成文本（br/p 会变成换行）。
+              // 不少源的 content 规则写的是 `@html`，不转的话正文里会露出 <div id=...> 这种标签。
+              if (/<[a-zA-Z][^>]*>/.test(content)) {
+                content = dom.htmlToText(content);
+              }
+              content = cleanContent(content);
+              return {
+                title: v[0] || (p.chapter && p.chapter.title) || '',
+                content: content,
+                nextUrl: absolutizeMaybe(v[2], page.url)
+              };
+            });
+          });
+        });
+      }).catch(function (e) {
+        return { content: '', error: String(e && e.message || e) };
+      });
+    }
+  };
+
+  function normalizeKinds(arr, base) {
+    return (arr || []).map(function (k) {
+      if (typeof k === 'string') {
+        var p = k.split('::');
+        return { title: p[0], url: dom.absolutize((p[1] || '').trim(), base), style: '' };
+      }
+      return {
+        title: String(k.title || k.name || k.text || ''),
+        url: dom.absolutize(String(k.url || k.link || ''), base),
+        style: (k.style && typeof k.style === 'object') ? JSON.stringify(k.style) : String(k.style || '')
+      };
+    }).filter(function (k) { return k.title; });
+  }
+
+  /* 正文清洗：去广告行、去首尾空行 */
+  function cleanContent(s) {
+    var lines = String(s || '').split('\n');
+    var drop = /(上一章|下一章|返回目录|加入书架|推荐本书|txt下载|请记住本站|www\.|http:\/\/|请收藏本站|广告)/;
+    var out = lines.filter(function (l) {
+      var t = l.trim();
+      if (!t) return true;
+      if (drop.test(t) && t.length < 40) return false;
+      return true;
+    });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /* ---------------------------------------------------------
+   * 入口
+   * ------------------------------------------------------- */
+
+  g.__qrInvoke = function (op, payload) {
+    var fn = OPS[op];
+    if (!fn) return Promise.reject(new Error('未知操作: ' + op));
+    return Promise.resolve()
+      .then(function () { return fn(payload || {}); })
+      .catch(function (e) {
+        return { error: String(e && e.message || e) };
+      });
+  };
+  g.__qrOps = Object.keys(OPS);
+})(typeof globalThis !== 'undefined' ? globalThis : self);

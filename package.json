@@ -1,0 +1,16 @@
+{
+  "name": "qireaderlite",
+  "private": true,
+  "description": "轻阅 Lite 的 JS 规则引擎与测试台",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node test/rules.test.js && node test/e2e.test.js",
+    "test:rules": "node test/rules.test.js",
+    "test:e2e": "node test/e2e.test.js",
+    "test:swift": "python3 test/swift-structure.py"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "js-sha1": "^0.7.0"
+  }
+}

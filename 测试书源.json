@@ -1,0 +1,27 @@
+{
+  "bookSourceUrl": "https://example.com",
+  "bookSourceName": "导入测试源",
+  "bookSourceGroup": "测试",
+  "bookSourceComment": "只用来验证导入功能，规则是假的。刻意省略了 bookSourceType / enabledCookieJar / header / jsLib / ruleExplore 等字段 —— 真实书源经常也缺。",
+  "enabled": true,
+  "enabledExplore": true,
+  "ruleSearch": {
+    "searchUrl": "https://example.com/s?q={{keyword}}",
+    "bookList": "class.list",
+    "name": "tag.a@text",
+    "author": "class.au@text",
+    "bookUrl": "tag.a@href"
+  },
+  "ruleBookInfo": {
+    "name": "tag.h1@text",
+    "tocUrl": "class.cat@href"
+  },
+  "ruleToc": {
+    "chapterList": "ul.list@tag.li",
+    "chapterName": "tag.a@text",
+    "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+    "content": "id.content@html"
+  }
+}

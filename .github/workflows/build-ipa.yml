@@ -1,0 +1,83 @@
+name: 出 IPA
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译
+        run: |
+          # || true 只为让脚本能往下走到打印错误那步
+          xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
+            -configuration Release -sdk iphoneos -derivedDataPath build/dd \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            ENABLE_BITCODE=NO build > b.log 2>&1 || true
+          echo "===== 编译错误 ====="
+          grep "error:" b.log | sort -u | head -40
+          echo "===== 错误结束 ====="
+      - name: 打包
+        run: |
+          set -e
+          APP=$(find build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP" || { echo "找不到 .app"; exit 1; }
+          # 防呆：编译失败时 Xcode 会留下只有资源的空壳 .app，
+          # 别再把它打成没有可执行文件的废 ipa
+          if [ ! -f "$APP/QingYue" ]; then
+            echo "!!! 构建产物不完整：缺可执行文件 QingYue !!!"
+            tail -40 b.log
+            exit 1
+          fi
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          cat > build/ipa/Payload/QingYue.app/embedded.mobileprovision <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>Entitlements</key><dict/>
+          <key>application-identifier</key><string>*</string>
+          <key>com.apple.developer.team-identifier</key><string>*</string>
+          <key>get-task-allow</key><false/>
+          <key>keychain-access-groups</key><array><string>*</string></array>
+          </dict></plist>
+          PLIST
+          ( cd build/ipa && zip -qry QingYue.ipa Payload )
+          ls -la build/ipa/QingYue.ipa
+      - name: 提交进仓库
+        # Artifacts 在手机上下不动，改成把 ipa 直接 push 进仓库，
+        # 从仓库页面就能下载，手机浏览器完全没问题。
+        #
+        # ⚠️ 强制从 main 取源码：之前在 ipa-build 分支上触发过一次，
+        # 结果 checkout 到旧代码 → 编出旧 ipa → 推回 ipa-build，
+        # 形成死循环，跑一百次还是旧包。这里钉死。
+        if: always()
+        run: |
+          set +e
+          git fetch origin main --depth=1 2>&1 | tail -2
+          git checkout -B ipa-out origin/main 2>&1 | tail -2
+          mkdir -p out
+          if [ -f build/ipa/QingYue.ipa ]; then
+            cp build/ipa/QingYue.ipa out/QingYue.ipa
+          elif [ -f build/out.ipa ]; then
+            cp build/out.ipa out/QingYue.ipa
+          else
+            echo "没有 ipa 可提交"; exit 0
+          fi
+          git config user.email "ci@local"
+          git config user.name "ci"
+          git add -f out/QingYue.ipa
+          git commit -q -m "ipa build ${{ github.run_number }}" || echo "(无变化)"
+          # 推到独立分支 ipa-build，不碰 main ——
+          # 否则用户本地仓库每次推送都要先 pull，白折腾
+          git push -q origin HEAD:refs/heads/ipa-build --force 2>&1 | tail -3
+          echo "下载地址: https://github.com/806927125/qireaderlite/blob/ipa-build/out/QingYue.ipa"
+      - name: 上传
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QingYue-ipa
+          path: build/ipa/*.ipa
+          retention-days: 7
