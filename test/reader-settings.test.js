@@ -79,7 +79,8 @@ const navMod = web.slice(web.indexOf('private struct ClearNavigationBackground')
 const avail = navMod.indexOf('#available(iOS 18.0, *)');
 const cb = navMod.indexOf('containerBackground(.clear, for: .navigation)');
 ok(avail >= 0 && cb > avail, 'containerBackground 在 #available(iOS 18) 之后');
-ok(navMod.indexOf('else') < cb, 'iOS 17 分支在 containerBackground 之前（走另一条路）');
+ok(cb < navMod.indexOf('else'),
+   'containerBackground 在 if 分支里，else 分支（iOS 17）走另一条路');
 
 console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var displayCard'));
