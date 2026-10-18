@@ -97,9 +97,13 @@ struct CategoryPickerView: View {
                                   subtitle: "")
                             .padding(.top, 40)
                     } else {
-                        ForEach(Array(shown.enumerated()), id: \.offset) { _, group in
+                        // ⚠️ ForEach 的元素是元组，元组没有 .name 成员属性，
+                        //    得先解构成局部常量再用（下面 groupTitle / groupItems）。
+                        ForEach(Array(shown.enumerated()), id: \.offset) { _, entry in
+                            let groupTitle = entry.0
+                            let groupItems = entry.1
                             VStack(alignment: .leading, spacing: 10) {
-                                Text(group.name)
+                                Text(groupTitle)
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundStyle(Theme.sub)
                                     .padding(.leading, 4)
@@ -109,7 +113,7 @@ struct CategoryPickerView: View {
                                     columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
                                     spacing: 8
                                 ) {
-                                    ForEach(Array(group.items.enumerated()), id: \.offset) { _, k in
+                                    ForEach(Array(groupItems.enumerated()), id: \.offset) { _, k in
                                         let on = current?.url == k.url
                                         Button {
                                             onPick(k)
