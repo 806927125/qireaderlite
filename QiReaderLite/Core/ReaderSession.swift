@@ -14,7 +14,7 @@ final class ReaderSession: ObservableObject {
     private var sources: SourceStore?
     private var library: LibraryStore?
     /// 正文被点了一下（宿主用它显/隐工具栏）
-    var onTap: (() -> Void)??
+    var onTap: (() -> Void)?
 
     @Published var index: Int = 0
     @Published var errorText: String = ""
