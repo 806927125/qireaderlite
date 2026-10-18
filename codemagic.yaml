@@ -54,8 +54,12 @@ workflows:
         # ⚠️ 这几项别丢：xcodebuild 的显式设置会覆盖 pbxproj 里的值。
         #    版本号必须跟 pbxproj 一致，否则 Codemagic 编出来的包版本会跟 Actions 出的不一样。
         PRODUCT_BUNDLE_IDENTIFIER: com.qireaderlite.app
-        MARKETING_VERSION: "3.4"
-        CURRENT_PROJECT_VERSION: "2"
+        # ⚠️ 版本号故意跟 Actions 出的不一样：
+        #    Actions = macos-15 (Xcode 16.4) → 3.4，手搓版玻璃
+        #    Codemagic = Xcode 26.6             → 3.5，系统 glassEffect 版
+        #    两个包装机上能一眼分出哪个是 26 的 UI
+        MARKETING_VERSION: "3.5"
+        CURRENT_PROJECT_VERSION: "1"
 
     scripts:
       - name: 编译并签名
@@ -108,8 +112,15 @@ workflows:
   build_unsigned_ipa:
     name: 免签 IPA（不需要证书）
     instance_type: mac_mini_m2
+    # ⬆️ Xcode 26.6 = iOS 26 SDK → LiquidGlass.swift 里的系统 glassEffect() 会真的编进去
     xcode_version: "26.6"
     max_build_duration: 60
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.qireaderlite.app
+        MARKETING_VERSION: "3.5"
+        CURRENT_PROJECT_VERSION: "1"
 
     scripts:
       - name: 编译（不签名）
