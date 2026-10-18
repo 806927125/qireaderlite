@@ -1,4 +1,8 @@
-# Codemagic —— 云端 macOS 出包，用你自己的证书签名
+# Codemagic —— 云端 macOS 出包
+#
+# ⚠️ 格式说明：2026-10-18 从老式 `configs:` 迁到新式 `workflows:`。
+#    老格式的 `distribution: manual` + `ios_method: development` 在新格式里
+#    合并成一个字段：`distribution_type: development`（可选 app_store / ad_hoc / development / enterprise）。
 #
 # ⚠️ 证书只有一种放法，别混用（混用会报「找不到 p12」）：
 #
@@ -12,40 +16,38 @@
 #     → 取消下面那两行注释，并在 Codemagic 的环境变量里加 P12_PASSWORD
 #     （注意 .gitignore 已排除 *.p12，传了也传不上去，得先去掉那行）
 #
+#   方案 C：完全免签（不需要任何证书）
+#     用下面 build_unsigned_ipa 那个 workflow，走 GitHub Actions 也一样能免签出包
+#
 # 免费额度 500 分钟/月，一次构建 3~5 分钟。
 
 name: 轻阅 Lite
-type: ios
+type: app
+platform: iOS
 
-environment:
-  ios_signing:
-    distribution: manual
-
-    # 装自己手机用 development 或 ad_hoc；上 TestFlight / App Store 改 app_store
-    ios_method: development
-
-    # ── 方案 A：注释掉这三行，走网页上传 ──
-    # p12_file_path: "ios-certificate/development.p12"
-    # p12_password: ${P12_PASSWORD}
-    # provisioning_profile_path: "ios-certificate/development.mobileprovision"
-
-    # ── bundle id 必须和 profile 里那个一字不差 ──
-    # 不一致 → No profile matching 'xxx' found
-    # 改这里的同时，要改 project.pbxproj 里的 PRODUCT_BUNDLE_IDENTIFIER
-    bundle_identifier: com.qireaderlite.app
-
-configs:
-  ipa:
+workflows:
+  build_signed_ipa:
     name: 已签名 IPA
-    mode: release
+    instance_type: mac_mini_m2
+    # ⬆️ Xcode 26.6 = Swift 6.3 + iOS 26 SDK → 系统的 glassEffect() / Liquid Glass 可用
+    #    之前是 Xcode 16.4 / iOS 18.5 SDK，LiquidGlass 只能手搓
+    xcode_version: "26.6"
+    max_build_duration: 60
 
-    settings:
-      base:
-        ENABLE_BITCODE: NO
-        PRODUCT_BUNDLE_IDENTIFIER: com.qireaderlite.app
-        # 版本号，跟 App Store Connect 上传时保持一致
-        MARKETING_VERSION: "3.1"
-        CURRENT_PROJECT_VERSION: "1"
+    environment:
+      ios_signing:
+        # 装自己手机用 development 或 ad_hoc；上 TestFlight / App Store 改 app_store
+        distribution_type: development
+
+        # ── 方案 A：注释掉这三行，走网页上传 ──
+        # p12_file_path: "ios-certificate/development.p12"
+        # p12_password: ${P12_PASSWORD}
+        # provisioning_profile_path: "ios-certificate/development.mobileprovision"
+
+        # ── bundle id 必须和 profile 里那个一字不差 ──
+        # 不一致 → No profile matching 'xxx' found
+        # 改这里的同时，要改 project.pbxproj 里的 PRODUCT_BUNDLE_IDENTIFIER
+        bundle_identifier: com.qireaderlite.app
 
     scripts:
       - name: 编译并签名
@@ -58,7 +60,6 @@ configs:
             -sdk iphoneos \
             -derivedDataPath build/dd \
             -allowProvisioningUpdates \
-            ENABLE_BITCODE=NO \
             build
 
       - name: 核对签名
@@ -95,3 +96,58 @@ configs:
     artifacts:
       - build/*.ipa
       - build/dd/Logs/**/*.xcactivitylog
+
+  build_unsigned_ipa:
+    name: 免签 IPA（不需要证书）
+    instance_type: mac_mini_m2
+    xcode_version: "26.6"
+    max_build_duration: 60
+
+    scripts:
+      - name: 编译（不签名）
+        script: |
+          set -e
+          xcodebuild \
+            -project QiReaderLite.xcodeproj \
+            -scheme QiReaderLite \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/dd \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build > b.log 2>&1 || true
+          echo "===== 编译错误 ====="
+          grep "error:" b.log | sort -u | head -40
+          echo "===== 错误结束 ====="
+
+      - name: 组装 IPA
+        script: |
+          set -e
+          APP=$(find build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP" || { echo "找不到 .app"; exit 1; }
+          # 防呆：编译失败时 Xcode 会留下只有资源的空壳 .app，别打成废 ipa
+          if [ ! -f "$APP/QingYue" ]; then
+            echo "!!! 构建产物不完整：缺可执行文件 QingYue !!!"
+            tail -40 b.log
+            exit 1
+          fi
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          # 免签包里塞一份空描述文件，装的时候才不会因为缺 embedded.mobileprovision 报错
+          cat > build/ipa/Payload/QingYue.app/embedded.mobileprovision <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>Entitlements</key><dict/>
+          <key>application-identifier</key><string>*</string>
+          <key>com.apple.developer.team-identifier</key><string>*</string>
+          <key>get-task-allow</key><false/>
+          <key>keychain-access-groups</key><array><string>*</string></array>
+          </dict></plist>
+          PLIST
+          ( cd build/ipa && zip -qry QingYue.ipa Payload )
+          ls -la build/ipa/QingYue.ipa
+
+    artifacts:
+      - build/ipa/*.ipa

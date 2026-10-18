@@ -1,6 +1,6 @@
 #!/bin/bash
 # 本地出免签 IPA。用法：./scripts/build-ipa.sh
-# 需要 macOS + Xcode 16 以上
+# 需要 macOS + Xcode 26 以上（iOS 26 SDK 才有系统的 Liquid Glass / glassEffect）
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -15,6 +15,7 @@ SCHEME="QiReaderLite"
 APP_NAME="QingYue"
 
 echo "▶ Xcode: $(xcodebuild -version | head -1)"
+echo "▶ SDK  : $(xcrun --sdk iphoneos --show-sdk-version)"
 
 echo "▶ 编译 Release…"
 xcodebuild \
@@ -32,6 +33,11 @@ xcodebuild \
 APP="build/dd/Build/Products/Release-iphoneos/${APP_NAME}.app"
 if [[ ! -d "$APP" ]]; then
   echo "❌ 没找到 $APP"
+  exit 1
+fi
+# 防呆：编译失败时 Xcode 会留下只有资源的空壳 .app，别打成废 ipa
+if [[ ! -f "$APP/$APP_NAME" ]]; then
+  echo "!!! 构建产物不完整：缺可执行文件 $APP_NAME !!!"
   exit 1
 fi
 

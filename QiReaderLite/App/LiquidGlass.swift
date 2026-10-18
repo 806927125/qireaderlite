@@ -1,19 +1,27 @@
 import SwiftUI
 
-/// 液态玻璃（Liquid Glass）质感 —— **手搓版**，不依赖 iOS 26 的 `glassEffect()`。
+/// 液态玻璃（Liquid Glass）质感。
 ///
-/// 为什么不用系统的：构建机是 Xcode 16.4 / iOS 18.5 SDK，
-/// `glassEffect` / `GlassEffectContainer` 写进去直接编译不过。
-/// 栖阅自己也是 iOS 17 部署目标，它那套玻璃感同样是拼出来的。
+/// 两条路，自动选：
+///   · iOS 26+ 且用 Xcode 26+ 编译 → **系统 `glassEffect()`**（真·液态玻璃：透镜折射、陀螺仪高光、动态阴影）
+///   · 其余情况 → 手搓版（四层玻璃感，视觉上 90% 还原）
 ///
-/// 玻璃感的四层（缺一层就变"塑料"）：
-///   ① 毛玻璃底      Material
-///   ② 竖向明暗      顶部亮（受光）→ 底部暗
-///   ③ 边缘镜面描边  顶部最亮的那道高光，是"玻璃"最像的一笔
-///   ④ 柔和投影      让它浮起来，不是贴上去
+/// ── 为什么必须有 `#if compiler(>=6.2)` ──
+/// `if #available(iOS 26.0, *)` **挡不住编译期不存在的 API**。
+/// 用老 SDK（Xcode 16.x / iOS 18.5）编译时，编译器照样会编译那个分支，
+/// 然后报 `no member 'glassEffect'` / `cannot find 'Glass' in scope`。
+/// `#if compiler(...)` 才是编译期开关 —— Xcode 26 = Swift 6.2。
 ///
-/// ⚠️ 每一层都拆成独立小 View / 局部 let：
-///    整条修饰链直接串起来会触发 "unable to type-check in reasonable time"。
+/// ── CI 报 glassEffect 相关的错怎么办 ──
+/// 把下面 `USE_SYSTEM_GLASS` 改成 `false` 立刻回退到手搓版，不影响其它功能。
+/// 改完推一次，CI 会重编。
+///
+/// ── 手搓版为什么保留 ──
+/// 部署目标还是 iOS 17，iOS 17~25 的机器只能走手搓版。
+private let USE_SYSTEM_GLASS = true
+
+// MARK: - 玻璃填充 / 描边（手搓版专用）
+
 private struct GlassFill: View {
     var tint: [Color]
     var strength: Double
@@ -46,13 +54,56 @@ private struct GlassRim: View {
     }
 }
 
+// MARK: - 修饰器
+
 struct LiquidGlass: ViewModifier {
     var cornerRadius: CGFloat = 20
     /// 玻璃里透出的环境色（栖阅那种淡蓝/淡紫）
     var tint: [Color] = [.white.opacity(0.22), .white.opacity(0.08)]
     var strength: Double = 1.0
+    /// 圆形（顶栏返回键那种）
+    var isCircle: Bool = false
 
+    @ViewBuilder
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if USE_SYSTEM_GLASS {
+            if #available(iOS 26.0, *) {
+                systemGlass(content)
+            } else {
+                legacyGlass(content)
+            }
+        } else {
+            legacyGlass(content)
+        }
+        #else
+        legacyGlass(content)
+        #endif
+    }
+
+    #if compiler(>=6.2)
+    /// 系统液态玻璃。
+    ///
+    /// ⚠️ 系统的 glass 自带折射 / 高光 / 自适应阴影 / 前景文字增强对比度，
+    ///    所以这里**不要**再叠 background / clipShape / overlay(描边) —— 叠了反而打架。
+    /// ⚠️ 官方明确说：玻璃视图上**不要**用 `.clipShape()`。
+    /// ⚠️ 官方最佳实践：glassEffect 放在修饰链**最后**。
+    @available(iOS 26.0, *)
+    @ViewBuilder
+    private func systemGlass(_ content: Content) -> some View {
+        if isCircle {
+            content.glassEffect(.regular, in: .circle)
+        } else {
+            content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        }
+    }
+    #endif
+
+    /// 手搓版：四层玻璃感。
+    ///
+    /// ⚠️ 每一层都拆成独立小 View / 局部 let：
+    ///    整条修饰链直接串起来会触发 "unable to type-check in reasonable time"。
+    private func legacyGlass(_ content: Content) -> some View {
         let fill = GlassFill(tint: tint, strength: strength)
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let inner = RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
@@ -79,7 +130,7 @@ extension View {
 
     /// 玻璃圆按钮（顶栏那个返回键）
     func glassCircle(tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
-        modifier(LiquidGlass(cornerRadius: 999, tint: tint))
+        modifier(LiquidGlass(cornerRadius: 999, tint: tint, isCircle: true))
     }
 }
 
