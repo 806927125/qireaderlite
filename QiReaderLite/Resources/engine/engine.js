@@ -612,6 +612,51 @@
                 try { n = (dom.resolve(doc, ruleText(listRule.bookList)).nodes || []).length; }
                 catch (e) { out.选择器报错 = String(e && e.message || e); }
                 out.规则命中元素 = n;
+                // 规则没命中时，扫一遍页面里"重复出现多次"的 class 当候选列表容器。
+                // 站方改版导致规则失效是常态，让 App 自己把候选摆出来，
+                // 总比在沙盒里对着一个 503 的站瞎猜强。
+                if (n <= 1) {
+                  var counts = {}, tags = {};
+                  try {
+                    var all = doc.querySelectorAll('[class]');
+                    for (var i = 0; i < all.length && i < 6000; i++) {
+                      var el = all[i];
+                      var cls = (el.getAttribute('class') || '').trim();
+                      if (!cls) continue;
+                      var parts = cls.split(/\s+/);
+                      for (var j = 0; j < parts.length; j++) {
+                        var c = parts[j];
+                        if (!counts[c]) counts[c] = { n: 0, sample: '' };
+                        counts[c].n++;
+                        tags[c] = el.tagName;
+                        if (!counts[c].sample && counts[c].n === 3) {
+                          counts[c].sample = String(el.outerHTML || '')
+                            .replace(/\s+/g, ' ').slice(0, 200);
+                        }
+                      }
+                    }
+                  } catch (e2) { /* 扫不动就算了，不影响主流程 */ }
+                  var cand = Object.keys(counts)
+                    .filter(function (c) { return counts[c].n >= 3; })
+                    .sort(function (a, b) { return counts[b].n - counts[a].n; })
+                    .slice(0, 6);
+                  out.候选列表容器 = cand.map(function (c) {
+                    return '.' + c + '  ×' + counts[c].n + ' <' + tags[c] + '>'
+                      + (counts[c].sample ? '\n    ' + counts[c].sample : '');
+                  }).join('\n');
+                  if (!cand.length) out.候选列表容器 = '页面里没有重复出现的 class，可能不是书单页';
+                  // 标签统计：像 #sitebox@tag.dl 这种靠 id+标签定位的，
+                  // 光扫 class 扫不出来（元素自己没 class），得把常见容器标签数也摆出来
+                  var tg = ['dl', 'li', 'tr', 'article', 'ul', 'section', 'h2', 'h3', 'table'];
+                  var tstat = [];
+                  for (var t = 0; t < tg.length; t++) {
+                    var c2 = 0;
+                    try { c2 = doc.querySelectorAll(tg[t]).length; } catch (e3) { continue; }
+                    if (c2 > 2) tstat.push(tg[t] + '=' + c2);
+                  }
+                  out.元素统计 = '带class元素=' + (all ? all.length : 0)
+                    + (tstat.length ? '  ' + tstat.join(' ') : '');
+                }
               } catch (e) {
                 out.解析报错 = String(e && e.message || e);
               }

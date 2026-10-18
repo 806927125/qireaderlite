@@ -128,7 +128,8 @@ final class SourceService {
         guard let dict = raw as? [String: Any] else { return "引擎没有返回诊断数据" }
         var out: [String] = []
         for k in ["请求URL", "最终URL", "方式", "状态码", "响应字节", "页面标题",
-                  "用的规则", "bookList规则", "规则命中元素", "选择器报错", "解析报错", "结论"] {
+                  "用的规则", "bookList规则", "规则命中元素", "元素统计", "选择器报错",
+                  "解析报错", "结论", "候选列表容器"] {
             if let v = dict[k] {
                 let s = (v is String) ? (v as! String) : String(describing: v)
                 if s.isEmpty { continue }
