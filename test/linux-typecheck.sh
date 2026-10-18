@@ -28,6 +28,10 @@ sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' \
     -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
     QiReaderLite/Core/ReaderHost.swift > "$OUT/ReaderHost.swift"
 
+# 阅读会话的接线逻辑也要真检查（纯 Foundation/Combine，不碰 SwiftUI）
+sed -e 's/^import Combine$//' \
+    QiReaderLite/Core/ReaderSession.swift > "$OUT/ReaderSession.swift"
+
 echo "▶ 类型检查 Foundation 层…"
 "$SWIFT_BIN" -typecheck -swift-version 5 \
   test/linux-shims/CombineShim.swift \
@@ -38,6 +42,7 @@ echo "▶ 类型检查 Foundation 层…"
   QiReaderLite/Core/SourceService.swift \
   "$OUT/RuleSandbox.swift" \
   "$OUT/ReaderHost.swift" \
+  "$OUT/ReaderSession.swift" \
   2>&1 | tee "$OUT/log.txt"
 
 ERRS=$(grep -c "error:" "$OUT/log.txt" || true)
