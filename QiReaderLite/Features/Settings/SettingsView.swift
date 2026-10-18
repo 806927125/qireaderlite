@@ -23,8 +23,21 @@ struct SettingsView: View {
                     summaryCard
 
                     settingsGroup {
-                        row("book.vertical", "书源", "\(store.sources.count) 个") { }
-                        row("books.vertical", "书库", "\(library.items.count) 本") { }
+                        // 书源管理搬进设置（用户定的）：底栏四格是
+                        // 书架 / 发现 / 搜索 / 设置，书源不占格子
+                        NavigationLink {
+                            SourcesView()
+                        } label: {
+                            rowLabel("slider.horizontal.3", "书源管理", "\(store.sources.count) 个", Theme.tagBlue)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            BookshelfView()
+                        } label: {
+                            rowLabel("books.vertical", "书库", "\(library.items.count) 本", Theme.tagGreen)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     settingsGroup {
@@ -130,32 +143,29 @@ struct SettingsView: View {
         .glassCard(cornerRadius: 16, strong: true)
     }
 
-    private func row(_ icon: String, _ title: String, _ value: String,
-                    tint: Color = Theme.tagBlue, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 17))
-                    .foregroundStyle(tint)
-                    .frame(width: 26)
-                Text(title)
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.ink)
-                Spacer()
-                Text(value)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.sub)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.sub.opacity(0.6))
-            }
-            .padding(.vertical, 13)
+    /// 一行「图标 + 标题 + 右侧值 + chevron」，NavigationLink 和 Button 共用
+    private func rowLabel(_ icon: String, _ title: String, _ value: String, _ tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 17))
+                .foregroundStyle(tint)
+                .frame(width: 26)
+            Text(title)
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Text(value)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.sub)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.sub.opacity(0.6))
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 13)
     }
 }
 
 /// 引擎版本号（RuleSandbox 那边也有一份，这里只读）
 enum EngineInfo {
-    static let version = "2026.10.18-r13 · Packages / AES / MessageDigest 已就位"
+    static let version = "2026.10.18-r14 · Packages / AES / MessageDigest 已就位"
 }

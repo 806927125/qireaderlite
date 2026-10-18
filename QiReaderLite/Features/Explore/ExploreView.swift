@@ -16,10 +16,19 @@ struct ExploreView: View {
     @State private var loadingMore = false
     @State private var reachedEnd = false
     @State private var loadMoreID = 0
+    /// 顶栏分类胶囊点开的「分类筛选」页
+    @State private var showCategoryPicker = false
+
+    /// 从发现页点进来时书源是定死的，没定死才回退到「第一个启用的」
+    private let pinnedSourceId: String?
+
+    init(source: BookSource? = nil) {
+        pinnedSourceId = source?.bookSourceUrl
+    }
 
     private var current: BookSource? {
-        guard let id = sourceId, let s = sources.source(id: id) else { return sources.enabled.first
-        }
+        if let pid = pinnedSourceId, let s = sources.source(id: pid) { return s }
+        guard let id = sourceId, let s = sources.source(id: id) else { return sources.enabled.first }
         return s.enabled ? s : sources.enabled.first
     }
 
@@ -36,6 +45,24 @@ struct ExploreView: View {
         .navigationTitle("发现")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadKinds() }
+        .sheet(isPresented: $showCategoryPicker) {
+            if let s = current {
+                NavigationStack {
+                    CategoryPickerView(
+                        source: s,
+                        kinds: kinds,
+                        current: selected,
+                        onPick: { k in
+                            selected = k
+                            books = []
+                            page = 1
+                            reachedEnd = false
+                            Task { await loadBooks() }
+                        }
+                    )
+                }
+            }
+        }
         .alert("发现页诊断", isPresented: Binding(
             get: { diagText != nil }, set: { if !$0 { diagText = nil } })) {
             Button("知道了", role: .cancel) {}
@@ -43,6 +70,7 @@ struct ExploreView: View {
             Text(diagText ?? "")
         }
         .onChange(of: sourceId) { _, _ in
+            guard pinnedSourceId == nil else { return }
             selected = nil
             books = []
             Task { await loadKinds() }
@@ -63,10 +91,25 @@ struct ExploreView: View {
 
             Spacer()
 
+            // 栖阅顶栏右侧是一个「分类名 ⌄」胶囊，点开是分类筛选页；
+            // 只有在没钉死书源（老入口）时，才额外保留一个切书源的下拉。
             GlassCapsule {
-                SourcePicker(selection: $sourceId)
-                    .labelsHidden()
-                    .fixedSize()
+                if pinnedSourceId == nil {
+                    SourcePicker(selection: $sourceId)
+                        .fixedSize()
+                }
+                Button { showCategoryPicker = true } label: {
+                    HStack(spacing: 4) {
+                        Text(selected?.title ?? "选分类")
+                            .font(.system(size: 14, weight: .medium))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.ink)
+                }
+                .buttonStyle(.plain)
+                .disabled(kinds.isEmpty)
             }
         }
         .padding(.horizontal, 14)
@@ -191,7 +234,7 @@ struct ExploreView: View {
         guard let s = current else {
             kinds = []; statusText = "没有启用且带发现页的书源"; return
         }
-        if sourceId == nil { sourceId = s.bookSourceUrl }
+        if sourceId == nil { sourceId = pinnedSourceId ?? s.bookSourceUrl }
         busy = true
         do {
             kinds = try await SourceService.shared.exploreKinds(source: s)

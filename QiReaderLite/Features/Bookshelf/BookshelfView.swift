@@ -89,23 +89,17 @@ struct BookshelfView: View {
                 .buttonStyle(.plain)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                // 搜索从底栏挪上来（底栏第四格给了设置），
-                // 这里跟栖阅一样：右上角一组胶囊按钮
-                GlassCapsule {
-                    NavigationLink { SearchView() } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.ink)
-                    }
-                    .buttonStyle(.plain)
-
-                    NavigationLink { SearchView() } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.ink)
-                    }
-                    .buttonStyle(.plain)
+                // 搜索已经回到底栏了，这里只留「加书」——之前塞了两个
+                // 长得一模一样、都通往搜索页的按钮，纯属重复。
+                NavigationLink { SearchView() } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 16)
+                        .frame(height: 34)
+                        .liquidGlass(cornerRadius: 999)
                 }
+                .buttonStyle(.plain)
             }
         }
     }
