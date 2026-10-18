@@ -11,6 +11,11 @@ struct ExploreView: View {
     @State private var statusText = ""
     @State private var diagText: String?
     @State private var diagBusy = false
+    /// 上拉加载更多：页码 / 加载中 / 是否到底 / 触发器 id（改 id 让 .task 重跑）
+    @State private var page = 1
+    @State private var loadingMore = false
+    @State private var reachedEnd = false
+    @State private var loadMoreID = 0
 
     private var current: BookSource? {
         guard let id = sourceId, let s = sources.source(id: id) else { return sources.enabled.first
@@ -62,6 +67,9 @@ struct ExploreView: View {
                         let on = selected?.url == k.url
                         Button {
                             selected = k
+                            books = []
+                            page = 1
+                            reachedEnd = false
                             Task { await loadBooks() }
                         } label: {
                             Text(k.title)
@@ -127,8 +135,28 @@ struct ExploreView: View {
                 }
             }
         } else {
-            List(BookDedup.unique(books)) { b in
-                NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+            List {
+                ForEach(BookDedup.unique(books)) { b in
+                    NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+                }
+                // 列表底部这一行就是「上拉加载」的触发器：
+                // 它出现在屏幕里就自动加载下一页，加完把 id 一改，.task 就会再跑一次；
+                // 页面不满屏时会连着翻，直到填满或者站方没数据了。
+                if !reachedEnd {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                    .listRowSeparator(.hidden)
+                    .task(id: loadMoreID) { await loadMore() }
+                } else {
+                    Text("没有更多了")
+                        .font(.caption)
+                        .foregroundStyle(Theme.sub)
+                        .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
+                }
             }
             .listStyle(.plain)
             .refreshable { await loadBooks() }
@@ -156,16 +184,52 @@ struct ExploreView: View {
         busy = false
     }
 
+    /// 重新从头加载（切分类、下拉刷新都走这里）
     private func loadBooks() async {
         guard let s = current, let k = selected else { return }
         busy = true
         statusText = ""
+        page = 1
+        reachedEnd = false
         do {
-            books = try await SourceService.shared.explore(source: s, kindUrl: k.url, page: 1)
+            let first = try await SourceService.shared.explore(source: s, kindUrl: k.url, page: 1)
+            books = first
+            // 一页都没东西就别显示"没有更多了"，直接算到底，交给诊断按钮
+            reachedEnd = first.isEmpty
+            loadMoreID += 1
         } catch {
             statusText = error.localizedDescription
             books = []
+            reachedEnd = true
         }
         busy = false
+    }
+
+    /// 上拉加载下一页，追加到已有列表后面
+    private func loadMore() async {
+        guard !loadingMore, !reachedEnd, !busy else { return }
+        guard let s = current, let k = selected else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        do {
+            let more = try await SourceService.shared.explore(source: s, kindUrl: k.url, page: page + 1)
+            let before = Set(books.map(\.bookUrl))
+            let merged = books + more
+            let addedNew = Set(merged.map(\.bookUrl)).subtracting(before).count
+            if more.isEmpty || addedNew == 0 || page >= 60 {
+                // 三种情况都算到底：
+                //   more 为空        —— 站方真没下一页了
+                //   addedNew == 0    —— 站方 {{page}} 没生效，一直返回同一页（不挡住就是死循环）
+                //   page >= 60       —— 兜底，别无限翻
+                reachedEnd = true
+            } else {
+                page += 1
+                books = merged
+                loadMoreID += 1
+            }
+        } catch {
+            // 翻页失败就停在这儿，别无限重试（站方 403/超时很常见）
+            reachedEnd = true
+        }
     }
 }
