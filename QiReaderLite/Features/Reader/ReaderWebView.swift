@@ -304,31 +304,39 @@ struct ReaderWebView: View {
     /// 阅读设置 —— **照用户给的参考截图 1:1 复刻**。
     ///
     /// 布局（从上到下）：
-    ///   ① 字号行：[小方块] 滑块 [大方块] [系统字体⌄]   ← 字体下拉和滑块**同一行**
-    ///   ② 分隔线
-    ///   ③ 配色：☀ 一排 8 个 + 🌙 一排 8 个
-    ///   ④ 跟随系统深浅色 + 开关
-    ///   ⑤ 分隔线
-    ///   ⑥ 翻页方式：一张**灰底圆角卡片**里，左边一个图标 + 5 个胶囊
-    ///   ⑦ 功能磁贴：4 + 5，每个 = 图标 + 粗体标题(+副标题)
+    ///   ① 一张**磨砂玻璃大卡片**：字号行(小方块/滑块/大方块/字体⌄) + 分隔线
+    ///      + 配色(☀ 8个 + 🌙 8个) + 跟随系统深浅色
+    ///   ② 一张**磨砂玻璃卡片**：翻页方式(左侧图标 + 5 个胶囊)
+    ///   ③ 功能磁贴：4 + 5，每个 = 图标 + 粗体标题(+副标题)
     ///
-    /// 没接上的**只摆位不点**（灰掉），留着当以后的接口。
+    /// 面板本身是**半透明磨砂**（能看到底下的正文），
+    /// 高度**贴合内容**（下面不留一大块空白）。
     private var settingsSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    sizeRow
-                    hairLine
-                    paletteGrid
-                    followSystemRow
-                    hairLine
-                    pageTurnCard
-                    featureGrid
-                    Spacer(minLength: 24)
+        settingsContent
+            .background(Color.clear)
+            // 半透明磨砂：底下正文透得出来
+            .presentationBackground {
+                ZStack {
+                    Rectangle().fill(.ultraThinMaterial)
+                    Rectangle().fill(Color.white.opacity(0.14))
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
             }
+            .presentationCornerRadius(28)
+            .modifier(FitSheetHeight())
+    }
+
+    /// 面板内容
+    private var settingsContent: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                displayCard
+                pageTurnCard
+                featureGrid
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
             .navigationTitle("阅读设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -349,7 +357,20 @@ struct ReaderWebView: View {
                 moreSettingsPage
             }
         }
-        .presentationDetents([.large])
+    }
+
+    /// ① 字号 + 配色 + 跟随系统：一张大卡片
+    private var displayCard: some View {
+        VStack(spacing: 0) {
+            sizeRow
+            hairLine
+            paletteGrid
+            followSystemRow
+        }
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.34),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.bottom, 10)
     }
 
     private var hairLine: some View {
@@ -457,9 +478,9 @@ struct ReaderWebView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color.gray.opacity(0.12),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.34),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.bottom, 10)
     }
 
     // MARK: - ⑦ 功能磁贴（4 + 5）
@@ -502,7 +523,7 @@ struct ReaderWebView: View {
         .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(Color.gray.opacity(ready ? 0.12 : 0.07),
+        .background(Color.white.opacity(ready ? 0.34 : 0.16),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
@@ -865,5 +886,25 @@ private struct ChipButton: View {
                 .frame(height: fillsWidth ? 32 : nil)
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+/// 让 sheet 的高度**贴合内容**，下面不留一大块空白。
+///
+/// iOS 18+ 用系统的 `presentationSizing(.fitted)`；
+/// iOS 17 没有这个 API，退回按内容估一个高度（`.height`）。
+///
+/// ⚠️ 这个必须跟「内容不是 ScrollView」配套：
+///    ScrollView 的理想高度是无限大，fitted 就没法算出贴合的高度，
+///    sheet 还是会撑满。所以主面板用 VStack（内容行数固定），
+///    子页才用 ScrollView。
+private struct FitSheetHeight: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.presentationSizing(.fitted)
+        } else {
+            content.presentationDetents([.height(620)])
+        }
     }
 }

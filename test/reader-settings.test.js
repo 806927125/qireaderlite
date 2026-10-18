@@ -49,14 +49,31 @@ for (const [label, re] of [
   ['子页：间距设置',                  /private var layoutSettingsPage/],
 ]) ok(re.test(web), label);
 
+console.log('\n── 液态玻璃 + 高度贴合（用户反馈：下面空一大块、没液态玻璃）──');
+ok(/presentationBackground/.test(web), '面板用了 presentationBackground（半透明背景）');
+ok(/ultraThinMaterial/.test(web), '背景是磨砂材质（底下正文透得出来）');
+ok(/background\(Color\.clear\)/.test(web), 'NavigationStack 背景要透明，否则挡住磨砂');
+ok(/presentationCornerRadius/.test(web), '面板有圆角');
+ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有「高度贴合内容」的修饰符');
+ok(/presentationSizing\(\.fitted\)/.test(web), 'iOS 18+ 用 presentationSizing(.fitted)');
+ok(/presentationDetents\(\[\.height\(/.test(web), 'iOS 17 退回按内容高度给 detent');
+// 主面板不能用 ScrollView（ScrollView 理想高度无限大，fitted 算不出贴合高度）
+const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var displayCard'));
+ok(!/ScrollView/.test(mainSheet), '主面板不用 ScrollView（否则 fitted 撑不满）');
+ok(/VStack/.test(mainSheet), '主面板用 VStack（内容行数固定，高度确定）');
+ok(/private var displayCard/.test(web), '字号+配色+跟随系统 装在一张卡片里');
+ok(/private var pageTurnCard/.test(web), '翻页方式是独立的一张卡片');
+ok(/Color\.white\.opacity\(0\.34\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 20/.test(web),
+   '卡片是半透明白（玻璃感）');
+
 console.log('\n── 关键布局细节 ──');
 // 字体下拉必须跟滑块同一行（不是单独一行）
 const sizeRow = web.slice(web.indexOf('private var sizeRow'), web.indexOf('private func sizeKnob'));
 ok(/fontMenu/.test(sizeRow), '字体下拉在字号行里（同一行）');
 ok(!/private var fontRow/.test(web), '没有单独的字体行');
 // 翻页方式卡片：灰底圆角 + 左侧图标
-ok(/Color\.gray\.opacity\(0\.12\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 18/.test(web),
-   '翻页方式卡片是灰底圆角');
+ok(/Color\.white\.opacity\(0\.34\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 20/.test(web),
+   '翻页方式卡片是半透明白圆角（玻璃感）');
 ok(/Image\(systemName: "doc\.text"\)/.test(web), '翻页方式卡片左边有图标');
 // 磁贴：图标 + 粗体标题 + 副标题
 ok(/Image\(systemName: icon\)/.test(web), '磁贴有图标');
