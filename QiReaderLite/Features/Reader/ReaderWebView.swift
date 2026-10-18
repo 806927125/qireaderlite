@@ -467,17 +467,7 @@ struct ReaderWebView: View {
             Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
             ForEach(Array(ReaderParaAlign.allCases), id: \.rawValue) { a in
-                Button { paraAlign = a.raw } label: {
-                    Text(a.name)
-                        .font(.system(size: 12))
-                        .foregroundStyle(paraAlign == a.raw ? Color.white : Theme.ink)
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(paraAlign == a.raw ? Theme.accent : Color.white.opacity(0.5))
-                        )
-                }
-                .buttonStyle(.plain)
+                ChipButton(title: a.name, selected: paraAlign == a.raw) { paraAlign = a.raw }
             }
         }
         .padding(.vertical, 10)
@@ -503,17 +493,7 @@ struct ReaderWebView: View {
             Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
             ForEach(Array(ReaderBaselineScope.allCases), id: \.rawValue) { sc in
-                Button { baselineScope = sc.raw } label: {
-                    Text(sc.name)
-                        .font(.system(size: 12))
-                        .foregroundStyle(baselineScope == sc.raw ? Color.white : Theme.ink)
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(baselineScope == sc.raw ? Theme.accent : Color.white.opacity(0.5))
-                        )
-                }
-                .buttonStyle(.plain)
+                ChipButton(title: sc.name, selected: baselineScope == sc.raw) { baselineScope = sc.raw }
             }
         }
         .padding(.vertical, 6)
@@ -523,21 +503,14 @@ struct ReaderWebView: View {
     private var pageTurnButtons: some View {
         HStack(spacing: 4) {
             ForEach(PageTurnMode.all) { m in
-                Button {
+                ChipButton(title: m.name,
+                           selected: pageTurnMode == m.raw,
+                           fontSize: 13,
+                           cornerRadius: 15,
+                           fillsWidth: true) {
                     pageTurnMode = m.raw
                     pageTurn = m.raw != "scroll"
-                } label: {
-                    Text(m.name)
-                        .font(.system(size: 13))
-                        .foregroundStyle(pageTurnMode == m.raw ? Color.white : Theme.ink)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .fill(pageTurnMode == m.raw ? Theme.accent : Color.white.opacity(0.5))
-                        )
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.vertical, 10)
@@ -801,5 +774,40 @@ struct ReaderWebContainer: UIViewRepresentable {
             // 宽度都不到 200pt 的窄屏（分屏/小窗）不启用，免得误触
             return w >= 200
         }
+    }
+}
+
+
+/// 设置项里那种小胶囊按钮。
+///
+/// ⚠️ 单独抽出来是有原因的：把
+///   Button { } label: { Text(…).font(…).foregroundStyle(选中 ? .white : 主题色)
+///                              .padding(…).background(RoundedRectangle(…).fill(选中 ? … : …)) }
+/// 整坨塞进 HStack 里，Swift 的类型检查器会**超时**
+/// （"unable to type-check this expression in reasonable time"）。
+/// 抽成独立 View 之后每个表达式都简单了，编译就过了。
+private struct ChipButton: View {
+    let title: String
+    let selected: Bool
+    var fontSize: CGFloat = 12
+    var cornerRadius: CGFloat = 12
+    var fillsWidth: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: fontSize))
+                .foregroundStyle(selected ? Color.white : Theme.ink)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(selected ? Theme.accent : Color.white.opacity(0.5))
+                )
+                .frame(maxWidth: fillsWidth ? .infinity : nil)
+                .frame(height: fillsWidth ? 32 : nil)
+        }
+        .buttonStyle(.plain)
     }
 }

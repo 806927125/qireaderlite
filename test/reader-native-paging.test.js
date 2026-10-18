@@ -130,6 +130,13 @@ console.log('\n── 踩过的坑不能再踩 ──');
 ok(/private var paraAlignRow: some View/.test(web), '段落对齐行拆成独立子视图');
 ok(/private var baselineScopeRow: some View/.test(web), '底线范围行拆成独立子视图');
 ok(/private var pageTurnButtons: some View/.test(web), '翻页方式行拆成独立子视图');
+// 光拆成子视图还不够 —— 按钮本体（Button + label + 嵌套 background + 三元）
+// 也必须抽成独立 View，否则类型检查器照样超时
+ok(/private struct ChipButton: View/.test(web), '小胶囊按钮抽成独立 View（防类型检查超时）');
+ok(/ChipButton\(title: a\.name, selected: paraAlign == a\.raw\)/.test(web), '段落对齐用 ChipButton');
+ok(/ChipButton\(title: sc\.name, selected: baselineScope == sc\.raw\)/.test(web), '底线范围用 ChipButton');
+ok(!/Button \{ paraAlign = a\.raw \} label: \{[\s\S]{0,200}?RoundedRectangle/.test(web),
+   '段落对齐那一行里没有内联的复杂按钮');
 // CaseIterable.allCases 只是 Collection，不是 RandomAccessCollection
 // → SwiftUI 的 ForEach(_:content:) 匹配不上 → 编译器退到 Binding<C> 重载 → 一片红
 ok(!/ForEach\(ReaderParaAlign\.allCases\)/.test(web), 'ForEach(allCases) 要包成 Array');
