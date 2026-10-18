@@ -59,6 +59,13 @@ final class SourceService {
         var coverUrl: String = ""
         var bookUrl: String = ""
         var wordCount: String = ""
+        /// ⚠️ 这个字段以前**根本没在 DTO 里声明** ——
+        /// 引擎 bookInfo 返回了 tocUrl，Swift 解码时直接丢掉，
+        /// toBook 再硬传 `tocUrl: ""`，于是**每一本书的 tocUrl 都是空的**。
+        /// 后果：目录永远退回书籍页 → chapterList 打不中 → 0 章，
+        /// 而且不报错，页面上什么都看不出来（详情看着还挺正常，因为
+        /// 书名/作者简介是从列表页带过来的）。实测「免费追书」全中招。
+        var tocUrl: String = ""
     }
     struct BookListDTO: Codable {
         var books: [BookDTO] = []
@@ -198,7 +205,7 @@ extension SourceService.BookDTO {
     func toBook(origin: String, sourceName: String) -> Book {
         Book(origin: origin, bookUrl: bookUrl, name: name, author: author, intro: intro,
              kind: kind, lastChapter: lastChapter, coverUrl: coverUrl, wordCount: wordCount,
-             tocUrl: "", sourceName: sourceName, detailLoaded: false)
+             tocUrl: tocUrl, sourceName: sourceName, detailLoaded: false)
     }
 }
 
@@ -206,7 +213,8 @@ extension Book {
     /// 送进沙盒的原始字典（引擎不认识 Swift 的 Book 类型）
     var rawJSON: [String: Any] {
         ["bookUrl": bookUrl, "name": name, "author": author, "intro": intro,
-         "kind": kind, "lastChapter": lastChapter, "coverUrl": coverUrl, "wordCount": wordCount]
+         "kind": kind, "lastChapter": lastChapter, "coverUrl": coverUrl, "wordCount": wordCount,
+         "tocUrl": tocUrl]
     }
 }
 

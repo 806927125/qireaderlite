@@ -28,11 +28,18 @@ struct BookDetailView: View {
                 actionBar
                 if !book.kind.isEmpty || !book.lastChapter.isEmpty { meta }
                 intro
-                if !statusText.isEmpty && chapters.isEmpty { Text(statusText).font(.footnote).foregroundStyle(.orange) }
+                // ⚠️ 有问题就**一直**显示，不管目录解析出多少章。
+                //    原来只在 chapters.isEmpty 时显示，目录有内容但详情解析失败时反而看不见。
+                if !statusText.isEmpty {
+                    Text(statusText)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 // ⚠️ 原来只在 1~2 章时显示诊断按钮，**0 章反而不显示** ——
                 //    而 0 章恰恰是最需要诊断的情况（toc() 成功返回但一条没解析出来，
-                //    不抛错，statusText 也是空的，页面上什么都看不出来）。
-                if chapters.count <= 2 {
+                //    不抛错，页面上什么都看不出来）。
+                if chapters.count <= 2 || !statusText.isEmpty {
                     HStack(spacing: 6) {
                         Text(chapters.isEmpty ? "目录一章都没解析出来" : "只解析出 \(chapters.count) 章，多半不对")
                             .font(.caption).foregroundStyle(.orange)
@@ -257,23 +264,42 @@ struct BookDetailView: View {
         defer { loading = false }
 
         // 1) 详情页
-        if let fresh = try? await SourceService.shared.bookInfo(source: s, bookUrl: book.cleanBookUrl, fallback: book) {
+        //
+        // ⚠️ 原来是 `if let fresh = try? await …`，**失败被完全吞掉**：
+        //    页面上看着"书名作者简介都有"，其实全是**列表页那份数据**，
+        //    bookInfo 压根没跑成。tocUrl 因此是空的 → 目录去抓书籍页
+        //    → 0 章。而 statusText 紧接着被清空，**屏幕上一点提示都没有**。
+        //    这种"静默地错"最难查，必须把错误说出来。
+        var problems: [String] = []
+        do {
+            let fresh = try await SourceService.shared.bookInfo(
+                source: s, bookUrl: book.cleanBookUrl, fallback: book)
             book = book.merged(with: fresh)
             if inShelf { library.add(book) }
+            if book.tocUrl.isEmpty {
+                problems.append("详情没算出 tocUrl（ruleBookInfo.tocUrl 返回空），目录只能退回书籍页")
+            }
+        } catch {
+            problems.append("详情解析失败：\(error.localizedDescription)")
         }
-        statusText = ""
 
         // 2) 目录
         let tocURL = book.tocUrl.isEmpty ? book.cleanBookUrl : book.tocUrl
-        if let list = try? await SourceService.shared.toc(source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl) {
+        do {
+            let list = try await SourceService.shared.toc(
+                source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl)
             chapters = list
+            if list.isEmpty {
+                problems.append("目录接口通了但一条章节都没解析出来（chapterList 规则没命中）")
+            }
             if let last = library.item(for: book.id)?.lastChapterIndex,
                last > 0, last < list.count {
                 readerChapter = nil   // 只是预热，不自动跳
             }
-        } else if !chapters.isEmpty {
-            statusText = "目录加载失败"
+        } catch {
+            problems.append("目录加载失败：\(error.localizedDescription)")
         }
+        statusText = problems.joined(separator: "\n")
     }
 }
 
