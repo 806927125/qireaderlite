@@ -38,12 +38,32 @@ struct ExploreView: View {
 
             VStack(spacing: 0) {
                 picker
-                kindBar
                 list
             }
         }
         .navigationTitle("发现")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // 分类胶囊放导航栏，跟返回键平齐一行。
+                // 之前它跟内容区里的书源名挤在一起，看起来是错位的。
+                Button { showCategoryPicker = true } label: {
+                    HStack(spacing: 4) {
+                        Text(selected?.title ?? "选分类")
+                            .font(.system(size: 14, weight: .medium))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .liquidGlass(cornerRadius: 999)
+                }
+                .buttonStyle(.plain)
+                .disabled(kinds.isEmpty)
+            }
+        }
         .task { await loadKinds() }
         .sheet(isPresented: $showCategoryPicker) {
             if let s = current {
@@ -77,7 +97,10 @@ struct ExploreView: View {
         }
     }
 
-    /// 栖阅截图 1 那个顶栏：圆形按钮 + 书源名（带色块图标）+ 右侧分组胶囊
+    /// 内容区第一行：**只有**色块图标 + 书源名。
+    /// 返回键和分类胶囊都在系统导航栏那行（见 .toolbar）——
+    /// 之前它们跟这里的书源名不在同一行，看起来是错位的。
+    /// 书源名右边不加箭头：它不是可点的，是这一行的标题。
     private var picker: some View {
         HStack(spacing: 10) {
             SourceBadge(name: current?.bookSourceName ?? "书源",
@@ -91,61 +114,15 @@ struct ExploreView: View {
 
             Spacer()
 
-            // 栖阅顶栏右侧是一个「分类名 ⌄」胶囊，点开是分类筛选页；
-            // 只有在没钉死书源（老入口）时，才额外保留一个切书源的下拉。
-            GlassCapsule {
-                if pinnedSourceId == nil {
-                    SourcePicker(selection: $sourceId)
-                        .fixedSize()
-                }
-                Button { showCategoryPicker = true } label: {
-                    HStack(spacing: 4) {
-                        Text(selected?.title ?? "选分类")
-                            .font(.system(size: 14, weight: .medium))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.ink)
-                }
-                .buttonStyle(.plain)
-                .disabled(kinds.isEmpty)
+            // 老入口（没钉死书源）才留切书源的下拉；
+            // 钉死书源时书源名就是标题，右边不放箭头 —— 它不是可点的。
+            if pinnedSourceId == nil {
+                SourcePicker(selection: $sourceId)
+                    .fixedSize()
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-    }
-
-    @ViewBuilder
-    private var kindBar: some View {
-        if !kinds.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(kinds.enumerated()), id: \.offset) { _, k in
-                        let on = selected?.url == k.url
-                        Button {
-                            selected = k
-                            books = []
-                            page = 1
-                            reachedEnd = false
-                            Task { await loadBooks() }
-                        } label: {
-                            Text(k.title)
-                                .font(.system(size: 14, weight: on ? .semibold : .regular))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 7)
-                                .foregroundStyle(on ? .white : Theme.ink)
-                                .background(
-                                    Capsule().fill(on ? Theme.accent : Color.white.opacity(0.55))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-            }
-        }
     }
 
     @ViewBuilder
