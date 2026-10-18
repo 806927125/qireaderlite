@@ -9,16 +9,19 @@ struct RootView: View {
                 .tabItem { Label("书架", systemImage: "books.vertical") }
                 .tag(0)
 
+            // 栖阅底栏是「书架/书签/统计/设置」，没有独立的发现——
+            // 用户明确说了「统计不玩了，栖阅的书签就是发现」，
+            // 所以这里第二格放发现，第三格放书源，第四格给设置。
             NavigationStack { ExploreView() }
                 .tabItem { Label("发现", systemImage: "safari") }
                 .tag(1)
 
-            NavigationStack { SearchView() }
-                .tabItem { Label("搜索", systemImage: "magnifyingglass") }
-                .tag(2)
-
             NavigationStack { SourcesView() }
                 .tabItem { Label("书源", systemImage: "slider.horizontal.3") }
+                .tag(2)
+
+            NavigationStack { SettingsView() }
+                .tabItem { Label("设置", systemImage: "gearshape") }
                 .tag(3)
         }
         .tint(Theme.accent)

@@ -39,7 +39,7 @@ struct BookshelfView: View {
                     if uniqueItems.isEmpty {
                         EmptyHint(icon: "books.vertical",
                                   title: search.isEmpty ? "书库还是空的" : "没有匹配的书",
-                                  subtitle: search.isEmpty ? "去「搜索」找本书，加进来就能离线读了" : nil)
+                                  subtitle: search.isEmpty ? "去「搜索」找本书，加进来就能离线读了" : "")
                             .padding(.top, 60)
                     } else {
                         LazyVStack(spacing: 12) {
@@ -89,10 +89,19 @@ struct BookshelfView: View {
                 .buttonStyle(.plain)
             }
             ToolbarItem(placement: .topBarTrailing) {
+                // 搜索从底栏挪上来（底栏第四格给了设置），
+                // 这里跟栖阅一样：右上角一组胶囊按钮
                 GlassCapsule {
                     NavigationLink { SearchView() } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                    }
+                    .buttonStyle(.plain)
+
+                    NavigationLink { SearchView() } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                     }
                     .buttonStyle(.plain)

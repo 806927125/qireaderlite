@@ -238,3 +238,50 @@ struct ShelfCard: View {
 extension Theme {
     static let tagPink = Color(red: 0.82, green: 0.30, blue: 0.52)
 }
+
+// MARK: - 书源彩色图标
+
+/// 栖阅每个书源前面那个彩色圆角方块（截图 2）：
+/// 首字或 emoji 做主体，颜色按书源名稳定散列 —— 同一个源每次打开颜色一样。
+struct SourceBadge: View {
+    let source: BookSource
+    var size: CGFloat = 46
+
+    private static let palette: [Color] = [
+        Color(red: 0.30, green: 0.52, blue: 0.88),
+        Color(red: 0.62, green: 0.42, blue: 0.78),
+        Color(red: 0.85, green: 0.52, blue: 0.16),
+        Color(red: 0.24, green: 0.66, blue: 0.52),
+        Color(red: 0.82, green: 0.36, blue: 0.52),
+        Color(red: 0.40, green: 0.62, blue: 0.80),
+    ]
+
+    private var tint: Color {
+        let key = source.bookSourceName.isEmpty ? source.bookSourceUrl : source.bookSourceName
+        let h = abs(key.hashValue)
+        return Self.palette[h % Self.palette.count]
+    }
+
+    /// 书源名里如果有 emoji 就用它当图标（栖阅那个 🍅 / 🏰 就是这么来的）
+    private var glyph: String {
+        let name = source.bookSourceName
+        for ch in name {
+            if let scalar = ch.unicodeScalars.first,
+               scalar.value > 0x1F000 || (scalar.value >= 0x2600 && scalar.value <= 0x27BF) {
+                return String(ch)
+            }
+        }
+        return String(name.prefix(1)).isEmpty ? "书" : String(name.prefix(1))
+    }
+
+    var body: some View {
+        Text(glyph)
+            .font(.system(size: size * 0.44, weight: .semibold))
+            .foregroundStyle(source.enabled ? Color.white : Theme.sub.opacity(0.5))
+            .frame(width: size, height: size)
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                    .fill(source.enabled ? tint : Theme.sub.opacity(0.18))
+            )
+    }
+}

@@ -25,9 +25,13 @@ struct SourcesView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            engineBanner
-            listBody
+        ZStack {
+            PageBackdrop()
+
+            VStack(spacing: 0) {
+                engineBanner
+                listBody
+            }
         }
         .navigationTitle("书源 (\(store.enabled.count))")
         .searchable(text: $filter, prompt: "搜书源名 / 分组")
@@ -127,32 +131,56 @@ struct SourcesView: View {
             List {
                 ForEach(grouped, id: \.0) { group, list in
                     Section(group) {
-                        ForEach(list) { s in row(s) }
+                        ForEach(list) { s in
+                            row(s)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                        }
                     }
+                    .listSectionSeparator(.hidden)
                 }
             }
+            // List 默认白底，会把 PageBackdrop 完全盖掉 —— 必须透明才看得到底
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
         }
     }
 
+    /// 栖阅截图 2 的列表行：彩色圆角方形图标（首字/emoji）+ 玻璃卡片 + 右侧 chevron
     private func row(_ s: BookSource) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: s.enabled ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(s.enabled ? Theme.accent : Theme.sub.opacity(0.4))
+        HStack(spacing: 11) {
+            SourceBadge(source: s)
             VStack(alignment: .leading, spacing: 3) {
-                Text(s.name).font(.body).lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(s.bookSourceName.isEmpty ? "(未命名)" : s.bookSourceName)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    PillTag(text: "本地", color: Theme.tagOrange)
+                }
                 HStack(spacing: 6) {
-                    Text(hostOf(s)).font(.caption2).foregroundStyle(Theme.sub)
-                    if !(s.searchUrl ?? "").isEmpty {
-                        Text("可搜索").font(.caption2).foregroundStyle(.green)
-                    }
-                    if !(s.exploreUrl ?? "").isEmpty {
-                        Text("有发现").font(.caption2).foregroundStyle(.blue)
-                    }
+                    Image(systemName: "folder")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.sub.opacity(0.7))
+                    Text(s.enabled ? "能用" : "已停用")
+                        .font(.system(size: 11))
+                        .foregroundStyle(s.enabled ? Theme.sub : Theme.sub.opacity(0.5))
+                    Text(hostOf(s))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.sub.opacity(0.75))
+                        .lineLimit(1)
                 }
             }
-            Spacer()
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.sub.opacity(0.55))
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .glassCard(cornerRadius: 16)
         .contentShape(Rectangle())
         .onTapGesture { store.setEnabled(!s.enabled, for: s.bookSourceUrl) }
         .swipeActions {
