@@ -7,6 +7,11 @@ import UIKit
 enum ReaderParaAlign: String, CaseIterable, Identifiable {
     case left, center, right, justify
     var id: String { rawValue }
+
+    /// ⚠️ 用具体数组，不要用 `allCases`：
+    ///    `CaseIterable.AllCases` 的约束只有 `Collection`（不是 `RandomAccessCollection`），
+    ///    SwiftUI 的 `ForEach` 重载会挑不中，编译器报一堆看不懂的错。
+    static let cases: [ReaderParaAlign] = [.left, .center, .right, .justify]
     var name: String {
         switch self {
         case .left:    return "左对齐"
@@ -29,6 +34,8 @@ enum ReaderParaAlign: String, CaseIterable, Identifiable {
 enum ReaderBaselineScope: String, CaseIterable, Identifiable {
     case full, word
     var id: String { rawValue }
+
+    static let cases: [ReaderBaselineScope] = [.full, .word]
     var name: String { self == .full ? "整行" : "按文字" }
 }
 
