@@ -157,5 +157,5 @@ struct SettingsView: View {
 
 /// 引擎版本号（RuleSandbox 那边也有一份，这里只读）
 enum EngineInfo {
-    static let version = "2026.10.18-r8 · Packages / AES / MessageDigest 已就位"
+    static let version = "2026.10.18-r9 · Packages / AES / MessageDigest 已就位"
 }

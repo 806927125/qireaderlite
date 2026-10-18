@@ -139,6 +139,13 @@ struct BigTitle: View {
     let text: String
     var subtitle: String?
 
+    /// Swift 的成员初始化器第一个参数是带标签的（`BigTitle(text:)`）。
+    /// 页面标题是唯一用途，直接给个无标签版本，省得每个调用点都写 `text:`。
+    init(_ text: String, subtitle: String? = nil) {
+        self.text = text
+        self.subtitle = subtitle
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(text)
