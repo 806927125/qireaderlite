@@ -45,6 +45,36 @@ struct ReaderWebView: View {
 
     @Environment(\.colorScheme) private var darkScheme
 
+    /// 用原生分页（CoreText 排版 + 翻页动画）还是 webview 上下滚动。
+    /// 只有「上下滚动」这一种走 webview —— 栖阅也是这么分的：
+    /// 它的 WebViewVerticalScrollViewController 管滚动，ReaderPaginator 管分页。
+    private var useNativePaging: Bool {
+        pageTurnMode != "scroll"
+    }
+
+    /// 排版参数：跟喂给 webview 的 settingsPayload 用同一套语义
+    private var layoutConfig: ReaderLayoutConfig {
+        ReaderLayoutConfig(
+            fontSize: CGFloat(fontSize),
+            lineSpacing: CGFloat(lineSpacing),
+            horizontalMargin: 20,
+            topMargin: 20,
+            bottomMargin: 28,
+            firstLineIndent: CGFloat(fontSize) * 2,
+            fontFamily: ReaderFont.family(for: fontKey),
+            textColor: UIColor(theme.ink),
+            backgroundColor: UIColor(theme.bg)
+        )
+    }
+
+    /// 分页模式下把页码比例存成阅读进度
+    private func saveProgress(ratio: Double) {
+        library.saveProgress(bookID: book.id,
+                             chapterIndex: session.index,
+                             ratio: ratio,
+                             chapterTitle: session.current?.title ?? "")
+    }
+
     private var theme: ReaderTheme {
         let t = ReaderTheme.all.first(where: { $0.key == themeKey }) ?? .paper
         // 开了"跟随系统深浅色"但没手动选色板时，跟系统走
@@ -59,12 +89,29 @@ struct ReaderWebView: View {
             ZStack {
                 theme.bg.ignoresSafeArea()
                 GlassBackdrop()
-                ReaderWebContainer(
-                    host: session.host,
-                    pageTurn: pageTurn,
-                    onSwipe: { delta in session.step(delta) }
-                )
+                if useNativePaging {
+                    // 原生分页（栖阅那套 CoreText 排版 + 翻页动画）
+                    PagedReaderView(
+                        text: session.chapterText,
+                        title: session.chapterTitle,
+                        config: layoutConfig,
+                        mode: pageTurnMode,
+                        onPageChange: { p, total in
+                            pageInfo = (p, total)
+                            saveProgress(ratio: total > 1 ? Double(p - 1) / Double(total) : 0)
+                        },
+                        onEdge: { dir in session.step(dir) },
+                        onMenu: { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } }
+                    )
                     .ignoresSafeArea(edges: .bottom)
+                } else {
+                    ReaderWebContainer(
+                        host: session.host,
+                        pageTurn: true,
+                        onSwipe: { delta in session.step(delta) }
+                    )
+                    .ignoresSafeArea(edges: .bottom)
+                }
             }
 
             if showChrome {
@@ -94,9 +141,8 @@ struct ReaderWebView: View {
             session.onTap = { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } }
             // 翻页模式：左边上一章 / 中间出菜单 / 右边下一章
             session.onTapZone = { x in
-                // 分页模式下翻页由 JS 模块自己做（章内翻页优先，翻到边才换章），
-                // 这里不再抢，避免跟它打架
-                if pageTurn && session.host.paginateReady { return }
+                // 原生分页模式下正文不在 webview 里，翻页由 PagedReaderView 管
+                if useNativePaging { return }
                 guard pageTurn else { showChrome = true; return }
                 if x < 0.32 {
                     session.step(-1)
@@ -105,24 +151,6 @@ struct ReaderWebView: View {
                 } else {
                     withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
                 }
-            }
-            // ── 分页模式 ──
-            session.host.onPaginateReady = {
-                applyPageTurn()
-            }
-            // 换章后重新分页（reader.js 渲染完才触发，时机是对的）
-            session.onChapterChanged = { _ in repaginate() }
-            session.host.onPaginatePage = { p, c in pageInfo = (p, c) }
-            // 章内翻到头/尾 → 接上一章/下一章。
-            // 这是「真·翻页」跟「滑动换章」的区别：先把本章翻完，才换章。
-            session.host.onPaginateEdge = { dir in
-                session.step(dir)
-            }
-            // 分页失败 → 静默退回上下滚动，正文必须还在
-            session.host.onPaginateFail = { reason in
-                pageTurn = false
-                pageInfo = (0, 0)
-                edgeToast = "分页没成功，已切回上下滚动"
             }
             // 翻页模式下，章节到边交给分页模块自己处理（它在章内翻到头/尾才抛出来）
             session.onPageEdge = { msg in
@@ -236,21 +264,6 @@ struct ReaderWebView: View {
             .foregroundStyle(Theme.ink)
             .frame(maxWidth: .infinity)
         }
-    }
-
-    /// 把当前的翻页开关 / 翻页方式同步给分页模块
-    private func applyPageTurn() {
-        let idx = session.flat.firstIndex(where: { $0.url == session.current?.url }) ?? session.index
-        session.host.setPageTurn(pageTurn, chapterIndex: idx, mode: pageTurnMode)
-        if pageTurn { session.host.setPageTurnMode(pageTurnMode) }
-    }
-
-    /// 章节跳了之后重新分页（分页只对当前章生效）
-    private func repaginate() {
-        guard pageTurn, session.host.paginateReady else { return }
-        let idx = session.flat.firstIndex(where: { $0.url == session.current?.url }) ?? session.index
-        session.host.refreshPageTurn(chapterIndex: idx)
-        pageInfo = (1, 1)
     }
 
     /// 阅读设置 —— 照栖阅那一版布局：
@@ -370,7 +383,6 @@ struct ReaderWebView: View {
                 Button {
                     pageTurnMode = m.raw
                     pageTurn = m.raw != "scroll"
-                    applyPageTurn()
                 } label: {
                     Text(m.name)
                         .font(.system(size: 13))
