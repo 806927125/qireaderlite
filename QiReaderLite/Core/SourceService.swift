@@ -46,18 +46,25 @@ final class SourceService {
         do {
             return try AppDecoder.decode(type, from: data)
         } catch let e as DecodingError {
-            // 把「哪一列出的问题」带出来，别只丢一句"解码失败"
-            let path = e.codingPath.map { k -> String in
-                k.intValue.map { "[\($0)]" } ?? k.stringValue
-            }.joined(separator: ".")
+            // 把「哪一列出的问题」带出来，别只丢一句"解码失败"。
+            // ⚠️ codingPath 挂在每个 case 的 **context** 上，不在 DecodingError 本体上。
+            var keys: [CodingKey] = []
             let why: String
             switch e {
-            case .keyNotFound(let key, _):   why = "缺字段 \(key.stringValue)"
-            case .typeMismatch(let t, _):     why = "类型不匹配，要的是 \(t)"
-            case .valueNotFound(let t, _):   why = "值缺失（\(t)），该字段是 null"
-            case .dataCorrupted(let ctx):    why = "数据损坏：\(ctx.debugDescription)"
-            @unknown default:                 why = e.localizedDescription
+            case .keyNotFound(let key, let ctx):
+                keys = ctx.codingPath; why = "缺字段 \(key.stringValue)"
+            case .typeMismatch(let t, let ctx):
+                keys = ctx.codingPath; why = "类型不匹配，要的是 \(t)"
+            case .valueNotFound(let t, let ctx):
+                keys = ctx.codingPath; why = "值缺失（\(t)），该字段是 null"
+            case .dataCorrupted(let ctx):
+                keys = ctx.codingPath; why = "数据损坏：\(ctx.debugDescription)"
+            @unknown default:
+                why = e.localizedDescription
             }
+            let path = keys.map { k -> String in
+                k.intValue.map { "[\($0)]" } ?? k.stringValue
+            }.joined(separator: ".")
             let preview = String(data: data, encoding: .utf8)?.prefix(1200) ?? ""
             throw ServiceError.engineFailed(
                 "解析 \(type) 失败 —— 出错字段：\(path.isEmpty ? "(根)" : path) / \(why)\n返回：\(preview)")
