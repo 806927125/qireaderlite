@@ -56,6 +56,19 @@ console.log('\n── 液态玻璃：用系统层级的，不是自己糊一层 
 //   · 自定义 presentationBackground 会**覆盖掉**系统的玻璃 → 要去掉
 const fit = web.slice(web.indexOf('private struct FitSheetHeight'));
 ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有 FitSheetHeight 修饰符');
+
+// ★ iOS 26 的系统玻璃必须是 partial-height sheet。
+//   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
+//   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
+const fitBody = web.slice(web.indexOf('private struct FitSheetHeight'));
+const iOS26 = fitBody.slice(fitBody.indexOf('#available(iOS 26.0'), fitBody.indexOf('#available(iOS 18.0'));
+ok(/presentationDetents\(\[\.height\(/.test(iOS26), 'iOS 26 给了 partial detent（.height 是 partial）');
+ok(!/presentationSizing/.test(iOS26), 'iOS 26 分支不再单靠 presentationSizing(.fitted)');
+ok(!/presentationBackground/.test(iOS26), 'iOS 26 分支不覆盖系统玻璃背景');
+ok(/presentationDetents\(\[\.height\([^)]*\)\]\)/.test(fitBody), 'detent 高度可动态传入');
+ok(/private struct SheetContentHeightKey: PreferenceKey/.test(web), '有测高 preference');
+ok(/preference\(key: SheetContentHeightKey\.self, value: geo\.size\.height\)/.test(web), '背景 GeometryReader 量内容高度');
+ok(/fixedSize\(horizontal: false, vertical: true\)/.test(web), '内容固定成自然高度（否则量到的是 detent 高度，成死循环）');
 ok(/if #available\(iOS 26\.0, \*\)/.test(fit), 'iOS 26 单独一条分支');
 ok(/presentationSizing\(\.fitted\)/.test(fit), '用 presentationSizing(.fitted) 让高度贴合内容');
 // iOS 26 分支里不能有 presentationBackground

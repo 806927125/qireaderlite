@@ -47,6 +47,8 @@ struct ReaderWebView: View {
     @State private var showDisplaySettings = false
     @State private var showLayoutSettings = false
     @State private var showMoreSettings = false
+    /// 面板内容实测高度，用来给 partial detent
+    @State private var sheetHeight: CGFloat = 620
     @State private var started = false
 
     /// ReaderSession 是 @MainActor 类，init 也得在主线程（Swift 5 模式强检查）
@@ -314,7 +316,7 @@ struct ReaderWebView: View {
     private var settingsSheet: some View {
         settingsContent
             .background(Color.clear)
-            .modifier(FitSheetHeight())
+            .modifier(FitSheetHeight(contentHeight: sheetHeight))
     }
 
     /// 面板内容
@@ -324,7 +326,20 @@ struct ReaderWebView: View {
                 displayCard
                 pageTurnCard
                 featureGrid
-                Spacer(minLength: 0)
+            }
+            // 固定成内容本来的高度 —— 这样量出来的才是真实高度，
+            // 不会被 detent 限制（限住就成了循环依赖）
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: SheetContentHeightKey.self, value: geo.size.height)
+                }
+            )
+            .onPreferenceChange(SheetContentHeightKey.self) { h in
+                guard h > 0 else { return }
+                // +56 是导航栏（标题 + 完成按钮）
+                let target = min(max(h + 56, 320), 900)
+                if abs(target - sheetHeight) > 1 { sheetHeight = target }
             }
             .padding(.horizontal, 14)
             .padding(.top, 6)
@@ -900,24 +915,44 @@ private struct ChipButton: View {
 /// ── iOS 17~25：没有系统玻璃，自己糊一层材质 ──
 /// `.ultraThinMaterial` 是最接近玻璃的退路。
 ///
-/// ── 高度贴合 ──
-/// iOS 18+ 用 `presentationSizing(.fitted)`；iOS 17 退回 `.height(620)`。
-/// ⚠️ 必须跟「内容不是 ScrollView」配套：ScrollView 理想高度无限大，
-///    fitted 算不出贴合高度，sheet 还是会撑满。主面板行数固定用 VStack。
+/// ── iOS 26：partial-height sheet 才有系统液态玻璃 ──
+/// Apple 的原话（WWDC25 session 323）：
+///   "we need to specify presentation detents in the sheet content and
+///    **include at least one partial height option**, such as medium or
+///    a custom height detent."
+/// 而且 ".large 全屏 detent 的背景会变成不透明"。
+///
+/// 踩过的坑：只给 `presentationSizing(.fitted)`、**不给 detent** —— sheet 走默认
+/// 全屏，就是不透明的，玻璃出不来，面板还撑满整屏。**detent 必须是 partial**。
+///
+/// `.height(n)` 是 partial ✓ → 系统玻璃 ✓
+///
+/// ⚠️ 别用 `presentationBackground` 覆盖 iOS 26 的背景，那样系统玻璃就没了。
+/// iOS 17~25 没有系统玻璃，才自己糊 `.ultraThinMaterial` 兜底。
 private struct FitSheetHeight: ViewModifier {
+    let contentHeight: CGFloat
+
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            // 系统液态玻璃：partial 高度 + 不覆盖背景
-            content.presentationSizing(.fitted)
+            // partial detent → 系统液态玻璃；不设 presentationBackground
+            content.presentationDetents([.height(contentHeight)])
         } else if #available(iOS 18.0, *) {
             content
-                .presentationSizing(.fitted)
+                .presentationDetents([.height(contentHeight)])
                 .presentationBackground(.ultraThinMaterial)
         } else {
             content
-                .presentationDetents([.height(620)])
+                .presentationDetents([.height(contentHeight)])
                 .presentationBackground(.ultraThinMaterial)
         }
+    }
+}
+
+/// 量内容高度用的 preference
+private struct SheetContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
