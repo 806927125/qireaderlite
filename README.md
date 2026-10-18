@@ -270,6 +270,27 @@ val bookListRule: BookListRule = when {
 
 ---
 
+## HTTP 明文站（ATS）
+
+书源里大量是 `http://` 的老站（`http://www.xuanhuange.net` 这种），
+iOS 默认的 App Transport Security 会把它们全拦掉，症状是：
+
+> The resource could not be loaded because the App Transport Security policy requires the use of a secure connection.
+
+**分类能出来、一点书就报这个错** —— 因为分类是纯本地解析的，不发请求。
+
+三道防线：
+
+1. `Config/Info.plist` 里 `NSAllowsArbitraryLoads` + `NSAllowsArbitraryLoadsInWebContent` 都开
+2. 请求被 ATS 拦时，**自动把 http 换成 https 再试一次**（有些站 http 挂 CDN 后面，https 反而通）
+3. 引擎自检里有一行「HTTP 明文站：已放开 / 未放开 → 你装的是旧包」
+
+> ⚠️ 如果你看到第 3 行写着「未放开」，说明装的是**旧包**，
+> 去 `ipa-build` 分支重新下载安装最新版。
+
+
+---
+
 ## 已知限制
 
 - **MVP 只做阅读链路**，没有 TTS、缓存整本、下载、书源设计器、云同步
