@@ -24,6 +24,8 @@ struct ReaderWebView: View {
     @State private var showSettings = false
     @State private var showChrome = false
     @State private var started = false
+    @State private var ttsHint = false
+    @State private var searchHint = false
 
     /// ReaderSession 是 @MainActor 类，init 也得在主线程（Swift 5 模式强检查）
     @MainActor init(book: Book, chapters: [Chapter], start: Chapter) {
@@ -58,7 +60,8 @@ struct ReaderWebView: View {
             started = true
             session.onTap = { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } }
             session.attach(sources: sources, library: library)
-            await session.start(settings: settingsPayload())
+            let bg = await session.coverDataURL(book.coverUrl)
+            await session.start(settings: settingsPayload(coverDataURL: bg))
         }
         .sheet(isPresented: $showCatalog) {
             CatalogSheet(chapters: chapters, start: session.current) { ch in
@@ -69,36 +72,101 @@ struct ReaderWebView: View {
             }
         }
         .sheet(isPresented: $showSettings) { settingsSheet }
+        .alert("朗读", isPresented: $ttsHint) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("这版还没接 TTS，先看书。")
+        }
+        .alert("章内搜索", isPresented: $searchHint) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("这版还没接章内搜索，先用顶部目录跳转。")
+        }
     }
 
     // MARK: - 顶栏 / 底栏
 
+    /// 顶栏：圆形返回 / 中间书名+来源 / 右侧圆形封面（照栖阅截图）
     private var topBar: some View {
-        HStack {
-            Button { dismiss() } label: { Image(systemName: "chevron.left") }
-            Spacer()
-            Text(session.current?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
-            Spacer()
-            Button { showCatalog = true } label: { Image(systemName: "list.bullet") }
+        HStack(spacing: 10) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(book.name).font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ink).lineLimit(1)
+                Text(book.sourceName).font(.caption2).foregroundStyle(Theme.sub).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if let cover = book.coverUrl, !cover.isEmpty {
+                AsyncImage(url: URL(string: cover)) { img in
+                    img.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Color.clear
+                }
+                .frame(width: 34, height: 34)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
+                .shadow(radius: 2, y: 1)
+            }
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Theme.card)
+        .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 8)
     }
 
+    /// 底栏：半透明浮层 —— 章节名 + n/N、左右箭头 + 进度滑杆、四个功能键
     private var bottomBar: some View {
-        HStack {
-            Button { session.jump(to: session.index - 1) } label: { Image(systemName: "chevron.left") }
+        VStack(spacing: 10) {
+            HStack {
+                Text(session.current?.title ?? "").font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.ink).lineLimit(1)
+                Spacer(minLength: 8)
+                Text("\(session.index + 1) / \(max(session.flat.count, 1))")
+                    .font(.footnote).foregroundStyle(Theme.sub)
+            }
+            HStack(spacing: 10) {
+                Button { session.jump(to: session.index - 1) } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
+                }
                 .disabled(session.index <= 0)
-            Spacer()
-            Text("\(session.index + 1) / \(max(session.flat.count, 1))")
-                .font(.caption).foregroundStyle(Theme.sub)
-            Spacer()
-            Button { session.jump(to: session.index + 1) } label: { Image(systemName: "chevron.right") }
+                Button { session.jump(to: session.index + 1) } label: {
+                    Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
+                }
                 .disabled(session.index >= session.flat.count - 1)
-            Button { showSettings = true } label: { Image(systemName: "textformat.size") }
+                Slider(
+                    value: Binding(
+                        get: { Double(session.index) },
+                        set: { session.jump(to: Int($0.rounded())) }),
+                    in: 0...Double(max(session.flat.count - 1, 1)), step: 1)
+            }
+            .foregroundStyle(Theme.ink)
+            HStack(spacing: 0) {
+                barItem("目录", "list.bullet") { showCatalog = true }
+                barItem("朗读", "speaker.wave.2") { ttsHint = true }
+                barItem("搜索", "magnifyingglass") { searchHint = true }
+                barItem("大小", "textformat.size") { showSettings = true }
+            }
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Theme.card)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .strokeBorder(.white.opacity(0.35), lineWidth: 0.5))
+        .padding(.horizontal, 14).padding(.bottom, 10)
+        .shadow(radius: 8, y: 3)
+    }
+
+    private func barItem(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 16))
+                Text(title).font(.caption2)
+            }
+            .foregroundStyle(Theme.ink)
+            .frame(maxWidth: .infinity)
+        }
     }
 
     private var settingsSheet: some View {
@@ -119,30 +187,33 @@ struct ReaderWebView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") {
                         showSettings = false
-                        session.host.setSettings(settingsPayload())
+                        session.host.setSettings(settingsPayload(coverDataURL: nil))
                     }
                 }
             }
         }
     }
 
-    private func settingsPayload() -> [String: Any] {
+    private func settingsPayload(coverDataURL: String?) -> [String: Any] {
         [
-            "fontFamily": "-apple-system, 'PingFang SC', sans-serif",
+            "fontFamily": "System",
             "fontSize": fontSize,
-            "fontWeight": 400,
+            "fontWeight": 0,
             "letterSpacing": 0.5,
             "lineSpacing": lineSpacing,
-            "paragraphSpacing": 14,
+            "paragraphSpacing": 16,
             "textIndent": 0,
             "textColorHex": hex(theme.ink),
             "backgroundColorHex": hex(theme.bg),
-            "hasBackgroundImage": false,
+            // 封面当背景：栖阅阅读页那个「虚化铺底」就是这么来的
+            "hasBackgroundImage": coverDataURL != nil,
+            "backgroundImageDataURL": coverDataURL ?? "",
+            "isDarkMode": false,
             "fullScreen": false,
-            "leftMargin": 18,
-            "rightMargin": 18,
+            "leftMargin": 20,
+            "rightMargin": 20,
             "textAlign": "left",
-            "highlightStyles": [:],
+            "highlightStyles": [],
             "fontFaceCSS": ""
         ]
     }

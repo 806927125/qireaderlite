@@ -30,6 +30,7 @@ sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' \
 
 # 阅读会话的接线逻辑也要真检查（纯 Foundation/Combine，不碰 SwiftUI）
 sed -e 's/^import Combine$//' \
+    -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
     QiReaderLite/Core/ReaderSession.swift > "$OUT/ReaderSession.swift"
 
 echo "▶ 类型检查 Foundation 层…"

@@ -16,6 +16,28 @@ final class ReaderSession: ObservableObject {
     /// 正文被点了一下（宿主用它显/隐工具栏）
     var onTap: (() -> Void)?
 
+    /// 把封面抓成 data URL 喂给界面当背景图。
+    /// 栖阅阅读页那个「封面虚化铺底」就是 --reader-background-image，
+    /// 走的是原生下载再转 base64（WebView 里直接 fetch 会被 CORS 挡）。
+    func coverDataURL(_ urlString: String) async -> String? {
+        let raw = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, let u = URL(string: raw) else { return nil }
+        if raw.hasPrefix("data:") { return raw }
+        var req = URLRequest(url: u)
+        req.timeoutInterval = 10
+        req.setValue(Self.ua, forHTTPHeaderField: "User-Agent")
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 10
+        let session = URLSession(configuration: cfg)
+        guard let (data, _) = try? await session.data(for: req), !data.isEmpty else { return nil }
+        // 超过 2MB 的封面没必要当背景，太吃内存
+        guard data.count <= 2 * 1024 * 1024 else { return nil }
+        return "data:image/jpeg;base64," + data.base64EncodedString()
+    }
+
+    private static let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+        + "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 qireaderlite/1.0"
+
     @Published var index: Int = 0
     @Published var errorText: String = ""
     @Published var hostReady = false
