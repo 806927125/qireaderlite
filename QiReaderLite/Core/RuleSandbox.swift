@@ -140,8 +140,19 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         // ATS 有没有放开：装旧包的话这里是 false，
         // 症状就是「分类能出来、一点书就报 App Transport Security」
         let ats = (Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]) ?? [:]
-        let allowsHTTP = (ats["NSAllowsArbitraryLoads"] as? Bool) ?? false
-        lines.append("HTTP 明文站：\(allowsHTTP ? "已放开" : "**未放开**")")
+        let rawTrue = (ats["NSAllowsArbitraryLoads"] as? Bool) ?? false
+        // iOS 10+：plist 里只要出现这三个键之一，NSAllowsArbitraryLoads 的值就**被忽略、按 NO 算**。
+        // 所以不能只看那个键写着什么 —— 得看旁边有没有"作废键"。曾经就因为这个白查了三轮。
+        let killers = ["NSAllowsArbitraryLoadsInWebContent",
+                       "NSAllowsArbitraryLoadsForMedia",
+                       "NSAllowsLocalNetworking"].filter { ats[$0] != nil }
+        if rawTrue && killers.isEmpty {
+            lines.append("HTTP 明文站：已放开")
+        } else if rawTrue {
+            lines.append("HTTP 明文站：**实际没放开**（plist 写着 true，但被 \(killers.joined(separator: ",")) 作废了）")
+        } else {
+            lines.append("HTTP 明文站：**未放开**")
+        }
         lines.append("就绪状态：\(ready ? "已就绪" : "未就绪")")
         if let e = lastError { lines.append("错误：\(e)") }
         let missing = ResourceLocator.missingScripts()

@@ -51,12 +51,17 @@
 	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>
-	<!-- 书源大量是 HTTP 明文站，必须放开 ATS -->
+	<!-- 书源大量是 HTTP 明文站，必须放开 ATS。
+	     ⚠️ 这里**只能留 NSAllowsArbitraryLoads 一个键**。
+	     Apple 文档（NSAllowsArbitraryLoads 条目）明写：
+	     iOS 10+ 只要 plist 里出现 NSAllowsArbitraryLoadsInWebContent /
+	     NSAllowsArbitraryLoadsForMedia / NSAllowsLocalNetworking 任意一个，
+	     **NSAllowsArbitraryLoads 的值就会被忽略、按 NO 处理**。
+	     曾经三个键都写，结果 URLSession（发书源请求那条路）全被 -1022 拦死，
+	     而 plist 原文里明明是 true —— 看文件根本看不出来，只有真机发请求才知道。 -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
