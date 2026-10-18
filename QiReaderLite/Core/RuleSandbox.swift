@@ -137,6 +137,11 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         var lines: [String] = []
         lines.append("引擎版本：\(Self.engineVersion)")
         lines.append("App 版本：\(AppPaths.appVersion)")
+        // ATS 有没有放开：装旧包的话这里是 false，
+        // 症状就是「分类能出来、一点书就报 App Transport Security」
+        let ats = (Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]) ?? [:]
+        let allowsHTTP = (ats["NSAllowsArbitraryLoads"] as? Bool) ?? false
+        lines.append("HTTP 明文站：\(allowsHTTP ? "已放开" : "**未放开 → 你装的是旧包**")")
         lines.append("就绪状态：\(ready ? "已就绪" : "未就绪")")
         if let e = lastError { lines.append("错误：\(e)") }
         let missing = ResourceLocator.missingScripts()
@@ -418,6 +423,31 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         cfg.httpShouldSetCookies = true
         let session = URLSession(configuration: cfg)
 
+        var result = await Self.perform(req: req, session: session)
+
+        // ATS 兜底：明文被系统拦了，就改用 https 再试一次。
+        // 有些站 http 挂在 CDN 后面，https 反而是通的。
+        if result["atsBlocked"] as? Bool == true,
+           u.scheme?.lowercased() == "http",
+           var comps = URLComponents(url: u, resolvingAgainstBaseURL: false) {
+            comps.scheme = "https"
+            if let httpsURL = comps.url {
+                var req2 = URLRequest(url: httpsURL)
+                req2.httpMethod = method
+                req2.httpBody = req.httpBody
+                req2.allHTTPHeaderFields = req.allHTTPHeaderFields
+                var r2 = await Self.perform(req: req2, session: session)
+                if r2["ok"] as? Bool == true {
+                    r2["httpsUpgraded"] = true
+                    result = r2
+                }
+            }
+        }
+        return result
+    }
+
+    /// 真发一次请求。抽出来是为了能在 ATS 拦截时**换 https 再试一次**。
+    private static func perform(req: URLRequest, session: URLSession) async -> [String: Any] {
         do {
             let (data, resp) = try await session.data(for: req)
             let http = resp as? HTTPURLResponse
@@ -430,14 +460,26 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             return [
                 "ok": true,
                 "code": http?.statusCode ?? 0,
-                "url": http?.url?.absoluteString ?? u.absoluteString,
+                "url": http?.url?.absoluteString ?? req.url?.absoluteString ?? "",
                 "redirectUrl": http?.url?.absoluteString ?? "",
                 "headers": hs,
                 "body": text,
                 "bytes": data.count,
             ]
         } catch {
-            return ["ok": false, "error": error.localizedDescription]
+            var out: [String: Any] = ["ok": false, "error": error.localizedDescription]
+            let ns = error as NSError
+            if ns.domain == NSURLErrorDomain,
+               ns.code == NSURLErrorAppTransportSecurityRequiresSecureConnection {
+                // 系统安全策略(ATS)拦了明文 HTTP。
+                // 绝大多数情况是装的是旧包（旧包没放开 ATS），给一句人话，
+                // 别让用户对着英文报错猜。
+                out["atsBlocked"] = true
+                out["error"] = "系统安全策略(ATS)拦了明文 HTTP 地址。"
+                    + "如果你装的是旧版 App，请到 GitHub 的 ipa-build 分支重新下载安装最新版；"
+                    + "如果已经是最新版，说明这个站只支持 http，换一个书源试试。"
+            }
+            return out
         }
     }
 
