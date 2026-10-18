@@ -49,6 +49,14 @@ workflows:
         # 改这里的同时，要改 project.pbxproj 里的 PRODUCT_BUNDLE_IDENTIFIER
         bundle_identifier: com.qireaderlite.app
 
+    settings:
+      base:
+        # ⚠️ 这几项别丢：xcodebuild 的显式设置会覆盖 pbxproj 里的值。
+        #    版本号必须跟 pbxproj 一致，否则 Codemagic 编出来的包版本会跟 Actions 出的不一样。
+        PRODUCT_BUNDLE_IDENTIFIER: com.qireaderlite.app
+        MARKETING_VERSION: "3.4"
+        CURRENT_PROJECT_VERSION: "2"
+
     scripts:
       - name: 编译并签名
         script: |
