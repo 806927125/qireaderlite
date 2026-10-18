@@ -466,7 +466,7 @@ struct ReaderWebView: View {
         HStack(spacing: 6) {
             Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
-            ForEach(ReaderParaAlign.cases, id: \.self) { a in
+            ForEach(ReaderParaAlign.cases) { a in
                 ChipButton(title: a.name, selected: paraAlign == a.raw) { paraAlign = a.raw }
             }
         }
@@ -492,7 +492,7 @@ struct ReaderWebView: View {
         HStack(spacing: 6) {
             Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
-            ForEach(ReaderBaselineScope.cases, id: \.self) { sc in
+            ForEach(ReaderBaselineScope.cases) { sc in
                 ChipButton(title: sc.name, selected: baselineScope == sc.raw) { baselineScope = sc.raw }
             }
         }

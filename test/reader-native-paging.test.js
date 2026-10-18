@@ -140,9 +140,10 @@ ok(!/Button \{ paraAlign = a\.raw \} label: \{[\s\S]{0,200}?RoundedRectangle/.te
 // CaseIterable.allCases 只是 Collection，不是 RandomAccessCollection
 // → SwiftUI 的 ForEach(_:content:) 匹配不上 → 编译器退到 Binding<C> 重载 → 一片红
 ok(!/ForEach\(ReaderParaAlign\.allCases\)/.test(web), 'ForEach(allCases) 要包成 Array');
-ok(/ForEach\(ReaderParaAlign\.cases, id: \\.self\)/.test(web), '段落对齐用具体数组 + id: \\.self');
+ok(/ForEach\(ReaderParaAlign\.cases\) \{ a in/.test(web), '段落对齐用具体数组 + Identifiable 重载');
+ok(!/ForEach\(ReaderParaAlign\.cases, id:/.test(web), '别用 ForEach 的 id: 重载（这个上下文挑不中）');
 ok(!/ReaderParaAlign\.allCases\)/.test(web), '别用 allCases（只是 Collection，ForEach 挑不中）');
-ok(/ForEach\(ReaderBaselineScope\.cases, id: \\.self\)/.test(web), '底线范围用具体数组 + id: \\.self');
+ok(/ForEach\(ReaderBaselineScope\.cases\) \{ sc in/.test(web), '底线范围用具体数组 + Identifiable 重载');
 // iOS SDK 里没有 CTLineGetOffsetForIndex
 // 只查**调用**（注释里提一嘴名字不算）
 ok(!/CTLineGetOffsetForIndex\(/.test(paginator), '别用 CTLineGetOffsetForIndex（SDK 里没这符号）');
