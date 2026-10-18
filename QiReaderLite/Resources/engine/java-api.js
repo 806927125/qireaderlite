@@ -240,6 +240,91 @@
 
     // --- DOM ---
     getElements: function (rule, base) { return QR.rule.getElements(rule, base); },
+    getElement: function (rule, base) {
+      var a = QR.rule.getElements(rule, base);
+      return (a && a.length) ? a[0] : null;
+    },
+    setContent: function (html) { return nativeCall('setContent', { html: String(html == null ? '' : html) }); },
+
+    // --- 补齐：125 源聚合包里用到、轻阅原本没有的 ---
+    // 依据：运行时逐个 typeof java.X === 'function' 点名出来的，不是 grep 源码
+    // （源码里赋值形态五花八门，grep 会误判 —— java.io / java.util 这些包引用更会误报）
+    ajaxAll: function (urlList) {
+      var urls = Array.isArray(urlList) ? urlList : [urlList];
+      // 返回带 body()/bodyStr()/headers()/code() 的 StrResponse 数组，跟 Legado 对齐
+      return Promise.all(urls.map(function (u) {
+        return java.ajax(u).then(function (r) {
+          return {
+            url: String(u),
+            code: r && r.code != null ? r.code : 200,
+            bodyStr: function () { return r && r.body != null ? String(r.body) : ''; },
+            body: function () { return { string: function () { return this.bodyStr(); } }; },
+            headers: function () { return {}; },
+            toString: function () { return this.bodyStr(); }
+          };
+        });
+      }));
+    },
+    getAbsoluteURL: function (u, base) {
+      try { return new URL(String(u), String(base || java.getString('$.baseUrl') || '')).href; }
+      catch (e) { return String(u); }
+    },
+    // 简繁转换：轻阅不做真实 OpenCC，靠词表兜底；至少不是 undefined
+    t2s: function (t) { return String(t == null ? '' : t); },
+    // UTC 版 timeFormat：轻阅统一按本地时区，这里保持签名不报错
+    timeFormatUTC: function (t, f) { return java.timeFormat(t, f); },
+    hexDecodeToString: function (hex) {
+      var h = String(hex == null ? '' : hex).replace(/[^0-9a-fA-F]/g, '');
+      var out = '';
+      for (var i = 0; i + 1 < h.length; i += 2) out += String.fromCharCode(parseInt(h.substr(i, 2), 16));
+      try { return decodeURIComponent(escape(out)); } catch (e) { return out; }
+    },
+    randomUUID: function () {
+      // 必须是 v4 格式：书源常拿它当签名 nonce
+      if (g.crypto && g.crypto.randomUUID) return g.crypto.randomUUID();
+      var b = new Uint8Array(16);
+      if (g.crypto && g.crypto.getRandomValues) g.crypto.getRandomValues(b);
+      else for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+      b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+      var h = [];
+      for (var j = 0; j < 16; j++) h.push((b[j] + 0x100).toString(16).substr(1));
+      return h.slice(0, 4).join('') + '-' + h.slice(4, 6).join('') + '-' +
+             h.slice(6, 8).join('') + '-' + h.slice(8, 10).join('') + '-' + h.slice(10).join('');
+    },
+    // 触发宿主动作：沙盒里没有真 UI，返回「不可用」而不是静默 undefined
+    refreshExplore: function () { return nativeCall('refreshExplore', {}); },
+    refreshTocUrl: function () { return nativeCall('refreshTocUrl', {}); },
+    showBrowser: function (url) { return nativeCall('showBrowser', { url: resolveUrl(url) }); },
+    startBrowserAwait: function (url) {
+      return nativeCall('showBrowser', { url: resolveUrl(url) }).then(function (r) { return r && r.value; });
+    },
+    reLoginView: function (a) { return nativeCall('reLoginView', { msg: String(a == null ? '' : a) }); },
+    searchBook: function (key) { return nativeCall('searchBook', { key: String(key == null ? '' : key) }); },
+    toNumChapter: function (name) {
+      // 「第 123 章」→ 123；书源拿它排序用
+      var m = String(name == null ? '' : name).match(/(\d+)/);
+      return m ? parseInt(m[1], 10) : -1;
+    },
+    createSymmetricCrypto: function (key, iv, mode) {
+      // 对齐 java.createSymmetricCrypto(key, iv, transformation) 的形状。
+      // 轻阅没有真 Cipher 实例，这里给一个能用 java.encryptBase64/decryptBase64 的壳
+      var K = String(key == null ? '' : key), I = iv == null ? '' : String(iv);
+      var MODE = String(mode == null ? 'AES/CBC/PKCS5Padding' : mode).toUpperCase();
+      function pad(s, n) {
+        var padLen = n - (s.length % n);
+        var r = '';
+        for (var i = 0; i < padLen; i++) r += String.fromCharCode(padLen);
+        return s + r;
+      }
+      return {
+        encrypt: function (text) { return nativeCall('symmetricCrypto', { op: 'encrypt', key: K, iv: I, mode: MODE, text: String(text == null ? '' : text), pad: true }); },
+        decrypt: function (b64) { return nativeCall('symmetricCrypto', { op: 'decrypt', key: K, iv: I, mode: MODE, text: String(b64 == null ? '' : b64) }); },
+        encryptBase64: function (text) { return nativeCall('symmetricCrypto', { op: 'encrypt', key: K, iv: I, mode: MODE, text: String(text == null ? '' : text), b64: true, pad: true }); },
+        decryptBase64: function (b64) { return nativeCall('symmetricCrypto', { op: 'decrypt', key: K, iv: I, mode: MODE, text: String(b64 == null ? '' : b64) }); },
+        getKey: function () { return K; },
+        getIv: function () { return I; }
+      };
+    },
     getStringMatch: function (rule, text) { return QR.rule.stringMatchAll(rule, text); },
 
     // --- 杂项 ---
