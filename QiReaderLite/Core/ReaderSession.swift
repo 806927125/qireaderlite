@@ -15,6 +15,10 @@ final class ReaderSession: ObservableObject {
     private var library: LibraryStore?
     /// 正文被点了一下（宿主用它显/隐工具栏）
     var onTap: (() -> Void)?
+    /// 翻页模式回调（x 是 0~1 的横向位置）
+    var onTapZone: ((Double) -> Void)?
+    /// 翻页模式下翻到头/翻到尾时给 UI 的提示（nil = 不提示）
+    var onPageEdge: ((String) -> Void)?
 
     /// 把封面抓成 data URL 喂给界面当背景图。
     /// 栖阅阅读页那个「封面虚化铺底」就是 --reader-background-image，
@@ -103,6 +107,19 @@ final class ReaderSession: ObservableObject {
         host.setSettings(settings)
         host.apply(chapters: flat, at: index, progress: library?.progress(bookID: book.id))
         await load(index: index)
+    }
+
+    /// 翻页：向右滑 / 点右半边 = 下一章，向左滑 / 点左半边 = 上一章。
+    /// 到头了回调 onPageEdge 提示一句，别装没听见。
+    func step(_ delta: Int) {
+        let next = index + delta
+        if next < 0 {
+            onPageEdge?("已经是第一章")
+        } else if next >= flat.count {
+            onPageEdge?("已经是最后一章")
+        } else {
+            jump(to: next)
+        }
     }
 
     func jump(to i: Int) {

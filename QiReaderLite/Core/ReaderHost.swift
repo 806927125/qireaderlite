@@ -28,6 +28,9 @@ final class ReaderHost: NSObject, ObservableObject {
     var onVisibleChapter: ((Int) -> Void)?
     /// 正文里点了一下（宿主可用来显/隐工具栏）
     var onTap: (() -> Void)?
+    /// 翻页模式：点正文左半边 / 右半边翻上一章 / 下一章。
+    /// 传 -1 表示"到头，没有下一章"，让 UI 能弹个提示而不是装没听见。
+    var onTapZone: ((Double) -> Void)?
     /// 引擎调试日志
     var onDebugLog: ((String, [String: Any]) -> Void)?
     /// JS 侧 ready 了（reader.js 加载完，会先 post("ready")）
@@ -112,6 +115,34 @@ final class ReaderHost: NSObject, ObservableObject {
                                    completionHandler: nil)
     }
 
+    /// 翻页模式需要知道"点的是正文左边还是右边"，但 reader.js 是从栖阅 IPA
+    /// 原样搬来的（post("tap", {}) 不带坐标），**不改那个文件**，
+    /// 用 capture 阶段的监听把 clientX 补进去，跟 reader.js 自己的 click 监听并存。
+    ///
+    /// 只做坐标透传、不 preventDefault，所以段评点按、文本选择、
+    /// 长按选词这些 reader.js 原有的行为一律不受影响。
+    private func installTapPosShim() {
+        web.evaluateJavaScript(Self.tapPosShim, completionHandler: nil)
+    }
+
+    private static let tapPosShim = """
+    (function () {
+      if (window.__qrTapPos) return;
+      window.__qrTapPos = 1;
+      document.addEventListener('click', function (e) {
+        var t = e.target;
+        if (t && t.closest && t.closest('.comment-node')) return; // 段评交给 reader.js
+        var w = (document.documentElement && document.documentElement.clientWidth) || window.innerWidth || 1;
+        var x = (e.clientX || 0) / w;
+        try {
+          window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.qiReader &&
+            window.webkit.messageHandlers.qiReader.postMessage({ type: 'tap', x: x });
+        } catch (_) {}
+      }, true);
+    })();
+    ;void 0;
+    """
+
     // MARK: - WKScriptMessageHandler
 
     func handle(name: String, body: Any) {
@@ -121,6 +152,7 @@ final class ReaderHost: NSObject, ObservableObject {
         switch type {
         case "ready":
             ready = true
+            installTapPosShim()
             onReady?()
             break
 
@@ -150,7 +182,13 @@ final class ReaderHost: NSObject, ObservableObject {
             }
 
         case "tap":
-            onTap?()
+            // reader.js 原样搬自栖阅，post("tap", {}) 不带坐标。
+            // 由 Swift 侧注入的 tapPosShim 在 capture 阶段补上 x（0~1）。
+            if let x = m["x"] as? Double {
+                onTapZone?(x)
+            } else {
+                onTap?()
+            }
 
         case "debugLog":
             let ev = m["event"] as? String ?? ""

@@ -15,6 +15,10 @@ struct ReaderWebView: View {
     @AppStorage("reader.fontSize") private var fontSize: Double = 18
     @AppStorage("reader.lineSpacing") private var lineSpacing: Double = 8
     @AppStorage("reader.theme") private var themeKey: String = "paper"
+    /// 翻页模式：点正文左/右半边翻章、左右滑动翻章；关掉就是原来的
+    /// "点一下出菜单" 行为。默认开（用户明确要的）。
+    @AppStorage("reader.pageTurn") private var pageTurn: Bool = true
+    @State private var edgeToast: String?
 
     @EnvironmentObject private var sources: SourceStore
     @EnvironmentObject private var library: LibraryStore
@@ -43,7 +47,11 @@ struct ReaderWebView: View {
             ZStack {
                 theme.bg.ignoresSafeArea()
                 GlassBackdrop()
-                ReaderWebContainer(host: session.host)
+                ReaderWebContainer(
+                    host: session.host,
+                    pageTurn: pageTurn,
+                    onSwipe: { delta in session.step(delta) }
+                )
                     .ignoresSafeArea(edges: .bottom)
             }
 
@@ -55,12 +63,45 @@ struct ReaderWebView: View {
                 }
                 .transition(.opacity)
             }
+
+            // 翻到头 / 翻到尾时给一句提示，而不是装没听见
+            if let t = edgeToast {
+                Text(t)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .liquidGlass(cornerRadius: 999, strength: 1.2)
+                    .padding(.top, 96)
+                    .transition(.opacity)
+            }
         }
         .background(theme.bg)
         .task {
             guard !started else { return }
             started = true
             session.onTap = { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } }
+            // 翻页模式：左边上一章 / 中间出菜单 / 右边下一章
+            session.onTapZone = { x in
+                guard pageTurn else { showChrome = true; return }
+                if x < 0.32 {
+                    session.step(-1)
+                } else if x > 0.68 {
+                    session.step(1)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
+                }
+            }
+            session.onPageEdge = { msg in
+                withAnimation(.easeInOut(duration: 0.2)) { edgeToast = msg }
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_400_000_000)
+                    await MainActor.run {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if edgeToast == msg { edgeToast = nil }
+                        }
+                    }
+                }
+            }
             session.attach(sources: sources, library: library)
             let bg = await session.coverDataURL(book.coverUrl)
             await session.start(settings: settingsPayload(coverDataURL: bg))
@@ -121,11 +162,11 @@ struct ReaderWebView: View {
                     .font(.footnote).foregroundStyle(Theme.sub)
             }
             HStack(spacing: 10) {
-                Button { session.jump(to: session.index - 1) } label: {
+                Button { session.step(-1) } label: {
                     Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
                 }
                 .disabled(session.index <= 0)
-                Button { session.jump(to: session.index + 1) } label: {
+                Button { session.step(1) } label: {
                     Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
                 }
                 .disabled(session.index >= session.flat.count - 1)
@@ -163,6 +204,13 @@ struct ReaderWebView: View {
     private var settingsSheet: some View {
         NavigationStack {
             Form {
+                Section("翻页") {
+                    Toggle("翻页模式", isOn: $pageTurn)
+                    Text(pageTurn
+                         ? "点正文左半边 = 上一章，右半边 = 下一章，中间 = 菜单。左右滑动也能翻。"
+                         : "点正文任意处 = 菜单，用底部箭头翻章。")
+                        .font(.caption2).foregroundStyle(Theme.sub)
+                }
                 Section("字号") { Slider(value: $fontSize, in: 14...28, step: 1) { Text("\(Int(fontSize))") } }
                 Section("行距") { Slider(value: $lineSpacing, in: 2...20, step: 1) { Text("\(Int(lineSpacing))") } }
                 Section("背景") {
@@ -217,11 +265,61 @@ struct ReaderWebView: View {
     }
 }
 
-/// WKWebView 的 SwiftUI 容器
+/// WKWebView 的 SwiftUI 容器。
+///
+/// 额外挂一个**横向**滑动手势做翻页：
+///   · 加在 WKWebView 自身（不是 SwiftUI 覆盖层）—— 覆盖层会把触摸全吃掉，
+///     正文就没法上下滚了；
+///   · `direction = .horizontal` 且 `cancelsTouchesInView = false`
+///     —— 纵向滚动完全不受影响，iOS 自己就会把纵向手势给 web view。
 struct ReaderWebContainer: UIViewRepresentable {
     @ObservedObject var host: ReaderHost
+    /// 翻页模式开关（存 AppStorage，由外层传进来）
+    var pageTurn: Bool
+    /// 翻页回调：+1 下一章 / -1 上一章
+    var onSwipe: ((Int) -> Void)?
 
-    func makeUIView(context: Context) -> WKWebView { host.web }
+    func makeUIView(context: Context) -> WKWebView {
+        let g = UISwipeGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSwipe(_:)))
+        g.direction = .horizontal
+        // ⚠️ 不吃掉触摸：否则 web view 收不到手势，正文滚不动
+        g.cancelsTouchesInView = false
+        g.delegate = context.coordinator
+        host.web.addGestureRecognizer(g)
+        context.coordinator.gesture = g
+        context.coordinator.owner = self
+        return host.web
+    }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        context.coordinator.owner = self
+        context.coordinator.gesture?.isEnabled = pageTurn
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var owner: ReaderWebContainer?
+        weak var gesture: UISwipeGestureRecognizer?
+
+        @objc func handleSwipe(_ g: UISwipeGestureRecognizer) {
+            guard let o = owner, let cb = o.onSwipe else { return }
+            switch g.direction {
+            case .left:  cb(1)    // 左滑 = 下一章
+            case .right: cb(-1)   // 右滑 = 上一章
+            default: break
+            }
+        }
+
+        /// 只处理横向手势，纵向留给 WKWebView 自己滚
+        nonisolated func gestureRecognizerShouldBegin(_ gr: UIGestureRecognizer) -> Bool {
+            guard let s = gr as? UISwipeGestureRecognizer else { return true }
+            let v = s.view
+            let w = v?.bounds.width ?? 0
+            // 宽度都不到 200pt 的窄屏（分屏/小窗）不启用，免得误触
+            return w >= 200
+        }
+    }
 }
