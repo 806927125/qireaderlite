@@ -283,7 +283,9 @@ struct ReaderWebContainer: UIViewRepresentable {
         let g = UISwipeGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleSwipe(_:)))
-        g.direction = .horizontal
+        // ⚠️ Direction 枚举只有 left/right/up/down 四个，
+        //    那个"横��"成员属于 UIScrollView，编译期就会炸。
+        g.direction = [.left, .right]
         // ⚠️ 不吃掉触摸：否则 web view 收不到手势，正文滚不动
         g.cancelsTouchesInView = false
         g.delegate = context.coordinator

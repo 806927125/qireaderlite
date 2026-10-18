@@ -31,7 +31,12 @@ ok(/x > 0\.68/.test(web), '右 32% → 下一章');
 ok(web.indexOf('0.32') < web.indexOf('0.68'), '左右阈值有序（0.32 < 0.68）');
 
 console.log('\n── 滑动翻页 ──');
-ok(/direction = \.horizontal/.test(web), '手势是横向的（不能抢纵向滚动）');
+ok(/g\.direction = \[\.left, \.right\]/.test(web),
+   '手势只认左右（不能抢纵向滚动）');
+// 拼装出来再查，避免命中注释里的文字
+const code = web.replace(/\/\/.*$/gm, '');
+ok(!/direction = \.horizontal/.test(code),
+   '没有用编译期不存在的 Direction.horizontal');
 ok(/cancelsTouchesInView = false/.test(web),
    'cancelsTouchesInView = false —— 否则 web view 收不到触摸，正文滚不动');
 ok(/case \.left:\s*cb\(1\)/.test(web.replace(/\s+/g, ' ')), '左滑 = 下一章');
