@@ -324,8 +324,13 @@
       var whole = String(rule).trim();
       return Promise.resolve(whole ? [whole] : []);
     }
-    // 部分插值后不再是选择器的，也原样返回
-    if (kind === 'selector' && !/[.#:@>\s*+~\[\]()|]/.test(rule)) {
+    // 部分插值后不再是选择器的，也原样返回。
+    // ⚠️ **必须要求插值真的发生过**（rule !== rawRule）：
+    //    不加这个判断，`chapterName: 'a@text || text'` 里的兜底裸词 `text`
+    //    会被当**字面量**返回，目录里就出现一排字面写着 "text" 的章节；
+    //    同理 `href` 会变成字面量 "href"。实测 2026-10-18 肉文屋。
+    //    这个分支的本意只是接住 `{{...}}` 展开后的结果，不是接住裸词。
+    if (kind === 'selector' && rule !== rawRule && !/[.#:@>\s*+~\[\]()|]/.test(rule)) {
       var lit = String(rule).trim();
       return Promise.resolve(lit ? [lit] : []);
     }

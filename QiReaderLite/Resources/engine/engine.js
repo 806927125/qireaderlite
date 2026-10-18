@@ -885,10 +885,15 @@
                     //    会**回落到详情页 URL** —— 于是凭空多出一堆"章节"，
                     //    点进去全是同一本书的详情页。实测 m.powenxue15.com 的
                     //    PC 版 15 个 <li> 里 7 个是纯文本 `<li>标题</li>`。
-                    var url = absolutizeMaybe(v[1], '');
-                    if (!title || !url) return out;
+                    //
+                    // ⚠️ 判空必须在 absolutize **之前**，而且基准仍要是 page.url：
+                    //    早先图省事写成 absolutizeMaybe(v[1], '')，结果站方的
+                    //    **相对**章节地址（/info/1/2.html）不会被展开，
+                    //    WKWebView 直接甩「不支持的URL」—— 这是 build 15 的回归。
+                    var rawUrl = (v[1] || '').trim();
+                    if (!title || !rawUrl) return out;
                     out.push({
-                      url: url,
+                      url: absolutizeMaybe(rawUrl, page.url),
                       title: title,
                       index: idx++,
                       isVolume: /卷|部|篇/.test(title) && !/第\s*\d+/.test(title),

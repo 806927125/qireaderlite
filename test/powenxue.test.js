@@ -107,6 +107,12 @@ const SOURCE = {
   ok(chs.length >= 8 && chs.length <= 16, `章数合理（PC 快照站方缺 7 条链接 → 8；m. 应为 15）`, `实际 ${chs.length}`);
   ok(chs.length !== 1, '不是"整页兜底"的 1 章', `实际 ${chs.length} 章`);
 
+  // build 15 回归：曾经用 absolutizeMaybe(v[1], '') 判空，
+  // 导致站方的**相对**章节地址不被展开 → WKWebView「不支持的URL」。
+  const relative = chs.filter(c => c.url && !/^https?:\/\//.test(c.url));
+  ok(relative.length === 0, '所有章节 URL 都已展开成绝对地址（相对 /info/… 必须补全 host）',
+     `${relative.length} 条仍是相对，例：${JSON.stringify((relative[0]||{}).url)}`);
+
   const bad = chs.filter(c => !/\/info\/136414\/\d+\.html$/.test(c.url || ''));
   ok(bad.length === 0, '每章 URL 都是本章的 /info/<书号>/<章号>.html',
      bad.length ? `${bad.length} 条不合格，例：${JSON.stringify(bad[0].url)}` : '');
@@ -134,6 +140,30 @@ const SOURCE = {
   console.log('\n── 4. nextContentUrl ──');
   const nc = (c1 && (c1.nextUrl || c1.nextContentUrl)) || '';
   ok(/\/info\/136414\/39483903\.html/.test(nc), '下一章 URL 算对', nc || '(空)');
+
+  console.log('\n── 5. 回归：build 15 用户真机踩到的两个坑 ──');
+  {
+    // 坑 1：裸词被当字面量。`chapterName: 'a@text || text'` 的兜底 `text`
+    //       曾经直接返回字符串 "text"，目录里出现一排字面写着 "text" 的章节。
+    //       规则按 Legado 语义，裸 `text` 应该取**当前节点自己的文本**。
+    const d1 = QR.dom.parseHTML('<li><a href="/x/1.html">第一章</a></li>', 'https://a.com/');
+    const n1 = QR.dom.selectAll(d1, 'li')[0];
+    const d2 = QR.dom.parseHTML('<li>纯文本标题</li>', 'https://a.com/');
+    const n2 = QR.dom.selectAll(d2, 'li')[0];
+    const ctx = { baseUrl: 'https://a.com/', source: {}, book: {} };
+
+    const bare = await QR.rule.getValue('text', n2, ctx);
+    ok(bare === '纯文本标题', '裸 `text` 取节点自身文本，不是字面量 "text"', JSON.stringify(bare));
+    const fb = await QR.rule.getValue('a@text || text', n2, ctx);
+    ok(fb === '纯文本标题', '`a@text || text` 兜底不再是字面量', JSON.stringify(fb));
+    const withA = await QR.rule.getValue('a@text || text', n1, ctx);
+    ok(withA === '第一章', '有 <a> 时优先取 a@text', JSON.stringify(withA));
+    const bareHref = await QR.rule.getValue('href', n1, ctx);
+    ok(bareHref === '', '裸 `href` 不再返回字面量 "href"', JSON.stringify(bareHref));
+    // 插值分支不能被这次收紧误伤
+    const interp = await QR.rule.getValue('{{1+1}}', n1, ctx);
+    ok(interp === '2', '{{}} 插值仍然原样返回', JSON.stringify(interp));
+  }
 
   console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
   process.exit(fail === 0 ? 0 : 1);
