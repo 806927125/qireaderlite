@@ -18,6 +18,8 @@ enum ResourceLocator {
         "org-jsoup.js",      // org.jsoup.* 兼容
         "sha1.js",           // 哈希
         "java-api.js",       // java.*
+        "packages-native.js", // Packages.* 的原生函数实现（必须排在 packages_stub.js 前）
+        "packages_stub.js",   // Packages / JavaImporter / importPackage 兼容层
         "rule-analyzer.js",  // 规则解释器
         "engine.js",         // 调度层
     ]

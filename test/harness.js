@@ -4,7 +4,19 @@ const path = require('path');
 const vm = require('vm');
 
 const ENGINE_DIR = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
-const FILES = ['jsoup-compat.js', 'jsonpath.js', 'org-jsoup.js', 'sha1.js', 'java-api.js', 'rule-analyzer.js', 'engine.js'];
+// 顺序必须与 QiReaderLite/Core/RuleSandbox.swift 的 ResourceLocator.scripts 完全一致 ——
+// 不一致会让"沙盒能跑、真机不跑"或者反过来。
+const FILES = [
+  'jsoup-compat.js',
+  'jsonpath.js',
+  'org-jsoup.js',
+  'sha1.js',
+  'java-api.js',
+  'packages-native.js',   // Packages.* 的原生函数实现（必须在 packages_stub.js 前）
+  'packages_stub.js',     // Packages / JavaImporter / importPackage 兼容层
+  'rule-analyzer.js',
+  'engine.js',
+];
 
 /**
  * 在 jsdom 里造一个跟 WKWebView 一样形状的沙盒：
