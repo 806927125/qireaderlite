@@ -566,7 +566,11 @@ struct ReaderWebView: View {
                 HStack(spacing: 8) {
                     ForEach(row) { tile in featureTile(tile) }
                     if row.count < 4 {
-                        ForEach(0..<(4 - row.count), id: \.offset) { _ in
+                        // ⚠️ 别直接 ForEach(0..<n)：Range 在这里会被推成 Binding<C>，
+                        //    泛型 C 推不出来（"generic parameter 'C' could not be inferred"）。
+                        //    转成 Array 再给 id 就稳了。
+                        let blanks: [Int] = Array(0..<(4 - row.count))
+                        ForEach(blanks, id: \.self) { _ in
                             Color.clear.frame(maxWidth: .infinity)
                         }
                     }

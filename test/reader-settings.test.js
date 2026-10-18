@@ -28,8 +28,10 @@ for (const [label, re] of [
   ['配色格子（浅色一排）', /paletteRow\(ReaderTheme\.light/],
   ['配色格子（深色一排）', /paletteRow\(ReaderTheme\.darkRow/],
   ['跟随系统深浅色',       /跟随系统深浅色/],
-  ['翻页方式那一排',       /private var pageTurnRow/],
-  ['功能宫格',             /private var featureTiles/]
+  ['翻页方式那一排',       /private var pageTurnSection/],
+  ['功能宫格',             /private var otherSection/],
+  ['排版分组',             /private var layoutSection/],
+  ['阅读行为分组',         /private var behaviorSection/]
 ]) ok(re.test(web), label);
 
 console.log('\n── 5 种翻页方式（跟参考 App 一致）──');
@@ -40,18 +42,23 @@ for (const [raw, name] of [['flip','仿真'],['slide','滑动'],['flat','平移'
 }
 
 console.log('\n── 没接的功能：摆位但不点 ──');
-const tiles = web.slice(web.indexOf('private var featureTiles'), web.indexOf('private func featureTile'));
+const tiles = web.slice(web.indexOf('private var otherSection'), web.indexOf('private func sectionHeader'));
 const notReady = (tiles.match(/ready:\s*false/g) || []).length;
-ok(notReady >= 7, `7 个功能标了 ready:false`, `实际 ${notReady}`);
+ok(notReady >= 7, `7 个功能标了 ready:false（栖阅那 7 个还没接的）`, `实际 ${notReady}`);
 ok(/\.disabled\(!t\.ready\)/.test(web), 'ready:false 的宫格是 disabled');
 ok(/guard t\.ready else \{ return \}/.test(web), '点击前先挡一道（不只靠 disabled）');
 ok(/foregroundStyle\(t\.ready \? Theme\.ink : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
    '未接的格子画成灰的，一眼看得出还没做');
 
 console.log('\n── 真接上的功能 ──');
-ok(/ready:\s*true/.test(tiles), '有 ready:true 的格子（不是全摆位）');
-ok(tiles.includes('大小') && tiles.includes('间距'), '大小 / 间距 是接上的');
-ok(/lineSpacing = lineSpacing >= 16 \? 6 : lineSpacing \+ 4/.test(web), '间距格子能改行距');
+// 栖阅的排版项是**真实控件行**，不是宫格：
+// 字号滑杆、字体、配色、跟随系统、段落对齐、段落间空行、行底线、垂直两端对齐
+ok(/private var sizeAndFontRow/.test(web), '字号/字体是真实控件');
+ok(/private var layoutSection/.test(web), '排版分组是真实控件');
+ok(/Slider\(value: \$fontSize/.test(web), '字号滑杆真接了');
+ok(/paragraphSpacing: CGFloat\(paraSpacing\)/.test(web), '段落间空行真进排版');
+ok(/lineSpacing: CGFloat\(lineSpacing\)/.test(web), '行间距真进排版');
+ok(/fontFamily: ReaderFont\.family\(for: fontKey\)/.test(web), '字体真进排版');
 
 console.log('\n── 配色色板 ──');
 ok(/static let light: \[ReaderTheme\]/.test(view) && /static let darkRow: \[ReaderTheme\]/.test(view),
@@ -67,6 +74,8 @@ ok(!/darkRow\.contains\(t\)/.test(view), '没有残留的 contains(t)');
 const envDecl = web.split('@Environment(\\.colorScheme)').length - 1;
 ok(/let blanks: \[Int\] = Array\(0\.\.<\(4 - row\.count\)\)/.test(web),
    '补空位用 Array(0..<n) —— 直接 ForEach(Range) 泛型 C 推不出来');
+ok(/ForEach\(0\.\.\<\(4 - row\.count\), id: \\.offset\)/.test(web) === false,
+   '没有直接 ForEach(Range) 的写法');
 ok(/darkScheme == \.dark/.test(web),
    'ColorScheme 要跟 .dark 比 —— 不能直接当 Bool 用');
 ok(/if row\.count < 4 \{/.test(web),
