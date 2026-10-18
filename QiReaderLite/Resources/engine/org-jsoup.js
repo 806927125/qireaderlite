@@ -477,6 +477,10 @@
     e.eachHtml = function (fn) { e.forEach(function (x, i) { fn(x.html(), i); }); return e; };
     e.eachTag = function (fn) { e.forEach(function (x, i) { fn(x.tagName(), i); }); return e; };
     e.remove = function () { e.forEach(function (x) { x.remove(); }); return e; };
+    e.before = function (h) { e.forEach(function (x) { x.before(h); }); return e; };
+    e.after = function (h) { e.forEach(function (x) { x.after(h); }); return e; };
+    e.append = function (h) { e.forEach(function (x) { x.append(h); }); return e; };
+    e.prepend = function (h) { e.forEach(function (x) { x.prepend(h); }); return e; };
     e.empty = function () { e.forEach(function (x) { x.empty(); }); return e; };
     e.addClass = function (c) { e.forEach(function (x) { x.addClass(c); }); return e; };
     e.removeClass = function (c) { e.forEach(function (x) { x.removeClass(c); }); return e; };
