@@ -51,7 +51,10 @@ struct BookDetailView: View {
             }
             .padding(16)
         }
-        .background(Theme.bg)
+        .background {
+            ZStack { Theme.bg; GlassBackdrop() }
+            .ignoresSafeArea()
+        }
         .navigationTitle(book.name)
         .navigationBarTitleDisplayMode(.inline)
         .overlay {

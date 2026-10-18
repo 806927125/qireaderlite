@@ -42,8 +42,12 @@ struct ReaderWebView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            ReaderWebContainer(host: session.host)
-                .ignoresSafeArea(edges: .bottom)
+            ZStack {
+                theme.bg.ignoresSafeArea()
+                GlassBackdrop()
+                ReaderWebContainer(host: session.host)
+                    .ignoresSafeArea(edges: .bottom)
+            }
 
             if showChrome {
                 VStack(spacing: 0) {
@@ -93,8 +97,8 @@ struct ReaderWebView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.ink)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .frame(width: 36, height: 36)
+                    .glassCircle()
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(book.name).font(.subheadline.weight(.semibold))
@@ -152,11 +156,8 @@ struct ReaderWebView: View {
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .strokeBorder(.white.opacity(0.35), lineWidth: 0.5))
-        .padding(.horizontal, 14).padding(.bottom, 10)
-        .shadow(radius: 8, y: 3)
+        .liquidGlass(cornerRadius: 22, strength: 1.15)
+        .padding(.horizontal, 12).padding(.bottom, 12)
     }
 
     private func barItem(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
