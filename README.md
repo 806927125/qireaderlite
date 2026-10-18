@@ -108,8 +108,11 @@ QiReaderLite/
 
 ```bash
 npm install
-node test/rules.test.js   # 规则解释器 39 项
-node test/e2e.test.js     # 端到端全链路 37 项
+node test/rules.test.js           # 规则解释器 39 项
+node test/e2e.test.js             # 端到端全链路 37 项
+node test/explore-fallback.test.js # 发现页规则回退 19 项
+node test/explore-live.js         # 发现页真站实测（需能出网）
+node test/explore-probe.js 60     # 批量扫 60 个带发现规则的源
 
 # Swift 类型检查（Linux 上也能跑，见下）
 SWIFT_BIN=/path/to/swiftc ./test/linux-typecheck.sh
@@ -201,8 +204,69 @@ export LD_LIBRARY_PATH=$PWD/swift-6.1.2-RELEASE-debian12/usr/lib/swift/linux:$LD
 | 目录串行翻页 + 下标跨页累计 | ✅ |
 | 章节内分页自动续接 | ✅ |
 | `exploreUrl` 返回数组 / JSON 字符串 / 纯文本分类 | ✅ |
+| `exploreUrl` 直接是一段 JSON 数组 | ✅ |
+| 发现页规则为空时回退 `ruleSearch` | ✅ |
 | 登录 `loginUrl`、Cookie 罐、付费章节 | ❌ MVP 未做 |
 | 交互式浏览器（`java.webView`） | ❌ 明确报错，不假装成功 |
+
+---
+
+## 发现页（Explore）是怎么对齐 Legado 的
+
+发现页踩过的坑比搜索多，因为「分类」和「书列表」是**两套独立规则**，
+而绝大多数书源只认真写了一套。照 Legado 的源码抄，三条规则缺一不可：
+
+### ① 分类从哪来
+
+Legado `BookSourceExtensions.exploreKinds()`：
+
+| `exploreUrl` 的写法 | 怎么解析 |
+|---|---|
+| `@js:` / `<js>` | 先跑 JS，再看结果是**JSON 数组**还是**纯文本** |
+| 一整段 JSON 数组 | 直接当 `ExploreKind[]` 解析（`[{"title":"玄幻","url":"…"}]`） |
+| 纯文本 | 按 `(&&|\n)+` 切开，每行 `分类名::URL` |
+
+漏掉「一整段 JSON 数组」这一支，症状是**只解析出 1 个分类**，
+而且那 1 个分类的标题是整段 JSON、URL 是空的 —— 点进去必然空列表。
+
+### ② 书列表用哪套规则 ★ 最关键
+
+Legado `BookList.kt`：
+
+```kotlin
+val bookListRule: BookListRule = when {
+    isSearch -> bookSource.getSearchRule()
+    bookSource.getExploreRule().bookList.isNullOrBlank() -> bookSource.getSearchRule()
+    else -> bookSource.getExploreRule()
+}
+```
+
+**回退换的是整份规则对象**，不是只换 `bookList` —— 名字、作者、封面、
+书籍 URL 全跟着换成 `ruleSearch` 的。只换 `bookList` 的话，
+列表能出来但每本书没名字，App 里就是一堆空行。
+
+语料里 4953 个源带 `exploreUrl`，其中大量 `ruleExplore` 就是 `{}`
+（写书源的人只填了分类 URL，忘了写发现规则）。不实现这条回退，
+这些源的发现页**永远是空的**。
+
+### ③ 分类 URL 里的 `{{page}}`
+
+`玄幻::/sort1/{{page}}/` 这种相对 URL 会被补成绝对地址，
+`{{page}}` 在发请求前展开 —— 注意 `new URL()` 会把 `{` `}` 百分号编码，
+所以补全绝对地址这步必须绕开 `URL` 构造函数。
+
+### 实测
+
+`node test/explore-live.js` 拿真站跑（沙盒在境外，部分站被墙）：
+
+```
+✓ 👍玄幻阁    (http://www.xuanhuange.net)   11 个分类 → 出书 30 本
+✓ 🔖玄幻阁    (http://www.xuankuge.com)     10 个分类 → 出书 30 本
+✓ 📚 玄幻文学  (https://m.xhwx3.com)         7 个分类 → 出书
+✓ 小说屋      (http://www.xiaoshuowu.com)   13 个分类 → 出书 30 本
+✗ 小说屋      (http://www.xs5.la/)          站方连接超时（不是引擎问题）
+✗ 闪舞小说    (https://www.35xss.com)       站方 503（不是引擎问题）
+```
 
 ---
 

@@ -12,7 +12,8 @@ function loadAll() {
     try {
       const d = JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8'));
       for (const s of (Array.isArray(d) ? d : [d])) {
-        if (s && typeof s === 'object' && s.ruleExplore && s.ruleExplore.bookList) out.push(s);
+        // 只要有 exploreUrl 就算 —— ruleExplore 空的源靠回退 ruleSearch 出书
+        if (s && typeof s === 'object' && s.exploreUrl) out.push(s);
       }
     } catch (e) { /* 跳过 */ }
   }

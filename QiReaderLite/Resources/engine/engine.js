@@ -244,6 +244,22 @@
    * 通用：从规则里取一批书
    * ------------------------------------------------------- */
 
+  /**
+   * 书源的 baseUrl。
+   *
+   * 语料里 193/8751 个源的 bookSourceUrl 带 "##" 后缀，
+   * 形如 "https://m.dmxso.com##旅途" —— 那是站方自己标的分组/频道名，不是 URL 的一部分。
+   * 整个当 baseUrl 用，相对路径拼出来就成了
+   *   https://m.dmxso.com##旅途/search/?searchkey=xxx   ← 域名直接歪掉
+   * 所以这里把 ## 之后的部分切掉。
+   */
+  function baseUrlOf(src) {
+    var u = String((src && src.bookSourceUrl) || '');
+    var i = u.indexOf('##');
+    if (i >= 0) u = u.substring(0, i);
+    return u.replace(/\/+$/, '');
+  }
+
   function ruleText(rv) {
     if (rv == null) return '';
     if (typeof rv === 'string') return rv;
@@ -256,6 +272,29 @@
     var t = ruleText(rv);
     if (!t) return '';
     return t.split('\n')[0];
+  }
+
+  /**
+   * 这一页用哪份「书籍列表规则」—— 严格照 Legado 的 BookList.kt：
+   *
+   *   isSearch == true              → ruleSearch
+   *   ruleExplore.bookList 为空     → ruleSearch   ★ 回退
+   *   否则                          → ruleExplore
+   *
+   * 关键点：回退换的是**整份规则对象**，不是只换 bookList ——
+   * name / author / coverUrl / bookUrl 全跟着换成 ruleSearch 的。
+   * 只换 bookList 的话，列表能出来但书名书封全是空。
+   *
+   * 很多书源（玄幻、小说屋这类）ruleExplore 写的是 {}，
+   * Legado 照样能在发现页出书，靠的就是这条回退。
+   */
+  function pickListRule(src, isSearch) {
+    src = src || {};
+    var search = src.ruleSearch || {};
+    if (isSearch) return search;
+    var explore = src.ruleExplore || {};
+    if (!ruleText(explore.bookList).trim()) return search;
+    return explore;
   }
 
   /**
@@ -451,12 +490,12 @@
         // searchUrl 在**顶层**（实测 7339 条顶层 / 0 条在 ruleSearch 里）
         var spec = ruleText(src.searchUrl) || ruleText(src.ruleSearch && src.ruleSearch.searchUrl);
         if (!spec) return { books: [], total: 0, error: '该书源没有搜索规则' };
-        var ctx = { baseUrl: src.bookSourceUrl, keyword: p.keyword || '', page: p.page || 1, source: src };
+        var ctx = { baseUrl: baseUrlOf(src), keyword: p.keyword || '', page: p.page || 1, source: src };
         return buildUrl(spec, ctx).then(function (target) {
           if (!target.url) return { books: [], total: 0, error: '搜索 URL 生成失败' };
           return fetchPage(target, ctx).then(function (page) {
             markContent(ctx, page);
-            return extractBooks(page, src.ruleSearch || {}, ctx, { requireUrl: true });
+            return extractBooks(page, pickListRule(src, true), ctx, { requireUrl: true });
           });
         });
       }).then(function (r) {
@@ -474,7 +513,7 @@
         // exploreUrl 同样在顶层
         var spec = ruleText(src.exploreUrl) || ruleText(src.ruleExplore && src.ruleExplore.exploreUrl);
         if (!spec) return { kinds: [], error: '该书源没有发现规则' };
-        var ctx = { baseUrl: src.bookSourceUrl, source: src };
+        var ctx = { baseUrl: baseUrlOf(src), source: src };
         // exploreUrl 常是 @js:，可能返回数组，也可能返回 JSON 字符串
         if (rule.classify(spec) === rule.T.JS) {
           var scope = rule.makeScope({ baseUrl: ctx.baseUrl, source: src });
@@ -487,8 +526,8 @@
               if (t.startsWith('[') || t.startsWith('{')) {
                 try { arr = JSON.parse(t); } catch (e) { arr = []; }
               } else {
-                // 纯文本分类："玄幻::/type/xh\n仙侠::/type/xx"
-                arr = t.split('\n').map(function (l) { return l.trim(); }).filter(Boolean)
+                // 纯文本分类："玄幻::/type/xh\n仙侠::/type/xx"（Legado 用 (&&|\n)+ 切）
+                arr = t.split(/(&&|\n)+/).map(function (l) { return String(l).trim(); }).filter(Boolean)
                   .map(function (l) { var q = l.split('::'); return { title: q[0], url: q[1] || '' }; });
               }
             }
@@ -498,8 +537,16 @@
             return { kinds: [], error: String(e && e.message || e) };
           });
         }
-        // 静态写法：每行 "分类名::url"
-        var kinds = String(spec).split('\n').map(function (l) { return l.trim(); }).filter(Boolean)
+        // 静态写法有两种（Legado BookSourceExtensions.exploreKinds 同款）：
+        //   ① 整个 exploreUrl 是一段 JSON 数组  → [{title,url,style},…]
+        //   ② 纯文本，每行 "分类名::url"（Legado 用 (&&|\n)+ 切）
+        var raw = String(spec).trim();
+        if (raw.charAt(0) === '[') {
+          var jk = [];
+          try { jk = JSON.parse(raw); } catch (e) { jk = []; }
+          if (Array.isArray(jk)) return { kinds: normalizeKinds(jk, ctx.baseUrl) };
+        }
+        var kinds = raw.split(/(&&|\n)+/).map(function (l) { return String(l).trim(); }).filter(Boolean)
           .map(function (l) {
             var p2 = l.split('::');
             return { title: p2[0], url: dom.absolutize((p2[1] || '').trim(), ctx.baseUrl), style: '' };
@@ -513,12 +560,13 @@
       var src = p.source || {};
       runtime.source = src;
       return ensureJsLib(src).then(function () {
-        var ctx = { baseUrl: src.bookSourceUrl, page: p.page || 1, source: src };
+        var ctx = { baseUrl: baseUrlOf(src), page: p.page || 1, source: src };
         return buildUrl(p.kindUrl || '', ctx).then(function (target) {
           if (!target.url) return { books: [], total: 0, error: '分类 URL 为空' };
           return fetchPage(target, ctx).then(function (page) {
             markContent(ctx, page);
-            return extractBooks(page, src.ruleExplore || {}, ctx, { requireUrl: true });
+            // 发现页：ruleExplore.bookList 为空时回退 ruleSearch（Legado BookList.kt 同款）
+            return extractBooks(page, pickListRule(src, false), ctx, { requireUrl: true });
           });
         });
       }).then(function (r) {
@@ -534,7 +582,7 @@
       runtime.source = src;
       return ensureJsLib(src).then(function () {
         var bi = src.ruleBookInfo || {};
-        var url = absolutizeMaybe(p.bookUrl, src.bookSourceUrl);
+        var url = absolutizeMaybe(p.bookUrl, baseUrlOf(src));
         if (!url) return { book: null, error: '书籍 URL 为空' };
         return fetchPage({ url: url, headers: {} }, { baseUrl: url }).then(function (page) {
           var ctx = { baseUrl: page.url, source: src, book: p.book };
@@ -570,7 +618,7 @@
       runtime.source = src;
       return ensureJsLib(src).then(function () {
         var tr = src.ruleToc || {};
-        var url = absolutizeMaybe(p.tocUrl || p.bookUrl, src.bookSourceUrl);
+        var url = absolutizeMaybe(p.tocUrl || p.bookUrl, baseUrlOf(src));
         if (!url) return { chapters: [], error: '目录 URL 为空' };
         var ctx = { baseUrl: url, source: src, book: p.book };
         var maxPages = Math.max(1, p.maxPages || 3);
@@ -642,7 +690,7 @@
       runtime.source = src;
       return ensureJsLib(src).then(function () {
         var cr = src.ruleContent || {};
-        var url = absolutizeMaybe(p.chapterUrl, src.bookSourceUrl);
+        var url = absolutizeMaybe(p.chapterUrl, baseUrlOf(src));
         if (!url) return { content: '', error: '章节 URL 为空' };
         var ctx = { baseUrl: url, source: src, chapter: p.chapter };
         return fetchPage({ url: url, headers: {} }, ctx).then(function (page) {
