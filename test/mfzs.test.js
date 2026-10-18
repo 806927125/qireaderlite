@@ -57,7 +57,9 @@ function realRequest({ url, method, body, headers }) {
 }
 
 (async () => {
-  const SOURCE = JSON.parse(fs.readFileSync(SRC_FILE, 'utf8'));
+  // 书源文件可能是单对象，也可能是数组包一层（Legado 导出惯例）
+  const _raw = JSON.parse(fs.readFileSync(SRC_FILE, 'utf8'));
+  const SOURCE = Array.isArray(_raw) ? _raw[0] : _raw;
 
   const calls = [];
   const { win } = createSandbox({

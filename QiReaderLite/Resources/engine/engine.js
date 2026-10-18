@@ -881,7 +881,10 @@
           // JSON 接口源几乎全靠它 —— 比如 `init: "$.data"` 把
           // `{code,msg,data:{...}}` 缩成 `{...}`，后面 `$.authorName` 才有值。
           // 不支持的话所有 $.xxx 都会打在 {code,msg,data} 这一层上 → 字段全空。
-          var initText = ruleText(bi.init);
+          // Swift 侧属性名不能叫 `init`（保留字），叫 initRule，
+          // 但对 JSON 暴露的键应该还是 `init`。两个都认，
+          // 免得哪边映射漏了整本书详情直接全空、目录也跟着废。
+          var initText = ruleText(bi.init) || ruleText(bi.initRule);
           // ⚠️ getElements 返回的是 **Promise**，必须 await ——
           //    同步去读 .values 永远拿到 undefined（Promise 上没有这个属性），
           //    于是 base 一直停在整页，init 等于没跑。
