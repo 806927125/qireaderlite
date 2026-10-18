@@ -50,14 +50,14 @@ struct PagedReaderView: View {
                     // 正文还没到（或者这一章确实是空的）——别显示空白页
                     Text("（本章没有内容）")
                         .font(.system(size: config.fontSize))
-                        .foregroundStyle(config.textColor)
+                        .foregroundStyle(Color(uiColor: config.textColor))
                 } else if layoutLooksBroken {
                     // 分页结果明显不对（长文本只排出一页）→ 退回连续滚动，
                     // 宁可丑也不能让正文消失
                     ScrollView {
                         Text(text)
                             .font(config.resolvedFont)
-                            .foregroundStyle(config.textColor)
+                            .foregroundStyle(Color(uiColor: config.textColor))
                             .lineSpacing(config.lineSpacing)
                             .padding(.horizontal, config.horizontalMargin)
                             .padding(.vertical, config.topMargin)

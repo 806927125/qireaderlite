@@ -82,6 +82,9 @@ ok(/import SwiftUI/.test(paginator), 'ReaderPaginator.swift 要 import SwiftUI�
 ok(/Color\(uiColor: config\.backgroundColor\)/.test(paged),
    'UIColor 不能直接 .ignoresSafeArea()，要先包成 Color');
 ok(!/config\.backgroundColor\.ignoresSafeArea/.test(paged), '没有 UIColor 直接当 View 用的残留');
+// UIColor 不是 ShapeStyle，foregroundStyle 要 Color
+ok(!/foregroundStyle\(config\.textColor\)/.test(paged), 'foregroundStyle 不能直接吃 UIColor');
+ok(/foregroundStyle\(Color\(uiColor: config\.textColor\)\)/.test(paged), '文字颜色先包成 Color');
 ok(!/window\.QiReader\.enable/.test(host), '别再把分页方法打到 window.QiReader 上');
 ok(/CTFramesetterCreateFrame/.test(paginator), '页框用 framesetter 生成');
 ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
