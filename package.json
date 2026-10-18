@@ -4,11 +4,11 @@
   "description": "轻阅 Lite 的 JS 规则引擎与测试台",
   "type": "commonjs",
   "scripts": {
-    "test": "node test/packages-native.test.js && node test/rules.test.js && node test/e2e.test.js",
+    "test": "node test/packages-native.test.js && node test/engine-packages.test.js && node test/rules.test.js && node test/e2e.test.js",
     "test:rules": "node test/rules.test.js",
     "test:e2e": "node test/e2e.test.js",
     "test:swift": "python3 test/swift-structure.py",
-    "test:packages": "node test/packages-native.test.js"
+    "test:packages": "node test/packages-native.test.js && node test/engine-packages.test.js"
   },
   "devDependencies": {
     "jsdom": "^29.1.1",

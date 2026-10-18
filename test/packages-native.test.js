@@ -242,6 +242,46 @@ console.log('\n=== 6. 集成：packages_stub.js + packages-native.js 端到端 =
 })();
 
 // ────────────────────────────────────────────────────────────────────────
+console.log('\n=== 7. 摘要：SHA-256 / java.digestHex ===');
+(function () {
+  const D = N.__packagesNativeInternals;
+  const crypto = require('crypto');
+
+  // 7a. SHA-256 跟 Node crypto 交叉验证（含中文/emoji/长文本）
+  const cases = ['', 'abc', 'hello 轻阅', 'a'.repeat(1000), '🚀🔥中文测试'];
+  let ok = true, bad = '';
+  for (const s of cases) {
+    const mine = D.sha256hex(Array.from(Buffer.from(s, 'utf8')));
+    const node = crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+    if (mine !== node) { ok = false; bad = `"${s.slice(0, 20)}" → ${mine} != ${node}`; break; }
+  }
+  check('SHA-256 与 Node crypto 一致', ok, bad);
+
+  // 7b. digestHex：给 java 装 md5/sha1 桩，验证它按算法名分派
+  N.java = N.java || {};
+  N.java.md5Encode = (s) => crypto.createHash('md5').update(s, 'utf8').digest('hex');
+  N.java.sha1Encode = (s) => crypto.createHash('sha1').update(s, 'utf8').digest('hex');
+  if (typeof N.java.digestHex !== 'function') { check('java.digestHex 已提供', false, '不存在'); return; }
+  check('java.digestHex 已提供', true);
+
+  const dispatch = [
+    ['MD5', 'md5'], ['SHA-1', 'sha1'], ['SHA1', 'sha1'], ['SHA-256', 'sha256'],
+  ];
+  ok = true; bad = '';
+  for (const [name, algo] of dispatch) {
+    const mine = N.java.digestHex('轻阅 test', name);
+    const node = crypto.createHash(algo).update('轻阅 test', 'utf8').digest('hex');
+    if (mine !== node) { ok = false; bad = `${name} → ${mine} != ${node}`; break; }
+  }
+  check('java.digestHex 按算法名正确分派（MD5/SHA-1/SHA-256）', ok, bad);
+
+  // 7c. 未实现算法返回空串而不是抛错（不打断书源）
+  let threw = false, r = null;
+  try { r = N.java.digestHex('x', 'SHA-512'); } catch (e) { threw = true; }
+  check('未实现的算法（SHA-512）返回空串而不抛错', !threw && r === '', `threw=${threw} r=${r}`);
+})();
+
+// ────────────────────────────────────────────────────────────────────────
 setTimeout(() => {
   console.log('\n' + '═'.repeat(52));
   console.log(`  通过 ${passed}  失败 ${failed}`);
