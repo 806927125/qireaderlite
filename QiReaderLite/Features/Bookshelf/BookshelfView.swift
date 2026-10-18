@@ -83,8 +83,8 @@ struct BookshelfView: View {
                         .foregroundStyle(Theme.ink)
                         .padding(.horizontal, 14)
                         .frame(height: 34)
-                        .background(Theme.glassFillStrong, in: Capsule())
-                        .overlay(Capsule().stroke(Theme.glassStroke, lineWidth: 1))
+                        // 同 GlassCapsule：走真玻璃，别叠半透明白
+                        .liquidGlass(cornerRadius: 999, strength: 1.1)
                 }
                 .buttonStyle(.plain)
             }
