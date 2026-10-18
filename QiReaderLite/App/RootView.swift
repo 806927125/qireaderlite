@@ -66,35 +66,42 @@ struct BookRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            CoverImage(url: book.cleanCover, width: 56, height: 78)
-            VStack(alignment: .leading, spacing: 5) {
+            CoverImage(url: book.cleanCover, width: 76, height: 104)
+            VStack(alignment: .leading, spacing: 6) {
                 Text(book.name)
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !book.author.isEmpty {
                     Text(book.author)
-                        .font(.subheadline).foregroundStyle(Theme.sub).lineLimit(1)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.sub)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 6) {
+                    if !book.kind.isEmpty {
+                        PillTag(text: book.kind, color: Theme.tagPurple)
+                    }
+                    if !book.wordCount.isEmpty {
+                        PillTag(text: book.wordCount, color: Theme.tagPink)
+                    }
+                    if showSource && !book.sourceName.isEmpty {
+                        PillTag(text: book.sourceName, color: Theme.tagBlue)
+                    }
                 }
                 if !book.intro.isEmpty {
                     Text(book.intro)
-                        .font(.caption).foregroundStyle(Theme.sub)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.sub.opacity(0.85))
                         .lineLimit(2)
-                }
-                HStack(spacing: 6) {
-                    if !book.lastChapter.isEmpty {
-                        Text(book.lastChapter)
-                            .font(.caption2).foregroundStyle(Theme.accent)
-                            .lineLimit(1)
-                    }
-                    if showSource && !book.sourceName.isEmpty {
-                        Text("· " + book.sourceName)
-                            .font(.caption2).foregroundStyle(Theme.sub).lineLimit(1)
-                    }
+                        .lineSpacing(2)
                 }
             }
             Spacer(minLength: 0)
         }
+        .padding(12)
+        .glassCard(cornerRadius: 18)
         .contentShape(Rectangle())
     }
 }

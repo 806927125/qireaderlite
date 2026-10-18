@@ -24,11 +24,14 @@ struct ExploreView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            picker
-            kindBar
-            Divider()
-            list
+        ZStack {
+            PageBackdrop()
+
+            VStack(spacing: 0) {
+                picker
+                kindBar
+                list
+            }
         }
         .navigationTitle("发现")
         .navigationBarTitleDisplayMode(.inline)
@@ -46,16 +49,26 @@ struct ExploreView: View {
         }
     }
 
+    /// 栖阅截图 1 那个顶栏：圆形按钮 + 书源名（带色块图标）+ 右侧分组胶囊
     private var picker: some View {
-        HStack {
+        HStack(spacing: 10) {
+            SourceBadge(source: current ?? BookSource(bookSourceUrl: "", bookSourceName: "书源"), size: 34)
+
             Text(current?.name ?? "没有可用书源")
-                .font(.headline).foregroundStyle(Theme.ink)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.ink)
                 .lineLimit(1)
+
             Spacer()
-            SourcePicker(selection: $sourceId)
+
+            GlassCapsule {
+                SourcePicker(selection: $sourceId)
+                    .labelsHidden()
+                    .fixedSize()
+            }
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Theme.card)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -73,17 +86,20 @@ struct ExploreView: View {
                             Task { await loadBooks() }
                         } label: {
                             Text(k.title)
-                                .font(.subheadline.weight(on ? .semibold : .regular))
-                                .padding(.horizontal, 14).padding(.vertical, 7)
-                                .background(on ? Theme.accent : Theme.sub.opacity(0.1),
-                                            in: Capsule())
+                                .font(.system(size: 14, weight: on ? .semibold : .regular))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
                                 .foregroundStyle(on ? .white : Theme.ink)
+                                .background(
+                                    Capsule().fill(on ? Theme.accent : Color.white.opacity(0.55))
+                                )
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 8)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
             }
-            .background(Theme.card)
         }
     }
 
@@ -138,6 +154,10 @@ struct ExploreView: View {
             List {
                 ForEach(BookDedup.unique(books)) { b in
                     NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+                        // BookRow 自己是玻璃卡片，List 的默认行背景会把它压住
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                 }
                 // 列表底部这一行就是「上拉加载」的触发器：
                 // 它出现在屏幕里就自动加载下一页，加完把 id 一改，.task 就会再跑一次；
@@ -159,6 +179,8 @@ struct ExploreView: View {
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
             .refreshable { await loadBooks() }
         }
     }

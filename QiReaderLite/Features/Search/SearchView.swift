@@ -71,8 +71,14 @@ struct SearchView: View {
                 } label: {
                     BookRow(book: b)
                 }
+                // BookRow 是玻璃卡片，List 默认行背景会压住它
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
         }
     }
 

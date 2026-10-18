@@ -24,8 +24,6 @@ struct ReaderWebView: View {
     @State private var showSettings = false
     @State private var showChrome = false
     @State private var started = false
-    @State private var ttsHint = false
-    @State private var searchHint = false
 
     /// ReaderSession 是 @MainActor 类，init 也得在主线程（Swift 5 模式强检查）
     @MainActor init(book: Book, chapters: [Chapter], start: Chapter) {
@@ -76,16 +74,6 @@ struct ReaderWebView: View {
             }
         }
         .sheet(isPresented: $showSettings) { settingsSheet }
-        .alert("朗读", isPresented: $ttsHint) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text("这版还没接 TTS，先看书。")
-        }
-        .alert("章内搜索", isPresented: $searchHint) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text("这版还没接章内搜索，先用顶部目录跳转。")
-        }
     }
 
     // MARK: - 顶栏 / 底栏
@@ -150,8 +138,9 @@ struct ReaderWebView: View {
             .foregroundStyle(Theme.ink)
             HStack(spacing: 0) {
                 barItem("目录", "list.bullet") { showCatalog = true }
-                barItem("朗读", "speaker.wave.2") { ttsHint = true }
-                barItem("搜索", "magnifyingglass") { searchHint = true }
+                // 朗读 / 章内搜索之前是「点了弹『还没接』」——
+                // 给用户一个点下去只会挨骂的按钮，比没有更糟。先撤掉，
+                // 等真接上了（正文要从 WKWebView 里取）再加回来。
                 barItem("大小", "textformat.size") { showSettings = true }
             }
         }

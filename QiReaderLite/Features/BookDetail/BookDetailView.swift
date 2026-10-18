@@ -13,6 +13,8 @@ struct BookDetailView: View {
     @State private var statusText = ""
     @State private var showCatalog = false
     @State private var readerChapter: Chapter?
+    /// 简介默认截 6 行，栖阅那个「展开全部」就是干这个的
+    @State private var showAllIntro = false
 
     init(book: Book) { _book = State(initialValue: book) }
 
@@ -52,8 +54,7 @@ struct BookDetailView: View {
             .padding(16)
         }
         .background {
-            ZStack { Theme.bg; GlassBackdrop() }
-            .ignoresSafeArea()
+            PageBackdrop()
         }
         .navigationTitle(book.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -80,22 +81,43 @@ struct BookDetailView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            CoverImage(url: book.cleanCover, width: 96, height: 132)
-            VStack(alignment: .leading, spacing: 7) {
-                Text(book.name).font(.title3.bold()).foregroundStyle(Theme.ink)
+            CoverImage(url: book.cleanCover, width: 104, height: 140)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(book.name)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 if !book.author.isEmpty {
-                    Text(book.author).font(.subheadline).foregroundStyle(Theme.sub)
+                    HStack(spacing: 5) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.sub)
+                        Text(book.author)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.sub)
+                            .lineLimit(1)
+                    }
                 }
-                if !book.sourceName.isEmpty {
-                    Text(book.sourceName).font(.caption2).foregroundStyle(Theme.accent)
-                }
-                if !book.lastChapter.isEmpty {
-                    Text(book.lastChapter).font(.caption).foregroundStyle(Theme.sub).lineLimit(2)
+
+                // 栖阅把字数/分类/状态排成彩色胶囊
+                HStack(spacing: 6) {
+                    if !book.wordCount.isEmpty {
+                        PillTag(text: book.wordCount, color: Theme.tagPink)
+                    }
+                    if !book.kind.isEmpty {
+                        PillTag(text: book.kind, color: Theme.tagGreen)
+                    }
+                    if !book.lastChapter.isEmpty {
+                        PillTag(text: book.lastChapter, color: Theme.tagOrange)
+                    }
                 }
             }
             Spacer(minLength: 0)
         }
-        .cardStyle()
+        .padding(12)
+        .glassCard(cornerRadius: 18)
     }
 
     private var actionBar: some View {
@@ -104,62 +126,121 @@ struct BookDetailView: View {
                 readerChapter = chapters.first(where: { !$0.isVolume })
             } label: {
                 Label("开始阅读", systemImage: "book")
-                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 10)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 12))
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
                     .foregroundStyle(.white)
+                    .background(
+                        RoundedRectangle(cornerRadius: 999, style: .continuous)
+                            .fill(Theme.accent)
+                    )
             }
+            .buttonStyle(.plain)
             .disabled(chapters.isEmpty)
+            .opacity(chapters.isEmpty ? 0.5 : 1)
 
+            // 次按钮走玻璃，跟主按钮拉开层次
             Button {
-                showCatalog = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(.headline).frame(width: 46, height: 42)
-                    .background(Theme.sub.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            }
-            .disabled(chapters.isEmpty)
-
-            Button {
-                // 不能写成三元：remove 返回 ()，add 返回 LibraryItem，两边类型不一致编译不过
                 if inShelf {
                     library.remove(book.id)
                 } else {
                     library.add(book)
                 }
             } label: {
-                Image(systemName: inShelf ? "checkmark.square.fill" : "square")
-                    .font(.headline).frame(width: 46, height: 42)
-                    .background(Theme.sub.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                Label(inShelf ? "已在书库" : "加入书库",
+                      systemImage: inShelf ? "checkmark" : "plus")
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .foregroundStyle(Theme.ink)
             }
+            .buttonStyle(.plain)
+            .liquidGlass(cornerRadius: 999)
+
+            Button {
+                showCatalog = true
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 50, height: 50)
+                    .foregroundStyle(Theme.ink)
+            }
+            .buttonStyle(.plain)
+            .liquidGlass(cornerRadius: 999)
+            .disabled(chapters.isEmpty)
+            .opacity(chapters.isEmpty ? 0.5 : 1)
         }
     }
 
+    /// 栖阅那三列「分组 / 类型 / 更新」——横向分栏，各自带图标
     private var meta: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !book.kind.isEmpty { line("分类", book.kind) }
-            if !book.wordCount.isEmpty { line("字数", book.wordCount) }
-            if !chapters.isEmpty { line("章节", "\(chapters.filter { !$0.isVolume }.count) 章") }
+        HStack(spacing: 0) {
+            metaCell("folder.fill", "分组", "未分组", Theme.tagBlue)
+            Divider().frame(height: 34)
+            metaCell("doc.text.fill", "类型", book.kind.isEmpty ? "文本" : book.kind, Theme.tagPurple)
+            Divider().frame(height: 34)
+            metaCell("bell.fill", "更新",
+                     chapters.filter { !$0.isVolume }.count > 0
+                        ? "\(chapters.filter { !$0.isVolume }.count) 章"
+                        : "未加载",
+                     Theme.tagOrange)
         }
-        .cardStyle()
+        .padding(.vertical, 14)
+        .glassCard(cornerRadius: 16)
+    }
+
+    private func metaCell(_ icon: String, _ title: String, _ value: String, _ tint: Color) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 17))
+                .foregroundStyle(tint)
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.sub)
+            Text(value)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("简介").font(.headline).foregroundStyle(Theme.ink)
+            HStack(spacing: 6) {
+                Image(systemName: "text.alignleft")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.sub)
+                Text("简介")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+            }
             Text(book.intro.isEmpty ? "（这本书没有简介）" : book.intro)
-                .font(.subheadline).foregroundStyle(Theme.sub)
-                .lineSpacing(4)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle()
-    }
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.ink.opacity(0.85))
+                .lineSpacing(5)
+                .lineLimit(showAllIntro ? nil : 6)
+                .fixedSize(horizontal: false, vertical: true)
 
-    private func line(_ k: String, _ v: String) -> some View {
-        HStack(alignment: .top) {
-            Text(k).font(.caption).foregroundStyle(Theme.sub).frame(width: 44, alignment: .leading)
-            Text(v).font(.caption).foregroundStyle(Theme.ink)
-            Spacer()
+            if !book.intro.isEmpty && book.intro.count > 110 {
+                Button {
+                    withAnimation { showAllIntro.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(showAllIntro ? "收起" : "展开全部")
+                            .font(.system(size: 13, weight: .medium))
+                        Image(systemName: showAllIntro ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: 16)
     }
 
     // MARK: 加载
