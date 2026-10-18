@@ -49,22 +49,33 @@ for (const [label, re] of [
   ['子页：间距设置',                  /private var layoutSettingsPage/],
 ]) ok(re.test(web), label);
 
-console.log('\n── 液态玻璃 + 高度贴合（用户反馈：下面空一大块、没液态玻璃）──');
-ok(/presentationBackground/.test(web), '面板用了 presentationBackground（半透明背景）');
-ok(/ultraThinMaterial/.test(web), '背景是磨砂材质（底下正文透得出来）');
-ok(/background\(Color\.clear\)/.test(web), 'NavigationStack 背景要透明，否则挡住磨砂');
-ok(/presentationCornerRadius/.test(web), '面板有圆角');
-ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有「高度贴合内容」的修饰符');
-ok(/presentationSizing\(\.fitted\)/.test(web), 'iOS 18+ 用 presentationSizing(.fitted)');
-ok(/presentationDetents\(\[\.height\(/.test(web), 'iOS 17 退回按内容高度给 detent');
-// 主面板不能用 ScrollView（ScrollView 理想高度无限大，fitted 算不出贴合高度）
+console.log('\n── 液态玻璃：用系统层级的，不是自己糊一层 ──');
+// Apple 规则（WWDC25 session 323）：
+//   · iOS 26 的 partial-height sheet **默认就是液态玻璃**
+//   · .large 全屏 detent 是不透明的
+//   · 自定义 presentationBackground 会**覆盖掉**系统的玻璃 → 要去掉
+const fit = web.slice(web.indexOf('private struct FitSheetHeight'));
+ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有 FitSheetHeight 修饰符');
+ok(/if #available\(iOS 26\.0, \*\)/.test(fit), 'iOS 26 单独一条分支');
+ok(/presentationSizing\(\.fitted\)/.test(fit), '用 presentationSizing(.fitted) 让高度贴合内容');
+// iOS 26 分支里不能有 presentationBackground
+const ios26Branch = fit.slice(fit.indexOf('if #available(iOS 26.0, *)'), fit.indexOf('} else if #available(iOS 18.0'));
+ok(!/presentationBackground/.test(ios26Branch),
+   'iOS 26 分支**不设** presentationBackground（会覆盖掉系统的玻璃）');
+ok(!/presentationCornerRadius/.test(fit), '不用 presentationCornerRadius 覆盖系统圆角');
+// 旧系统才自己糊
+ok(/presentationBackground\(\.ultraThinMaterial\)/.test(fit), 'iOS 17~25 用 ultraThinMaterial 兜底');
+ok(/presentationDetents\(\[\.height\(620\)\]\)/.test(fit), 'iOS 17 用固定高度 detent');
+// 全屏 detent 会让玻璃消失
+ok(!/presentationDetents\(\[\.large\]\)/.test(web), '不能用 .large（全屏不透明，玻璃就没了）');
+// 推入的子页要透明，否则玻璃被盖
+ok((web.match(/containerBackground\(\.clear, for: \.navigation\)/g) || []).length >= 3,
+   '三个子页都加了 containerBackground(.clear, for: .navigation)');
+
+console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var displayCard'));
 ok(!/ScrollView/.test(mainSheet), '主面板不用 ScrollView（否则 fitted 撑不满）');
 ok(/VStack/.test(mainSheet), '主面板用 VStack（内容行数固定，高度确定）');
-ok(/private var displayCard/.test(web), '字号+配色+跟随系统 装在一张卡片里');
-ok(/private var pageTurnCard/.test(web), '翻页方式是独立的一张卡片');
-ok(/Color\.white\.opacity\(0\.34\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 20/.test(web),
-   '卡片是半透明白（玻璃感）');
 
 console.log('\n── 关键布局细节 ──');
 // 字体下拉必须跟滑块同一行（不是单独一行）

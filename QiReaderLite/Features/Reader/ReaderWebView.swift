@@ -314,14 +314,6 @@ struct ReaderWebView: View {
     private var settingsSheet: some View {
         settingsContent
             .background(Color.clear)
-            // 半透明磨砂：底下正文透得出来
-            .presentationBackground {
-                ZStack {
-                    Rectangle().fill(.ultraThinMaterial)
-                    Rectangle().fill(Color.white.opacity(0.14))
-                }
-            }
-            .presentationCornerRadius(28)
             .modifier(FitSheetHeight())
     }
 
@@ -349,12 +341,18 @@ struct ReaderWebView: View {
             }
             .navigationDestination(isPresented: $showDisplaySettings) {
                 displaySettingsPage
+                    // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
+                    .containerBackground(.clear, for: .navigation)
             }
             .navigationDestination(isPresented: $showLayoutSettings) {
                 layoutSettingsPage
+                    // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
+                    .containerBackground(.clear, for: .navigation)
             }
             .navigationDestination(isPresented: $showMoreSettings) {
                 moreSettingsPage
+                    // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
+                    .containerBackground(.clear, for: .navigation)
             }
         }
     }
@@ -890,21 +888,35 @@ private struct ChipButton: View {
 }
 
 
-/// 让 sheet 的高度**贴合内容**，下面不留一大块空白。
+/// sheet 的高度**贴合内容**，并且**用系统级的液态玻璃**。
 ///
-/// iOS 18+ 用系统的 `presentationSizing(.fitted)`；
-/// iOS 17 没有这个 API，退回按内容估一个高度（`.height`）。
+/// ── iOS 26：系统 sheet 本来就是液态玻璃 ──
+/// Apple 的规则（WWDC25 session 323）：
+///   · **partial-height**（.medium / .height / fitted）的 sheet **默认就是玻璃**；
+///   · **.large 全屏 detent 是不透明的**；
+///   · 自定义 `presentationBackground(_:)` 会**覆盖掉系统的玻璃** —— 要去掉。
+/// 所以 iOS 26 这条分支**什么都不设背景**，让系统材质自己出来。
 ///
-/// ⚠️ 这个必须跟「内容不是 ScrollView」配套：
-///    ScrollView 的理想高度是无限大，fitted 就没法算出贴合的高度，
-///    sheet 还是会撑满。所以主面板用 VStack（内容行数固定），
-///    子页才用 ScrollView。
+/// ── iOS 17~25：没有系统玻璃，自己糊一层材质 ──
+/// `.ultraThinMaterial` 是最接近玻璃的退路。
+///
+/// ── 高度贴合 ──
+/// iOS 18+ 用 `presentationSizing(.fitted)`；iOS 17 退回 `.height(620)`。
+/// ⚠️ 必须跟「内容不是 ScrollView」配套：ScrollView 理想高度无限大，
+///    fitted 算不出贴合高度，sheet 还是会撑满。主面板行数固定用 VStack。
 private struct FitSheetHeight: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
+        if #available(iOS 26.0, *) {
+            // 系统液态玻璃：partial 高度 + 不覆盖背景
             content.presentationSizing(.fitted)
+        } else if #available(iOS 18.0, *) {
+            content
+                .presentationSizing(.fitted)
+                .presentationBackground(.ultraThinMaterial)
         } else {
-            content.presentationDetents([.height(620)])
+            content
+                .presentationDetents([.height(620)])
+                .presentationBackground(.ultraThinMaterial)
         }
     }
 }
