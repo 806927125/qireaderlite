@@ -124,7 +124,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
-    static let engineVersion = "2026.10.18-r22（init 双键兼容；详情规则改递归下降，不依赖 init）"
+    static let engineVersion = "2026.10.18-r23（tocUrl 从 bookUrl 取书号；0 章也可诊断）"
 
     /// 给界面用的一行状态
     var statusText: String {

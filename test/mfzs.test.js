@@ -148,6 +148,13 @@ function realRequest({ url, method, body, headers }) {
   ok(book.name === '都市修仙之至尊宝玉', '书名对', book.name);
   ok(book.author === '至尊宝', '作者对', book.author);
   ok(/getvolume\?bookId=359915/.test(book.tocUrl || ''), 'tocUrl 指向 getvolume 接口', book.tocUrl);
+  // ⚠️ 不能用 $..bookId：详情响应里若有「推荐书籍」等嵌套结构，
+  // 递归下降会匹配到**别的书的 bookId**（实测 [111,999]），
+  // 取错就静默抓错接口 → 目录 0 章且不报错。
+  ok(!/\$\.\.bookId/.test(SOURCE.ruleBookInfo.tocUrl || ''),
+     'tocUrl 不用 $..bookId 取书号（会取到嵌套的别的书）', SOURCE.ruleBookInfo.tocUrl);
+  ok(/book\.bookUrl/.test(SOURCE.ruleBookInfo.tocUrl || ''),
+     'tocUrl 从 bookUrl 切书号（与响应结构解耦）');
   ok(!/@/.test(book.tocUrl || ''), 'tocUrl 里没有 @遇知', book.tocUrl);
   ok((book.intro || '').length > 20, '简介拼出来了（含评分/标签/人气）', (book.intro || '').slice(0, 60));
   ok(/，/.test(book.intro || '') || /标签/.test(book.intro || ''), '「##\\s##，」把标签数组拼成了顿号串');

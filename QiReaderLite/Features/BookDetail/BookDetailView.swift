@@ -29,9 +29,12 @@ struct BookDetailView: View {
                 if !book.kind.isEmpty || !book.lastChapter.isEmpty { meta }
                 intro
                 if !statusText.isEmpty && chapters.isEmpty { Text(statusText).font(.footnote).foregroundStyle(.orange) }
-                if !chapters.isEmpty && chapters.count <= 2 {
+                // ⚠️ 原来只在 1~2 章时显示诊断按钮，**0 章反而不显示** ——
+                //    而 0 章恰恰是最需要诊断的情况（toc() 成功返回但一条没解析出来，
+                //    不抛错，statusText 也是空的，页面上什么都看不出来）。
+                if chapters.count <= 2 {
                     HStack(spacing: 6) {
-                        Text("只解析出 \(chapters.count) 章，多半不对")
+                        Text(chapters.isEmpty ? "目录一章都没解析出来" : "只解析出 \(chapters.count) 章，多半不对")
                             .font(.caption).foregroundStyle(.orange)
                         Button {
                             guard let src = source else { return }
