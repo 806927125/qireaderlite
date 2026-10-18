@@ -42,7 +42,7 @@ final class ReaderPaginator {
         var bestLines = 0
         for i in 0..<min(pages.count, 3) {
             guard let f = frame(at: i, pageSize: pageSize) else { continue }
-            let n = CTFrameGetLines(f).count
+            let n = (CTFrameGetLines(f) as NSArray).count
             if n > bestLines { bestLines = n }
         }
         guard bestLines > 1 else { return pages }
@@ -57,10 +57,12 @@ final class ReaderPaginator {
         tuned.lineSpacing = wanted
         // ⚠️ 不能拿 attributed.string 重新造 —— 那样标题的样式就丢了。
         //    直接改正文那段 attributed 的行距。
-        let tunedAttr = NSMutableAttributedString(attributed: attributed)
-        if let full = attributed.length > 0 {
+        let tunedAttr = NSMutableAttributedString(attributedString: attributed)
+        let full = attributed.length
+        if full > 0 {
+            let ps = tuned.paragraphStyle()
             tunedAttr.addAttribute(.paragraphStyle,
-                                   value: tuned.paragraphStyle(),
+                                   value: ps,
                                    range: NSRange(location: 0, length: full))
         }
         pages = paginate(tunedAttr, pageSize: pageSize)
@@ -199,10 +201,12 @@ struct ReaderPageCanvas: UIViewRepresentable {
                 var x0: CGFloat = 0
                 var x1: CGFloat = bounds.width
                 if baselineScope == .word {
-                    let glyphs = CTLineGetGlyphCount(line)
-                    if glyphs > 0 {
-                        x0 = CTLineGetOffsetForIndex(line, 0, nil)
-                        x1 = CTLineGetOffsetForIndex(line, glyphs, nil)
+                    // 只要这一行**有字**的那段横向范围。
+                    // ⚠️ 别用 CTLineGetOffsetForIndex —— iOS SDK 里没这个符号，编译不过。
+                    let b = CTLineGetImageBounds(line, nil)
+                    if b.width > 0 {
+                        x0 = b.minX
+                        x1 = b.maxX
                     }
                 }
                 guard x1 > x0 else { continue }

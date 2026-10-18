@@ -126,6 +126,21 @@ ok(/tapAnywhereTurnsPage/.test(paged), '点击任意位置翻页真接了');
 ok(/paragraphSpacing: CGFloat\(paraSpacing\)/.test(web), '段落间空行真进排版');
 
 console.log('\n── 踩过的坑不能再踩 ──');
+// CaseIterable.allCases 只是 Collection，不是 RandomAccessCollection
+// → SwiftUI 的 ForEach(_:content:) 匹配不上 → 编译器退到 Binding<C> 重载 → 一片红
+ok(!/ForEach\(ReaderParaAlign\.allCases\)/.test(web), 'ForEach(allCases) 要包成 Array');
+ok(/ForEach\(Array\(ReaderParaAlign\.allCases\), id: \\.rawValue\)/.test(web), '段落对齐用 Array(allCases)');
+ok(/ForEach\(Array\(ReaderBaselineScope\.allCases\), id: \\.rawValue\)/.test(web), '底线范围用 Array(allCases)');
+// iOS SDK 里没有 CTLineGetOffsetForIndex
+// 只查**调用**（注释里提一嘴名字不算）
+ok(!/CTLineGetOffsetForIndex\(/.test(paginator), '别用 CTLineGetOffsetForIndex（SDK 里没这符号）');
+ok(/CTLineGetImageBounds/.test(paginator), '行内字形范围用 CTLineGetImageBounds');
+// CFArray 没有 count
+ok(!/CTFrameGetLines\([a-z]+\)\.count/.test(paginator), 'CFArray 要先 as NSArray 再取 count');
+ok(/CTFrameGetLines\([a-z]+\) as NSArray\)\.count/.test(paginator), 'CTFrameGetLines 先 as NSArray');
+// NSMutableAttributedString 的标签
+ok(/NSMutableAttributedString\(attributedString:/.test(paginator), 'NSMutableAttributedString 用 attributedString: 标签');
+ok(!/NSMutableAttributedString\(attributed:/.test(paginator), '没有 attributed: 标签的写法');
 // 存一个叫 frame 的属性 → 成员查找先命中它 → SwiftUI 的 .frame(width:height:) 被遮住
 ok(!/\n\s*let frame: CTFrame\?/.test(paginator), 'ReaderPageCanvas 别有 frame 属性（会遮住 .frame() 修饰符）');
 ok(!/\n\s*let size: CGSize/.test(paginator), '别有 size 属性（会遮住 .size()）');

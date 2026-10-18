@@ -122,13 +122,13 @@ struct ReaderWebView: View {
                         chapterKey: session.index,
                         config: layoutConfig,
                         mode: pageTurnMode,
-                        tapAnywhereTurnsPage: tapAnywhereTurnsPage,
                         onPageChange: { p, total in
                             pageInfo = (p, total)
                             saveProgress(ratio: total > 1 ? Double(p - 1) / Double(total) : 0)
                         },
                         onEdge: { dir in session.step(dir) },
-                        onMenu: { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } }
+                        onMenu: { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } },
+                        tapAnywhereTurnsPage: tapAnywhereTurnsPage
                     )
                     .ignoresSafeArea(edges: .bottom)
                 } else {
@@ -425,7 +425,7 @@ struct ReaderWebView: View {
             HStack(spacing: 6) {
                 Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
                 Spacer()
-                ForEach(ReaderParaAlign.allCases) { a in
+                ForEach(Array(ReaderParaAlign.allCases), id: \.rawValue) { a in
                     Button { paraAlign = a.raw } label: {
                         Text(a.name)
                             .font(.system(size: 12))
@@ -467,7 +467,7 @@ struct ReaderWebView: View {
                 HStack(spacing: 6) {
                     Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
                     Spacer()
-                    ForEach(ReaderBaselineScope.allCases) { sc in
+                    ForEach(Array(ReaderBaselineScope.allCases), id: \.rawValue) { sc in
                         Button { baselineScope = sc.raw } label: {
                             Text(sc.name)
                                 .font(.system(size: 12))
