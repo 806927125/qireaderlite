@@ -342,17 +342,17 @@ struct ReaderWebView: View {
             .navigationDestination(isPresented: $showDisplaySettings) {
                 displaySettingsPage
                     // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
-                    .containerBackground(.clear, for: .navigation)
+                    .modifier(ClearNavigationBackground())
             }
             .navigationDestination(isPresented: $showLayoutSettings) {
                 layoutSettingsPage
                     // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
-                    .containerBackground(.clear, for: .navigation)
+                    .modifier(ClearNavigationBackground())
             }
             .navigationDestination(isPresented: $showMoreSettings) {
                 moreSettingsPage
                     // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
-                    .containerBackground(.clear, for: .navigation)
+                    .modifier(ClearNavigationBackground())
             }
         }
     }
@@ -917,6 +917,22 @@ private struct FitSheetHeight: ViewModifier {
             content
                 .presentationDetents([.height(620)])
                 .presentationBackground(.ultraThinMaterial)
+        }
+    }
+}
+
+
+/// 把 push 出来的页面背景清掉。
+///
+/// ⚠️ `containerBackground(_:for: .navigation)` 里的 `.navigation` 是 **iOS 18+** 的，
+///    iOS 17 上写死会报 "'navigation' is only available in iOS 18.0 or newer"。
+///    iOS 17 退而求其次用 `.background(Color.clear)`。
+private struct ClearNavigationBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.containerBackground(.clear, for: .navigation)
+        } else {
+            content.background(Color.clear)
         }
     }
 }

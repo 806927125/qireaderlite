@@ -69,8 +69,13 @@ ok(/presentationDetents\(\[\.height\(620\)\]\)/.test(fit), 'iOS 17 用固定高�
 // 全屏 detent 会让玻璃消失
 ok(!/presentationDetents\(\[\.large\]\)/.test(web), '不能用 .large（全屏不透明，玻璃就没了）');
 // 推入的子页要透明，否则玻璃被盖
-ok((web.match(/containerBackground\(\.clear, for: \.navigation\)/g) || []).length >= 3,
-   '三个子页都加了 containerBackground(.clear, for: .navigation)');
+ok((web.match(/modifier\(ClearNavigationBackground\(\)\)/g) || []).length >= 3,
+   '三个子页都用了 ClearNavigationBackground');
+ok(/private struct ClearNavigationBackground: ViewModifier/.test(web), '有 ClearNavigationBackground 修饰符');
+ok(/#available\(iOS 18\.0, \*\)[\s\S]{0,120}?containerBackground\(\.clear, for: \.navigation\)/.test(web),
+   '.navigation 那个 placement 是 iOS 18+，必须用 #available 包起来');
+ok(!/\.containerBackground\(\.clear, for: \.navigation\)[\s\S]{0,80}?\.background\(Color\.clear\)/.test(web),
+   '没有把 iOS 18 专属 API 写死在公共路径上');
 
 console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var displayCard'));
