@@ -5,6 +5,7 @@ struct BookshelfView: View {
     @EnvironmentObject private var sources: SourceStore
     @State private var search = ""
     @State private var showAdd = false
+    @State private var editing = false
 
     private var shown: [LibraryItem] {
         let list = search.isEmpty
@@ -25,35 +26,77 @@ struct BookshelfView: View {
     }
 
     var body: some View {
-        Group {
-            if library.items.isEmpty {
-                EmptyHint(icon: "books.vertical", title: "书架还是空的",
-                          subtitle: "去「搜索」找本书，加进来就能离线读了")
-            } else if shown.isEmpty {
-                EmptyHint(icon: "magnifyingglass", title: "没有匹配的书")
-            } else {
-                List {
-                    ForEach(uniqueItems) { item in
-                        NavigationLink {
-                            BookDetailView(book: item.book)
-                        } label: {
-                            BookRow(book: item.book, showSource: false)
-                        }
-                        .swipeActions {
-                            Button(role: .destructive) {
-                                library.remove(item.book.id)
-                            } label: { Label("移除", systemImage: "trash") }
+        ZStack {
+            PageBackdrop()
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    BigTitle("书库",
+                              subtitle: library.items.isEmpty ? nil
+                                : "\(library.items.count) 本 · 在读 \(library.items.filter { $0.lastChapterIndex > 0 && !$0.finished }.count) 本")
+                        .padding(.top, 4)
+
+                    if uniqueItems.isEmpty {
+                        EmptyHint(icon: "books.vertical",
+                                  title: search.isEmpty ? "书库还是空的" : "没有匹配的书",
+                                  subtitle: search.isEmpty ? "去「搜索」找本书，加进来就能离线读了" : nil)
+                            .padding(.top, 60)
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(uniqueItems) { item in
+                                NavigationLink {
+                                    BookDetailView(book: item.book)
+                                } label: {
+                                    ShelfCard(item: item)
+                                }
+                                .buttonStyle(.plain)
+                                // List 换成 ScrollView 后没有 swipeActions，
+                                // 长按菜单是唯一入口 —— 空出来就是"能看不能删"，不可接受
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        library.remove(item.book.id)
+                                    } label: { Label("移出书库", systemImage: "trash") }
+                                    Button {
+                                        let want = !item.finished
+                                        library.update(item.book.id) { $0.finished = want }
+                                    } label: {
+                                        Label(item.finished ? "标记为在读" : "标记已读完",
+                                              systemImage: item.finished ? "book" : "checkmark.circle")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                .listStyle(.plain)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 24)
             }
         }
-        .navigationTitle("书架")
-        .searchable(text: $search, prompt: "搜书架里的书")
+        .searchable(text: $search, prompt: "搜书库里的书")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    withAnimation { editing.toggle() }
+                } label: {
+                    Text(editing ? "完成" : "编辑")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .background(Theme.glassFillStrong, in: Capsule())
+                        .overlay(Capsule().stroke(Theme.glassStroke, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { SearchView() } label: { Image(systemName: "plus") }
+                GlassCapsule {
+                    NavigationLink { SearchView() } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }
