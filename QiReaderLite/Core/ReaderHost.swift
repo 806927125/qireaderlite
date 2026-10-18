@@ -28,6 +28,43 @@ final class ReaderHost: NSObject, ObservableObject {
     var onVisibleChapter: ((Int) -> Void)?
     /// 正文里点了一下（宿主可用来显/隐工具栏）
     var onTap: (() -> Void)?
+    /// 分页模块（reader-paginate.js）是否已就绪
+    private(set) var paginateReady = false
+    var onPaginateReady: (() -> Void)?
+    /// 翻页模式下的页码变化（1 起）
+    var onPaginatePage: ((Int, Int) -> Void)?
+    /// 翻页模式的翻页方式：flip 仿真 / slide 滑动 / none 无动画 / scroll 上下滚动
+    var pageTurnMode: String = "slide"
+
+    /// 装上翻页模块。reader.html 不用改 —— 那个文件跟栖阅逐字节一致是要保的，
+    /// 所以分页脚本作为独立资源在 ready 之后注入。
+    func installPaginate() {
+        guard let dir = ResourceLocator.locate("reader.html").map({ $0.deletingLastPathComponent() }),
+              let js = try? String(contentsOf: dir.appendingPathComponent("reader-paginate.js"),
+                                   encoding: .utf8) else { return }
+        web.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    /// 开启/关闭/切换翻页。chapterIndex 是当前章的索引。
+    func setPageTurn(_ enabled: Bool, chapterIndex: Int, mode: String) {
+        guard paginateReady else { return }
+        pageTurnMode = mode
+        let fn = enabled ? "enable" : "disable"
+        callJS(fn, ["chapterIndex": chapterIndex, "mode": mode])
+    }
+
+    /// 只切翻页方式，不重排（章节切换时才重排）
+    func setPageTurnMode(_ mode: String) {
+        guard paginateReady else { return }
+        pageTurnMode = mode
+        callJS("setMode", ["mode": mode])
+    }
+
+    func refreshPageTurn(chapterIndex: Int) {
+        guard paginateReady else { return }
+        callJS("refresh", ["chapterIndex": chapterIndex])
+    }
+
     /// 翻页模式：点正文左半边 / 右半边翻上一章 / 下一章。
     /// 传 -1 表示"到头，没有下一章"，让 UI 能弹个提示而不是装没听见。
     var onTapZone: ((Double) -> Void)?
@@ -153,6 +190,7 @@ final class ReaderHost: NSObject, ObservableObject {
         case "ready":
             ready = true
             installTapPosShim()
+            installPaginate()
             onReady?()
             break
 
@@ -179,6 +217,15 @@ final class ReaderHost: NSObject, ObservableObject {
             if let idx = number(m["chapterIndex"]) {
                 currentIndex = idx
                 onVisibleChapter?(idx)
+            }
+
+        case "paginateReady":
+            paginateReady = true
+            onPaginateReady?()
+
+        case "paginatePage":
+            if let p = number(m["page"]), let c = number(m["count"]) {
+                onPaginatePage?(Int(p), Int(c))
             }
 
         case "tap":

@@ -207,5 +207,57 @@ struct ReaderTheme: Identifiable {
                                   bg: Color(red: 0.10, green: 0.10, blue: 0.11),
                                   ink: Color(red: 0.82, green: 0.82, blue: 0.84))
 
-    static let all: [ReaderTheme] = [.paper, .green, .gray, .dark]
+    // 浅色一排（对应设置面板第一行「文」格子）
+    static let paper2 = ReaderTheme(key: "paper2", name: "米黄",
+                                    bg: Color(red: 0.976, green: 0.961, blue: 0.925),
+                                    ink: Color(red: 0.20, green: 0.18, blue: 0.14))
+    static let wheat = ReaderTheme(key: "wheat", name: "麦黄",
+                                   bg: Color(red: 0.949, green: 0.906, blue: 0.796),
+                                   ink: Color(red: 0.22, green: 0.18, blue: 0.12))
+    static let rose = ReaderTheme(key: "rose", name: "藕粉",
+                                  bg: Color(red: 0.965, green: 0.914, blue: 0.918),
+                                  ink: Color(red: 0.24, green: 0.16, blue: 0.17))
+    static let sky = ReaderTheme(key: "sky", name: "天青",
+                                 bg: Color(red: 0.898, green: 0.933, blue: 0.949),
+                                 ink: Color(red: 0.14, green: 0.18, blue: 0.24))
+    static let blue = ReaderTheme(key: "blue", name: "湖蓝",
+                                  bg: Color(red: 0.855, green: 0.906, blue: 0.941),
+                                  ink: Color(red: 0.12, green: 0.17, blue: 0.24))
+    static let teal = ReaderTheme(key: "teal", name: "青碧",
+                                  bg: Color(red: 0.855, green: 0.929, blue: 0.902),
+                                  ink: Color(red: 0.12, green: 0.20, blue: 0.18))
+    static let green2 = ReaderTheme(key: "green2", name: "豆绿",
+                                    bg: Color(red: 0.898, green: 0.933, blue: 0.859),
+                                    ink: Color(red: 0.15, green: 0.21, blue: 0.13))
+
+    // 深色一排（对应第二行「文」格子）
+    static let dChar = ReaderTheme(key: "dChar", name: "炭黑",
+                                   bg: Color(red: 0.13, green: 0.13, blue: 0.14),
+                                   ink: Color(red: 0.80, green: 0.80, blue: 0.82))
+    static let dOlive = ReaderTheme(key: "dOlive", name: "橄榄",
+                                    bg: Color(red: 0.16, green: 0.17, blue: 0.14),
+                                    ink: Color(red: 0.78, green: 0.80, blue: 0.72))
+    static let dNavy = ReaderTheme(key: "dNavy", name: "藏青",
+                                   bg: Color(red: 0.12, green: 0.14, blue: 0.20),
+                                   ink: Color(red: 0.76, green: 0.80, blue: 0.88))
+    static let dPurple = ReaderTheme(key: "dPurple", name: "紫檀",
+                                     bg: Color(red: 0.17, green: 0.13, blue: 0.19),
+                                     ink: Color(red: 0.82, green: 0.78, blue: 0.86))
+    static let dBrown = ReaderTheme(key: "dBrown", name: "深棕",
+                                    bg: Color(red: 0.19, green: 0.16, blue: 0.13),
+                                    ink: Color(red: 0.84, green: 0.80, blue: 0.74))
+    static let dGreen = ReaderTheme(key: "dGreen", name: "墨绿",
+                                    bg: Color(red: 0.12, green: 0.17, blue: 0.15),
+                                    ink: Color(red: 0.76, green: 0.84, blue: 0.80))
+    static let dBlue = ReaderTheme(key: "dBlue", name: "深蓝",
+                                   bg: Color(red: 0.12, green: 0.16, blue: 0.22),
+                                   ink: Color(red: 0.78, green: 0.84, blue: 0.90))
+
+    /// 浅色一排
+    static let light: [ReaderTheme] = [.paper, .paper2, .wheat, .rose, .sky, .blue, .teal, .green2, .green, .gray]
+    /// 深色一排
+    static let darkRow: [ReaderTheme] = [.dChar, .dOlive, .dNavy, .dPurple, .dBrown, .dGreen, .dBlue, .dark]
+
+    static let all: [ReaderTheme] = light + darkRow
+    static func isDark(_ t: ReaderTheme) -> Bool { darkRow.contains(t) }
 }
