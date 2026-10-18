@@ -9,6 +9,8 @@ struct ExploreView: View {
     @State private var books: [Book] = []
     @State private var busy = false
     @State private var statusText = ""
+    @State private var diagText: String?
+    @State private var diagBusy = false
 
     private var current: BookSource? {
         guard let id = sourceId, let s = sources.source(id: id) else { return sources.enabled.first
@@ -26,6 +28,12 @@ struct ExploreView: View {
         .navigationTitle("发现")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadKinds() }
+        .alert("发现页诊断", isPresented: Binding(
+            get: { diagText != nil }, set: { if !$0 { diagText = nil } })) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(diagText ?? "")
+        }
         .onChange(of: sourceId) { _, _ in
             selected = nil
             books = []
@@ -80,7 +88,44 @@ struct ExploreView: View {
         } else if !statusText.isEmpty && books.isEmpty {
             ErrorHint(message: statusText)
         } else if books.isEmpty {
-            EmptyHint(icon: "rectangle.stack", title: "选个分类看看")
+            VStack(spacing: 14) {
+                EmptyHint(icon: "rectangle.stack", title: "选个分类看看")
+                if let s = current, let k = selected {
+                    Button {
+                        diagBusy = true
+                        Task {
+                            diagText = (try? await SourceService.shared.explain(source: s, kindUrl: k.url))
+                                ?? "诊断跑失败了"
+                            diagBusy = false
+                        }
+                    } label: {
+                        Text(diagBusy ? "诊断中…" : "为什么只有这几本？点我诊断")
+                            .font(.caption.weight(.semibold))
+                    }
+                }
+            }
+        } else if books.count <= 1 {
+            VStack(spacing: 14) {
+                List(BookDedup.unique(books)) { b in
+                    NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+                }
+                .listStyle(.plain)
+                .disabled(true)
+                .opacity(0.75)
+                if let s = current, let k = selected {
+                    Button {
+                        diagBusy = true
+                        Task {
+                            diagText = (try? await SourceService.shared.explain(source: s, kindUrl: k.url))
+                                ?? "诊断跑失败了"
+                            diagBusy = false
+                        }
+                    } label: {
+                        Text(diagBusy ? "诊断中…" : "只出 \(books.count) 本？点我诊断")
+                            .font(.caption.weight(.semibold))
+                    }
+                }
+            }
         } else {
             List(BookDedup.unique(books)) { b in
                 NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }

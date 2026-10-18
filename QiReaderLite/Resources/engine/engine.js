@@ -576,6 +576,63 @@
       });
     },
 
+    /**
+     * 诊断：把「发现页这一趟到底发生了什么」摊开。
+     *
+     * 沙盒里同一份规则能出 30 本、真机只有 1 本 —— 这种差异光看代码看不出来，
+     * 必须把 请求URL / 状态码 / 响应字节 / 规则命中元素数 / 页面标题 一起摆出来。
+     */
+    explain: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var ctx = { baseUrl: baseUrlOf(src), page: p.page || 1, source: src };
+        var out = {};
+        return buildUrl(p.kindUrl || '', ctx).then(function (target) {
+          out.请求URL = target.url || '';
+          out.方式 = target.method || 'GET';
+          if (!target.url) { out.结论 = '分类 URL 为空'; return out; }
+          return QR.java.rawRequest(target.url, target.method || 'GET',
+                                    target.headers || {}, target.body || '', 20000)
+            .then(function (resp) {
+              var body = resp._body || resp.body || '';
+              out.最终URL = resp.url || resp._url || '';
+              out.状态码 = resp._code || resp.code || 0;
+              out.响应字节 = body.length;
+              var listRule = pickListRule(src, false);
+              out.用的规则 = (listRule === (src.ruleSearch || {}))
+                ? 'ruleSearch（ruleExplore.bookList 为空，已回退）'
+                : 'ruleExplore';
+              out.bookList规则 = ruleText(listRule.bookList);
+              var t = (body.match(/<title[^>]*>([\s\S]{0,100}?)<\/title>/i) || [])[1] || '';
+              out.页面标题 = t.replace(/\s+/g, ' ').trim();
+              try {
+                var doc = dom.parseHTML(body, out.最终URL || target.url);
+                var n = 0;
+                try { n = (dom.resolve(doc, ruleText(listRule.bookList)).nodes || []).length; }
+                catch (e) { out.选择器报错 = String(e && e.message || e); }
+                out.规则命中元素 = n;
+              } catch (e) {
+                out.解析报错 = String(e && e.message || e);
+              }
+              out.正文开头 = String(body).replace(/\s+/g, ' ').slice(0, 220);
+              if (/验证|人机|cloudflare|captcha|请稍候|访问频繁/i.test(out.页面标题 + out.正文开头)) {
+                out.结论 = '**站方给的是验证/拦截页**，不是书单页（多半是 IP 或 UA 被判）';
+              } else if ((out.规则命中元素 || 0) <= 1) {
+                out.结论 = '规则只命中 ' + (out.规则命中元素 || 0) + ' 个元素 —— 书单页结构跟规则对不上';
+              } else {
+                out.结论 = '规则命中 ' + out.规则命中元素 + ' 个元素，页面结构是对的';
+              }
+              return out;
+            })
+            .catch(function (e) {
+              out.结论 = '请求失败：' + String(e && e.message || e);
+              return out;
+            });
+        });
+      });
+    },
+
     /** 书籍详情 */
     bookInfo: function (p) {
       var src = p.source || {};

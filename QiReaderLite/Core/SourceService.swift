@@ -121,6 +121,25 @@ final class SourceService {
         return dto.books.map { $0.toBook(origin: source.bookSourceUrl, sourceName: source.name) }
     }
 
+    /// 诊断一次发现页请求，把 URL / 状态码 / 字节数 / 命中元素数拼成人话。
+    func explain(source: BookSource, kindUrl: String, page: Int = 1) async throws -> String {
+        let raw = try await RuleSandbox.shared.invoke("explain",
+            ["kindUrl": kindUrl, "page": page], source: source)
+        guard let dict = raw as? [String: Any] else { return "引擎没有返回诊断数据" }
+        var out: [String] = []
+        for k in ["请求URL", "最终URL", "方式", "状态码", "响应字节", "页面标题",
+                  "用的规则", "bookList规则", "规则命中元素", "选择器报错", "解析报错", "结论"] {
+            if let v = dict[k] {
+                let s = (v is String) ? (v as! String) : String(describing: v)
+                if s.isEmpty { continue }
+                out.append("\(k)：\(s)")
+            }
+        }
+        let head = dict["正文开头"] as? String ?? ""
+        if !head.isEmpty { out.append("正文开头：\(head)") }
+        return out.isEmpty ? "没有诊断信息" : out.joined(separator: "\n")
+    }
+
     func bookInfo(source: BookSource, bookUrl: String, fallback: Book? = nil) async throws -> Book {
         var p: [String: Any] = ["bookUrl": bookUrl]
         if let f = fallback { p["book"] = f.rawJSON }
