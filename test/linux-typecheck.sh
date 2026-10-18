@@ -23,6 +23,11 @@ sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' \
     -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
     QiReaderLite/Core/RuleSandbox.swift > "$OUT/RuleSandbox.swift"
 
+# 阅读界面的桥也要真检查：它是 WebKit 层，Linux 上有 shim，能抓类型错
+sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' \
+    -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
+    QiReaderLite/Core/ReaderHost.swift > "$OUT/ReaderHost.swift"
+
 echo "▶ 类型检查 Foundation 层…"
 "$SWIFT_BIN" -typecheck -swift-version 5 \
   test/linux-shims/CombineShim.swift \
@@ -32,6 +37,7 @@ echo "▶ 类型检查 Foundation 层…"
   "$OUT/Store.swift" \
   QiReaderLite/Core/SourceService.swift \
   "$OUT/RuleSandbox.swift" \
+  "$OUT/ReaderHost.swift" \
   2>&1 | tee "$OUT/log.txt"
 
 ERRS=$(grep -c "error:" "$OUT/log.txt" || true)

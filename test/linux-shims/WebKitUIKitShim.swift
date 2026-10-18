@@ -29,6 +29,7 @@ public class WKUserContentController: NSObject {
 
 public class WKWebsiteDataStore: NSObject {
     public class func `default`() -> WKWebsiteDataStore { WKWebsiteDataStore() }
+    public class func nonPersistent() -> WKWebsiteDataStore { WKWebsiteDataStore() }
 }
 
 public class WKPreferences: NSObject {

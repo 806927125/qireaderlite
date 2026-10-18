@@ -22,7 +22,7 @@ enum ResourceLocator {
         "engine.js",         // 调度层
     ]
 
-    private static let subdirs = ["engine", "Resources/engine", "Engine", ""]
+    private static let subdirs = ["engine", "Resources/engine", "Engine", "reader", "Resources/reader", ""]
 
     private static var cache: [String: String] = [:]
 
@@ -45,7 +45,7 @@ enum ResourceLocator {
         scripts.filter { text($0) == nil }
     }
 
-    private static func locate(_ name: String) -> URL? {
+    static func locate(_ name: String) -> URL? {
         let base = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
 

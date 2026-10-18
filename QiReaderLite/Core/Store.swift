@@ -90,6 +90,26 @@ final class LibraryStore: ObservableObject {
     init() { load() }
 
     func item(for bookId: String) -> LibraryItem? { items.first { $0.book.id == bookId } }
+
+    /// 存阅读进度（章索引 + 章内比例）。WebView 阅读界面每次滚动都会调。
+    func saveProgress(bookID: String, chapterIndex: Int, ratio: Double,
+                      chapterTitle: String) {
+        guard items.contains(where: { $0.book.id == bookID }) else { return }
+        update(bookID) { item in
+            item.lastChapterIndex = max(item.lastChapterIndex, chapterIndex)
+            item.lastReadAt = Date()
+            if !chapterTitle.isEmpty, item.book.lastChapter.isEmpty {
+                item.book.lastChapter = chapterTitle
+            }
+        }
+    }
+
+    /// 取上次读到的位置，给阅读界面 setInitial 用
+    func progress(bookID: String) -> (chapterIndex: Int, scrollRatio: Double)? {
+        guard let it = items.first(where: { $0.book.id == bookID }),
+              it.lastReadAt != nil || it.lastChapterIndex > 0 else { return nil }
+        return (it.lastChapterIndex, 0)
+    }
     func contains(_ book: Book) -> Bool { items.contains { $0.book.id == book.id } }
 
     @discardableResult

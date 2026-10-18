@@ -65,7 +65,7 @@ struct BookDetailView: View {
             }
         }
         .fullScreenCover(item: $readerChapter) { ch in
-            ReaderView(book: book, chapters: chapters, start: ch)
+            ReaderWebView(book: book, chapters: chapters, start: ch)
         }
         .alert("目录诊断", isPresented: Binding(
             get: { tocDiag != nil }, set: { if !$0 { tocDiag = nil } })) {
