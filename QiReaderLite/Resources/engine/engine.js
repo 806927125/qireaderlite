@@ -28,8 +28,34 @@
     var code = String(source.jsLib);
     try {
       /* jshint evil:true */
-      new Function('java', 'org', 'cache', 'cookie', 'source', 'book', 'chapter', code)
-        .call(g, g.java, g.org, g.cache, g.cookie, source, undefined, undefined);
+      // ⚠️ 这里原来用的是
+      //     new Function('java','org','cache','cookie','source','book','chapter', code).call(g, ...)
+      //    —— jsLib 里的 `function foo(){}` 声明会落在**那个函数的局部作用域**里，
+      //    规则 JS 根本看不到。于是「jsLib 定义签名/解密函数 → 规则里调用」
+      //    这种最常见的书源写法直接失效（而且不报任何错，调用时才 ReferenceError）。
+      //
+      //    改成**间接 eval**（(0, eval)）：间接 eval 在**全局作用域**执行，
+      //    函数声明进全局；规则 JS 同样是 new Function（作用域链挂在全局上），
+      //    于是能直接调到 —— 跟 Legado/Rhino 的共享 scope 语义一致。
+      //    实测：严格模式下 new Function + 间接 eval，声明照样进全局。
+      //
+      //    副作用：jsLib 里的 var 也会进全局（Rhino 共享 scope 也是这样，可接受）。
+      var fn = new Function('__code', 'return (0, eval)(__code);');
+
+      // 原来靠形参提供的宿主变量，改 eval 后得自己摆到全局上。
+      // java / org 本来就是全局的；cache / cookie 没有就补个空壳
+      // （跟 makeScope 里 `cache: g.cache` 的行为对齐，不会比原来更差）。
+      var addedCache = false, addedCookie = false;
+      if (typeof g.cache === 'undefined') { g.cache = {}; addedCache = true; }
+      if (typeof g.cookie === 'undefined') { g.cookie = {}; addedCookie = true; }
+      var prevSource = g.source, prevBook = g.book, prevChapter = g.chapter;
+      g.source = source; g.book = undefined; g.chapter = undefined;
+      try {
+        fn(code);
+      } finally {
+        g.source = prevSource; g.book = prevBook; g.chapter = prevChapter;
+        void addedCache; void addedCookie;
+      }
     } catch (e) {
       QR.java.log('[jsLib 出错] ' + (source.bookSourceName || key) + ': ' + e.message);
     }
