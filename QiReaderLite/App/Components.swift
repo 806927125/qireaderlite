@@ -273,8 +273,23 @@ extension Theme {
 /// 栖阅每个书源前面那个彩色圆角方块（截图 2）：
 /// 首字或 emoji 做主体，颜色按书源名稳定散列 —— 同一个源每次打开颜色一样。
 struct SourceBadge: View {
-    let source: BookSource
+    let name: String
+    let isOn: Bool
     var size: CGFloat = 46
+
+    /// ⚠️ 不要直接存 BookSource：它有三十多个字段，成员初始化器必须全给，
+    ///    想"造一个空的"很别扭。这里只取需要的两个值。
+    init(source: BookSource, size: CGFloat = 46) {
+        self.name = source.bookSourceName
+        self.isOn = source.enabled
+        self.size = size
+    }
+
+    init(name: String, isOn: Bool = true, size: CGFloat = 46) {
+        self.name = name
+        self.isOn = isOn
+        self.size = size
+    }
 
     private static let palette: [Color] = [
         Color(red: 0.30, green: 0.52, blue: 0.88),
@@ -286,14 +301,12 @@ struct SourceBadge: View {
     ]
 
     private var tint: Color {
-        let key = source.bookSourceName.isEmpty ? source.bookSourceUrl : source.bookSourceName
-        let h = abs(key.hashValue)
+        let h = abs(name.hashValue)
         return Self.palette[h % Self.palette.count]
     }
 
     /// 书源名里如果有 emoji 就用它当图标（栖阅那个 🍅 / 🏰 就是这么来的）
     private var glyph: String {
-        let name = source.bookSourceName
         for ch in name {
             if let scalar = ch.unicodeScalars.first,
                scalar.value > 0x1F000 || (scalar.value >= 0x2600 && scalar.value <= 0x27BF) {
@@ -306,11 +319,11 @@ struct SourceBadge: View {
     var body: some View {
         Text(glyph)
             .font(.system(size: size * 0.44, weight: .semibold))
-            .foregroundStyle(source.enabled ? Color.white : Theme.sub.opacity(0.5))
+            .foregroundStyle(isOn ? Color.white : Theme.sub.opacity(0.5))
             .frame(width: size, height: size)
             .background(
                 RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                    .fill(source.enabled ? tint : Theme.sub.opacity(0.18))
+                    .fill(isOn ? tint : Theme.sub.opacity(0.18))
             )
     }
 }

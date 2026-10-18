@@ -52,7 +52,9 @@ struct ExploreView: View {
     /// 栖阅截图 1 那个顶栏：圆形按钮 + 书源名（带色块图标）+ 右侧分组胶囊
     private var picker: some View {
         HStack(spacing: 10) {
-            SourceBadge(source: current ?? BookSource(bookSourceUrl: "", bookSourceName: "书源"), size: 34)
+            SourceBadge(name: current?.bookSourceName ?? "书源",
+                        isOn: current?.enabled ?? false,
+                        size: 34)
 
             Text(current?.name ?? "没有可用书源")
                 .font(.system(size: 17, weight: .semibold))
