@@ -74,8 +74,12 @@ ok((web.match(/modifier\(ClearNavigationBackground\(\)\)/g) || []).length >= 3,
 ok(/private struct ClearNavigationBackground: ViewModifier/.test(web), '有 ClearNavigationBackground 修饰符');
 ok(/#available\(iOS 18\.0, \*\)[\s\S]{0,120}?containerBackground\(\.clear, for: \.navigation\)/.test(web),
    '.navigation 那个 placement 是 iOS 18+，必须用 #available 包起来');
-ok(!/\.containerBackground\(\.clear, for: \.navigation\)[\s\S]{0,80}?\.background\(Color\.clear\)/.test(web),
-   '没有把 iOS 18 专属 API 写死在公共路径上');
+// containerBackground(.clear, for: .navigation) 只能活在 #available(iOS 18) 分支里
+const navMod = web.slice(web.indexOf('private struct ClearNavigationBackground'));
+const avail = navMod.indexOf('#available(iOS 18.0, *)');
+const cb = navMod.indexOf('containerBackground(.clear, for: .navigation)');
+ok(avail >= 0 && cb > avail, 'containerBackground 在 #available(iOS 18) 之后');
+ok(navMod.indexOf('else') < cb, 'iOS 17 分支在 containerBackground 之前（走另一条路）');
 
 console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var displayCard'));
