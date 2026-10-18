@@ -59,7 +59,7 @@ console.log('\n── 开关与默认值 ──');
 ok(/@AppStorage\("reader\.pageTurn"\) private var pageTurn: Bool = true/.test(web),
    '翻页模式默认开（用户明确要的）');
 // 开关现在长成「翻页方式那一排」，选「上下滚动」就等于关掉分页
-ok(/private var pageTurnSection/.test(web), '设置里有翻页方式那一排');
+ok(/private var pageTurnCard/.test(web), '设置里有翻页方式那一排（在卡片里）');
 ok(/pageTurnMode = m\.raw\s*\n\s*pageTurn = m\.raw != "scroll"/.test(web)
    || /pageTurnMode = m\.raw[\s\S]{0,80}pageTurn = m\.raw != "scroll"/.test(web),
    '选「上下滚动」= 关掉分页，能回到老行为');

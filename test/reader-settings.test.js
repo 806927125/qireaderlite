@@ -34,18 +34,44 @@ function ok(c, label, extra) {
 const web = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
 const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
 
-console.log('\n── 面板结构（照截图的层次）──');
+console.log('\n── 面板结构（照参考截图 1:1）──');
 for (const [label, re] of [
-  ['字号滑杆 + 小/大',      /Slider\(value: \$fontSize/],
-  ['字体下拉',             /Menu\s*\{[\s\S]*?ReaderFont\.all/],
-  ['配色格子（浅色一排）', /paletteRow\(ReaderTheme\.light/],
-  ['配色格子（深色一排）', /paletteRow\(ReaderTheme\.darkRow/],
-  ['跟随系统深浅色',       /跟随系统深浅色/],
-  ['翻页方式那一排',       /private var pageTurnSection/],
-  ['功能宫格',             /private var otherSection/],
-  ['排版分组',             /private var layoutSection/],
-  ['阅读行为分组',         /private var behaviorSection/]
+  ['字号行：小方块+滑块+大方块+字体下拉', /private var sizeRow/],
+  ['小/大 是灰底圆角方块',            /private func sizeKnob/],
+  ['字体下拉是胶囊',                  /private var fontMenu/],
+  ['分隔线',                          /private var hairLine/],
+  ['配色格子（浅色一排）',            /paletteRow\(ReaderTheme\.light/],
+  ['配色格子（深色一排）',            /paletteRow\(ReaderTheme\.darkRow/],
+  ['跟随系统深浅色',                  /跟随系统深浅色/],
+  ['翻页方式在灰底圆角卡片里',        /private var pageTurnCard/],
+  ['功能磁贴 4+5',                    /private var featureGrid/],
+  ['子页：显示设置',                  /private var displaySettingsPage/],
+  ['子页：间距设置',                  /private var layoutSettingsPage/],
 ]) ok(re.test(web), label);
+
+console.log('\n── 关键布局细节 ──');
+// 字体下拉必须跟滑块同一行（不是单独一行）
+const sizeRow = web.slice(web.indexOf('private var sizeRow'), web.indexOf('private func sizeKnob'));
+ok(/fontMenu/.test(sizeRow), '字体下拉在字号行里（同一行）');
+ok(!/private var fontRow/.test(web), '没有单独的字体行');
+// 翻页方式卡片：灰底圆角 + 左侧图标
+ok(/Color\.gray\.opacity\(0\.12\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 18/.test(web),
+   '翻页方式卡片是灰底圆角');
+ok(/Image\(systemName: "doc\.text"\)/.test(web), '翻页方式卡片左边有图标');
+// 磁贴：图标 + 粗体标题 + 副标题
+ok(/Image\(systemName: icon\)/.test(web), '磁贴有图标');
+ok(/font\(\.subheadline\.weight\(\.semibold\)\)/.test(web), '磁贴标题是粗体');
+ok(/Text\(subtitle\)\.font\(\.caption2\)/.test(web), '磁贴有副标题');
+ok(/name: "大小", subtitle: "显示设置"/.test(web), '「大小/显示设置」磁贴');
+for (const n of ['间距设置','朗读设置','高亮设置','气泡设置','格式','标题样式','页眉页脚','更多设置']) {
+  ok(web.includes(`name: "${n}"`), `磁贴「${n}」在`);
+}
+// 色板 8 + 8
+ok(/static let light: \[ReaderTheme\] = \[[^\]]*\]/.test(view), '浅色色板在');
+const lightCount = (view.match(/static let light: \[ReaderTheme\] = \[(.*?)\]/s) || ['',''])[1].split(',').filter(x=>x.trim()).length;
+ok(lightCount === 8, `浅色色板 8 个`, `实际 ${lightCount}`);
+const darkCount = (view.match(/static let darkRow: \[ReaderTheme\] = \[(.*?)\]/s) || ['',''])[1].split(',').filter(x=>x.trim()).length;
+ok(darkCount === 8, `深色色板 8 个`, `实际 ${darkCount}`);
 
 console.log('\n── 5 种翻页方式（跟参考 App 一致）──');
 // 空白宽度不该被门禁卡住；直接按 raw 名找，不去截区间
@@ -55,19 +81,21 @@ for (const [raw, name] of [['flip','仿真'],['slide','滑动'],['flat','平移'
 }
 
 console.log('\n── 没接的功能：摆位但不点 ──');
-const tiles = web.slice(web.indexOf('private var otherSection'), web.indexOf('private func sectionHeader'));
+const tiles = web.slice(web.indexOf('private var featureGrid'), web.indexOf('private func featureTileLabel'));
 const notReady = (tiles.match(/ready:\s*false/g) || []).length;
-ok(notReady >= 7, `7 个功能标了 ready:false（栖阅那 7 个还没接的）`, `实际 ${notReady}`);
+ok(notReady >= 6, `6 个功能标了 ready:false（还没接的）`, `实际 ${notReady}`);
+ok(/ready:\s*true/.test(tiles), '有 ready:true 的磁贴（大小/间距/更多设置 是接上的）');
 ok(/\.disabled\(!t\.ready\)/.test(web), 'ready:false 的宫格是 disabled');
 ok(/guard t\.ready else \{ return \}/.test(web), '点击前先挡一道（不只靠 disabled）');
-ok(/foregroundStyle\(t\.ready \? Theme\.ink : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
+ok(/foregroundStyle\(ready \? Theme\.ink : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
    '未接的格子画成灰的，一眼看得出还没做');
+ok(/\.disabled\(!t\.ready\)/.test(web), 'ready:false 的磁贴是 disabled');
 
 console.log('\n── 真接上的功能 ──');
 // 栖阅的排版项是**真实控件行**，不是宫格：
 // 字号滑杆、字体、配色、跟随系统、段落对齐、段落间空行、行底线、垂直两端对齐
-ok(/private var sizeAndFontRow/.test(web), '字号/字体是真实控件');
-ok(/private var layoutSection/.test(web), '排版分组是真实控件');
+ok(/private var sizeRow/.test(web), '字号/字体是真实控件');
+ok(/private var layoutSettingsPage/.test(web), '间距设置子页是真实控件');
 ok(/Slider\(value: \$fontSize/.test(web), '字号滑杆真接了');
 ok(/paragraphSpacing: CGFloat\(paraSpacing\)/.test(web), '段落间空行真进排版');
 ok(/lineSpacing: CGFloat\(lineSpacing\)/.test(web), '行间距真进排版');

@@ -254,7 +254,7 @@ struct ReaderTheme: Identifiable {
                                    ink: Color(red: 0.78, green: 0.84, blue: 0.90))
 
     /// 浅色一排
-    static let light: [ReaderTheme] = [.paper, .paper2, .wheat, .rose, .sky, .blue, .teal, .green2, .green, .gray]
+    static let light: [ReaderTheme] = [.paper, .paper2, .wheat, .rose, .sky, .blue, .green2, .gray]
     /// 深色一排
     static let darkRow: [ReaderTheme] = [.dChar, .dOlive, .dNavy, .dPurple, .dBrown, .dGreen, .dBlue, .dark]
 

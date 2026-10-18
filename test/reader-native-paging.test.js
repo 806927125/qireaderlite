@@ -119,8 +119,9 @@ for (const [label, re] of [
   ['内容限制在页眉页脚之间', /内容限制在页眉页脚之间，不遮挡/],
   ['段落对齐 左/居中/右/两端', /段落对齐/],
 ]) ok(re.test(webRaw), label);
-ok(/textformat\.size\.smaller/.test(web) && /textformat\.size\.larger/.test(web),
-   '字号滑杆用栖阅同款 SF Symbol');
+ok(/private func sizeKnob/.test(web), '小/大 是灰底圆角方块（参考截图就是这样，不是 SF Symbol）');
+ok(/Color\.gray\.opacity\(0\.18\)[\s\S]{0,120}?RoundedRectangle\(cornerRadius: 10/.test(web),
+   '小/大方块是灰底圆角');
 ok(/circle\.lefthalf\.filled/.test(web), '跟随系统用 circle.lefthalf.filled');
 for (const [raw, hint] of [
   ['flip','模拟真实翻书效果，页面卷曲翻转'],
@@ -143,7 +144,7 @@ console.log('\n── 踩过的坑不能再踩 ──');
 // 整个 HStack 塞一个表达式里 → 编译器类型检查超时
 ok(/private var paraAlignRow: some View/.test(web), '段落对齐行拆成独立子视图');
 ok(/private var baselineScopeRow: some View/.test(web), '底线范围行拆成独立子视图');
-ok(/private var pageTurnButtons: some View/.test(web), '翻页方式行拆成独立子视图');
+ok(/private var pageTurnCard: some View/.test(web), '翻页方式在独立卡片视图里');
 // 光拆成子视图还不够 —— 按钮本体（Button + label + 嵌套 background + 三元）
 // 也必须抽成独立 View，否则类型检查器照样超时
 ok(/private struct ChipButton: View/.test(web), '小胶囊按钮抽成独立 View（防类型检查超时）');
@@ -167,7 +168,8 @@ const foreachLines = web.split('\n').filter(l => /ForEach\(/.test(l) && !/^\s*\/
 ok(foreachLines.every(l => !/id:/.test(l)),
    '所有 ForEach 都不用 id: 重载', foreachLines.filter(l => /id:/.test(l)).join(' | '));
 ok(!/enumerated\(\)/.test(web), '没有 enumerated() 元组（做不了 key path）');
-ok(/featureTile\(FeatureTile\(name: "朗读"/.test(web), '功能宫格写死两行，不用 ForEach');
+ok(/featureTile\(FeatureTile\(name: "朗读设置"/.test(web), '功能磁贴写死两行，不用 ForEach');
+ok(/ForEach\(Array\(tiles\.enumerated\(\)\)/.test(web) === false, '没有 enumerated() 元组 ForEach');
 
 // iOS SDK 里没有 CTLineGetOffsetForIndex
 // 只查**调用**（注释里提一嘴名字不算）
