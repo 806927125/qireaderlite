@@ -49,7 +49,7 @@ struct ReaderWebView: View {
         let t = ReaderTheme.all.first(where: { $0.key == themeKey }) ?? .paper
         // 开了"跟随系统深浅色"但没手动选色板时，跟系统走
         if followSystemAppearance && themeKey == "auto" {
-            return darkScheme ? .dChar : .paper
+            return (darkScheme == .dark) ? .dChar : .paper
         }
         return t
     }
@@ -399,7 +399,11 @@ struct ReaderWebView: View {
                     // 一行不满 4 个时补空位，网格才对得齐。
                     // ⚠️ ForEach(0..<0) 在 SwiftUI 里会崩，必须挡掉。
                     if row.count < 4 {
-                        ForEach(0..<(4 - row.count), id: \.offset) { _ in
+                        // ⚠️ 别直接 ForEach(0..<n)：Range 在这里会被推成 Binding<C>，
+                        //    泛型 C 推不出来（"generic parameter 'C' could not be inferred"）。
+                        //    转成 Array 再给 id 就稳了。
+                        let blanks: [Int] = Array(0..<(4 - row.count))
+                        ForEach(blanks, id: \.self) { _ in
                             Color.clear.frame(maxWidth: .infinity)
                         }
                     }
@@ -448,7 +452,7 @@ struct ReaderWebView: View {
             // 封面当背景：栖阅阅读页那个「虚化铺底」就是这么来的
             "hasBackgroundImage": coverDataURL != nil,
             "backgroundImageDataURL": coverDataURL ?? "",
-            "isDarkMode": followSystemAppearance && darkScheme,
+            "isDarkMode": followSystemAppearance && (darkScheme == .dark),
             "isNightMode": ReaderTheme.isDark(theme),
             "fullScreen": false,
             "leftMargin": 20,

@@ -259,5 +259,8 @@ struct ReaderTheme: Identifiable {
     static let darkRow: [ReaderTheme] = [.dChar, .dOlive, .dNavy, .dPurple, .dBrown, .dGreen, .dBlue, .dark]
 
     static let all: [ReaderTheme] = light + darkRow
-    static func isDark(_ t: ReaderTheme) -> Bool { darkRow.contains(t) }
+    // ⚠️ 必须写 contains(where:)：`contains(t)` 在这里会被当成
+    //    contains(where:) 的柯里化简写，Swift 5.9 编译不过
+    //    （"missing argument label 'where:'"）。
+    static func isDark(_ t: ReaderTheme) -> Bool { darkRow.contains(where: { $0.key == t.key }) }
 }

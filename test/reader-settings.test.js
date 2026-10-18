@@ -61,6 +61,14 @@ ok((view.match(/static let \w+ = ReaderTheme\(key:/g) || []).length >= 12,
 ok(/static func isDark/.test(view), '有 isDark 判定（给 isNightMode 用）');
 
 console.log('\n── 踩过的坑不能再踩 ──');
+ok(/static func isDark\(_ t: ReaderTheme\) -> Bool \{ darkRow\.contains\(where:/.test(view),
+   'isDark 用 contains(where:) —— contains(t) 在 Swift 5.9 编译不过');
+ok(!/darkRow\.contains\(t\)/.test(view), '没有残留的 contains(t)');
+const envDecl = web.split('@Environment(\\.colorScheme)').length - 1;
+ok(/let blanks: \[Int\] = Array\(0\.\.<\(4 - row\.count\)\)/.test(web),
+   '补空位用 Array(0..<n) —— 直接 ForEach(Range) 泛型 C 推不出来');
+ok(/darkScheme == \.dark/.test(web),
+   'ColorScheme 要跟 .dark 比 —— 不能直接当 Bool 用');
 ok(/if row\.count < 4 \{/.test(web),
    'ForEach(0..<n) 前面有 if 挡着 —— ForEach(0..<0) 在 SwiftUI 里会崩');
 ok(!/rows\[\.\.<0\]/.test(web), '没有那个恒等于 0 的 id 计算残留');
