@@ -110,7 +110,20 @@ struct ReaderWebView: View {
             session.host.onPaginateReady = {
                 applyPageTurn()
             }
+            // 换章后重新分页（reader.js 渲染完才触发，时机是对的）
+            session.onChapterChanged = { _ in repaginate() }
             session.host.onPaginatePage = { p, c in pageInfo = (p, c) }
+            // 章内翻到头/尾 → 接上一章/下一章。
+            // 这是「真·翻页」跟「滑动换章」的区别：先把本章翻完，才换章。
+            session.host.onPaginateEdge = { dir in
+                session.step(dir)
+            }
+            // 分页失败 → 静默退回上下滚动，正文必须还在
+            session.host.onPaginateFail = { reason in
+                pageTurn = false
+                pageInfo = (0, 0)
+                edgeToast = "分页没成功，已切回上下滚动"
+            }
             // 翻页模式下，章节到边交给分页模块自己处理（它在章内翻到头/尾才抛出来）
             session.onPageEdge = { msg in
                 withAnimation(.easeInOut(duration: 0.2)) { edgeToast = msg }
@@ -186,11 +199,11 @@ struct ReaderWebView: View {
                     .font(.footnote).foregroundStyle(Theme.sub)
             }
             HStack(spacing: 10) {
-                Button { session.step(-1); repaginate() } label: {
+                Button { session.step(-1) } label: {
                     Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
                 }
                 .disabled(session.index <= 0)
-                Button { session.step(1); repaginate() } label: {
+                Button { session.step(1) } label: {
                     Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
                 }
                 .disabled(session.index >= session.flat.count - 1)

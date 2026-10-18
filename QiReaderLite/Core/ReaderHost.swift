@@ -33,6 +33,10 @@ final class ReaderHost: NSObject, ObservableObject {
     var onPaginateReady: (() -> Void)?
     /// 翻页模式下的页码变化（1 起）
     var onPaginatePage: ((Int, Int) -> Void)?
+    /// 章内翻到头(-1)/尾(+1) → 去上一章/下一章
+    var onPaginateEdge: ((Int) -> Void)?
+    /// 分页失败（自动退回上下滚动）
+    var onPaginateFail: ((String) -> Void)?
     /// 翻页模式的翻页方式：flip 仿真 / slide 滑动 / none 无动画 / scroll 上下滚动
     var pageTurnMode: String = "slide"
 
@@ -227,6 +231,16 @@ final class ReaderHost: NSObject, ObservableObject {
             if let p = number(m["page"]), let c = number(m["count"]) {
                 onPaginatePage?(Int(p), Int(c))
             }
+
+        case "paginateEdge":
+            // 章内翻到头/尾 → 交给原生去上一章/下一章
+            if let d = number(m["direction"]) {
+                onPaginateEdge?(Int(d))
+            }
+
+        case "paginateFail":
+            // 分页失败 → 退回上下滚动，绝不让正文消失
+            onPaginateFail?(m["reason"] as? String ?? "分页失败")
 
         case "tap":
             // reader.js 原样搬自栖阅，post("tap", {}) 不带坐标。

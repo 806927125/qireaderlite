@@ -120,6 +120,9 @@
     body.style.transform = transformFor(state.mode, x, p);
 
     if (state.onPage) state.onPage(p, state.pageCount);
+    // ⚠️ 必须**主动 post** 给原生：Swift 侧收消息是单向的，
+    //    没法反过来调这里的 setter（原来只有 onPage 回调，等于永远不触发）。
+    post('paginatePage', { page: p, count: state.pageCount });
   }
 
   function transitionFor(mode) {
@@ -147,10 +150,12 @@
     if (next < 0) {
       // 本章第一页往右翻 → 交给原生去上一章
       if (state.onEdge) state.onEdge(-1);
+      post('paginateEdge', { direction: -1, edge: 'head' });
       return;
     }
     if (next >= state.pageCount) {
       if (state.onEdge) state.onEdge(1);
+      post('paginateEdge', { direction: 1, edge: 'tail' });
       return;
     }
     render(next, true);
@@ -225,7 +230,9 @@
         document.documentElement.classList.add('qr-page-mode');
         return true;
       } catch (e) {
-        if (state.onFail) state.onFail(String(e && e.message || e));
+        var reason = String(e && e.message || e);
+        if (state.onFail) state.onFail(reason);
+        post('paginateFail', { reason: reason });
         return false;
       }
     },

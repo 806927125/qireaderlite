@@ -18,6 +18,8 @@ final class ReaderSession: ObservableObject {
     /// 翻页模式回调（x 是 0~1 的横向位置）
     var onTapZone: ((Double) -> Void)?
     /// 翻页模式下翻到头/翻到尾时给 UI 的提示（nil = 不提示）
+    /// 章节内容渲染完成（分页模块在这里重排）
+    var onChapterChanged: ((Int) -> Void)?
     var onPageEdge: ((String) -> Void)?
 
     /// 把封面抓成 data URL 喂给界面当背景图。
@@ -79,6 +81,11 @@ final class ReaderSession: ObservableObject {
         host.onVisibleChapter = { [weak self] i in
             guard let self, self.flat.indices.contains(i) else { return }
             self.index = i
+            // 分页模块要知道换章了，得重新分一次。
+            // ⚠️ 不能在 step() 里立刻重排：正文是异步加载的，
+            //    那一刻 DOM 里还没有新章的 .chapter-body，重排会拿到旧的。
+            //    reader.js 渲染完才 post visibleChapter，那才是对的时机。
+            self.onChapterChanged?(i)
         }
 
         host.onTap = { [weak self] in
