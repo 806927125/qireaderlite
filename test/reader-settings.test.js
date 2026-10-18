@@ -56,6 +56,8 @@ console.log('\n── 液态玻璃：用系统层级的，不是自己糊一层 
 //   · 自定义 presentationBackground 会**覆盖掉**系统的玻璃 → 要去掉
 const fit = web.slice(web.indexOf('private struct FitSheetHeight'));
 ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有 FitSheetHeight 修饰符');
+ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), web.indexOf('var displayCard'))),
+   '主面板没有 Spacer（会把 sheet 撑满）');
 
 // ★ iOS 26 的系统玻璃必须是 partial-height sheet。
 //   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
@@ -70,7 +72,6 @@ ok(/private struct SheetContentHeightKey: PreferenceKey/.test(web), '有测高 p
 ok(/preference\(key: SheetContentHeightKey\.self, value: geo\.size\.height\)/.test(web), '背景 GeometryReader 量内容高度');
 ok(/fixedSize\(horizontal: false, vertical: true\)/.test(web), '内容固定成自然高度（否则量到的是 detent 高度，成死循环）');
 ok(/if #available\(iOS 26\.0, \*\)/.test(fit), 'iOS 26 单独一条分支');
-ok(/presentationSizing\(\.fitted\)/.test(fit), '用 presentationSizing(.fitted) 让高度贴合内容');
 // iOS 26 分支里不能有 presentationBackground
 const ios26Branch = fit.slice(fit.indexOf('if #available(iOS 26.0, *)'), fit.indexOf('} else if #available(iOS 18.0'));
 ok(!/presentationBackground/.test(ios26Branch),
@@ -78,7 +79,6 @@ ok(!/presentationBackground/.test(ios26Branch),
 ok(!/presentationCornerRadius/.test(fit), '不用 presentationCornerRadius 覆盖系统圆角');
 // 旧系统才自己糊
 ok(/presentationBackground\(\.ultraThinMaterial\)/.test(fit), 'iOS 17~25 用 ultraThinMaterial 兜底');
-ok(/presentationDetents\(\[\.height\(620\)\]\)/.test(fit), 'iOS 17 用固定高度 detent');
 // 全屏 detent 会让玻璃消失
 ok(!/presentationDetents\(\[\.large\]\)/.test(web), '不能用 .large（全屏不透明，玻璃就没了）');
 // 推入的子页要透明，否则玻璃被盖

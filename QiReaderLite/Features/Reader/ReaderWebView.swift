@@ -503,7 +503,7 @@ struct ReaderWebView: View {
             HStack(spacing: 8) {
                 Button { showDisplaySettings = true } label: {
                     featureTileLabel(name: "大小", subtitle: "显示设置",
-                                     icon: "textformat.size", ready: true)
+                                     icon: "", ready: true)
                 }
                 .buttonStyle(.plain)
                 featureTile(FeatureTile(name: "间距设置", icon: "text.alignleft", ready: true)) {
@@ -527,7 +527,9 @@ struct ReaderWebView: View {
     /// 一个磁贴（图标 + 粗体标题 + 副标题）
     private func featureTileLabel(name: String, subtitle: String?, icon: String, ready: Bool) -> some View {
         VStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 19))
+            if !icon.isEmpty {
+                Image(systemName: icon).font(.system(size: 19))
+            }
             Text(name).font(.subheadline.weight(.semibold))
             if let subtitle {
                 Text(subtitle).font(.caption2)
