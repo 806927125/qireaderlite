@@ -13,10 +13,6 @@ import SwiftUI
 //    这里用 GlassBackdrop 的半透明符号点缀替代观感，素材另换开源图。
 
 extension Theme {
-    /// 卡片玻璃：栖阅的卡片不是白纸，是能透出背景的半透明层
-    static let glassFill = Color.white.opacity(0.55)
-    static let glassFillStrong = Color.white.opacity(0.72)
-    static let glassStroke = Color.white.opacity(0.85)
     /// 页面底色：浅蓝白渐变（跟栖阅一致的观感）
     static let pageTop = Color(red: 0.855, green: 0.898, blue: 0.965)
     static let pageBottom = Color(red: 0.949, green: 0.965, blue: 0.984)
@@ -31,6 +27,10 @@ extension Theme {
 
 /// 栖阅每个页面底下都有那层淡插画 + 浅蓝白底。
 /// 插画用 GlassBackdrop（半透明符号）替代，底色改成蓝白渐变。
+///
+/// ⚠️ 这一层不只是好看 —— 它是玻璃的**折射对象**。
+///    底下越接近纯色，glassEffect 的折射和高光越看不出来（就是一块灰白板）。
+///    栖阅那种高饱和插画正是为此存在的，所以这里加了彩色光斑来给玻璃"咬东西"。
 struct PageBackdrop: View {
     var body: some View {
         ZStack {
@@ -40,10 +40,31 @@ struct PageBackdrop: View {
             )
             .ignoresSafeArea()
 
+            // 彩色光斑：给玻璃折射提供高对比内容，比纯符号有效得多
+            GeometryReader { geo in
+                let w = geo.size.width, h = geo.size.height
+                ZStack {
+                    blob(w * 0.16, h * 0.10, 190, Color(red: 0.62, green: 0.78, blue: 1.0))
+                    blob(w * 0.88, h * 0.20, 210, Color(red: 0.95, green: 0.78, blue: 0.92))
+                    blob(w * 0.10, h * 0.52, 170, Color(red: 0.76, green: 0.88, blue: 1.0))
+                    blob(w * 0.82, h * 0.68, 230, Color(red: 0.88, green: 0.82, blue: 1.0))
+                    blob(w * 0.42, h * 0.92, 200, Color(red: 0.70, green: 0.90, blue: 0.94))
+                }
+            }
+            .ignoresSafeArea()
+
             GlassBackdrop()
-                .opacity(0.35)
+                .opacity(0.5)
         }
         .allowsHitTesting(false)
+    }
+
+    private func blob(_ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ c: Color) -> some View {
+        Circle()
+            .fill(c.opacity(0.42))
+            .frame(width: size, height: size)
+            .blur(radius: 42)
+            .position(x: x, y: y)
     }
 }
 
@@ -54,20 +75,19 @@ struct GlassCard: ViewModifier {
     var strong = false
 
     func body(content: Content) -> some View {
-        // 底色 + 描边都用现有 Features 里已经验证过的 API 形态
-        // （.background(_:in:) / .overlay { } / .font(.caption)），
-        // 别用 .stroke()、.font(.system(size:weight:))、EdgeInsets 简写 ——
-        // 那些 shim 没实现，改了这里就验不了，只能等真机 CI 才发现问题。
-        content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(strong ? Theme.glassFillStrong : Theme.glassFill)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Theme.glassStroke.opacity(0.001))
-            }
-            .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 5)
+        // ⚠️ 这里**必须**委托给 LiquidGlass，不要自己叠半透明白。
+        //    LiquidGlass 内部已经处理好了两条路：
+        //      · iOS 26+ → 系统 .glassEffect()（真折射 / 动态高光 / 自适应阴影）
+        //      · iOS 17~25 → 手搓四层（.ultraThinMaterial 真实模糊 + 镜面描边 + 双阴影）
+        //    而且系统 glass 自带高光和描边，**再叠 background / overlay / shadow 会打架**，
+        //    叠出来的效果是"半透明白卡片"，不是液态玻璃 —— 这坑我踩过一次。
+        content.liquidGlass(
+            cornerRadius: cornerRadius,
+            tint: strong
+                ? [Color.white.opacity(0.30), Theme.pageTop.opacity(0.10)]
+                : [Color.white.opacity(0.22), Theme.pageTop.opacity(0.08)],
+            strength: strong ? 1.15 : 1.0
+        )
     }
 }
 
@@ -93,8 +113,10 @@ struct PillTag: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(color)
+            // ⚠️ 卡片本身就是玻璃了，标签再来一层半透明白会把玻璃糊掉，
+            //    玻璃的折射/高光就没了。改成纯色调（低透明度的彩色块）。
             .background(
-                Capsule().fill(filled ? color.opacity(0.16) : Color.white.opacity(0.5))
+                Capsule().fill(filled ? color.opacity(0.22) : color.opacity(0.12))
             )
     }
 }
@@ -126,11 +148,11 @@ struct GlassCapsule<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
+        // 同 GlassCard：委托给 LiquidGlass，别自己叠半透明白
         HStack(spacing: 0) { content() }
             .padding(.horizontal, 14)
             .frame(height: 40)
-            .background(Capsule().fill(Theme.glassFillStrong))
-            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 3)
+            .liquidGlass(cornerRadius: 999, strength: 1.1)
     }
 }
 
