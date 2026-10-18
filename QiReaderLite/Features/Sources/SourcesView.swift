@@ -7,6 +7,8 @@ struct SourcesView: View {
     @State private var showPaste = false
     @State private var showDiag = false
     @State private var importError: String?
+    @State private var netDiagText: String?
+    @State private var netDiagBusy = false
     @State private var filter = ""
 
     var shown: [BookSource] {
@@ -42,6 +44,15 @@ struct SourcesView: View {
                     Button { showDiag = true } label: {
                         Label("引擎自检", systemImage: "stethoscope")
                     }
+                    Button {
+                        netDiagBusy = true
+                        Task {
+                            netDiagText = await RuleSandbox.shared.probePlainHTTP()
+                            netDiagBusy = false
+                        }
+                    } label: {
+                        Label(netDiagBusy ? "检测中…" : "网络自检（明文HTTP）", systemImage: "network")
+                    }
                     if !store.sources.isEmpty {
                         Divider()
                         Button(role: .destructive) {
@@ -63,6 +74,13 @@ struct SourcesView: View {
             Button("知道了", role: .cancel) {}
         } message: {
             Text(RuleSandbox.shared.diagnose())
+        }
+        .alert("网络自检", isPresented: Binding(
+            get: { netDiagText != nil },
+            set: { if !$0 { netDiagText = nil } })) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(netDiagText ?? "")
         }
         .alert("导入失败", isPresented: Binding(
             get: { importError != nil },

@@ -141,7 +141,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         // 症状就是「分类能出来、一点书就报 App Transport Security」
         let ats = (Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]) ?? [:]
         let allowsHTTP = (ats["NSAllowsArbitraryLoads"] as? Bool) ?? false
-        lines.append("HTTP 明文站：\(allowsHTTP ? "已放开" : "**未放开 → 你装的是旧包**")")
+        lines.append("HTTP 明文站：\(allowsHTTP ? "已放开" : "**未放开**")")
         lines.append("就绪状态：\(ready ? "已就绪" : "未就绪")")
         if let e = lastError { lines.append("错误：\(e)") }
         let missing = ResourceLocator.missingScripts()
@@ -153,6 +153,50 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             lines.append("engine.html：**没找到**")
         }
         lines.append(contentsOf: bootLog.suffix(6).map { "· " + $0 })
+        return lines.joined(separator: "\n")
+    }
+
+    /// 真发一次明文 HTTP 请求，看系统到底放不放行。
+    ///
+    /// Info.plist 里写着"已放开"不作数 —— 有些签名/安装工具会改写 Info.plist，
+    /// 只有实际发一次请求才知道结果。这一条实测能区分两种情况：
+    ///   - 放行 → http 站能用，之前那次报错另有原因
+    ///   - -1022 → 这个包的 ATS 例外没生效，http 站全都不行
+    func probePlainHTTP() async -> String {
+        let ats = (Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]) ?? [:]
+        let plistSays = (ats["NSAllowsArbitraryLoads"] as? Bool) == true
+        var lines: [String] = []
+        lines.append("Info.plist 写着：\(plistSays ? "已放开" : "未放开")")
+        for url in ["http://neverssl.com/", "http://example.com/"] {
+            guard let u = URL(string: url) else { continue }
+            var req = URLRequest(url: u)
+            req.timeoutInterval = 10
+            req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+            // 用跟书源请求**同一种** session（ephemeral），
+            // 不然测出来放行、真发书源请求还是被拦，诊断就骗人了。
+            let cfg = URLSessionConfiguration.ephemeral
+            cfg.timeoutIntervalForRequest = 10
+            let session = URLSession(configuration: cfg)
+            do {
+                let (_, resp) = try await session.data(for: req)
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                lines.append("✅ \(url) → HTTP \(code)")
+                lines.append("")
+                lines.append("结论：**明文 HTTP 能用**。之前那次报错是别的原因。")
+                return lines.joined(separator: "\n")
+            } catch {
+                let ns = error as NSError
+                if ns.domain == NSURLErrorDomain,
+                   ns.code == NSURLErrorAppTransportSecurityRequiresSecureConnection {
+                    lines.append("❌ \(url) → 被系统拦（ATS -1022）")
+                } else {
+                    lines.append("⚠️ \(url) → \(ns.localizedDescription)（不是 ATS 问题）")
+                }
+            }
+        }
+        lines.append("")
+        lines.append("结论：**这个包的 ATS 例外没生效，http 明文站全都用不了。**")
+        lines.append("多半是签名/安装工具改写了 Info.plist。")
         return lines.joined(separator: "\n")
     }
 
