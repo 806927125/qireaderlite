@@ -56,7 +56,7 @@ struct PagedReaderView: View {
                     // 宁可丑也不能让正文消失
                     ScrollView {
                         Text(text)
-                            .font(config.resolvedFont)
+                            .font(Font(config.resolvedFont))
                             .foregroundStyle(Color(uiColor: config.textColor))
                             .lineSpacing(config.lineSpacing)
                             .padding(.horizontal, config.horizontalMargin)

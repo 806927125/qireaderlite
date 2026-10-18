@@ -85,6 +85,9 @@ ok(!/config\.backgroundColor\.ignoresSafeArea/.test(paged), '没有 UIColor 直�
 // UIColor 不是 ShapeStyle，foregroundStyle 要 Color
 ok(!/foregroundStyle\(config\.textColor\)/.test(paged), 'foregroundStyle 不能直接吃 UIColor');
 ok(/foregroundStyle\(Color\(uiColor: config\.textColor\)\)/.test(paged), '文字颜色先包成 Color');
+// .font() 要 SwiftUI Font，不是 UIFont
+ok(!/\.font\(config\.resolvedFont\)/.test(paged), '.font() 不能直接吃 UIFont');
+ok(/\.font\(Font\(config\.resolvedFont\)\)/.test(paged), 'UIFont 要包成 Font 再给 .font()');
 ok(!/window\.QiReader\.enable/.test(host), '别再把分页方法打到 window.QiReader 上');
 ok(/CTFramesetterCreateFrame/.test(paginator), '页框用 framesetter 生成');
 ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
