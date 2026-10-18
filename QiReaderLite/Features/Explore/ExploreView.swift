@@ -41,7 +41,7 @@ struct ExploreView: View {
                 list
             }
         }
-        .navigationTitle("发现")
+        .navigationTitle(current?.bookSourceName ?? "发现")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -97,32 +97,20 @@ struct ExploreView: View {
         }
     }
 
-    /// 内容区第一行：**只有**色块图标 + 书源名。
-    /// 返回键和分类胶囊都在系统导航栏那行（见 .toolbar）——
-    /// 之前它们跟这里的书源名不在同一行，看起来是错位的。
-    /// 书源名右边不加箭头：它不是可点的，是这一行的标题。
+    /// 榜单页内容区**没有任何头部**：书源名在导航栏标题上，
+    /// 分类胶囊在导航栏右侧，返回键也在导航栏。
+    /// 之前这里还有一行「色块图标 + 书源名」，跟导航栏标题重复了。
+    @ViewBuilder
     private var picker: some View {
-        HStack(spacing: 10) {
-            SourceBadge(name: current?.bookSourceName ?? "书源",
-                        isOn: current?.enabled ?? false,
-                        size: 34)
-
-            Text(current?.name ?? "没有可用书源")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Theme.ink)
-                .lineLimit(1)
-
-            Spacer()
-
-            // 老入口（没钉死书源）才留切书源的下拉；
-            // 钉死书源时书源名就是标题，右边不放箭头 —— 它不是可点的。
-            if pinnedSourceId == nil {
+        if pinnedSourceId == nil {
+            HStack(spacing: 10) {
                 SourcePicker(selection: $sourceId)
                     .fixedSize()
+                Spacer()
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -153,7 +141,12 @@ struct ExploreView: View {
         } else if books.count <= 1 {
             VStack(spacing: 14) {
                 List(BookDedup.unique(books)) { b in
-                    NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+                    // NavigationLink 外面套一层 HStack 才是去箭头的关键：
+                    // 直接放在 List 行里，SwiftUI 会在行尾自动加
+                    // disclosure indicator（">"）。栖阅的书籍卡片没有箭头。
+                    HStack(spacing: 0) {
+                        NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+                    }
                 }
                 .listStyle(.plain)
                 .disabled(true)
@@ -175,7 +168,11 @@ struct ExploreView: View {
         } else {
             List {
                 ForEach(BookDedup.unique(books)) { b in
-                    NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+                    // 同上：外层 HStack 抑制 List 行的 disclosure indicator，
+                    // 栖阅的书籍卡片右侧没有 ">"。
+                    HStack(spacing: 0) {
+                        NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
+                    }
                         // BookRow 自己是玻璃卡片，List 的默认行背景会把它压住
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)

@@ -66,10 +66,14 @@ struct SearchView: View {
                       subtitle: "换个关键词，或者换个书源试试")
         } else {
             List(BookDedup.unique(results)) { b in
-                NavigationLink {
-                    BookDetailView(book: b)
-                } label: {
-                    BookRow(book: b)
+                // 外层 HStack 抑制 List 行的 disclosure indicator（">"），
+                // 跟榜单页保持一致：栖阅的书籍卡片右侧没有箭头。
+                HStack(spacing: 0) {
+                    NavigationLink {
+                        BookDetailView(book: b)
+                    } label: {
+                        BookRow(book: b)
+                    }
                 }
                 // BookRow 是玻璃卡片，List 默认行背景会压住它
                 .listRowSeparator(.hidden)
