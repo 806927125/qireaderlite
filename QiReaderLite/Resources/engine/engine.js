@@ -656,6 +656,20 @@
                   }
                   out.元素统计 = '带class元素=' + (all ? all.length : 0)
                     + (tstat.length ? '  ' + tstat.join(' ') : '');
+
+                  // ★ 最有用的一块：把「书单条目」的完整 HTML 摆出来。
+                  // 光看候选 class 只能知道"哪个类重复多"，看不出书名藏在哪个标签，
+                  // 改规则改不对。直接给一条完整条目，剩下的照着写就行。
+                  var boxTags = ['dl', 'li', 'tr', 'article', 'section', 'ul'];
+                  var samples = [];
+                  for (var b = 0; b < boxTags.length && samples.length < 2; b++) {
+                    var list = null;
+                    try { list = doc.querySelectorAll(boxTags[b]); } catch (e4) { continue; }
+                    if (!list || list.length < 3) continue;
+                    samples.push('—— <' + boxTags[b] + '> ×' + list.length + ' 的第 1 条 ——\n'
+                      + String(list[0].outerHTML || '').replace(/\s+/g, ' ').slice(0, 900));
+                  }
+                  out.书单条目样本 = samples.length ? samples.join('\n\n') : '没找到像书单容器的标签';
                 }
               } catch (e) {
                 out.解析报错 = String(e && e.message || e);

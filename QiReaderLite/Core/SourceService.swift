@@ -129,7 +129,7 @@ final class SourceService {
         var out: [String] = []
         for k in ["请求URL", "最终URL", "方式", "状态码", "响应字节", "页面标题",
                   "用的规则", "bookList规则", "规则命中元素", "元素统计", "选择器报错",
-                  "解析报错", "结论", "候选列表容器"] {
+                  "解析报错", "结论", "候选列表容器", "书单条目样本"] {
             if let v = dict[k] {
                 let s = (v is String) ? (v as! String) : String(describing: v)
                 if s.isEmpty { continue }
