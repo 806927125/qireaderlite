@@ -44,7 +44,7 @@ struct PagedReaderView: View {
         GeometryReader { geo in
             let w = geo.size.width
             ZStack {
-                config.backgroundColor.ignoresSafeArea()
+                Color(uiColor: config.backgroundColor).ignoresSafeArea()
 
                 if text.isEmpty {
                     // 正文还没到（或者这一章确实是空的）——别显示空白页
@@ -77,7 +77,7 @@ struct PagedReaderView: View {
             .onChange(of: text) { _, _ in layout(in: geo.size) }
             .onChange(of: config.fontSize) { _, _ in layout(in: geo.size) }
         }
-        .background(config.backgroundColor.ignoresSafeArea())
+        .background(Color(uiColor: config.backgroundColor).ignoresSafeArea())
     }
 
     /// 分页结果是不是明显不对。
@@ -105,9 +105,9 @@ struct PagedReaderView: View {
     @ViewBuilder
     private func pageView(_ index: Int) -> some View {
         if pages.indices.contains(index) {
-            ReaderPageCanvas(frame: paginator.frame(at: index, pageSize: pageSize),
-                             size: pageSize,
-                             background: config.backgroundColor)
+            ReaderPageCanvas(ctFrame: paginator.frame(at: index, pageSize: pageSize),
+                             pageSize: pageSize,
+                             bgColor: config.backgroundColor)
                 .frame(width: pageSize.width, height: pageSize.height)
         } else {
             Color.clear

@@ -74,6 +74,14 @@ ok(!/paginateReady|repaginate/.test(web), 'ReaderWebView 不再有 CSS 分页的
 ok(!/installPaginate|callPaginateJS/.test(host), '没有残留的注入/调用');
 
 console.log('\n── 踩过的坑不能再踩 ──');
+// 存一个叫 frame 的属性 → 成员查找先命中它 → SwiftUI 的 .frame(width:height:) 被遮住
+ok(!/\n\s*let frame: CTFrame\?/.test(paginator), 'ReaderPageCanvas 别有 frame 属性（会遮住 .frame() 修饰符）');
+ok(!/\n\s*let size: CGSize/.test(paginator), '别有 size 属性（会遮住 .size()）');
+ok(!/\n\s*let background: UIColor/.test(paginator), '别有 background 属性（会遮住 .background()）');
+ok(/import SwiftUI/.test(paginator), 'ReaderPaginator.swift 要 import SwiftUI（用了 UIViewRepresentable）');
+ok(/Color\(uiColor: config\.backgroundColor\)/.test(paged),
+   'UIColor 不能直接 .ignoresSafeArea()，要先包成 Color');
+ok(!/config\.backgroundColor\.ignoresSafeArea/.test(paged), '没有 UIColor 直接当 View 用的残留');
 ok(!/window\.QiReader\.enable/.test(host), '别再把分页方法打到 window.QiReader 上');
 ok(/CTFramesetterCreateFrame/.test(paginator), '页框用 framesetter 生成');
 ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),

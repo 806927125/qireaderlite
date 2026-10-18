@@ -294,7 +294,6 @@ struct ReaderWebView: View {
                     Button("完成") {
                         showSettings = false
                         session.host.setSettings(settingsPayload(coverDataURL: nil))
-                        applyPageTurn()
                     }
                 }
             }

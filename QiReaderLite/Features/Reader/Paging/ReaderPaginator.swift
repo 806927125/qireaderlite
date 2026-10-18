@@ -1,5 +1,6 @@
 import CoreText
 import Foundation
+import SwiftUI
 import UIKit
 
 /// 一页正文
@@ -92,21 +93,26 @@ final class ReaderPaginator {
 /// 用 UIView 而不是 SwiftUI `Text` —— 分页要求**精确到字**，
 /// Text 没法指定"这一页只显示这些字"。
 struct ReaderPageCanvas: UIViewRepresentable {
-    let frame: CTFrame?
-    let size: CGSize
-    let background: UIColor
+    /// ⚠️ 别把这个属性叫 `frame` —— 成员查找会先命中它，
+    ///    把 SwiftUI 的 `.frame(width:height:)` 修饰符**遮住**，
+    ///    编译报 "cannot call value of non-function type 'CTFrame?'"。
+    let ctFrame: CTFrame?
+    /// ⚠️ 别叫 `size` / `background` —— 那是 View 的修饰符名，
+    ///    成员查找会先命中属性，把 `.size()` / `.background()` 遮住。
+    let pageSize: CGSize
+    let bgColor: UIColor
 
     func makeUIView(context: Context) -> PageView {
         let v = PageView()
-        v.backgroundColor = background
+        v.backgroundColor = bgColor
         v.isOpaque = true
         v.contentMode = .redraw
         return v
     }
 
     func updateUIView(_ v: PageView, context: Context) {
-        v.backgroundColor = background
-        v.ctFrame = frame
+        v.backgroundColor = bgColor
+        v.ctFrame = ctFrame
     }
 
     final class PageView: UIView {
