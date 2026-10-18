@@ -422,7 +422,7 @@
     var bySelector = false;
     try {
       var parsed = dom.parseChain(listRuleStr);
-      if (parsed.selector) { bySelector = true; nodes = dom.resolve(page.doc, listRuleStr).nodes; }
+      if (parsed.selector) { bySelector = true; nodes = rule.resolveNodes(listRuleStr, page.doc, ctx); }
     } catch (e) { bySelector = false; }
 
     var bases = bySelector && nodes.length ? nodes : [page.doc];
@@ -635,7 +635,7 @@
               try {
                 var doc = dom.parseHTML(body, out.最终URL || target.url);
                 var n = 0;
-                try { n = (dom.resolve(doc, ruleText(listRule.bookList)).nodes || []).length; }
+                try { n = rule.resolveNodes(ruleText(listRule.bookList), doc, {}).length; }
                 catch (e) { out.选择器报错 = String(e && e.message || e); }
                 out.规则命中元素 = n;
                 // 规则没命中时，扫一遍页面里"重复出现多次"的 class 当候选列表容器。
@@ -748,7 +748,7 @@
               try { doc = dom.parseHTML(body, out.最终URL || target.url); } catch (e) { out.解析报错 = String(e && e.message || e); }
               var nodes = [];
               if (doc) {
-                try { nodes = dom.resolve(doc, ruleText(tocRule.chapterList)).nodes || []; }
+                try { nodes = rule.resolveNodes(ruleText(tocRule.chapterList), doc, {}); }
                 catch (e2) { out.选择器报错 = String(e2 && e2.message || e2); }
               }
               out.规则命中元素 = nodes.length;
@@ -866,8 +866,10 @@
             markContent(ctx, page);
             var spec = ruleText(tr.chapterList);
             return rule.getElements(spec, page.doc, ctx).then(function () {
-              var nodes = [];
-              try { nodes = dom.resolve(page.doc, spec).nodes; } catch (e) {}
+              // ⚠️ 必须走 resolveNodes（自己解析 || 兜底链），
+              //    不能 dom.resolve(page.doc, spec) —— 后者把 || 各分支当并集，
+              //    `a[rel=chapter] || li a[href*="/info/"]` 会吐出 63 个而不是 17 个。
+              var nodes = rule.resolveNodes(spec, page.doc, ctx);
               var bases = nodes.length ? nodes : [page.doc];
               var idx = offset;
               return bases.reduce(function (acc, base) {
@@ -877,9 +879,16 @@
                     rule.getValue(ruleText(tr.chapterUrl), base, ctx)
                   ]).then(function (v) {
                     var title = (v[0] || '').trim();
-                    if (!title) return out;
+                    // 标题和 URL 都必须有才算一章。
+                    // ⚠️ 原来只查 title：站方在 <li> 里插纯文本（没 <a>）时，
+                    //    chapterUrl 拿到空串，absolutizeMaybe('', page.url)
+                    //    会**回落到详情页 URL** —— 于是凭空多出一堆"章节"，
+                    //    点进去全是同一本书的详情页。实测 m.powenxue15.com 的
+                    //    PC 版 15 个 <li> 里 7 个是纯文本 `<li>标题</li>`。
+                    var url = absolutizeMaybe(v[1], '');
+                    if (!title || !url) return out;
                     out.push({
-                      url: absolutizeMaybe(v[1], page.url),
+                      url: url,
                       title: title,
                       index: idx++,
                       isVolume: /卷|部|篇/.test(title) && !/第\s*\d+/.test(title),

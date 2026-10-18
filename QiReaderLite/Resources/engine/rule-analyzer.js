@@ -662,6 +662,46 @@
     });
   }
 
+  /**
+   * 按 Legado 的 多行 → `||` → `&&` 顺序找**第一个非空分支**，返回**节点**数组。
+   *
+   * ⚠️ 为什么不能直接 `dom.resolve(doc, rule)`：
+   *    `dom.resolve` 只认逗号分组，**完全不认 `||`**。
+   *    把 `#list dl dd||#list dd||#chapterlist dl dd` 这种带兜底链的
+   *    chapterList 原样丢进去，等于把各分支**并集**处理——
+   *    实测 `a[rel=chapter] || li a[href*="/info/"]` 在肉文屋详情页上
+   *    本该 17 章，实际吐出 **63 个节点**（17 + 46 个推荐书/导航混在一起），
+   *    目录直接废掉。而 book source 里 `||` 兜底链是**最常见**的写法。
+   *
+   *    getElements 的分支逻辑是对的，但它返回的是**字符串值**，
+   *    DOM 相关的调用（bookList / chapterList）要的是节点，所以这里补一份。
+   */
+  function resolveNodes(rule, base, ctx) {
+    // Legado 语义：规则前面加 `-` = 「站方列表是倒序，取出来反转成阅读顺序」。
+    // 很多站的详情页把**最新章放在最前**（实测 m.powenxue15.com 肉文屋：
+    // 17 章里 39483916 在最前，后面才是 39483902…），不加 `-` 目录就是倒的。
+    var raw = String(rule == null ? '' : rule).trim();
+    var reverse = false;
+    while (raw.charAt(0) === '-') { reverse = !reverse; raw = raw.slice(1).trim(); }
+    if (!raw) return [];
+
+    var lines = toLines(raw);
+    for (var i = 0; i < lines.length; i++) {
+      var orParts = splitTop(lines[i], ['||']);
+      for (var j = 0; j < orParts.length; j++) {
+        var andParts = splitTop(orParts[j], ['&&']);
+        for (var k = 0; k < andParts.length; k++) {
+          var r = null;
+          try { r = dom.resolve(base, andParts[k]); } catch (e) { continue; }
+          if (r && r.nodes && r.nodes.length) {
+            return reverse ? r.nodes.slice().reverse() : r.nodes;
+          }
+        }
+      }
+    }
+    return [];
+  }
+
   /** java.getStringMatch / java.getElements 的兼容入口 */
   function stringMatchAll(rule, text) {
     var k = classify(rule);
@@ -688,6 +728,7 @@
     toLines: toLines,
     getElements: getElements,
     getValue: getValue,
+    resolveNodes: resolveNodes,
     evalOne: evalOne,
     runJs: runJs,
     makeScope: makeScope,
