@@ -38,9 +38,29 @@ final class SourceService {
         if let dict = obj as? [String: Any], let msg = dict["error"] as? String, !msg.isEmpty {
             throw ServiceError.engineFailed(msg)
         }
+        // 书单走宽松解析：单本书坏掉不该让整页消失
+        if type == BookListDTO.self, let lenient = BookListDTO.lenient(obj) {
+            return lenient as! T
+        }
         let data = try JSONSerialization.data(withJSONObject: obj, options: [.fragmentsAllowed])
         do {
             return try AppDecoder.decode(type, from: data)
+        } catch let e as DecodingError {
+            // 把「哪一列出的问题」带出来，别只丢一句"解码失败"
+            let path = e.codingPath.map { k -> String in
+                k.intValue.map { "[\($0)]" } ?? k.stringValue
+            }.joined(separator: ".")
+            let why: String
+            switch e {
+            case .keyNotFound(let key, _):   why = "缺字段 \(key.stringValue)"
+            case .typeMismatch(let t, _):     why = "类型不匹配，要的是 \(t)"
+            case .valueNotFound(let t, _):   why = "值缺失（\(t)），该字段是 null"
+            case .dataCorrupted(let ctx):    why = "数据损坏：\(ctx.debugDescription)"
+            @unknown default:                 why = e.localizedDescription
+            }
+            let preview = String(data: data, encoding: .utf8)?.prefix(1200) ?? ""
+            throw ServiceError.engineFailed(
+                "解析 \(type) 失败 —— 出错字段：\(path.isEmpty ? "(根)" : path) / \(why)\n返回：\(preview)")
         } catch {
             // 引擎某一列的形状变了时，把原文带出来，别让上层只看到"解码失败"
             let preview = String(data: data, encoding: .utf8)?.prefix(300) ?? ""
@@ -59,13 +79,36 @@ final class SourceService {
         var coverUrl: String = ""
         var bookUrl: String = ""
         var wordCount: String = ""
-        /// ⚠️ 这个字段以前**根本没在 DTO 里声明** ——
-        /// 引擎 bookInfo 返回了 tocUrl，Swift 解码时直接丢掉，
-        /// toBook 再硬传 `tocUrl: ""`，于是**每一本书的 tocUrl 都是空的**。
-        /// 后果：目录永远退回书籍页 → chapterList 打不中 → 0 章，
-        /// 而且不报错，页面上什么都看不出来（详情看着还挺正常，因为
-        /// 书名/作者简介是从列表页带过来的）。实测「免费追书」全中招。
+        /// 引擎 bookInfo 会返回 tocUrl。之前这个字段压根没在 DTO 里声明，
+        /// 解码时直接丢掉、toBook 再硬传 `tocUrl: ""`，于是**每本书的 tocUrl 都是空的**
+        /// → 目录永远退回书籍页 → 0 章且不报错。
         var tocUrl: String = ""
+
+        init() {}
+
+        /// ⚠️ 逐列 `decodeIfPresent` + 默认值兜底，**不依赖编译器合成的行为** ——
+        ///    少一个字段（列表书没有 tocUrl）、某列是 null、或者站方换了字段形状，
+        ///    都只影响那一列，不会让整本书解不出来，进而让整页书单挂掉。
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            func g(_ k: K) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? "" }
+            name = g(.name);           author   = g(.author)
+            intro = g(.intro);         kind     = g(.kind)
+            lastChapter = g(.lastChapter); coverUrl = g(.coverUrl)
+            bookUrl = g(.bookUrl);     wordCount = g(.wordCount)
+            tocUrl = g(.tocUrl)
+        }
+        private enum K: String, CodingKey {
+            case name, author, intro, kind, lastChapter, coverUrl, bookUrl, wordCount, tocUrl
+        }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: K.self)
+            try c.encode(name, forKey: .name);         try c.encode(author, forKey: .author)
+            try c.encode(intro, forKey: .intro);       try c.encode(kind, forKey: .kind)
+            try c.encode(lastChapter, forKey: .lastChapter); try c.encode(coverUrl, forKey: .coverUrl)
+            try c.encode(bookUrl, forKey: .bookUrl);   try c.encode(wordCount, forKey: .wordCount)
+            try c.encode(tocUrl, forKey: .tocUrl)
+        }
     }
     struct BookListDTO: Codable {
         var books: [BookDTO] = []
@@ -74,6 +117,41 @@ final class SourceService {
         /// 引擎失败时会把原因放在这里。以前这个字段直接被丢掉，
         /// 结果就是「搜不出东西」但界面什么都不显示。
         var error: String? = nil
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            books    = (try? c.decodeIfPresent([BookDTO].self, forKey: .books)) as? [BookDTO] ?? []
+            total    = (try? c.decodeIfPresent(Int.self, forKey: .total)) as? Int ?? 0
+            nextUrl  = (try? c.decodeIfPresent(String.self, forKey: .nextUrl)) as? String ?? ""
+            error    = try? c.decodeIfPresent(String.self, forKey: .error)
+        }
+        private enum K: String, CodingKey { case books, total, nextUrl, error }
+
+        /// 从 WKWebView 桥过来的字典里**尽力**取出书单。
+        /// 之前是整份 JSON 丢给 JSONDecoder，一旦有**一本书**的字段形状对不上，
+        /// 整个数组就解不出来 → 页面直接显示「解析 BookListDTO 失败」+ 一个空列表。
+        /// 改成逐本单独解：坏的那本跳过，好的照常显示。
+        static func lenient(_ obj: Any?) -> BookListDTO? {
+            guard let dict = obj as? [String: Any] else { return nil }
+            var out = BookListDTO()
+            out.error = dict["error"] as? String
+            out.total = (dict["total"] as? NSNumber)?.intValue ?? 0
+            out.nextUrl = (dict["nextUrl"] as? String) ?? ""
+            var list: [BookDTO] = []
+            if let arr = dict["books"] as? [Any] {
+                for item in arr {
+                    guard let one = item as? [String: Any],
+                          let data = try? JSONSerialization.data(withJSONObject: one),
+                          let b = try? AppDecoder.decode(BookDTO.self, from: data)
+                    else { continue }
+                    list.append(b)
+                }
+            }
+            out.books = list
+            return out
+        }
     }
     struct BookInfoDTO: Codable {
         var book: BookDTO?

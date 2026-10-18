@@ -60,5 +60,17 @@ for (const k of biKeys) {
   ok(!!biBlock && new RegExp(`var ${k}\\s*:`).test(biBlock[0]), `BookInfoRule 声明了 ${k}`);
 }
 
+console.log('\n── 书单必须能扛住「少字段 / null」（build 20 回归）──');
+ok(/decodeIfPresent\(String\.self, forKey: k\)/.test(dto),
+   'BookDTO 逐列 decodeIfPresent（不依赖编译器合成的默认行为）');
+ok(/tocUrl = g\(\.tocUrl\)/.test(dto), 'tocUrl 也走 decodeIfPresent（列表书没这列不会炸）');
+const listBlock = /struct BookListDTO: Codable \{([\s\S]*?)\n    \}/.exec(svc);
+ok(!!listBlock, '能定位到 BookListDTO');
+ok(/static func lenient\(/.test(svc),
+   'BookListDTO 有 lenient()：单本书解不出来只跳过它，不让整页书单消失');
+ok(/for item in arr/.test(svc) && /continue/.test(svc), 'lenient 逐本单独解并跳过坏数据');
+ok(/case \.keyNotFound/.test(svc) && /codingPath/.test(svc),
+   '解码报错带上出错字段路径（下一轮不用再猜）');
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);
