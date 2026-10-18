@@ -7,6 +7,8 @@ struct BookDetailView: View {
 
     @State private var book: Book
     @State private var chapters: [Chapter] = []
+    @State private var tocDiag: String?
+    @State private var tocDiagBusy = false
     @State private var loading = false
     @State private var statusText = ""
     @State private var showCatalog = false
@@ -25,6 +27,26 @@ struct BookDetailView: View {
                 if !book.kind.isEmpty || !book.lastChapter.isEmpty { meta }
                 intro
                 if !statusText.isEmpty && chapters.isEmpty { Text(statusText).font(.footnote).foregroundStyle(.orange) }
+                if !chapters.isEmpty && chapters.count <= 2 {
+                    HStack(spacing: 6) {
+                        Text("只解析出 \(chapters.count) 章，多半不对")
+                            .font(.caption).foregroundStyle(.orange)
+                        Button {
+                            guard let src = source else { return }
+                            tocDiagBusy = true
+                            Task {
+                                tocDiag = (try? await SourceService.shared.explainToc(
+                                    source: src,
+                                    tocUrl: book.tocUrl.isEmpty ? book.cleanBookUrl : book.tocUrl,
+                                    bookUrl: book.cleanBookUrl)) ?? "诊断跑失败了"
+                                tocDiagBusy = false
+                            }
+                        } label: {
+                            Text(tocDiagBusy ? "诊断中…" : "点我诊断")
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                }
                 Spacer(minLength: 30)
             }
             .padding(16)
@@ -44,6 +66,12 @@ struct BookDetailView: View {
         }
         .fullScreenCover(item: $readerChapter) { ch in
             ReaderView(book: book, chapters: chapters, start: ch)
+        }
+        .alert("目录诊断", isPresented: Binding(
+            get: { tocDiag != nil }, set: { if !$0 { tocDiag = nil } })) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(tocDiag ?? "")
         }
     }
 

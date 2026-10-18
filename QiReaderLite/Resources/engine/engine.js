@@ -692,6 +692,101 @@
       });
     },
 
+    /**
+     * 诊断目录：跟 explain 一个路子，把目录页的真实结构摊开。
+     * 目录不对基本就三种：URL 拿错、规则没命中、命中了但章节名/链接取错。
+     */
+    explainToc: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var tocRule = src.ruleToc || {};
+        var ctx = { baseUrl: baseUrlOf(src), source: src };
+        var out = {};
+        var raw = p.tocUrl || p.bookUrl || '';
+        return buildUrl(raw, ctx).then(function (target) {
+          out.请求URL = target.url || String(raw);
+          if (!target.url) { out.结论 = '目录 URL 为空'; return out; }
+          return QR.java.rawRequest(target.url, 'GET', target.headers || {}, '', 20000)
+            .then(function (resp) {
+              var body = resp._body || resp.body || '';
+              out.最终URL = resp.url || resp._url || '';
+              out.状态码 = resp._code || resp.code || 0;
+              out.响应字节 = body.length;
+              out.页面标题 = ((body.match(/<title[^>]*>([\s\S]{0,100}?)<\/title>/i) || [])[1] || '')
+                .replace(/\s+/g, ' ').trim();
+              out.chapterList规则 = ruleText(tocRule.chapterList);
+              out.chapterName规则 = ruleText(tocRule.chapterName);
+              out.chapterUrl规则 = ruleText(tocRule.chapterUrl);
+              var doc = null;
+              try { doc = dom.parseHTML(body, out.最终URL || target.url); } catch (e) { out.解析报错 = String(e && e.message || e); }
+              var nodes = [];
+              if (doc) {
+                try { nodes = dom.resolve(doc, ruleText(tocRule.chapterList)).nodes || []; }
+                catch (e2) { out.选择器报错 = String(e2 && e2.message || e2); }
+              }
+              out.规则命中元素 = nodes.length;
+              // 命中的话，打印第一条命中项的完整 HTML —— 看章节名和链接到底在哪
+              if (nodes.length) {
+                out.命中条目样本 = String(nodes[0].outerHTML || '').replace(/\s+/g, ' ').slice(0, 900);
+                try {
+                  var nm = rule.getValue(ruleText(tocRule.chapterName), nodes[0], ctx);
+                  var ur = rule.getValue(ruleText(tocRule.chapterUrl), nodes[0], ctx);
+                  Promise.all([nm, ur]).then(function (v) {
+                    out.取到的章节名 = String(v[0] || '').slice(0, 60);
+                    out.取到的章节URL = String(v[1] || '').slice(0, 120);
+                  });
+                } catch (e3) { out.取值报错 = String(e3 && e3.message || e3); }
+              }
+              // 没命中 → 扫候选容器（跟 explain 一样）
+              if (nodes.length === 0 && doc) {
+                var counts = {}, tags = {};
+                try {
+                  var all = doc.querySelectorAll('[class]');
+                  for (var i = 0; i < all.length && i < 6000; i++) {
+                    var parts = (all[i].getAttribute('class') || '').trim().split(/\s+/);
+                    for (var j = 0; j < parts.length; j++) {
+                      var c = parts[j]; if (!c) continue;
+                      if (!counts[c]) counts[c] = { n: 0, s: '' };
+                      counts[c].n++; tags[c] = all[i].tagName;
+                      if (!counts[c].s && counts[c].n === 3) {
+                        counts[c].s = String(all[i].outerHTML || '').replace(/\s+/g, ' ').slice(0, 180);
+                      }
+                    }
+                  }
+                } catch (e4) {}
+                var cand = Object.keys(counts).filter(function (c) { return counts[c].n >= 5; })
+                  .sort(function (a, b) { return counts[b].n - counts[a].n; }).slice(0, 6);
+                out.候选容器 = cand.map(function (c) {
+                  return '.' + c + ' ×' + counts[c].n + ' <' + tags[c] + '>'
+                    + (counts[c].s ? '\n    ' + counts[c].s : '');
+                }).join('\n') || '页面里没有重复出现的 class';
+                var tg = ['dl', 'dd', 'li', 'tr', 'article', 'section', 'div', 'table'];
+                var ts = [];
+                for (var t = 0; t < tg.length; t++) {
+                  var n2 = 0; try { n2 = doc.querySelectorAll(tg[t]).length; } catch (e5) { continue; }
+                  if (n2 > 5) ts.push(tg[t] + '=' + n2);
+                }
+                out.元素统计 = ts.join('  ') || '(没有明显容器标签)';
+                var box = ['dl', 'dd', 'ul', 'ol', 'div', 'section'];
+                var sm = [];
+                for (var b = 0; b < box.length && sm.length < 2; b++) {
+                  var lst = null; try { lst = doc.querySelectorAll(box[b]); } catch (e6) { continue; }
+                  if (!lst || lst.length < 5) continue;
+                  sm.push('—— <' + box[b] + '> ×' + lst.length + ' 的第 1 条 ——\n'
+                    + String(lst[0].outerHTML || '').replace(/\s+/g, ' ').slice(0, 900));
+                }
+                out.目录容器样本 = sm.join('\n\n') || '没找到像目录容器的标签';
+              }
+              if (nodes.length === 0) out.结论 = '**chapterList 一个都没命中** —— 目录规则对不上';
+              else out.结论 = '命中 ' + nodes.length + ' 条（看下面的章节名/URL 对不对）';
+              return out;
+            })
+            .catch(function (e) { out.结论 = '请求失败：' + String(e && e.message || e); return out; });
+        });
+      });
+    },
+
     /** 书籍详情 */
     bookInfo: function (p) {
       var src = p.source || {};

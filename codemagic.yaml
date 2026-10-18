@@ -44,7 +44,7 @@ configs:
         ENABLE_BITCODE: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.qireaderlite.app
         # 版本号，跟 App Store Connect 上传时保持一致
-        MARKETING_VERSION: "2.1"
+        MARKETING_VERSION: "2.2"
         CURRENT_PROJECT_VERSION: "1"
 
     scripts:
