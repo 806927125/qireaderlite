@@ -137,6 +137,18 @@ struct BookInfoRule: Codable, Hashable {
     var wordCount: RuleValue = .none
     var canReName: RuleValue = .none
 
+    /// Legado 的 `ruleBookInfo.init`：在详情页结果上跑一次，
+    /// **把输出当成后面所有字段规则的基准**。JSON 接口源几乎全靠它
+    /// （`init: "$.data"` 把 `{code,msg,data:{…}}` 缩成 `{…}`）。
+    ///
+    /// ⚠️ Swift **不允许**存储属性取名 `init` —— 那是初始化器保留字，
+    ///    编译器直接报错。所以属性叫 `initRule`，但对外的 JSON 键
+    ///    必须仍是 `init`：`SourceService.call` 是
+    ///    `AppEncoder.encode(source)` **重新编码**后才发给 JS 引擎的，
+    ///    键名对不上引擎就永远看不到这条规则（实测「免费追书」书源
+    ///    详情页所有字段全空）。解码走 K，编码走 CodingKeys，两边都是 `init`。
+    var initRule: RuleValue = .none
+
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
@@ -146,9 +158,16 @@ struct BookInfoRule: Codable, Hashable {
         lastChapter = g(.lastChapter, .none); coverUrl = g(.coverUrl, .none)
         tocUrl = g(.tocUrl, .none);   wordCount  = g(.wordCount, .none)
         canReName = g(.canReName, .none)
+        initRule = g(.initRule, .none)
     }
     private enum K: String, CodingKey {
         case name, author, intro, kind, lastChapter, coverUrl, tocUrl, wordCount, canReName
+        case initRule = "init"
+    }
+    /// 合成 `encode(to:)` 用的键名；Swift 会优先找 CodingKeys。
+    enum CodingKeys: String, CodingKey {
+        case name, author, intro, kind, lastChapter, coverUrl, tocUrl, wordCount, canReName
+        case initRule = "init"
     }
 }
 

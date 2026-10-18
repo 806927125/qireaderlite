@@ -201,6 +201,25 @@
         .then(function (r) { return (r.value || []).map(b64decode); });
     },
     getStringWrapper: function (s) { return String(s == null ? '' : s); },
+    /**
+     * Legado 的 java.timeFormat：把日期字符串转成 epoch 毫秒。
+     * 书源常写 `updateTime: "{{java.timeFormat(java.getString('$.updateDate'))}}"`
+     * 来给章节标时间。站方给的多是 "2017-04-24 14:16:34" / "2017/04/24" /
+     * "2017-04-24T14:16:34.000Z"，这里做纯 JS 解析，不碰原生。
+     * 解析不了就返回 0（跟 Legado 一样，不抛）。
+     */
+    timeFormat: function (t) {
+      var s = String(t == null ? '' : t).trim();
+      if (!s) return 0;
+      if (/^\d+$/.test(s)) { var n0 = parseInt(s, 10); return s.length <= 10 ? n0 * 1000 : n0; }
+      var m = s.match(/(\d{4})[-\/年](\d{1,2})[-\/月](\d{1,2})日?(?:[T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+      if (m) {
+        return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+      }
+      var d = new Date(s);
+      var ms = d.getTime();
+      return isNaN(ms) ? 0 : ms;
+    },
 
     // 本地变量：跨规则传递中间结果。语料里 java.put/java.get 有 800+ 条
     put: function (k, v) { varStore()[String(k)] = v; return v; },

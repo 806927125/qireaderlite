@@ -251,6 +251,52 @@
     return ctx;
   }
 
+/**
+   * JSONPath 的结果被 flatten 成**字符串**了，
+   * 后面 `{{$.bookid}}` 这种字段模板打在字符串上必然取空 —— 复活成对象。
+   */
+  function reviveJsonNode(n) {
+    if (typeof n !== 'string') return n;
+    var t = n.replace(/^[\s]+|[\s]+$/g, '');
+    if (t.charAt(0) !== '{' && t.charAt(0) !== '[') return n;
+    try { return JSON.parse(t); } catch (e) { return n; }
+  }
+
+  /**
+   * 章节条目 → {title,url} 列表。DOM 节点和 JSON 对象两条路共用，
+   * 校验规则也只写一份（标题和 URL 都要有、URL 按 pageUrl 展开）。
+   */
+  function collectChapters(bases, offset, pageUrl, tocRule, tocCtx) {
+    var idx = offset;
+    return bases.reduce(function (acc, base) {
+      return acc.then(function (out) {
+        return Promise.all([
+          rule.getValue(ruleText(tocRule.chapterName), base, tocCtx),
+          rule.getValue(ruleText(tocRule.chapterUrl), base, tocCtx)
+        ]).then(function (v) {
+          var title = (v[0] || '').trim();
+          // 标题和 URL 都必须有才算一章。
+          // 原来只查 title：站方在 <li> 里插纯文本（没 <a>）时 chapterUrl 是空串，
+          // absolutizeMaybe('', page.url) 会**回落到详情页 URL** → 一堆假章节。
+          //
+          // 判空必须在 absolutize **之前**，基准仍要是 pageUrl：
+          // 写成 absolutizeMaybe(v[1], '') 的话，站方的**相对**章节地址
+          // 不会被展开，WKWebView 直接甩「不支持的URL」（build 15 踩过）。
+          var rawUrl = (v[1] || '').trim();
+          if (!title || !rawUrl) return out;
+          out.push({
+            url: absolutizeMaybe(rawUrl, pageUrl),
+            title: title,
+            index: idx++,
+            isVolume: /卷|部|篇/.test(title) && !/第\s*\d+/.test(title),
+            tag: ''
+          });
+          return out;
+        });
+      });
+    }, Promise.resolve([]));
+  }
+
   function fetchPage(target, ctx) {
     return QR.java.rawRequest(target.url, target.method || 'GET',
                               target.headers || {}, target.body || '',
@@ -283,6 +329,12 @@
     var u = String((src && src.bookSourceUrl) || '');
     var i = u.indexOf('##');
     if (i >= 0) u = u.substring(0, i);
+    // Legado 约定 `bookSourceUrl` 可以写成 `https://host@用户名:密码`
+    // （HTTP Basic 认证）或 `https://host@用户名`。
+    // `@` 之后不是 URL 的一部分 —— 不切掉的话基准变成
+    // `https://host@遇知`，相对路径全拼歪（实测「免费追书」书源）。
+    var at = u.indexOf('@', u.indexOf('://') > 0 ? u.indexOf('://') + 3 : 0);
+    if (at > 0) u = u.substring(0, at);
     return u.replace(/\/+$/, '');
   }
 
@@ -824,7 +876,34 @@
         return fetchPage({ url: url, headers: {} }, { baseUrl: url }).then(function (page) {
           var ctx = { baseUrl: page.url, source: src, book: p.book };
           markContent(ctx, page);
-          function f(rv) { return rule.getValue(ruleText(rv), page.doc, ctx); }
+          // Legado 的 `ruleBookInfo.init`：在详情页结果上跑一次，
+          // **把它的输出当成后面所有字段规则的基准节点**。
+          // JSON 接口源几乎全靠它 —— 比如 `init: "$.data"` 把
+          // `{code,msg,data:{...}}` 缩成 `{...}`，后面 `$.authorName` 才有值。
+          // 不支持的话所有 $.xxx 都会打在 {code,msg,data} 这一层上 → 字段全空。
+          var initText = ruleText(bi.init);
+          // ⚠️ getElements 返回的是 **Promise**，必须 await ——
+          //    同步去读 .values 永远拿到 undefined（Promise 上没有这个属性），
+          //    于是 base 一直停在整页，init 等于没跑。
+          return rule.getElements(initText.trim() || '$$__no_init__$$', page.doc, ctx)
+            .then(function (r) {
+              var iv = r && r.values ? r.values : null;
+              if (!initText.trim() || !iv || !iv.length) return page.doc;
+              var b = iv[0];
+              // getElements 给的是**字符串**值（JSONPath 结果会被序列化）。
+              // `init: "$.data"` 拿到的是那段 JSON 文本，直接当基准的话
+              // 后面 `{{$.bookId}}` 会在字符串上取字段 → 空。先 parse 回对象。
+              if (typeof b === 'string') {
+                var t = b.replace(/^[\s]+|[\s]+$/g, '');
+                if (t.charAt(0) === '{' || t.charAt(0) === '[') {
+                  try { b = JSON.parse(t); } catch (e) { /* 保持原样 */ }
+                }
+              }
+              return b;
+            })
+            .catch(function () { return page.doc; })
+            .then(function (initBase) {
+          function f(rv) { return rule.getValue(ruleText(rv), initBase, ctx); }
           // tocUrl 缺失时默认就是书籍页本身
           return Promise.all([
             f(bi.name), f(bi.author), f(bi.intro), f(bi.kind),
@@ -843,6 +922,7 @@
               }
             };
           });
+            });
         });
       }).catch(function (e) {
         return { book: null, error: String(e && e.message || e) };
@@ -866,43 +946,33 @@
             markContent(ctx, page);
             var spec = ruleText(tr.chapterList);
             return rule.getElements(spec, page.doc, ctx).then(function () {
+              // ★ JSON 响应的目录：章节是 JSON 对象（`$.list..bookChapters[*]`），
+              //   不是 DOM 节点。必须直接 jsonpath 取**对象**，
+              //   否则 resolveNodes 在 Document 上按 CSS 解析 → 0 节点 → 退回整页，
+              //   结果目录为空。跟 extractBooks 的 JSON 分支是一对。
+              if (ctx && ctx.isJSON) {
+                var jItems = [];
+                try {
+                  var jKind = rule.classify(spec, ctx);
+                  if (rule.T && rule.T.JSONPATH === jKind || jKind === 'jsonpath') {
+                    jItems = QR.jsonpath.select(JSON.parse(page.text),
+                      rule.stripModePrefix(spec, jKind)) || [];
+                  }
+                } catch (e) { jItems = []; }
+                if (!jItems.length) {
+                  try {
+                    jItems = (rule.getElements(spec, page.text, ctx).values || [])
+                      .map(reviveJsonNode);
+                  } catch (e2) { jItems = []; }
+                }
+                return collectChapters(jItems, offset, page.url, tr, ctx);
+              }
               // ⚠️ 必须走 resolveNodes（自己解析 || 兜底链），
               //    不能 dom.resolve(page.doc, spec) —— 后者把 || 各分支当并集，
               //    `a[rel=chapter] || li a[href*="/info/"]` 会吐出 63 个而不是 17 个。
               var nodes = rule.resolveNodes(spec, page.doc, ctx);
-              var bases = nodes.length ? nodes : [page.doc];
-              var idx = offset;
-              return bases.reduce(function (acc, base) {
-                return acc.then(function (out) {
-                  return Promise.all([
-                    rule.getValue(ruleText(tr.chapterName), base, ctx),
-                    rule.getValue(ruleText(tr.chapterUrl), base, ctx)
-                  ]).then(function (v) {
-                    var title = (v[0] || '').trim();
-                    // 标题和 URL 都必须有才算一章。
-                    // ⚠️ 原来只查 title：站方在 <li> 里插纯文本（没 <a>）时，
-                    //    chapterUrl 拿到空串，absolutizeMaybe('', page.url)
-                    //    会**回落到详情页 URL** —— 于是凭空多出一堆"章节"，
-                    //    点进去全是同一本书的详情页。实测 m.powenxue15.com 的
-                    //    PC 版 15 个 <li> 里 7 个是纯文本 `<li>标题</li>`。
-                    //
-                    // ⚠️ 判空必须在 absolutize **之前**，而且基准仍要是 page.url：
-                    //    早先图省事写成 absolutizeMaybe(v[1], '')，结果站方的
-                    //    **相对**章节地址（/info/1/2.html）不会被展开，
-                    //    WKWebView 直接甩「不支持的URL」—— 这是 build 15 的回归。
-                    var rawUrl = (v[1] || '').trim();
-                    if (!title || !rawUrl) return out;
-                    out.push({
-                      url: absolutizeMaybe(rawUrl, page.url),
-                      title: title,
-                      index: idx++,
-                      isVolume: /卷|部|篇/.test(title) && !/第\s*\d+/.test(title),
-                      tag: ''
-                    });
-                    return out;
-                  });
-                });
-              }, Promise.resolve([]));
+              return collectChapters(nodes.length ? nodes : [page.doc],
+                                     offset, page.url, tr, ctx);
             }).then(function (list) {
               // 站方给了 nextTocUrl 就用它，否则自己找「下一页」链接
               var explicit = '';

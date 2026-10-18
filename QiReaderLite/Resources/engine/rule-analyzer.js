@@ -80,8 +80,12 @@
     if (/^@XPath:/i.test(s)) return T.XPATH;
     if (/^@Json:/i.test(s)) return T.JSONPATH;
 
-    // 内容类型决定：JSON 响应 → 整链 JSONPath
-    if (ctx && ctx.isJSON) return T.JSONPATH;
+    // 内容类型决定：JSON 响应 → JSONPath。
+    // ⚠️ 但**必须同时要求规则本身长得像 JSONPath**（以 $ 开头）：
+    //    否则 JSON 响应里的 `{{$.grade}}分`（插值成 "85分"）、`{{java.put(...)}}`
+    //    这些**值类型**规则会被硬塞进 JSONPath 解析器 → 一律返回空。
+    //    实测「免费追书」书源整个详情页字段全空，就是这一条引起的。
+    if (ctx && ctx.isJSON && /^\s*\$/.test(s)) return T.JSONPATH;
     if (/^\$\s*[.\[]/.test(s)) return T.JSONPATH;
     // 规则以 / 开头 → XPath（Legado 原注释：XPath 特征很明显，无需识别标头）
     if (s.charAt(0) === '/') return T.XPATH;
@@ -324,7 +328,7 @@
       var whole = String(rule).trim();
       return Promise.resolve(whole ? [whole] : []);
     }
-    // 部分插值后不再是选择器的，也原样返回。
+
     // ⚠️ **必须要求插值真的发生过**（rule !== rawRule）：
     //    不加这个判断，`chapterName: 'a@text || text'` 里的兜底裸词 `text`
     //    会被当**字面量**返回，目录里就出现一排字面写着 "text" 的章节；
@@ -345,8 +349,22 @@
     kind = classify(body);
     if (!body && kind === T.EMPTY) return Promise.resolve([]);
 
+    // ⚠️ 切掉 ##尾部## 之后必须**再判一次字面量**。
+    //    上面第 ~346 行那次判定是针对整条规则的，而带尾部的规则里
+    //    `##(^|X)##$1` 含 `|` `(` `[`，过不了那个判定；等切完尾部，
+    //    body 就只剩插值出来的**值**（比如一整段简介），却还会被
+    //    classify 判成 SELECTOR 去查选择器 → 直接返回空。
+    //    表现：`{{$.introduction}}##(^|[。！？]+…)##$1<br>` 得到空简介。
+    // 「含 {{ 的规则是模板产出一个值」这条约定要贯彻到底：
+    // 只要插值真的发生过（rule !== rawRule），插值结果就是**值**，
+    // 不能再当选择器去查 —— 否则带换行、带 `>`（<br>）、带 `.`（105.3万字）
+    // 的简介/分类模板都会落到 CSS 解析路径上返回空。
+    var headIsValue = (rule !== rawRule && kind === T.SELECTOR && !!body);
+
     var p;
-    switch (kind) {
+    if (headIsValue) {
+      p = Promise.resolve([body]);
+    } else switch (kind) {
       case T.JS: {
         p = runJs(stripJsWrapper(body), makeScope(jsScope(base, base, ctx, body)));
         break;
@@ -376,7 +394,6 @@
         }).filter(function (s) { return s !== ''; }));
       }
     }
-
     return p.then(function (res) {
       var list = flatten(res, baseUrl);
       if (tail) list = applyTail(list, tail, ctx, base);
@@ -412,6 +429,43 @@
     return v;
   }
 
+  /**
+   * 规则里用的 java —— 在原生 java 之上给 get/getString 加一层回退。
+   *
+   * 书源里极常见 `{{java.getString('$.bookStatue')=='03'?'完结':'连载'}}`
+   * 这种写法：把 `$.字段` 当**取值**用。
+   * 而原生 `java.get(k)` 只查 @put/@get 的变量表，'$.bookStatue' 不是变量名 → 恒空
+   * → 三元永远走另一支（完结的书会显示"连载"）。
+   *
+   * 所以：变量表里有就用变量表；没有且参数长得像 `$` 路径，就回退到**当前规则结果**上取。
+   */
+  function ruleJava(base, result) {
+    if (!base) return base;
+    var j = Object.create(base);
+    function resolveArg(k) {
+      var v = typeof base.get === 'function' ? base.get(k) : '';
+      if (v != null && String(v) !== '') return v;
+      var s = String(k == null ? '' : k).trim();
+      if (s.charAt(0) !== '$' || result == null) return v == null ? '' : v;
+      try { return evalJsonPath(result, s); } catch (e) { /* 继续手写路径 */ }
+      var m = /^\$\.([\w.]+)$/.exec(s);
+      if (m) {
+        var cur = result;
+        var parts = m[1].split('.');
+        for (var i = 0; i < parts.length; i++) {
+          if (cur == null) return '';
+          cur = cur[parts[i]];
+        }
+        return cur == null ? '' : cur;
+      }
+      return v == null ? '' : v;
+    }
+    j.get = resolveArg;
+    j.getString = function (k) { var r = resolveArg(k); return r == null ? '' : String(r); };
+    j.getInt = function (k) { return parseInt(resolveArg(k), 10) || 0; };
+    return j;
+  }
+
   function jsScope(result, base, ctx, code) {
     return {
       // 多值规则的 result 必须是数组，书源里会写 result.length / result[0] / result.map
@@ -419,6 +473,9 @@
              : (result && result.nodeType ? dom.textOf(result) : result),
       $: asJsonish(result),
       resultNode: result,
+      // 覆盖 makeScope 的默认 java：让 get/getString 能回退到「当前结果」
+      // （书源里 `java.getString('$.字段')` 当取值用，非常常见）
+      java: ruleJava(g.java, result),
       // 站方 @js: 里经常直接 document.querySelectorAll，
       // 得把它指向当前规则的基准文档，而不是引擎自己的空页面
       document: ownerDocOf(base),
@@ -505,8 +562,14 @@
   }
 
   function evalJsonPath(text, rule) {
-    var data;
-    try { data = JSON.parse(text); } catch (e) { return []; }
+    // 入参既可能是 **JSON 字符串**（响应正文），也可能是**已解析的对象**
+    // （`{{$.tags..name}}` 里 scope.result 就是对象）。
+    var data = text;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (e) { return []; }
+    } else if (data == null || typeof data !== 'object') {
+      return [];
+    }
     var r = QR.jsonpath.select(data, rule);
     return flatten(r, '');
   }
@@ -560,13 +623,51 @@
   var URL_PLACEHOLDER = /^(page|pageIndex)$/i;
 
   function evalExpr(expr, scope) {
+    // Legado 的 `{{…}}` 里，`$.xxx` 走 **JSONPath**，其余走 JS。
+    // 但我们这里只做裸 eval —— 于是 `$.tags..name` 这种**递归下降**
+    // 在 JS 里是语法错误（`$..name` 不是合法 JS），求值失败被吞成空串。
+    // `..`、`[*]`、`[?(…)]` 这些 JSONPath 特征词一律走 JSONPath 引擎。
+    var e = String(expr == null ? '' : expr);
+    if (/^\s*\$/.test(e) && /(\.\.|\[\s*\*|\[\s*\?\s*\(|\[\s*\d+\s*:\s*\d*\s*\])/.test(e)) {
+      try {
+        var jv = evalJsonPath(scope && scope.result, e.trim());
+        return jv;
+      } catch (err) { /* 落到下面的 eval */ }
+    }
     try {
       var names = Object.keys(scope);
       var fn = new Function(names.concat(['__qrE']).join(','), 'return eval(__qrE);');
       return fn.apply(scope, names.map(function (k) { return scope[k]; }).concat([expr]));
-    } catch (e) {
+    } catch (e2) {
       return '';
     }
+  }
+
+  /** {{…}} 里的 `##正则##替换`：按顶层 ## 切成三段（正则里可能含 ## 之外的 ##） */
+  function splitRegexTailTop(expr) {
+    var s = String(expr == null ? '' : expr);
+    var i = s.indexOf('##');
+    if (i <= 0) return null;
+    var head = s.slice(0, i);
+    // 正则里常见 {2,3} 这种量词；只在 ## 边界切，别被花括号骗了
+    var j = s.indexOf('##', i + 2);
+    if (j < 0) return { head: head, pattern: s.slice(i + 2), replace: null };
+    return {
+      head: head,
+      pattern: s.slice(i + 2, j),
+      replace: s.slice(j + 2)
+    };
+  }
+
+  /** 对单个字符串做 `正则 → 替换`（替换串支持 $1 $2 反向引用） */
+  function applyInlineRegex(str, pattern, replace) {
+    if (!pattern) return str;
+    var re;
+    try { re = new RegExp(pattern, 'g'); } catch (e) { return str; }
+    var rep = replace == null ? '' : String(replace);
+    return String(str).replace(re, function () {
+      return replaceAll(arguments[0], rep, arguments);
+    });
   }
 
   /**
@@ -593,7 +694,17 @@
       i = end + 1;
       if (!expr || URL_PLACEHOLDER.test(expr)) out += s.slice(a, end + 1);
       else {
-        var v = evalExpr(expr, scope);
+        // Legado 允许 `{{值##正则##替换}}` —— 先求值 `值`，再对结果做正则替换。
+        // 不拆的话整段 `$.tags..name##\s##，` 会原样进 eval，必炸。
+        var seg = splitRegexTailTop(expr);
+        var v;
+        if (seg) {
+          v = evalExpr(seg.head, scope);
+          var sv = (v === null || v === undefined) ? '' : String(v);
+          v = applyInlineRegex(sv, seg.pattern, seg.replace);
+        } else {
+          v = evalExpr(expr, scope);
+        }
         out += (v === null || v === undefined) ? '' : String(v);
       }
     }
@@ -616,7 +727,16 @@
   }
 
   function getElements(rule, base, ctx) {
-    var lines = toLines(rule);
+    // ⚠️ 含 `{{` 的规则**不按行切**：它是「一个模板产出一个值」，
+    //    里面的 \n 是**输出里的换行**，不是规则分隔符。
+    //    按行切的话，`{{$.status}}\n{{$.tag}}\n{{$.grade}}分` 这种
+    //    多行 kind / intro 模板只会返回第一行的值，
+    //    `<br>\n🏅 评分：…\n🎗 标签：…` 这种简介模板甚至因为第一行
+    //    是 `<br>`（被当 CSS 标签名）直接查空。
+    //    不含 `{{` 的规则才按 `\n` 当兜底链逐行试（老行为）。
+    var lines = String(rule == null ? '' : rule).indexOf('{{') >= 0
+      ? [String(rule)]
+      : toLines(rule);
     if (!lines.length) return Promise.resolve({ values: [], rule: '' });
 
     function tryOr(line) {
