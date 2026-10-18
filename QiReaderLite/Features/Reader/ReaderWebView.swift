@@ -422,24 +422,10 @@ struct ReaderWebView: View {
         VStack(spacing: 0) {
             sectionHeader("排版")
             // 段落对齐
-            HStack(spacing: 6) {
-                Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
-                Spacer()
-                ForEach(Array(ReaderParaAlign.allCases), id: \.rawValue) { a in
-                    Button { paraAlign = a.raw } label: {
-                        Text(a.name)
-                            .font(.system(size: 12))
-                            .foregroundStyle(paraAlign == a.raw ? .white : Theme.ink)
-                            .padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(paraAlign == a.raw ? Theme.accent : Color.white.opacity(0.5))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 10)
+            // ⚠️ 这一行必须拆成独立子视图：整个 HStack 塞在一个表达式里，
+            //    编译器类型检查会超时（"unable to type-check this expression in
+            //    reasonable time"）。
+            paraAlignRow
 
             // 段落间空行（栖阅原文：「段落间空行: 」）
             HStack {
@@ -464,24 +450,7 @@ struct ReaderWebView: View {
                 }
                 .padding(.vertical, 6)
                 // 整行 / 按文字
-                HStack(spacing: 6) {
-                    Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
-                    Spacer()
-                    ForEach(Array(ReaderBaselineScope.allCases), id: \.rawValue) { sc in
-                        Button { baselineScope = sc.raw } label: {
-                            Text(sc.name)
-                                .font(.system(size: 12))
-                                .foregroundStyle(baselineScope == sc.raw ? .white : Theme.ink)
-                                .padding(.horizontal, 9).padding(.vertical, 5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(baselineScope == sc.raw ? Theme.accent : Color.white.opacity(0.5))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.vertical, 6)
+                baselineScopeRow
             }
 
             // 垂直两端对齐
@@ -492,37 +461,86 @@ struct ReaderWebView: View {
         }
     }
 
+    /// 段落对齐那一行（单独拆出来，别跟别的塞一个表达式）
+    private var paraAlignRow: some View {
+        HStack(spacing: 6) {
+            Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
+            Spacer()
+            ForEach(Array(ReaderParaAlign.allCases), id: \.rawValue) { a in
+                Button { paraAlign = a.raw } label: {
+                    Text(a.name)
+                        .font(.system(size: 12))
+                        .foregroundStyle(paraAlign == a.raw ? Color.white : Theme.ink)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(paraAlign == a.raw ? Theme.accent : Color.white.opacity(0.5))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
     // MARK: - 翻页方式（栖阅原文描述）
 
     private var pageTurnSection: some View {
         VStack(spacing: 0) {
             sectionHeader("翻页方式")
-            HStack(spacing: 4) {
-                ForEach(PageTurnMode.all) { m in
-                    Button {
-                        pageTurnMode = m.raw
-                        pageTurn = m.raw != "scroll"
-                    } label: {
-                        Text(m.name)
-                            .font(.system(size: 13))
-                            .foregroundStyle(pageTurnMode == m.raw ? .white : Theme.ink)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                    .fill(pageTurnMode == m.raw ? Theme.accent : Color.white.opacity(0.5))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 10)
+            pageTurnButtons
             Text(PageTurnMode.hint(for: pageTurnMode))
                 .font(.caption)
                 .foregroundStyle(Theme.sub)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 10)
         }
+    }
+
+    /// 底线范围那一行（拆出来防类型检查超时）
+    private var baselineScopeRow: some View {
+        HStack(spacing: 6) {
+            Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
+            Spacer()
+            ForEach(Array(ReaderBaselineScope.allCases), id: \.rawValue) { sc in
+                Button { baselineScope = sc.raw } label: {
+                    Text(sc.name)
+                        .font(.system(size: 12))
+                        .foregroundStyle(baselineScope == sc.raw ? Color.white : Theme.ink)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(baselineScope == sc.raw ? Theme.accent : Color.white.opacity(0.5))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    /// 翻页方式那一排（拆出来防类型检查超时）
+    private var pageTurnButtons: some View {
+        HStack(spacing: 4) {
+            ForEach(PageTurnMode.all) { m in
+                Button {
+                    pageTurnMode = m.raw
+                    pageTurn = m.raw != "scroll"
+                } label: {
+                    Text(m.name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(pageTurnMode == m.raw ? Color.white : Theme.ink)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 32)
+                        .background(
+                            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                .fill(pageTurnMode == m.raw ? Theme.accent : Color.white.opacity(0.5))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 10)
     }
 
     // MARK: - 阅读行为
