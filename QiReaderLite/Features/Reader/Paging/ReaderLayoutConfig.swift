@@ -4,39 +4,49 @@ import SwiftUI
 import UIKit
 
 /// 段落对齐方式（栖阅 ReadingSettings 里的 左对齐/居中/右对齐/两端对齐）
-enum ReaderParaAlign: String, CaseIterable, Identifiable {
-    case left, center, right, justify
-    var id: String { rawValue }
+///
+/// ⚠️ 做成 **struct**（不是 enum），跟能编译的 ReaderFont / PageTurnMode 保持一致。
+///    enum 靠 raw value 隐式带来的 Hashable，会让 `Identifiable` 的
+///    `where Self: Hashable` 扩展多出一个 `id` 候选 → `ID` 推导歧义 →
+///    SwiftUI 的 `ForEach` 重载直接挑不中，只剩 `Binding<C>` 可选 → 一片红。
+struct ReaderParaAlign: Identifiable, Hashable {
+    let raw: String
+    var id: String { raw }
 
-    /// ⚠️ 用具体数组，不要用 `allCases`：
-    ///    `CaseIterable.AllCases` 的约束只有 `Collection`（不是 `RandomAccessCollection`），
-    ///    SwiftUI 的 `ForEach` 重载会挑不中，编译器报一堆看不懂的错。
-    static let cases: [ReaderParaAlign] = [.left, .center, .right, .justify]
     var name: String {
-        switch self {
-        case .left:    return "左对齐"
-        case .center:  return "居中"
-        case .right:   return "右对齐"
-        case .justify: return "两端对齐"
+        switch raw {
+        case "center":  return "居中"
+        case "right":   return "右对齐"
+        case "justify": return "两端对齐"
+        default:        return "左对齐"
         }
     }
     var textAlignment: NSTextAlignment {
-        switch self {
-        case .left:    return .left
-        case .center:  return .center
-        case .right:   return .right
-        case .justify: return .justified
+        switch raw {
+        case "center":  return .center
+        case "right":   return .right
+        case "justify": return .justified
+        default:        return .left
         }
     }
+
+    static let left    = ReaderParaAlign(raw: "left")
+    static let center  = ReaderParaAlign(raw: "center")
+    static let right   = ReaderParaAlign(raw: "right")
+    static let justify = ReaderParaAlign(raw: "justify")
+    static let all: [ReaderParaAlign] = [.left, .center, .right, .justify]
 }
 
 /// 行底线的范围（栖阅：整行 / 按文字）
-enum ReaderBaselineScope: String, CaseIterable, Identifiable {
-    case full, word
-    var id: String { rawValue }
+struct ReaderBaselineScope: Identifiable, Hashable {
+    let raw: String
+    var id: String { raw }
 
-    static let cases: [ReaderBaselineScope] = [.full, .word]
     var name: String { self == .full ? "整行" : "按文字" }
+
+    static let full = ReaderBaselineScope(raw: "full")
+    static let word = ReaderBaselineScope(raw: "word")
+    static let all: [ReaderBaselineScope] = [.full, .word]
 }
 
 /// 排版参数。

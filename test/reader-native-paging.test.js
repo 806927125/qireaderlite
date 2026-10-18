@@ -13,14 +13,28 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', 'QiReaderLite');
 
+/**
+ * 剥掉源码里的注释（块注释 + 行注释）。
+ *
+ * 血的教训：门禁用正则查源码时，**注释里提一嘴某个函数名**就会被误判成
+ * 「代码里有这个」。这轮就因为我在注释里写了 `as? CTLine` 和 `enumerated()`，
+ * 门禁报了两个假阳性。查源码的断言一律先剥注释。
+ */
+function stripComments(src) {
+  return src
+    .replace(/\/[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+}
+
 let pass = 0, fail = 0;
 const ok = (c, l, e) => { if (c) { pass++; console.log(`  ✓ ${l}`); } else { fail++; console.log(`  ✗ ${l}${e ? '  → ' + e : ''}`); } };
 
 const P = path.join(ROOT, 'Features/Reader/Paging');
-const paginator = fs.readFileSync(path.join(P, 'ReaderPaginator.swift'), 'utf8');
-const layout   = fs.readFileSync(path.join(P, 'ReaderLayoutConfig.swift'), 'utf8');
-const paged    = fs.readFileSync(path.join(P, 'PagedReaderView.swift'), 'utf8');
-const web      = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+const paginator = stripComments(fs.readFileSync(path.join(P, 'ReaderPaginator.swift'), 'utf8'));
+const layout   = stripComments(fs.readFileSync(path.join(P, 'ReaderLayoutConfig.swift'), 'utf8'));
+const paged    = stripComments(fs.readFileSync(path.join(P, 'PagedReaderView.swift'), 'utf8'));
+const webRaw   = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+const web      = stripComments(webRaw);
 const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8');
 
 console.log('\n── 栖阅那套的骨架要在 ──');
@@ -104,7 +118,7 @@ for (const [label, re] of [
   ['iPad 同屏显示左右两页', /iPad 或宽屏横屏时自动同屏显示左右两页/],
   ['内容限制在页眉页脚之间', /内容限制在页眉页脚之间，不遮挡/],
   ['段落对齐 左/居中/右/两端', /段落对齐/],
-]) ok(re.test(web), label);
+]) ok(re.test(webRaw), label);
 ok(/textformat\.size\.smaller/.test(web) && /textformat\.size\.larger/.test(web),
    '字号滑杆用栖阅同款 SF Symbol');
 ok(/circle\.lefthalf\.filled/.test(web), '跟随系统用 circle.lefthalf.filled');
@@ -114,13 +128,13 @@ for (const [raw, hint] of [
   ['flat','左右平移动画翻页'],
   ['none','无翻页动画，立即切换'],
   ['scroll','上下滚动浏览，连续阅读体验']]) {
-  ok(web.includes(hint), `栖阅原文说明：${hint}`);
+  ok(webRaw.includes(hint), `栖阅原文说明：${hint}`);
 }
 
 console.log('\n── 这些项要真接上，不能只是摆位 ──');
 ok(/paginateJustified/.test(paged), '垂直两端对齐真接进分页器');
 ok(/showBaseline/.test(paged) && /drawBaselines/.test(paginator), '行底线真画了');
-ok(/CTLineGetOffsetForIndex/.test(paginator), '「按文字」范围用了行内字形偏移');
+ok(/CTLineGetImageBounds/.test(paginator), '「按文字」范围用了行内字形边界');
 ok(/paraAlign\.textAlignment/.test(layout), '段落对齐真进排版');
 ok(/tapAnywhereTurnsPage/.test(paged), '点击任意位置翻页真接了');
 ok(/paragraphSpacing: CGFloat\(paraSpacing\)/.test(web), '段落间空行真进排版');
@@ -137,17 +151,31 @@ ok(/ChipButton\(title: a\.name, selected: paraAlign == a\.raw\)/.test(web), '段
 ok(/ChipButton\(title: sc\.name, selected: baselineScope == sc\.raw\)/.test(web), '底线范围用 ChipButton');
 ok(!/Button \{ paraAlign = a\.raw \} label: \{[\s\S]{0,200}?RoundedRectangle/.test(web),
    '段落对齐那一行里没有内联的复杂按钮');
-// CaseIterable.allCases 只是 Collection，不是 RandomAccessCollection
-// → SwiftUI 的 ForEach(_:content:) 匹配不上 → 编译器退到 Binding<C> 重载 → 一片红
-ok(!/ForEach\(ReaderParaAlign\.allCases\)/.test(web), 'ForEach(allCases) 要包成 Array');
-ok(/ForEach\(ReaderParaAlign\.cases\) \{ a in/.test(web), '段落对齐用具体数组 + Identifiable 重载');
-ok(!/ForEach\(ReaderParaAlign\.cases, id:/.test(web), '别用 ForEach 的 id: 重载（这个上下文挑不中）');
-ok(!/ReaderParaAlign\.allCases\)/.test(web), '别用 allCases（只是 Collection，ForEach 挑不中）');
-ok(/ForEach\(ReaderBaselineScope\.cases\) \{ sc in/.test(web), '底线范围用具体数组 + Identifiable 重载');
+// ForEach 集合重载挑不中 → 编译器只剩 Binding<C> 可选
+// 根因是类型：enum 靠 raw value 隐式带来的 Hashable，
+// 会让 Identifiable 的 `where Self: Hashable` 扩展多出一个 id 候选 → ID 推导歧义
+ok(/struct ReaderParaAlign: Identifiable, Hashable/.test(layout),
+   'ReaderParaAlign 做成 struct + 显式 Hashable（跟能编译的 ReaderFont 一致）');
+ok(!/enum ReaderParaAlign/.test(layout), 'ReaderParaAlign 别做成 enum');
+ok(/struct ReaderBaselineScope: Identifiable, Hashable/.test(layout), 'ReaderBaselineScope 也是 struct');
+ok(/ForEach\(ReaderParaAlign\.all\) \{ a in/.test(web), '段落对齐用 ReaderParaAlign.all');
+ok(/ForEach\(ReaderBaselineScope\.all\) \{ sc in/.test(web), '底线范围用 ReaderBaselineScope.all');
+ok(!/ReaderParaAlign\.allCases/.test(web), '别用 allCases（只是 Collection，ForEach 挑不中）');
+ok(!/ReaderParaAlign\.cases/.test(web), '别用 .cases（改成 .all 对齐其它枚举）');
+// 所有 ForEach 都得是「Identifiable struct 数组 + 无 id:」这个已验证模式
+const foreachLines = web.split('\n').filter(l => /ForEach\(/.test(l) && !/^\s*\/\//.test(l));
+ok(foreachLines.every(l => !/id:/.test(l)),
+   '所有 ForEach 都不用 id: 重载', foreachLines.filter(l => /id:/.test(l)).join(' | '));
+ok(!/enumerated\(\)/.test(web), '没有 enumerated() 元组（做不了 key path）');
+ok(/featureTile\(FeatureTile\(name: "朗读"/.test(web), '功能宫格写死两行，不用 ForEach');
+
 // iOS SDK 里没有 CTLineGetOffsetForIndex
 // 只查**调用**（注释里提一嘴名字不算）
 ok(!/CTLineGetOffsetForIndex\(/.test(paginator), '别用 CTLineGetOffsetForIndex（SDK 里没这符号）');
 ok(/CTLineGetImageBounds/.test(paginator), '行内字形范围用 CTLineGetImageBounds');
+ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报 always succeed）');
+ok(/unsafeBitCast\(raw, to: CTLine\.self\)/.test(paginator), 'CTLine 用 CFArray 取指针 + unsafeBitCast');
+ok(/CFArrayGetCount\(lines\)/.test(paginator), 'CFArray 用 CFArrayGetCount 取长度');
 // CFArray 没有 count
 ok(!/CTFrameGetLines\([a-z]+\)\.count/.test(paginator), 'CFArray 要先 as NSArray 再取 count');
 ok(/CTFrameGetLines\([a-z]+\) as NSArray\)\.count/.test(paginator), 'CTFrameGetLines 先 as NSArray');

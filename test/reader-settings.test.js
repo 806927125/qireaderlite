@@ -12,14 +12,27 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', 'QiReaderLite');
 
+/**
+ * 剥掉源码里的注释（块注释 + 行注释）。
+ *
+ * 血的教训：门禁用正则查源码时，**注释里提一嘴某个函数名**就会被误判成
+ * 「代码里有这个」。这轮就因为我在注释里写了 `as? CTLine` 和 `enumerated()`，
+ * 门禁报了两个假阳性。查源码的断言一律先剥注释。
+ */
+function stripComments(src) {
+  return src
+    .replace(/\/[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+}
+
 let pass = 0, fail = 0;
 function ok(c, label, extra) {
   if (c) { pass++; console.log(`  ✓ ${label}`); }
   else { fail++; console.log(`  ✗ ${label}${extra ? '  → ' + extra : ''}`); }
 }
 
-const web = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
-const view = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8');
+const web = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
+const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
 
 console.log('\n── 面板结构（照截图的层次）──');
 for (const [label, re] of [
@@ -72,14 +85,11 @@ ok(/static func isDark\(_ t: ReaderTheme\) -> Bool \{ darkRow\.contains\(where:/
    'isDark 用 contains(where:) —— contains(t) 在 Swift 5.9 编译不过');
 ok(!/darkRow\.contains\(t\)/.test(view), '没有残留的 contains(t)');
 const envDecl = web.split('@Environment(\\.colorScheme)').length - 1;
-ok(/let blanks: \[Int\] = Array\(0\.\.<\(4 - row\.count\)\)/.test(web),
-   '补空位用 Array(0..<n) —— 直接 ForEach(Range) 泛型 C 推不出来');
-ok(/ForEach\(0\.\.\<\(4 - row\.count\), id: \\.offset\)/.test(web) === false,
-   '没有直接 ForEach(Range) 的写法');
+ok(!/ForEach\(0\.\.<[^)]*\)/.test(web),
+   '没有 ForEach(Range) —— Range 会被推成 Binding<C>，泛型 C 推不出来');
+ok(!/ForEach\(0\.\.\</.test(web), 'ForEach 别直接吃 Range');
 ok(/darkScheme == \.dark/.test(web),
    'ColorScheme 要跟 .dark 比 —— 不能直接当 Bool 用');
-ok(/if row\.count < 4 \{/.test(web),
-   'ForEach(0..<n) 前面有 if 挡着 —— ForEach(0..<0) 在 SwiftUI 里会崩');
 ok(!/rows\[\.\.<0\]/.test(web), '没有那个恒等于 0 的 id 计算残留');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);

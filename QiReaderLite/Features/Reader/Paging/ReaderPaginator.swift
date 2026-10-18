@@ -189,14 +189,19 @@ struct ReaderPageCanvas: UIViewRepresentable {
         /// 行底线：在每一行的基线下面画一条横线。
         /// 「整行」= 拉满整页宽；「按文字」= 只画有字的那一段。
         private func drawBaselines(_ cf: CTFrame, _ ctx: CGContext) {
-            let lines = CTFrameGetLines(cf) as NSArray
-            guard lines.count > 0 else { return }
-            var origins = [CGPoint](repeating: .zero, count: lines.count)
+            let lines = CTFrameGetLines(cf)
+            let count = CFArrayGetCount(lines)
+            guard count > 0 else { return }
+            var origins = [CGPoint](repeating: .zero, count: count)
             CTFrameGetLineOrigins(cf, CFRange(location: 0, length: 0), &origins)
             ctx.saveGState()
             ctx.setFillColor(baselineColor.cgColor)
-            for (i, obj) in lines.enumerated() {
-                guard let line = obj as? CTLine else { continue }
+            for i in 0..<count {
+                // ⚠️ 别写 `obj as? CTLine` —— 对 CoreFoundation 类型做条件转换
+                //    编译期就报 "conditional downcast ... will always succeed"。
+                //    用 CFArray 取裸指针再 unsafeBitCast。
+                guard let raw = CFArrayGetValueAtIndex(lines, i) else { continue }
+                let line = unsafeBitCast(raw, to: CTLine.self)
                 let y = origins[i].y
                 var x0: CGFloat = 0
                 var x1: CGFloat = bounds.width

@@ -84,11 +84,11 @@ struct ReaderWebView: View {
             fontFamily: ReaderFont.family(for: fontKey),
             textColor: UIColor(theme.ink),
             backgroundColor: UIColor(theme.bg),
-            paraAlign: ReaderParaAlign(rawValue: paraAlign) ?? .left,
+            paraAlign: ReaderParaAlign(raw: paraAlign) ?? .left,
             verticalJustify: verticalJustify,
             showBaseline: showBaseline,
             baselineColor: UIColor(baselineColorBinding.wrappedValue),
-            baselineScope: ReaderBaselineScope(rawValue: baselineScope) ?? .full
+            baselineScope: ReaderBaselineScope(raw: baselineScope) ?? .full
         )
     }
 
@@ -466,7 +466,7 @@ struct ReaderWebView: View {
         HStack(spacing: 6) {
             Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
-            ForEach(ReaderParaAlign.cases) { a in
+            ForEach(ReaderParaAlign.all) { a in
                 ChipButton(title: a.name, selected: paraAlign == a.raw) { paraAlign = a.raw }
             }
         }
@@ -492,7 +492,7 @@ struct ReaderWebView: View {
         HStack(spacing: 6) {
             Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
-            ForEach(ReaderBaselineScope.cases) { sc in
+            ForEach(ReaderBaselineScope.all) { sc in
                 ChipButton(title: sc.name, selected: baselineScope == sc.raw) { baselineScope = sc.raw }
             }
         }
@@ -544,28 +544,21 @@ struct ReaderWebView: View {
     private var otherSection: some View {
         VStack(spacing: 0) {
             sectionHeader("其他")
-            let tiles: [[FeatureTile]] = [
-                [.init(name: "朗读", icon: "speaker.wave.2.circle", ready: false),
-                 .init(name: "气泡", icon: "bubble.left.and.bubble.right", ready: false),
-                 .init(name: "格式", icon: "text.alignleft", ready: false),
-                 .init(name: "标题样式", icon: "textformat", ready: false)],
-                [.init(name: "页眉页脚", icon: "rectangle.split.2x1", ready: false),
-                 .init(name: "背景图", icon: "photo", ready: false),
-                 .init(name: "更多设置", icon: "ellipsis.circle", ready: false)]
-            ]
-            ForEach(Array(tiles.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 8) {
-                    ForEach(row) { tile in featureTile(tile) }
-                    if row.count < 4 {
-                        // ⚠️ 别直接 ForEach(0..<n)：Range 在这里会被推成 Binding<C>，
-                        //    泛型 C 推不出来（"generic parameter 'C' could not be inferred"）。
-                        //    转成 Array 再给 id 就稳了。
-                        let blanks: [Int] = Array(0..<(4 - row.count))
-                        ForEach(blanks, id: \.self) { _ in
-                            Color.clear.frame(maxWidth: .infinity)
-                        }
-                    }
-                }
+            // ⚠️ 这里写死两行，不用 ForEach：
+            //    ① 元组（enumerated() 的产物）做不了 key path
+            //    ② ForEach 的 id: 重载在这个上下文挑不中
+            //    ③④ 数量固定，写死最省事也最稳
+            HStack(spacing: 8) {
+                featureTile(FeatureTile(name: "朗读", icon: "speaker.wave.2.circle", ready: false))
+                featureTile(FeatureTile(name: "气泡", icon: "bubble.left.and.bubble.right", ready: false))
+                featureTile(FeatureTile(name: "格式", icon: "text.alignleft", ready: false))
+                featureTile(FeatureTile(name: "标题样式", icon: "textformat", ready: false))
+            }
+            HStack(spacing: 8) {
+                featureTile(FeatureTile(name: "页眉页脚", icon: "rectangle.split.2x1", ready: false))
+                featureTile(FeatureTile(name: "背景图", icon: "photo", ready: false))
+                featureTile(FeatureTile(name: "更多设置", icon: "ellipsis.circle", ready: false))
+                Color.clear.frame(maxWidth: .infinity)
             }
             .padding(.vertical, 8)
         }
