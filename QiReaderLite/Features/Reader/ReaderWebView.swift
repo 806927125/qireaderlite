@@ -102,8 +102,9 @@ struct ReaderWebView: View {
                 Text(book.sourceName).font(.caption2).foregroundStyle(Theme.sub).lineLimit(1)
             }
             Spacer(minLength: 4)
-            if let cover = book.coverUrl, !cover.isEmpty {
-                AsyncImage(url: URL(string: cover)) { img in
+            // coverUrl 是非可选 String，别用 if let（CI 就是在这儿红的）
+            if !book.coverUrl.isEmpty, let coverURL = URL(string: book.coverUrl) {
+                AsyncImage(url: coverURL) { img in
                     img.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
                     Color.clear
