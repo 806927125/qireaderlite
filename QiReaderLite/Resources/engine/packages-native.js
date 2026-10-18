@@ -810,3 +810,6 @@
   };
 
 })(typeof globalThis !== 'undefined' ? globalThis : this);
+
+// 同 packages_stub.js：保证顶层完成值是 undefined（详见那里的注释）
+;void 0;

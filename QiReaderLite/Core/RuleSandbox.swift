@@ -124,7 +124,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
-    static let engineVersion = "2026.10.18-r5（修发现页：Rhino 方言/JS插值/style）"
+    static let engineVersion = "2026.10.18-r6（栖阅 packages_stub 移植：Packages/AES/MessageDigest + jsLib 作用域修复）"
 
     /// 给界面用的一行状态
     var statusText: String {
@@ -256,7 +256,15 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
                 return
             }
             do {
-                _ = try await webView.evaluateJavaScript(code)
+                // ⚠️ 末尾必须补 `void 0` ——
+                // evaluateJavaScript 会把脚本的**完成值**桥接回 Swift，
+                // 而 WebKit 桥接不了普通 JS 对象 / 函数 / Symbol
+                // → 抛 WKError.resultTypeIsUnsupported（「返回结果的类型不受支持」）。
+                // 引擎脚本本来就没返回值（IIFE 或语句堆），补一句 void 0 保证完成值是 undefined。
+                // ⚠️ 前面那个 \n 不能省：万一脚本以 `// 注释` 结尾，void 0 会被注释掉。
+                // 这类问题 jsdom 测不出来（jsdom 没有返回值桥接环节），
+                // 所以另有门禁：test/engine-script-toplevel.test.js 断言每个脚本顶层完成值是 undefined。
+                _ = try await webView.evaluateJavaScript(code + "\n;void 0;")
             } catch {
                 lastError = "引擎脚本 \(name) 执行出错: \(error.localizedDescription)"
                 return
@@ -409,7 +417,8 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             guard let p = args["path"] as? String, let s = ResourceLocator.text(p) else { return err("importScript 找不到 " + (args["path"] as? String ?? "")) }
             // 明确用 completion-handler 版本：直接写 evaluateJavaScript(s) 会被解析到
             // async 重载，那边少个 await 就是编译错误
-            webView.evaluateJavaScript(s, completionHandler: nil)
+            // 补 \n;void 0; 同 injectEngine：别把脚本完成值交给 WebKit 去桥接
+            webView.evaluateJavaScript(s + "\n;void 0;", completionHandler: nil)
             return ok()
 
         case "getWebViewUA":

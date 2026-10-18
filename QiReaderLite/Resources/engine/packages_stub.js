@@ -1279,3 +1279,9 @@ if (!String.prototype.equals) {
 if (!String.prototype.equalsIgnoreCase) {
     String.prototype.equalsIgnoreCase = function(other) { return this.toLowerCase() === String(other).toLowerCase(); };
 }
+
+// 让脚本的顶层完成值是 undefined：WebKit 的 evaluateJavaScript 会把完成值
+// 桥接回 Swift，普通 JS 对象/函数/Symbol 桥接不了 →
+// WKError.resultTypeIsUnsupported → 轻阅报「引擎脚本执行出错」，整个引擎起不来。
+// 栖阅原文件没有这行（它不走 evaluateJavaScript 返回值桥接），移植后必须补。
+;void 0;
