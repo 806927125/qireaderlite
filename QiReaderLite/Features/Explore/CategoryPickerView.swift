@@ -1,18 +1,18 @@
 import SwiftUI
 
-/// 分类筛选 —— 照栖阅第 2 张图。
-/// 顶栏：左侧「× 关闭」胶囊 + 居中标题「分类筛选」+ 当前分类副标题
-/// 下面：搜索框（搜分类标签）+ 按 style 分组的胶囊网格
+/// 分类筛选页 —— 由榜单页导航栏右侧的分类胶囊 push 进来。
+///
+/// ⚠️ 之前它是 `.sheet` 弹窗 + 自定义头部（「× 关闭」胶囊 + 居中两行标题）。
+///    跟 sheet 自带的顶部区域打架，看起来很挤，而且下半屏全是空白。
+///    现在改成正常的 push 页面：系统返回键 + 导航栏标题，下面直接是搜索框和网格。
 ///
 /// 栖阅的分类是分组网格（排行榜 / 情节主题…），
-/// 我之前用一行横向滚动的胶囊条，分类一多就藏起来找不着了 —— 这里换成分组网格。
+/// 一行横向滚动的胶囊条在分类一多时就藏起来找不着了 —— 这里用分组网格。
 struct CategoryPickerView: View {
-    let source: BookSource
     let kinds: [SourceService.KindDTO]
     let current: SourceService.KindDTO?
     let onPick: (SourceService.KindDTO) -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var search = ""
 
     /// 按 style 分组。style 为空的一律归到「其他」——
@@ -44,40 +44,6 @@ struct CategoryPickerView: View {
 
             ScrollView {
                 VStack(spacing: 14) {
-                    // 顶栏：栖阅是「× 关闭」在左，标题居中
-                    HStack {
-                        Button { dismiss() } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 12, weight: .bold))
-                                Text("关闭")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                            .foregroundStyle(Theme.ink)
-                            .padding(.horizontal, 14)
-                            .frame(height: 34)
-                            .liquidGlass(cornerRadius: 999)
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        VStack(spacing: 1) {
-                            Text("分类筛选")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(Theme.ink)
-                            if let c = current, !c.title.isEmpty {
-                                Text("当前 · \(c.title)")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.sub)
-                            }
-                        }
-
-                        Spacer()
-                        // 占位，让标题真居中
-                        Color.clear.frame(width: 62, height: 1)
-                    }
-
                     // 搜索框
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
@@ -116,8 +82,8 @@ struct CategoryPickerView: View {
                                     ForEach(Array(groupItems.enumerated()), id: \.offset) { _, k in
                                         let on = current?.url == k.url
                                         Button {
+                                            // 父页负责 pop 回榜单（onPick 里置 showCategoryPicker = false）
                                             onPick(k)
-                                            dismiss()
                                         } label: {
                                             Text(k.title)
                                                 .font(.system(size: 13))

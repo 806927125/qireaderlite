@@ -18,6 +18,9 @@ struct ExploreView: View {
     @State private var loadMoreID = 0
     /// 顶栏分类胶囊点开的「分类筛选」页
     @State private var showCategoryPicker = false
+    /// 点书籍卡片进详情。走 navigationDestination(item:) 而不是 NavigationLink，
+    /// 因为后者在 List 行里会自动多出一个行尾箭头。
+    @State private var pickedBook: Book?
 
     /// 从发现页点进来时书源是定死的，没定死才回退到「第一个启用的」
     private let pinnedSourceId: String?
@@ -65,23 +68,28 @@ struct ExploreView: View {
             }
         }
         .task { await loadKinds() }
-        .sheet(isPresented: $showCategoryPicker) {
-            if let s = current {
-                NavigationStack {
-                    CategoryPickerView(
-                        source: s,
-                        kinds: kinds,
-                        current: selected,
-                        onPick: { k in
-                            selected = k
-                            books = []
-                            page = 1
-                            reachedEnd = false
-                            Task { await loadBooks() }
-                        }
-                    )
+        // 分类筛选是 push 进来的页面，不是 sheet 弹窗。
+        // sheet 自带顶部区域 + 我自己画的「× 关闭」胶囊打架，下半屏还全是空白。
+        .navigationDestination(item: $pickedBook) { b in
+            BookDetailView(book: b)
+        }
+        .navigationDestination(isPresented: $showCategoryPicker) {
+            CategoryPickerView(
+                kinds: kinds,
+                current: selected,
+                onPick: { k in
+                    selected = k
+                    books = []
+                    page = 1
+                    reachedEnd = false
+                    // 先关页面再加载：onPick 跑在 push 出来的页面里，
+                    // showCategoryPicker 置 false 才会 pop 回榜单页。
+                    showCategoryPicker = false
+                    Task { await loadBooks() }
                 }
-            }
+            )
+            .navigationTitle("分类筛选")
+            .navigationBarTitleDisplayMode(.inline)
         }
         .alert("发现页诊断", isPresented: Binding(
             get: { diagText != nil }, set: { if !$0 { diagText = nil } })) {
@@ -141,12 +149,12 @@ struct ExploreView: View {
         } else if books.count <= 1 {
             VStack(spacing: 14) {
                 List(BookDedup.unique(books)) { b in
-                    // NavigationLink 外面套一层 HStack 才是去箭头的关键：
-                    // 直接放在 List 行里，SwiftUI 会在行尾自动加
-                    // disclosure indicator（">"）。栖阅的书籍卡片没有箭头。
-                    HStack(spacing: 0) {
-                        NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
-                    }
+                    // 用 Button + navigationDestination(item:) 而不是 NavigationLink：
+                    // List 行里的 NavigationLink 会被 SwiftUI 自动加上
+                    // disclosure indicator（">"），iOS 26/27 上外面套 HStack 也不管用。
+                    // 栖阅的书籍卡片右侧没有箭头，只能彻底不用 NavigationLink。
+                    Button { pickedBook = b } label: { BookRow(book: b) }
+                        .buttonStyle(.plain)
                 }
                 .listStyle(.plain)
                 .disabled(true)
@@ -168,11 +176,10 @@ struct ExploreView: View {
         } else {
             List {
                 ForEach(BookDedup.unique(books)) { b in
-                    // 同上：外层 HStack 抑制 List 行的 disclosure indicator，
-                    // 栖阅的书籍卡片右侧没有 ">"。
-                    HStack(spacing: 0) {
-                        NavigationLink { BookDetailView(book: b) } label: { BookRow(book: b) }
-                    }
+                    // 同上：Button + navigationDestination(item:)，不用 NavigationLink，
+                    // 否则 List 会自动加行尾的 ">" 箭头。
+                    Button { pickedBook = b } label: { BookRow(book: b) }
+                        .buttonStyle(.plain)
                         // BookRow 自己是玻璃卡片，List 的默认行背景会把它压住
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -211,12 +218,19 @@ struct ExploreView: View {
         if sourceId == nil { sourceId = pinnedSourceId ?? s.bookSourceUrl }
         busy = true
         do {
+            // ⚠️ 先记住用户上次选的分类。`.task` 在页面重新出现时（从详情页返回）会重跑，
+            //    之前这里无条件 `selected = kinds.first` → 每返回一次就跳回「全部小说」。
+            let prevUrl = selected?.url
             kinds = try await SourceService.shared.exploreKinds(source: s)
-            if let first = kinds.first {
-                selected = first
-                await loadBooks()
-            } else {
+            if kinds.isEmpty {
                 statusText = "这个书源没解析出分类"
+                selected = nil
+            } else {
+                // 上次选的还在 → 保住；没了才退回第一个
+                selected = kinds.first { $0.url == prevUrl } ?? selected ?? kinds.first
+            }
+            if selected != nil {
+                await loadBooks()
             }
         } catch {
             statusText = error.localizedDescription

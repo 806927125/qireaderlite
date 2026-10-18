@@ -10,6 +10,10 @@ struct SearchView: View {
     @State private var busy = false
     @State private var searched = false
     @State private var statusText = ""
+    /// 点书籍卡片进详情。用 Button + navigationDestination(item:) 而不是 NavigationLink，
+    /// 因为 List 行里的 NavigationLink 会被 SwiftUI 自动加上行尾的 ">" 箭头，
+    /// 栖阅的书籍卡片没有箭头，iOS 26/27 上外面套 HStack 也压不住。
+    @State private var pickedBook: Book?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,6 +24,9 @@ struct SearchView: View {
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
         .onSubmit(of: .search) { Task { await run() } }
+        .navigationDestination(item: $pickedBook) { b in
+            BookDetailView(book: b)
+        }
     }
 
     private var bar: some View {
@@ -66,19 +73,12 @@ struct SearchView: View {
                       subtitle: "换个关键词，或者换个书源试试")
         } else {
             List(BookDedup.unique(results)) { b in
-                // 外层 HStack 抑制 List 行的 disclosure indicator（">"），
-                // 跟榜单页保持一致：栖阅的书籍卡片右侧没有箭头。
-                HStack(spacing: 0) {
-                    NavigationLink {
-                        BookDetailView(book: b)
-                    } label: {
-                        BookRow(book: b)
-                    }
-                }
-                // BookRow 是玻璃卡片，List 默认行背景会压住它
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                Button { pickedBook = b } label: { BookRow(book: b) }
+                    .buttonStyle(.plain)
+                    // BookRow 是玻璃卡片，List 默认行背景会压住它
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
