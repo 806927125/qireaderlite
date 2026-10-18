@@ -14,6 +14,8 @@ import UIKit
 struct PagedReaderView: View {
     let text: String
     let title: String
+    /// 章节序号。换章时用它判断「是新的一章」→ 页码要归零。
+    let chapterKey: Int
     let config: ReaderLayoutConfig
     let mode: String
 
@@ -23,6 +25,8 @@ struct PagedReaderView: View {
     var onEdge: (Int) -> Void
     /// 点中间 → 出菜单
     var onMenu: () -> Void
+    /// 「点击页面任意位置翻到下一页」（栖阅的默认行为）
+    var tapAnywhereTurnsPage: Bool = true
 
     @State private var paginator = ReaderPaginator()
     @State private var pages: [ReaderPage] = []
@@ -74,6 +78,17 @@ struct PagedReaderView: View {
             .simultaneousGesture(tapGesture(width: w))
             .onAppear { layout(in: geo.size) }
             .onChange(of: geo.size) { _, newSize in layout(in: newSize) }
+            .onChange(of: chapterKey) { _, _ in
+                // 换章 → 页码归零。
+                // ⚠️ 之前只 onChange(of: text) 里重排，但 current 没归零：
+                //    上一章翻到第 10 页，换章后 current 还是 10（被 clamp 到新章最后一页），
+                //    所以「从第一章最后一页划不到第二章第一页」——
+                //    划过去了，但落在第二章的最后一页，看起来就是没过去。
+                current = 0
+                drag = 0
+                incoming = nil
+                layout(in: geo.size)
+            }
             .onChange(of: text) { _, _ in layout(in: geo.size) }
             .onChange(of: config.fontSize) { _, _ in layout(in: geo.size) }
         }
@@ -93,8 +108,8 @@ struct PagedReaderView: View {
         guard size.width > 1, size.height > 1 else { return }
         viewport = size
         let ps = config.pageSize(in: size)
-        let attr = config.attributed(text)
-        let result = paginator.paginate(attr, pageSize: ps)
+        let attr = config.attributed(title: title, body: text)
+        let result = paginator.paginateJustified(attr, pageSize: ps, config: config)
         pages = result
         if current >= result.count { current = max(0, result.count - 1) }
         onPageChange(current + 1, result.count)
@@ -107,7 +122,10 @@ struct PagedReaderView: View {
         if pages.indices.contains(index) {
             ReaderPageCanvas(ctFrame: paginator.frame(at: index, pageSize: pageSize),
                              pageSize: pageSize,
-                             bgColor: config.backgroundColor)
+                             bgColor: config.backgroundColor,
+                             showBaseline: config.showBaseline,
+                             baselineColor: config.baselineColor,
+                             baselineScope: config.baselineScope)
                 .frame(width: pageSize.width, height: pageSize.height)
         } else {
             Color.clear
@@ -236,7 +254,14 @@ struct PagedReaderView: View {
                 guard !committing else { return }
                 let x = value.location.x
                 let w = max(width, 1)
-                if x < w * 0.25 {
+                if tapAnywhereTurnsPage {
+                    // 栖阅：点击任意位置翻到下一页，中间区域仍可打开菜单
+                    if x > w * 0.35 && x < w * 0.65 {
+                        onMenu()
+                    } else {
+                        tapAnywhereNext()
+                    }
+                } else if x < w * 0.25 {
                     goPage(-1)
                 } else if x > w * 0.75 {
                     goPage(1)
@@ -244,6 +269,12 @@ struct PagedReaderView: View {
                     onMenu()
                 }
             }
+    }
+
+    /// 点击任意位置 → 翻到下一页；中间区域仍然出菜单。
+    /// 栖阅原文：「点击页面任意位置翻到下一页，中间区域仍可打开菜单」。
+    private func tapAnywhereNext() {
+        goPage(1)
     }
 
     /// 点左/右 → 翻页；到本章头/尾 → 换章

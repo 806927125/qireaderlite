@@ -1,6 +1,36 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 import UIKit
+
+/// 段落对齐方式（栖阅 ReadingSettings 里的 左对齐/居中/右对齐/两端对齐）
+enum ReaderParaAlign: String, CaseIterable, Identifiable {
+    case left, center, right, justify
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .left:    return "左对齐"
+        case .center:  return "居中"
+        case .right:   return "右对齐"
+        case .justify: return "两端对齐"
+        }
+    }
+    var textAlignment: NSTextAlignment {
+        switch self {
+        case .left:    return .left
+        case .center:  return .center
+        case .right:   return .right
+        case .justify: return .justified
+        }
+    }
+}
+
+/// 行底线的范围（栖阅：整行 / 按文字）
+enum ReaderBaselineScope: String, CaseIterable, Identifiable {
+    case full, word
+    var id: String { rawValue }
+    var name: String { self == .full ? "整行" : "按文字" }
+}
 
 /// 排版参数。
 ///
@@ -24,6 +54,19 @@ struct ReaderLayoutConfig {
     var textColor: UIColor = UIColor(red: 0.16, green: 0.15, blue: 0.13, alpha: 1)
     var backgroundColor: UIColor = UIColor(red: 0.949, green: 0.941, blue: 0.914, alpha: 1)
 
+    // MARK: 栖阅 ReaderLayoutSettingsView 里的那几项
+
+    /// 段落对齐
+    var paraAlign: ReaderParaAlign = .left
+    /// 垂直两端对齐：每页文字自动调整行间距填满页面，底部对齐整齐
+    var verticalJustify: Bool = false
+    /// 行底线：正文每一行底部画横线
+    var showBaseline: Bool = false
+    /// 独立底线颜色（不跟正文颜色走）
+    var baselineColor: UIColor = UIColor(white: 0.72, alpha: 1)
+    /// 底线范围：整行 / 按文字
+    var baselineScope: ReaderBaselineScope = .full
+
     /// 一页的内容区尺寸（视口扣掉四周边距）
     func pageSize(in viewport: CGSize) -> CGSize {
         CGSize(width: max(80, viewport.width - horizontalMargin * 2),
@@ -44,18 +87,72 @@ struct ReaderLayoutConfig {
         return isBold ? UIFont.boldSystemFont(ofSize: size) : base
     }
 
-    /// 正文 → 带排版属性的字符串
-    func attributed(_ text: String) -> NSAttributedString {
+    /// 章标题 → 正文 → 带排版属性的字符串
+    ///
+    /// 标题样式照抄栖阅 reader.css 的 `.chapter-title`（那个文件跟栖阅逐字节一致）：
+    ///   font-size: calc(var(--reader-font-size) * 1.18);
+    ///   font-weight: 650;
+    ///   line-height: 1.35;
+    ///   margin: 0 0 28px;
+    func attributed(title: String, body: String) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let head = NSMutableParagraphStyle()
+            head.lineHeightMultiple = 1.35
+            head.paragraphSpacing = 28
+            head.alignment = .natural
+            let headFont = UIFont.systemFont(ofSize: max(8, fontSize * 1.18), weight: .semibold)
+            out.append(NSAttributedString(string: trimmed + "\n", attributes: [
+                .font: headFont,
+                .foregroundColor: textColor,
+                .paragraphStyle: head
+            ]))
+        }
+        out.append(attributed(body))
+        return out
+    }
+
+    /// 正文段落样式
+    func paragraphStyle() -> NSMutableParagraphStyle {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = lineSpacing
         para.paragraphSpacing = paragraphSpacing
         para.firstLineHeadIndent = firstLineIndent
-        para.alignment = .natural
-        // 中英混排用 .natural 跟随系统语言方向，别写死 .left
-        return NSAttributedString(string: text, attributes: [
+        para.alignment = paraAlign.textAlignment
+        return para
+    }
+
+    /// 正文 → 带排版属性的字符串
+    func attributed(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
             .font: resolvedFont,
             .foregroundColor: textColor,
-            .paragraphStyle: para
+            .paragraphStyle: paragraphStyle()
         ])
+    }
+}
+
+
+// MARK: - Color ↔ hex（设置项要持久化）
+
+extension Color {
+    /// "#RRGGBB" → Color
+    init(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("#") { s.removeFirst() }
+        var v: UInt64 = 0
+        Scanner(string: s).scanHexInt64(&v)
+        self.init(red: Double((v >> 16) & 0xFF) / 255,
+                  green: Double((v >> 8) & 0xFF) / 255,
+                  blue: Double(v & 0xFF) / 255)
+    }
+
+    /// Color → "#RRGGBB"
+    var hexString: String {
+        let u = UIColor(self)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        u.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
     }
 }

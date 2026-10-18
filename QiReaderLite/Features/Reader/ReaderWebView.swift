@@ -22,6 +22,17 @@ struct ReaderWebView: View {
     @AppStorage("reader.pageTurnMode") private var pageTurnMode: String = "slide"
     @AppStorage("reader.fontKey") private var fontKey: String = "system"
     @AppStorage("reader.followSystem") private var followSystemAppearance: Bool = false
+    // ── 栖阅 ReaderLayoutSettingsView 的那几项 ──
+    @AppStorage("reader.paraAlign") private var paraAlign: String = "left"
+    @AppStorage("reader.paraSpacing") private var paraSpacing: Double = 10
+    @AppStorage("reader.showBaseline") private var showBaseline: Bool = false
+    @AppStorage("reader.baselineScope") private var baselineScope: String = "full"
+    @AppStorage("reader.verticalJustify") private var verticalJustify: Bool = false
+    @AppStorage("reader.tapAnywhere") private var tapAnywhereTurnsPage: Bool = true
+    @AppStorage("reader.swipeUpExit") private var swipeUpExit: Bool = false
+    @AppStorage("reader.twoPageSpread") private var twoPageSpread: Bool = false
+    @AppStorage("reader.contentInHeaderFooter") private var contentInHeaderFooter: Bool = false
+    @AppStorage("reader.baselineColor") private var baselineColorHex: String = "#B8B8B8"
     @State private var edgeToast: String?
     @State private var pageInfo: (page: Int, total: Int) = (1, 1)
 
@@ -52,18 +63,32 @@ struct ReaderWebView: View {
         pageTurnMode != "scroll"
     }
 
+    /// 底线颜色：存成 hex，ColorPicker 要的是 Binding<Color>
+    private var baselineColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: baselineColorHex) },
+            set: { baselineColorHex = $0.hexString }
+        )
+    }
+
     /// 排版参数：跟喂给 webview 的 settingsPayload 用同一套语义
     private var layoutConfig: ReaderLayoutConfig {
         ReaderLayoutConfig(
             fontSize: CGFloat(fontSize),
             lineSpacing: CGFloat(lineSpacing),
+            paragraphSpacing: CGFloat(paraSpacing),
             horizontalMargin: 20,
             topMargin: 20,
             bottomMargin: 28,
             firstLineIndent: CGFloat(fontSize) * 2,
             fontFamily: ReaderFont.family(for: fontKey),
             textColor: UIColor(theme.ink),
-            backgroundColor: UIColor(theme.bg)
+            backgroundColor: UIColor(theme.bg),
+            paraAlign: ReaderParaAlign(rawValue: paraAlign) ?? .left,
+            verticalJustify: verticalJustify,
+            showBaseline: showBaseline,
+            baselineColor: UIColor(baselineColorBinding.wrappedValue),
+            baselineScope: ReaderBaselineScope(rawValue: baselineScope) ?? .full
         )
     }
 
@@ -94,8 +119,10 @@ struct ReaderWebView: View {
                     PagedReaderView(
                         text: session.chapterText,
                         title: session.chapterTitle,
+                        chapterKey: session.index,
                         config: layoutConfig,
                         mode: pageTurnMode,
+                        tapAnywhereTurnsPage: tapAnywhereTurnsPage,
                         onPageChange: { p, total in
                             pageInfo = (p, total)
                             saveProgress(ratio: total > 1 ? Double(p - 1) / Double(total) : 0)
@@ -270,22 +297,37 @@ struct ReaderWebView: View {
     ///   字号滑杆 + 字体  →  配色格子（浅色一排 / 深色一排）→ 跟随系统深浅色
     ///   →  翻页方式那一排  →  功能宫格
     /// 没接上的功能**只摆位不点**（灰掉），留着当以后的接口。
+    /// 阅读设置 —— **照栖阅的 ReaderSettingsView / ReaderLayoutSettingsView 改**。
+    ///
+    /// 栖阅的排版项（从它的二进制字符串表里挖出来的原文）：
+    ///   垂直两端对齐  开启后每页文字会自动调整行间距以填满页面，使底部对齐整齐
+    ///   段落间空行: N
+    ///   (行底线)     开启后会在正文每一行底部绘制整行横线
+    ///   独立底线颜色
+    ///   整行 / 按文字 整行：每行拉满；按文字：没有文字的横向区域不画线
+    ///   跟随系统深色模式
+    ///   上滑退出阅读
+    ///   点击页面任意位置翻到下一页，中间区域仍可打开菜单
+    ///   iPad 或宽屏横屏时自动同屏显示左右两页
+    ///   内容限制在页眉页脚之间，不遮挡 / 内容延伸至页眉页脚区域
+    ///   翻页方式：上下滚动 / 无动画 / 平移 / 滑动 / 仿真
+    ///
+    /// 没接上的**只摆位不点**（灰掉），留着当以后的接口。
     private var settingsSheet: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(spacing: 0) {
                     sizeAndFontRow
-                    Divider().opacity(0.35)
                     paletteGrid
                     followSystemRow
-                    Divider().opacity(0.35)
-                    pageTurnRow
-                    Divider().opacity(0.35)
-                    featureTiles
-                    Spacer(minLength: 20)
+                    layoutSection
+                    pageTurnSection
+                    behaviorSection
+                    otherSection
+                    Spacer(minLength: 24)
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 4)
             }
             .navigationTitle("阅读设置")
             .navigationBarTitleDisplayMode(.inline)
@@ -298,17 +340,19 @@ struct ReaderWebView: View {
                 }
             }
         }
-        .presentationDetents([.height(560)])
+        .presentationDetents([.large])
     }
 
-    // MARK: 字号 + 字体
+    // MARK: - 字号 + 字体（栖阅用 textformat.size.smaller / .larger）
 
     private var sizeAndFontRow: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             HStack(spacing: 10) {
-                Text("小").font(.footnote).foregroundStyle(Theme.sub)
+                Image(systemName: "textformat.size.smaller")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub)
                 Slider(value: $fontSize, in: 14...30, step: 1)
-                Text("大").font(.footnote).foregroundStyle(Theme.sub)
+                Image(systemName: "textformat.size.larger")
+                    .font(.system(size: 15)).foregroundStyle(Theme.sub)
             }
             HStack {
                 Spacer()
@@ -328,15 +372,17 @@ struct ReaderWebView: View {
                 }
             }
         }
+        .padding(.vertical, 12)
     }
 
-    // MARK: 配色格子（浅色一排 / 深色一排）
+    // MARK: - 配色格子（浅色一排 / 深色一排）
 
     private var paletteGrid: some View {
         VStack(spacing: 8) {
             paletteRow(ReaderTheme.light, icon: "sun.max.fill")
             paletteRow(ReaderTheme.darkRow, icon: "moon.fill")
         }
+        .padding(.vertical, 12)
     }
 
     private func paletteRow(_ list: [ReaderTheme], icon: String) -> some View {
@@ -362,95 +408,216 @@ struct ReaderWebView: View {
         }
     }
 
+    // MARK: - 跟随系统深浅色（栖阅：circle.lefthalf.filled）
+
     private var followSystemRow: some View {
-        HStack {
-            Label("跟随系统深浅色", systemImage: "circle.lefthalf.filled")
-                .font(.subheadline).foregroundStyle(Theme.ink)
-            Spacer()
-            Toggle("", isOn: $followSystemAppearance).labelsHidden()
-                .tint(Theme.accent)
+        settingRow(title: "跟随系统深浅色", icon: "circle.lefthalf.filled") {
+            Toggle("", isOn: $followSystemAppearance).labelsHidden().tint(Theme.accent)
         }
     }
 
-    // MARK: 翻页方式
+    // MARK: - 排版（栖阅 ReaderLayoutSettingsView）
 
-    private var pageTurnRow: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(Theme.sub)
-                .frame(width: 16)
-            ForEach(PageTurnMode.all) { m in
-                Button {
-                    pageTurnMode = m.raw
-                    pageTurn = m.raw != "scroll"
-                } label: {
-                    Text(m.name)
-                        .font(.system(size: 13))
-                        .foregroundStyle(pageTurnMode == m.raw ? .white : Theme.ink)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .fill(pageTurnMode == m.raw ? Theme.accent : Color.white.opacity(0.5))
-                        )
+    private var layoutSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("排版")
+            // 段落对齐
+            HStack(spacing: 6) {
+                Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
+                Spacer()
+                ForEach(ReaderParaAlign.allCases) { a in
+                    Button { paraAlign = a.raw } label: {
+                        Text(a.name)
+                            .font(.system(size: 12))
+                            .foregroundStyle(paraAlign == a.raw ? .white : Theme.ink)
+                            .padding(.horizontal, 9).padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(paraAlign == a.raw ? Theme.accent : Color.white.opacity(0.5))
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 10)
+
+            // 段落间空行（栖阅原文：「段落间空行: 」）
+            HStack {
+                Text("段落间空行").font(.subheadline).foregroundStyle(Theme.ink)
+                Spacer()
+                Text("\\(Int(paraSpacing))").font(.subheadline).foregroundStyle(Theme.sub)
+                Stepper("", value: $paraSpacing, in: 0...12, step: 1).labelsHidden()
+            }
+            .padding(.vertical, 6)
+
+            // 行底线
+            settingRow(title: "行底线", icon: "line.3.horizontal") {
+                Toggle("", isOn: $showBaseline).labelsHidden().tint(Theme.accent)
+            }
+            if showBaseline {
+                HStack {
+                    Text("独立底线颜色").font(.subheadline).foregroundStyle(Theme.ink)
+                    Spacer()
+                    ColorPicker("", selection: baselineColorBinding, supportsOpacity: true)
+                        .labelsHidden()
+                        .frame(width: 30, height: 24)
+                }
+                .padding(.vertical, 6)
+                // 整行 / 按文字
+                HStack(spacing: 6) {
+                    Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
+                    Spacer()
+                    ForEach(ReaderBaselineScope.allCases) { sc in
+                        Button { baselineScope = sc.raw } label: {
+                            Text(sc.name)
+                                .font(.system(size: 12))
+                                .foregroundStyle(baselineScope == sc.raw ? .white : Theme.ink)
+                                .padding(.horizontal, 9).padding(.vertical, 5)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(baselineScope == sc.raw ? Theme.accent : Color.white.opacity(0.5))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+
+            // 垂直两端对齐
+            settingRow(title: "垂直两端对齐", icon: "arrow.up.and.down",
+                       subtitle: "开启后每页文字会自动调整行间距以填满页面，使底部对齐整齐") {
+                Toggle("", isOn: $verticalJustify).labelsHidden().tint(Theme.accent)
             }
         }
     }
 
-    // MARK: 功能宫格
+    // MARK: - 翻页方式（栖阅原文描述）
 
-    /// 没接上的**只摆位不点**：灰掉、点不动，等真接了再开。
-    /// 给用户一个点下去只会挨骂的按钮，比没有更糟。
-    private var featureTiles: some View {
-        let rows: [[FeatureTile]] = [
-            [.init(name: "大小", icon: "textformat.size", ready: true),
-             .init(name: "间距", icon: "text.line.spacing", ready: true),
-             .init(name: "朗读", icon: "speaker.wave.2", ready: false),
-             .init(name: "高亮", icon: "highlighter", ready: false)],
-            [.init(name: "气泡", icon: "bubble.left.and.bubble.right", ready: false),
-             .init(name: "格式", icon: "text.alignleft", ready: false),
-             .init(name: "标题样式", icon: "textformat", ready: false),
-             .init(name: "页眉页脚", icon: "rectangle.split.2x1", ready: false)],
-            [.init(name: "更多设置", icon: "ellipsis.circle", ready: false)]
-        ]
-        return VStack(spacing: 8) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 8) {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, tile in
-                        featureTile(tile)
+    private var pageTurnSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("翻页方式")
+            HStack(spacing: 4) {
+                ForEach(PageTurnMode.all) { m in
+                    Button {
+                        pageTurnMode = m.raw
+                        pageTurn = m.raw != "scroll"
+                    } label: {
+                        Text(m.name)
+                            .font(.system(size: 13))
+                            .foregroundStyle(pageTurnMode == m.raw ? .white : Theme.ink)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                    .fill(pageTurnMode == m.raw ? Theme.accent : Color.white.opacity(0.5))
+                            )
                     }
-                    // 一行不满 4 个时补空位，网格才对得齐。
-                    // ⚠️ ForEach(0..<0) 在 SwiftUI 里会崩，必须挡掉。
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 10)
+            Text(PageTurnMode.hint(for: pageTurnMode))
+                .font(.caption)
+                .foregroundStyle(Theme.sub)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 10)
+        }
+    }
+
+    // MARK: - 阅读行为
+
+    private var behaviorSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("阅读")
+            settingRow(title: "点击页面任意位置翻到下一页", icon: "hand.tap",
+                       subtitle: "中间区域仍可打开菜单") {
+                Toggle("", isOn: $tapAnywhereTurnsPage).labelsHidden().tint(Theme.accent)
+            }
+            settingRow(title: "上滑退出阅读", icon: "arrow.up") {
+                Toggle("", isOn: $swipeUpExit).labelsHidden().tint(Theme.accent)
+            }
+            settingRow(title: "iPad 或宽屏横屏时自动同屏显示左右两页", icon: "rectangle.split.2x1") {
+                Toggle("", isOn: $twoPageSpread).labelsHidden().tint(Theme.accent)
+                    .disabled(true)
+            }
+            settingRow(title: "内容限制在页眉页脚之间，不遮挡", icon: "rectangle.split.2x1.bottomhalf") {
+                Toggle("", isOn: $contentInHeaderFooter).labelsHidden().tint(Theme.accent)
+                    .disabled(true)
+            }
+        }
+    }
+
+    // MARK: - 其他（还没接的，摆位不点）
+
+    private var otherSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("其他")
+            let tiles: [[FeatureTile]] = [
+                [.init(name: "朗读", icon: "speaker.wave.2.circle", ready: false),
+                 .init(name: "气泡", icon: "bubble.left.and.bubble.right", ready: false),
+                 .init(name: "格式", icon: "text.alignleft", ready: false),
+                 .init(name: "标题样式", icon: "textformat", ready: false)],
+                [.init(name: "页眉页脚", icon: "rectangle.split.2x1", ready: false),
+                 .init(name: "背景图", icon: "photo", ready: false),
+                 .init(name: "更多设置", icon: "ellipsis.circle", ready: false)]
+            ]
+            ForEach(Array(tiles.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 8) {
+                    ForEach(row) { tile in featureTile(tile) }
                     if row.count < 4 {
-                        // ⚠️ 别直接 ForEach(0..<n)：Range 在这里会被推成 Binding<C>，
-                        //    泛型 C 推不出来（"generic parameter 'C' could not be inferred"）。
-                        //    转成 Array 再给 id 就稳了。
-                        let blanks: [Int] = Array(0..<(4 - row.count))
-                        ForEach(blanks, id: \.self) { _ in
+                        ForEach(0..<(4 - row.count), id: \.offset) { _ in
                             Color.clear.frame(maxWidth: .infinity)
                         }
                     }
                 }
             }
+            .padding(.vertical, 8)
         }
     }
 
+    // MARK: - 小组件
+
+    private func sectionHeader(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.sub)
+            Spacer()
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 4)
+    }
+
+    /// 一行设置：标题 +（可选）说明 + 右边的东西
+    private func settingRow<Accessory: View>(title: String,
+                                              icon: String,
+                                              subtitle: String? = nil,
+                                              @ViewBuilder accessory: () -> Accessory) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(Theme.sub)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline).foregroundStyle(Theme.ink)
+                if let subtitle {
+                    Text(subtitle).font(.caption2).foregroundStyle(Theme.sub)
+                }
+            }
+            Spacer(minLength: 8)
+            accessory()
+        }
+        .padding(.vertical, 8)
+    }
+
+    /// 没接的**只摆位不点**：灰掉、点不动。
+    /// 给用户一个点下去只会挨骂的按钮，比没有更糟。
     private func featureTile(_ t: FeatureTile) -> some View {
         Button {
             guard t.ready else { return }
-            if t.name == "间距" {
-                lineSpacing = lineSpacing >= 16 ? 6 : lineSpacing + 4
-                session.host.setSettings(settingsPayload(coverDataURL: nil))
-                return
-            }
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: t.icon).font(.system(size: 17))
                 Text(t.name).font(.caption2)
-                if t.raw == "spacing" {
-                    Text("当前 \(Int(lineSpacing))").font(.system(size: 9)).opacity(0.7)
-                }
             }
             .foregroundStyle(t.ready ? Theme.ink : Theme.sub.opacity(0.45))
             .frame(maxWidth: .infinity)
@@ -540,6 +707,18 @@ struct PageTurnMode: Identifiable, Hashable {
         .init(raw: "none",   name: "无动画"),
         .init(raw: "scroll", name: "上下滚动")
     ]
+
+    /// 栖阅自己的说明文案（从它的二进制字符串表里挖出来的原文）
+    static func hint(for raw: String) -> String {
+        switch raw {
+        case "flip":   return "模拟真实翻书效果，页面卷曲翻转"
+        case "slide":  return "类似 Apple Books 的左右滑动翻页"
+        case "flat":   return "左右平移动画翻页"
+        case "none":   return "无翻页动画，立即切换"
+        case "scroll": return "上下滚动浏览，连续阅读体验"
+        default:       return ""
+        }
+    }
 }
 
 /// WKWebView 的 SwiftUI 容器。

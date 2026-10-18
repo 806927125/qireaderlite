@@ -73,6 +73,58 @@ ok(!/paginateReady|onPaginatePage|onPaginateEdge|onPaginateFail/.test(host), 'Re
 ok(!/paginateReady|repaginate/.test(web), 'ReaderWebView 不再有 CSS 分页的接线');
 ok(!/installPaginate|callPaginateJS/.test(host), '没有残留的注入/调用');
 
+console.log('\n── 用户报的问题 ①：第一章最后一页划不到第二章第一页 ──');
+ok(/let chapterKey: Int/.test(paged), 'PagedReaderView 有 chapterKey');
+ok(/\.onChange\(of: chapterKey\)/.test(paged), '监听章节变化');
+ok(/current = 0[\s\S]{0,200}?layout\(in: geo\.size\)/.test(paged),
+   '换章时页码归零（不归零就会落在新章最后一页 = 划不过去）');
+ok(!/if current >= result\.count \{ current = max\(0, result\.count - 1\) \}/.test(paged)
+   || /onChange\(of: chapterKey\)/.test(paged), '换章归零优先于 clamp');
+
+console.log('\n── 用户报的问题 ③：每章开始的标题 ──');
+ok(/let title: String/.test(paged), '有 title');
+ok(/config\.attributed\(title: title, body: text\)/.test(paged), '标题进排版内容');
+ok(/func attributed\(title: String, body: String\)/.test(layout), '排版支持标题+正文');
+ok(/fontSize \* 1\.18/.test(layout), '标题字号 = 正文 × 1.18（照栖阅 reader.css）');
+ok(/head\.paragraphSpacing = 28/.test(layout), '标题下边距 28（照栖阅 reader.css）');
+ok(/title: session\.chapterTitle/.test(web), '标题来源是章节标题');
+
+console.log('\n── 用户报的问题 ②：设置面板照栖阅 ──');
+for (const [label, re] of [
+  ['垂直两端对齐',        /垂直两端对齐/],
+  ['「每页文字自动调整行间距填满页面」说明', /开启后每页文字会自动调整行间距以填满页面，使底部对齐整齐/],
+  ['段落间空行',          /段落间空行/],
+  ['行底线',              /行底线/],
+  ['「每一行底部绘制整行横线」说明', /开启后会在正文每一行底部绘制整行横线/],
+  ['独立底线颜色',        /独立底线颜色/],
+  ['整行 / 按文字',       /整行|按文字/],
+  ['跟随系统深浅色',      /跟随系统深浅色/],
+  ['上滑退出阅读',        /上滑退出阅读/],
+  ['点击任意位置翻到下一页', /点击页面任意位置翻到下一页/],
+  ['iPad 同屏显示左右两页', /iPad 或宽屏横屏时自动同屏显示左右两页/],
+  ['内容限制在页眉页脚之间', /内容限制在页眉页脚之间，不遮挡/],
+  ['段落对齐 左/居中/右/两端', /段落对齐/],
+]) ok(re.test(web), label);
+ok(/textformat\.size\.smaller/.test(web) && /textformat\.size\.larger/.test(web),
+   '字号滑杆用栖阅同款 SF Symbol');
+ok(/circle\.lefthalf\.filled/.test(web), '跟随系统用 circle.lefthalf.filled');
+for (const [raw, hint] of [
+  ['flip','模拟真实翻书效果，页面卷曲翻转'],
+  ['slide','类似 Apple Books 的左右滑动翻页'],
+  ['flat','左右平移动画翻页'],
+  ['none','无翻页动画，立即切换'],
+  ['scroll','上下滚动浏览，连续阅读体验']]) {
+  ok(web.includes(hint), `栖阅原文说明：${hint}`);
+}
+
+console.log('\n── 这些项要真接上，不能只是摆位 ──');
+ok(/paginateJustified/.test(paged), '垂直两端对齐真接进分页器');
+ok(/showBaseline/.test(paged) && /drawBaselines/.test(paginator), '行底线真画了');
+ok(/CTLineGetOffsetForIndex/.test(paginator), '「按文字」范围用了行内字形偏移');
+ok(/paraAlign\.textAlignment/.test(layout), '段落对齐真进排版');
+ok(/tapAnywhereTurnsPage/.test(paged), '点击任意位置翻页真接了');
+ok(/paragraphSpacing: CGFloat\(paraSpacing\)/.test(web), '段落间空行真进排版');
+
 console.log('\n── 踩过的坑不能再踩 ──');
 // 存一个叫 frame 的属性 → 成员查找先命中它 → SwiftUI 的 .frame(width:height:) 被遮住
 ok(!/\n\s*let frame: CTFrame\?/.test(paginator), 'ReaderPageCanvas 别有 frame 属性（会遮住 .frame() 修饰符）');

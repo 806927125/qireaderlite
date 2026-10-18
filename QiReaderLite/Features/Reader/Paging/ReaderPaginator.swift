@@ -25,6 +25,48 @@ final class ReaderPaginator {
 
     private(set) var pages: [ReaderPage] = []
 
+    /// 排版 + 垂直两端对齐。
+    ///
+    /// 栖阅的说法：「开启后每页文字会自动调整行间距以填满页面，使底部对齐整齐」。
+    /// 做法：先按基准行距排一遍，量出**满页**那页有几行，
+    /// 再把行距调成「行高正好填满一页」，重排一次。
+    /// 最后一行（不满的那页）不参与计算。
+    @discardableResult
+    func paginateJustified(_ attributed: NSAttributedString,
+                            pageSize: CGSize,
+                            config: ReaderLayoutConfig) -> [ReaderPage] {
+        var pages = paginate(attributed, pageSize: pageSize)
+        guard config.verticalJustify, pages.count > 1 else { return pages }
+
+        // 找一页"排得比较满"的（取前几页里行数最多的那个）
+        var bestLines = 0
+        for i in 0..<min(pages.count, 3) {
+            guard let f = frame(at: i, pageSize: pageSize) else { continue }
+            let n = CTFrameGetLines(f).count
+            if n > bestLines { bestLines = n }
+        }
+        guard bestLines > 1 else { return pages }
+
+        // 让 bestLines 行正好填满一页
+        let fontLineHeight = config.resolvedFont.lineHeight
+        let target = pageSize.height / CGFloat(bestLines)
+        let wanted = max(0, target - fontLineHeight)
+        guard abs(wanted - config.lineSpacing) > 0.5 else { return pages }
+
+        var tuned = config
+        tuned.lineSpacing = wanted
+        // ⚠️ 不能拿 attributed.string 重新造 —— 那样标题的样式就丢了。
+        //    直接改正文那段 attributed 的行距。
+        let tunedAttr = NSMutableAttributedString(attributed: attributed)
+        if let full = attributed.length > 0 {
+            tunedAttr.addAttribute(.paragraphStyle,
+                                   value: tuned.paragraphStyle(),
+                                   range: NSRange(location: 0, length: full))
+        }
+        pages = paginate(tunedAttr, pageSize: pageSize)
+        return pages
+    }
+
     /// 排版。返回页列表。
     @discardableResult
     func paginate(_ attributed: NSAttributedString, pageSize: CGSize) -> [ReaderPage] {
@@ -101,6 +143,10 @@ struct ReaderPageCanvas: UIViewRepresentable {
     ///    成员查找会先命中属性，把 `.size()` / `.background()` 遮住。
     let pageSize: CGSize
     let bgColor: UIColor
+    /// 行底线（栖阅：开启后会在正文每一行底部绘制整行横线）
+    var showBaseline: Bool = false
+    var baselineColor: UIColor = .lightGray
+    var baselineScope: ReaderBaselineScope = .full
 
     func makeUIView(context: Context) -> PageView {
         let v = PageView()
@@ -112,6 +158,9 @@ struct ReaderPageCanvas: UIViewRepresentable {
 
     func updateUIView(_ v: PageView, context: Context) {
         v.backgroundColor = bgColor
+        v.showBaseline = showBaseline
+        v.baselineColor = baselineColor
+        v.baselineScope = baselineScope
         v.ctFrame = ctFrame
     }
 
@@ -119,6 +168,9 @@ struct ReaderPageCanvas: UIViewRepresentable {
         var ctFrame: CTFrame? {
             didSet { setNeedsDisplay() }
         }
+        var showBaseline: Bool = false
+        var baselineColor: UIColor = .lightGray
+        var baselineScope: ReaderBaselineScope = .full
 
         override func draw(_ rect: CGRect) {
             guard let cf = ctFrame, let ctx = UIGraphicsGetCurrentContext() else { return }
@@ -128,6 +180,35 @@ struct ReaderPageCanvas: UIViewRepresentable {
             ctx.translateBy(x: 0, y: bounds.height)
             ctx.scaleBy(x: 1, y: -1)
             CTFrameDraw(cf, ctx)
+            if showBaseline { drawBaselines(cf, ctx) }
+            ctx.restoreGState()
+        }
+
+        /// 行底线：在每一行的基线下面画一条横线。
+        /// 「整行」= 拉满整页宽；「按文字」= 只画有字的那一段。
+        private func drawBaselines(_ cf: CTFrame, _ ctx: CGContext) {
+            let lines = CTFrameGetLines(cf) as NSArray
+            guard lines.count > 0 else { return }
+            var origins = [CGPoint](repeating: .zero, count: lines.count)
+            CTFrameGetLineOrigins(cf, CFRange(location: 0, length: 0), &origins)
+            ctx.saveGState()
+            ctx.setFillColor(baselineColor.cgColor)
+            for (i, obj) in lines.enumerated() {
+                guard let line = obj as? CTLine else { continue }
+                let y = origins[i].y
+                var x0: CGFloat = 0
+                var x1: CGFloat = bounds.width
+                if baselineScope == .word {
+                    let glyphs = CTLineGetGlyphCount(line)
+                    if glyphs > 0 {
+                        x0 = CTLineGetOffsetForIndex(line, 0, nil)
+                        x1 = CTLineGetOffsetForIndex(line, glyphs, nil)
+                    }
+                }
+                guard x1 > x0 else { continue }
+                // 压在基线下面一点（翻转后的坐标系 y 向上，所以要减）
+                ctx.fill(CGRect(x: x0, y: y - 2, width: x1 - x0, height: 1))
+            }
             ctx.restoreGState()
         }
     }
