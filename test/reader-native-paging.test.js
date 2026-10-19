@@ -63,8 +63,13 @@ console.log('\n── 翻页方式：5 种齐全，且都真的实现 ──');
 for (const [raw, name] of [['flip','仿真'],['slide','滑动'],['flat','平移'],['none','无动画'],['scroll','上下滚动']]) {
   ok(new RegExp(`raw: "${raw}",[\\s,]+name: "${name}"`).test(web), `${name}（${raw}）在设置里`);
 }
-ok(/transitionStyle = \.pageCurl/.test(pager), '仿真用系统 pageCurl 真卷曲（不是硬凑的 3D）');
-ok(/transitionStyle = \.scroll/.test(pager), '滑动/平移走系统 scroll 容器');
+// ⚠️ transitionStyle / navigationOrientation 是 **get-only**，只能在 init 设。
+//    所以「仿真」的实现形态是「按方式重建容器」，不是事后赋值
+//    （事后赋值报 "cannot assign to property: 'transitionStyle' is a get-only property"）
+ok(/func makeContainer\(mode: String\) -> UIPageViewController/.test(pager), '容器可按翻页方式重建');
+ok(/\? \.pageCurl : \.scroll/.test(pager), '仿真用系统 pageCurl 真卷曲，其余走 scroll');
+ok(!/\.transitionStyle = /.test(pager), '没有事后赋值 transitionStyle（get-only，赋不了）');
+ok(!/pageViewControllerOptions/.test(pager), '没有 pageViewControllerOptions（SDK 里没这个成员）');
 ok(/animated && turnMode != "none"/.test(pager), '无动画 = 关掉容器动画');
 ok(/turnMode != "none"/.test(pager), '无动画直接切页（关掉容器动画）');
 ok(/pageTurnMode != "scroll"/.test(web), '上下滚动走 webview（不用原生分页）');
@@ -99,7 +104,9 @@ console.log('\n── 接线：webview 只在上下滚动模式用 ──');
 ok(/useNativePaging/.test(web), '有 useNativePaging 判断');
 ok(/pageTurnMode != "scroll"/.test(web), '只有「上下滚动」才用 webview');
 ok(/PagedReaderUI\(controller: pageCtl\)/.test(web), '新分页器接进阅读页');
-ok(/UIPageViewController\(transitionStyle/.test(readerUI), '容器是 UIPageViewController');
+ok(/UIPageViewController\(transitionStyle/.test(pager), '容器是 UIPageViewController');
+ok(/func setMode\(/.test(readerUI), 'SwiftUI 侧能换翻页方式');
+ok(/pager\.makeContainer\(mode: newMode\)/.test(readerUI), '换方式时重建容器');
 ok(/vc\.dataSource = self/.test(pager), '数据源接上了');
 ok(/vc\.delegate = self/.test(pager), '代理接上了（翻完要记页码）');
 ok(/UIPageViewControllerDataSource, UIPageViewControllerDelegate/.test(pager),
@@ -114,6 +121,15 @@ ok(!/installPaginate|callPaginateJS/.test(host), '没有残留的注入/调用')
 
 console.log('\n── 用户报的问题 ①：第一章最后一页划不到第二章第一页 ──');
 ok(/func show\(at index: Int/.test(pager), '能切到指定页');
+// SwiftUI ↔ pager 的类型边界：闭包参数不标类型会推不出来
+ok(/\{ \(p: Int, total: Int\) in/.test(web), 'onPageChange 闭包参数标了类型');
+ok(/\{ \(dir: Int\) in/.test(web), 'onStep 闭包参数标了类型');
+// ReaderLayoutConfig 是全默认值的 struct，没有 static default
+ok(!/ReaderLayoutConfig\.default/.test(pager), '没有用不存在的 ReaderLayoutConfig.default');
+ok(/ReaderLayoutConfig\(\)/.test(pager), '用 ReaderLayoutConfig() 初始化');
+// ReaderBaselineScope 是 struct（不是 enum），成员是 .word 不是 .text
+ok(!/\.baselineScope\.rawValue/.test(web), 'ReaderBaselineScope 用 .raw 不是 .rawValue');
+ok(/case \.word/.test(pageVC), '底线范围用 .word（栖阅叫「按文字」，枚举名是 word）');
 ok(/didFinishAnimating/.test(pager), '翻完动画后回写当前页');
 // 换章判定不再靠「chapterKey 立刻变、正文异步到」，而是正文真变了才重排
 // —— 老做法每次换章都先闪一下上一章第一页，看着就像翻页坏了

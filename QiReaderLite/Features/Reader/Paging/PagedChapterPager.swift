@@ -24,7 +24,9 @@ final class PagedChapterPager: NSObject {
 
     // MARK: 输入
 
-    var config: ReaderLayoutConfig = .default
+    // ⚠️ ReaderLayoutConfig 全属性都有默认值但**没有** static default，
+    //    用 .default 会报 "type has no member 'default'"
+    var config: ReaderLayoutConfig = ReaderLayoutConfig()
     var pageSize: CGSize = .zero
     var turnMode: String = "slide"
     var background: UIColor = .systemBackground
@@ -53,7 +55,6 @@ final class PagedChapterPager: NSObject {
         self.vc = vc
         vc.dataSource = self
         vc.delegate = self
-        applyTransition()
     }
 
     /// 换章后重排
@@ -78,7 +79,7 @@ final class PagedChapterPager: NSObject {
             vc?.setViewControllers([makeStatus(.loading)], direction: .forward, animated: false)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let ps = self?.pageSize ?? .zero
-                let cfg = self?.config ?? .default
+                let cfg = self?.config ?? ReaderLayoutConfig()
                 let p = ReaderPaginator()
                 let r = p.paginateJustified(attr, pageSize: ps, config: cfg)
                 DispatchQueue.main.async {
@@ -116,23 +117,16 @@ final class PagedChapterPager: NSObject {
 
     // MARK: 翻页方式
 
-    private func applyTransition() {
-        guard let vc else { return }
-        switch turnMode {
-        case "flip":
-            // 真·卷曲（系统 pageCurl），不是 rotation3DEffect 硬凑的
-            vc.transitionStyle = .pageCurl
-            vc.isDoubleSided = false
-            vc.pageViewControllerOptions = nil
-        default:
-            vc.transitionStyle = .scroll
-            vc.navigationOrientation = .horizontal
-        }
-    }
-
-    func setTurnMode(_ m: String) {
-        turnMode = m
-        applyTransition()
+    /// UIPageViewController 的 `transitionStyle` / `navigationOrientation`
+    /// 都是 **get-only**，只能在 init 里定，事后改会报
+    /// "cannot assign to property: 'transitionStyle' is a get-only property"。
+    /// 所以翻页方式变了要**换掉整个容器**。
+    func makeContainer(mode: String) -> UIPageViewController {
+        let style: UIPageViewController.TransitionStyle = (mode == "flip") ? .pageCurl : .scroll
+        let v = UIPageViewController(transitionStyle: style, navigationOrientation: .horizontal)
+        v.isDoubleSided = false
+        build(vc: v)
+        return v
     }
 
     func setPageSize(_ size: CGSize) {
@@ -162,7 +156,7 @@ final class PagedChapterPager: NSObject {
                   pageSize: pageSize,
                   bg: background,
                   baseline: config.showBaseline,
-                  baselineColor: UIColor(config.baselineColor),
+                  baselineColor: config.baselineColor,
                   scope: config.baselineScope)
         return v
     }

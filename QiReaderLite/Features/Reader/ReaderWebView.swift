@@ -116,21 +116,21 @@ struct ReaderWebView: View {
     /// 幂等 —— 只有「章变了 / 正文变了 / 排版参数变了」才真的重排。
     private func syncPager(size: CGSize) {
         let c = layoutConfig
-        let sig = "\(c.fontSize)|\(c.lineSpacing)|\(c.paragraphSpacing)|\(c.horizontalMargin)|\(c.topMargin)|\(c.verticalJustify)|\(c.baselineScope.rawValue)|\(themeKey)|\(darkScheme == .dark)"
+        let sig = "\(c.fontSize)|\(c.lineSpacing)|\(c.paragraphSpacing)|\(c.horizontalMargin)|\(c.topMargin)|\(c.verticalJustify)|\(c.baselineScope.raw)|\(themeKey)|\(darkScheme == .dark)"
         let pager = pageCtl.pager
         pager.config = c
         pager.background = UIColor(theme.bg)
-        pager.setTurnMode(pageTurnMode)
+        pageCtl.setMode(pageTurnMode)
         pager.setPageSize(c.pageSize(in: size))
 
-        pager.onStep = { dir in
+        pager.onStep = { (dir: Int) in
             if dir == 0 {
                 Task { await session.reloadCurrent() }
             } else {
                 session.step(dir)
             }
         }
-        pager.onPageChange = { p, total in
+        pager.onPageChange = { (p: Int, total: Int) in
             pageInfo = (p, total)
             saveProgress(ratio: total > 1 ? Double(p - 1) / Double(total) : 0)
         }

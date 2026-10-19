@@ -243,7 +243,9 @@ final class ReaderPageCanvasView: UIView {
     /// 行底线：栖阅「开启后会在正文每一行底部绘制整行横线」
     /// 支持「整行 / 按文字」两种范围。
     private func drawBaselines(in frame: CTFrame, ctx: CGContext) {
-        let path = CTFrameGetPath(frame)!
+        // ⚠️ 新 SDK 的 CTFrameGetPath 返回**非可选** CGPath，旧的 `!` 会报
+        //    "cannot force unwrap value of non-optional type 'CGPath'"
+        let path = CTFrameGetPath(frame)
         ctx.saveGState()
         ctx.addPath(path)
         ctx.clip()
@@ -255,17 +257,20 @@ final class ReaderPageCanvasView: UIView {
         var origins = [CGPoint](repeating: .zero, count: count)
         CTFrameGetLineOrigins(frame, CFRangeMake(0, 0), &origins)
         for i in 0..<count {
-            guard let line = CFArrayGetValueAtIndex(lines, i) else { continue }
-            let line = unsafeBitCast(line, to: CTLine.self)
+            // CFArrayGetValueAtIndex 拿的是 UnsafeRawPointer，
+            // 直接 let 会推成 Optional 再重名 —— 分两步写
+            guard let raw = CFArrayGetValueAtIndex(lines, i) else { continue }
+            let line = unsafeBitCast(raw, to: CTLine.self)
             let r = CTLineGetImageBounds(line, origins[i])
-            let desc = CTLineGetTypographicBounds(line, nil, nil, nil)
+            // CTLineGetTypographicBounds 返回 Double，CGFloat 减 Double 要显式转
+            let desc = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             let baselineY = origins[i].y - desc
             var x0: CGFloat, x1: CGFloat
             switch scope {
             case .full:
                 x0 = 0
                 x1 = pageSize.width
-            case .text:
+            case .word:          // 栖阅叫「按文字」，枚举里是 .word 不是 .text
                 x0 = CGFloat(r.origin.x)
                 x1 = CGFloat(r.origin.x + r.width)
             }
