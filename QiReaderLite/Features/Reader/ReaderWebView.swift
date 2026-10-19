@@ -611,12 +611,12 @@ struct ReaderWebView: View {
         }
         .padding(.vertical, 4)
         .background(Color.white.opacity(0.34),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.bottom, 10)
     }
 
     private var hairLine: some View {
-        Divider().opacity(0.35).padding(.vertical, 2)
+        Divider().overlay(Self.qrLine).padding(.vertical, 2)
     }
 
     // MARK: - ① 字号行（小方块 + 滑块 + 大方块 + 字体下拉，全在一行）
@@ -637,8 +637,8 @@ struct ReaderWebView: View {
             .font(.system(size: pointSize, weight: .medium))
             .foregroundStyle(Theme.ink)
             .frame(width: 36, height: 32)
-            .background(Color.gray.opacity(0.18),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Self.qrFill,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     /// 字体下拉（胶囊）
@@ -656,7 +656,7 @@ struct ReaderWebView: View {
             .foregroundStyle(Theme.ink)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(Color.gray.opacity(0.18), in: Capsule())
+            .background(Self.qrFill, in: Capsule())
         }
     }
 
@@ -681,9 +681,9 @@ struct ReaderWebView: View {
                         .foregroundStyle(t.ink)
                         .frame(maxWidth: .infinity)
                         .frame(height: 36)
-                        .background(t.bg, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .background(t.bg, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .strokeBorder(themeKey == t.key ? Theme.accent : .white.opacity(0.55),
                                               lineWidth: themeKey == t.key ? 2 : 1)
                         )
@@ -721,7 +721,7 @@ struct ReaderWebView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(Color.white.opacity(0.34),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.bottom, 10)
     }
 
@@ -761,6 +761,10 @@ struct ReaderWebView: View {
         }
     }
 
+    /// 一行 4 格。⚠️ `Self.tiles` 是**元组数组**，元组不是 Identifiable，
+    ///    所以这里必须显式给 `id: \.name`（内容稳定、唯一）。
+    ///    之前有一条门禁要求「所有 ForEach 都不用 id: 重载」——
+    ///    那条只对 `Identifiable` 元素成立，套到元组上是错的。
     private func tileRow(_ from: Int) -> some View {
         HStack(spacing: 8) {
             ForEach(Array(Self.tiles[from..<min(from + 4, Self.tiles.count)]), id: \.name) { t in
@@ -773,6 +777,26 @@ struct ReaderWebView: View {
             }
         }
     }
+
+    // MARK: - 栖阅设计 token
+    //
+    // ⭐ 抄自栖阅 `designer.css` 的 `:root`，不是凭感觉定的：
+    //     --r-sm: 8px;  --r-md: 12px;  --r-lg: 16px;  --r-pill: 999px;
+    //     --tap: 44px;
+    //     --panel:      rgba(255,255,255,0.86);
+    //     --fill:       rgba(120,120,128,0.12);
+    //     --fill-strong:rgba(120,120,128,0.20);
+    //     --line:       rgba(60,60,67,0.12);
+    //     --accent:     #0a84ff;
+    //
+    // ⚠️ 最容易错的是 **--fill 带蓝调**（120,120,128 是个偏冷的灰）。
+    //    我之前用 `Color.gray.opacity(0.18)` —— 那是**纯灰 18%**，
+    //    叠在暖色纸背景上会显脏。这就是面板看着"怪"的原因之一。
+
+    /// --fill：控件底色（按钮、滑杆、胶囊）
+    private static let qrFill = Color(red: 120/255, green: 120/255, blue: 128/255).opacity(0.12)
+    /// --line：细分隔线
+    private static let qrLine = Color(red: 60/255, green: 60/255, blue: 67/255).opacity(0.12)
 
     /// 一个磁贴（图标 + 粗体大字 + 小字副标题）。
     ///
@@ -797,7 +821,7 @@ struct ReaderWebView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(Color.white.opacity(ready ? 0.34 : 0.16),
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!ready)

@@ -117,8 +117,20 @@ const sizeRow = web.slice(web.indexOf('private var sizeRow'), web.indexOf('priva
 ok(/fontMenu/.test(sizeRow), '字体下拉在字号行里（同一行）');
 ok(!/private var fontRow/.test(web), '没有单独的字体行');
 // 翻页方式卡片：灰底圆角 + 左侧图标
-ok(/Color\.white\.opacity\(0\.34\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 20/.test(web),
-   '翻页方式卡片是半透明白圆角（玻璃感）');
+// 圆角按栖阅 designer.css 的 token 阶梯：--r-sm 8 / --r-md 12 / --r-lg 16
+ok(/Color\.white\.opacity\(0\.34\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 16/.test(web),
+   '翻页方式卡片是半透明白圆角，cornerRadius 16 = 栖阅 --r-lg');
+ok(/cornerRadius: 12/.test(web), '磁贴 cornerRadius 12 = 栖阅 --r-md');
+ok(/RoundedRectangle\(cornerRadius: 8, style: \.continuous\)/.test(web),
+   '小方块/配色格 cornerRadius 8 = 栖阅 --r-sm');
+// ⭐ 填充色必须**带蓝调**（栖阅 --fill: rgba(120,120,128,0.12)），
+//    不是纯灰 —— 纯灰叠在暖色纸背景上显脏。
+ok(/Color\(red: 120\/255, green: 120\/255, blue: 128\/255\)\.opacity\(0\.12\)/.test(web),
+   '控件底色用栖阅 --fill（120,120,128 偏冷的灰）');
+ok(!/\.background\(Color\.gray\.opacity/.test(web),
+   '**没有**用 Color.gray.opacity 当填充 —— 那是纯灰，不是栖阅的冷灰');
+ok(/Color\(red: 60\/255, green: 60\/255, blue: 67\/255\)\.opacity\(0\.12\)/.test(web),
+   '细分隔线用栖阅 --line (60,60,67,0.12)');
 ok(/Image\(systemName: "doc\.text"\)/.test(web), '翻页方式卡片左边有图标');
 // 磁贴：图标 + 粗体标题 + 副标题
 ok(/Image\(systemName: icon\)/.test(web), '磁贴有图标');

@@ -298,8 +298,8 @@ for (const [label, re] of [
   ['段落对齐 左/居中/右/两端', /段落对齐/],
 ]) ok(re.test(webRaw), label);
 ok(/private func sizeKnob/.test(web), '小/大 是灰底圆角方块（参考截图就是这样，不是 SF Symbol）');
-ok(/Color\.gray\.opacity\(0\.18\)[\s\S]{0,120}?RoundedRectangle\(cornerRadius: 10/.test(web),
-   '小/大方块是灰底圆角');
+ok(/Self\.qrFill[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 8/.test(web),
+   '小/大方块用栖阅 --fill 冷灰底 + --r-sm 圆角 8');
 ok(/circle\.lefthalf\.filled/.test(web), '跟随系统用 circle.lefthalf.filled');
 for (const [raw, hint] of [
   ['flip','模拟真实翻书效果，页面卷曲翻转'],
@@ -344,10 +344,26 @@ ok(!/ReaderParaAlign\.allCases/.test(web), '别用 allCases（只是 Collection�
 ok(!/ReaderParaAlign\.cases/.test(web), '别用 .cases（改成 .all 对齐其它枚举）');
 // 所有 ForEach 都得是「Identifiable struct 数组 + 无 id:」这个已验证模式
 const foreachLines = web.split('\n').filter(l => /ForEach\(/.test(l) && !/^\s*\/\//.test(l));
-ok(foreachLines.every(l => !/id:/.test(l)),
-   '所有 ForEach 都不用 id: 重载', foreachLines.filter(l => /id:/.test(l)).join(' | '));
+{
+  // 规则要分清：**Identifiable 元素**的 ForEach 不写 id:（已验证过的模式）；
+  // **元组 / 切片**不是 Identifiable，必须显式给 id:。
+  // 这条门禁原来一刀切，把合法的元组 ForEach 也判红了。
+  const needsId = foreachLines.filter(l => /id:/.test(l));
+  ok(needsId.every(l => /Array\(Self\.tiles\[/.test(l)),
+     '带 id: 的 ForEach 只有磁贴那个（Self.tiles 是元组数组，元组不是 Identifiable）',
+     needsId.join(' | '));
+  ok(foreachLines.filter(l => !/id:/.test(l)).every(l => !/Array\(/.test(l)),
+     'Identifiable 数组的 ForEach 仍然不写 id:');
+}
+// ⚠️ 注释会被 stripComments 剥掉，所以只能断言**代码本身**：
+//    磁贴那行确实是 Array(Self.tiles[...]) + id: \.name 这个组合。
+ok(/ForEach\(Array\(Self\.tiles\[from\.\.<min\(from \+ 4, Self\.tiles\.count\)\]\), id: \\\.name\)/.test(web),
+   '磁贴 ForEach 是「元组切片 + 显式 id:」这个组合（源码注释已说明原因）');
 ok(!/enumerated\(\)/.test(web), '没有 enumerated() 元组（做不了 key path）');
-ok(/featureTile\(FeatureTile\(name: "朗读设置"/.test(web), '功能磁贴写死两行，不用 ForEach');
+ok(/private static let tiles: \[\(name: String, subtitle: String, icon: String, ready: Bool\)\]/.test(web),
+   '磁贴是一张 8 格的数据表（文案照栖阅截图逐格抄的）');
+ok(/private func tileRow\(_ from: Int\)/.test(web) &&
+   /Self\.tiles\[from\.\.<min\(from \+ 4/.test(web), '按 4 + 4 两行渲染');
 ok(/ForEach\(Array\(tiles\.enumerated\(\)\)/.test(web) === false, '没有 enumerated() 元组 ForEach');
 
 // iOS SDK 里没有 CTLineGetOffsetForIndex
