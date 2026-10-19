@@ -147,7 +147,9 @@ ok(/ZStack\(alignment: \.bottom\)/.test(web), '根容器是 bottom 对齐的 ZSt
 {
   const sc = web.slice(web.indexOf('private var settingsContent'),
                         web.indexOf('private var panelContent'));
-  ok(/VStack\(spacing: 0\) \{\s*panelContent\s*featureGrid\s*\}\s*\n?\s*\.fixedSize/.test(sc),
+  // ⚠️ VStack 和 .fixedSize 之间可能隔着 .frame(maxWidth:)，
+  //    所以这里只要求 VStack 之后**不远处**出现 fixedSize。
+  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,60}featureGrid[\s\S]{0,200}\.fixedSize/.test(sc),
      'fixedSize 挂在**包住全部内容**的 VStack 上（不是只挂 featureGrid）');
   ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,60}featureGrid[\s\S]{0,600}SheetContentHeightKey/.test(sc),
      '测高 GeometryReader 同样挂在包住全部内容的 VStack 上');
@@ -279,7 +281,12 @@ ok(!/fillsWidth: true/.test(pageTurn), 'pills 不等分 —— 等分是我 buil
 ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 
 // 色块
-ok(/frame\(width: 42, height: 42\)/.test(web), '色块 42×42（参考实现 .swatch）');
+// ⚠️ 色块**不能**用固定 width —— 8×42 + 间距 + 图标槽 = 428pt，
+//    超出可用宽 412pt → 整个内容被撑宽、两边溢出被裁（真机验证过）。
+//    改成自适应均分（栖阅真机就是 8 个均分贴边），高度仍固定 42。
+ok(/frame\(maxWidth: \.infinity\)[\s\S]{0,80}frame\(height: 42\)/.test(web),
+   '色块宽度自适应均分（固定 42 会撑爆行宽导致内容溢出）');
+ok(!/frame\(width: 42, height: 42\)/.test(web), '不用固定 width 42 的色块');
 ok(/cornerRadius: 9/.test(web), '色块圆角 9');
 ok(/font\(\.system\(size: 13, weight: \.regular\)\)/.test(web), '色块文字 13');
 ok(/frame\(width: 28\)/.test(web), '色块行图标槽 28（参考实现 .mode-icon width:28）');

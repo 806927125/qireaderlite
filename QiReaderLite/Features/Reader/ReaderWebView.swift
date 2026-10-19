@@ -648,6 +648,7 @@ struct ReaderWebView: View {
 
     /// 面板内容
     private var settingsContent: some View {
+        // 内容宽度锁死在可用宽内 —— 任何一行撑爆都会把整个面板顶出屏幕
         NavigationStack {
             // ⚠️⚠️ 必须用 VStack 把 panelContent + featureGrid **包起来**，
             //    再把 `.fixedSize` 和测高 GeometryReader 挂在 **VStack** 上。
@@ -659,6 +660,7 @@ struct ReaderWebView: View {
                 panelContent
                 featureGrid
             }
+            .frame(maxWidth: .infinity)
             // 固定成内容本来的高度 —— 这样量出来的才是真实高度，
             // 不会被 detent 限制（限住就成了循环依赖）
             .fixedSize(horizontal: false, vertical: true)
@@ -844,7 +846,16 @@ struct ReaderWebView: View {
                         // 边框 = 选中 blue 2px / 否则 black @ .08 1px
                         .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(t.ink)
-                        .frame(width: 42, height: 42)
+                        // ⚠️⚠️ 不能用固定 `width: 42`！
+                        //    8 个 × 42 + 7 个间距 × 8 + 图标槽 28 = **428pt**，
+                        //    而可用宽只有 440 − 14×2(定位) − 14×2(内部) = **412pt**
+                        //    → 超 16pt，整个内容被撑宽、居中后**两边都溢出被裁**
+                        //    （真机：左边「小」被切、右边色块第8个/开关/「高亮」被切）
+                        //
+                        // 栖阅真机是 **8 个均分贴边**的，所以这里用 maxWidth:.infinity
+                        // 均分，高度仍固定 42（保持方块比例）。
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
                         .background(t.bg, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 9, style: .continuous)
