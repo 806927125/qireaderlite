@@ -61,6 +61,7 @@ const readerUI = stripComments(fs.readFileSync(path.join(P, 'PagedReaderUI.swift
 const webRaw   = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
 const web      = stripComments(webRaw);
 const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8');
+const sess     = fs.readFileSync(path.join(ROOT, 'Core/ReaderSession.swift'), 'utf8');
 
 ok(selfTestStripComments(), 'stripComments 自检通过（门禁工具自己出错的话下面全是随机结果）');
 
@@ -120,12 +121,16 @@ ok(/return nil/.test(edgeBlock) === false,
 
 console.log('\n── 绝不留白正文 ──');
 ok(/func pageCount\(of c: Int\)/.test(pager), '按章算页数（重建 spine 用）');
-ok(/guard let t = texts\[c\], !t\.body\.isEmpty else \{ return 1 \}/.test(pager),
-   '文本没到位的章按 1 页占位，到齐了重建 spine');
-ok(/if let t = chapterTextProvider\?\(c\) \{ texts\[c\] = t \}/.test(pager),
-   '文本到齐会填进 texts（字典下标赋值不接受 Optional，必须 if let 摊平）');
-ok(!/texts\[c\] = chapterTextProvider\?\(c\)/.test(pager),
-   '没直接给字典下标赋 Optional —— 那样推不出类型');
+ok(/private var renders: \[Int: ChapterRender\]/.test(pager), '各章排版结果有缓存');
+ok(/private func pageCount\(of c: Int\) -> Int \{ renders\[c\]\?\.pageCount \?\? 1 \}/.test(pager),
+   '没文本的章按 1 页占位');
+ok(/@discardableResult[\s\S]{0,80}private func render\(_ c: Int\)/.test(pager), '有 render() 统一排版');
+
+// ★ 标题 / 页数必须**同一基准**：之前 pageCount 不带标题、makePage 带标题，
+//   两边不一致 → 页边界和渲染对不上，标题页错位（用户报的「标题去哪了」）
+ok(/config\.attributed\(title: t\.title, body: t\.body\)/.test(pager),
+   '页数按「带标题」的基准算');
+ok(/title: gp\.page == 0 \? r\.title : ""/.test(pager), '只有该章首页渲染标题');
 ok(/func setPageSize\(_ size: CGSize\)/.test(pager), '视口变化要能重算页数');
 ok(/guard size\.width > 1, size\.height > 1 else \{ return \}/.test(pager),
    'setPageSize 同样不让 .zero 进来（那会算出 80×80 迷你页）');
@@ -185,8 +190,30 @@ ok(!/chapterKey/.test(pager + pageVC), '新架构里已经没有 chapterKey 这�
 
 console.log('\n── 用户报的问题 ③：每章开始的标题 ──');
 ok(/chapterTextProvider/.test(pager), '章节文本由上层提供');
-ok(/config\.attributed\(title: gp\.page == 0 \? t\.title : "", body: t\.body\)/.test(pager),
-   '标题只进该章第一页的排版');
+// ★ chapterTextArrived 绝不能跳页 —— 文本是异步到的，一到就跳首页
+//   就是用户报的「下面控件上的目录显示乱跳」
+ok(/func chapterTextArrived\(_ c: Int\)/.test(pager), '有 chapterTextArrived');
+// ⚠️ 这条以前写成 `show(cursor: firstIndexOf` —— **正则里少了个 `(`**，
+//    `firstIndexOf` 跟源码里的 `firstIndex(ofChapter:` 压根不匹配，
+//    于是这条断言**永远绿**。正则写错比没有更危险：它假装在守，实际没守。
+const arrivedBody = pager.slice(pager.indexOf('func chapterTextArrived'),
+                                pager.indexOf('private func refresh'));
+ok(!/show\(cursor: firstIndex/.test(arrivedBody),
+   '文本到齐不跳该章首页（跳了就是底部控件乱跳的来源）');
+ok(/refresh\(at: at\)/.test(arrivedBody), '文本到齐走原地重画，保持当前页');
+ok(/func refresh\(at idx: Int\)/.test(pager), '原地重画当前页');
+ok(/let at = cursor/.test(pager), '重排时记着当前位置');
+ok(/loadChapter[\s\S]{0,300}?show\(cursor: firstIndex\(ofChapter: c\)/.test(pager),
+   '只有真正换章才落该章第一页');
+
+// ★ 串章防护：章号先变、文本后到（异步），provider 必须三重校验
+ok(/guard c == session\.index, c == pagedChapter, !session\.chapterText\.isEmpty/.test(web),
+   'provider 同时卡章号和文本版本（否则会用上一章正文排新章的页）');
+ok(/func followIndex\(_ i: Int\)/.test(sess), '有 followIndex（只跟章号不跳页）');
+ok(/pager\.onChapterChange[\s\S]{0,200}?session\.followIndex\(c\)/.test(web),
+   'onChapterChange 只跟不跳');
+ok(!/if switchedChapter \{\s*\n\s*pager\.loadChapter/.test(web) === false,
+   '换章才 loadChapter，同章文本更新走 chapterTextArrived');
 ok(/func attributed\(title: String, body: String\)/.test(layout), '排版支持标题+正文');
 ok(/fontSize \* 1\.18/.test(layout), '标题字号 = 正文 × 1.18（照栖阅 reader.css）');
 ok(/head\.paragraphSpacing = 28/.test(layout), '标题下边距 28（照栖阅 reader.css）');
@@ -296,8 +323,6 @@ ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
 //   ② load 失败时 errorText 写了但**没有任何 UI 显示**，
 //      正文静默停在上一章第一页，看着就是「翻页卡住」
 {
-  const sess = fs.readFileSync(
-    path.join(__dirname, '..', 'QiReaderLite', 'Core', 'ReaderSession.swift'), 'utf8');
   const web = fs.readFileSync(
     path.join(__dirname, '..', 'QiReaderLite', 'Features', 'Reader', 'ReaderWebView.swift'), 'utf8');
 
@@ -339,7 +364,6 @@ ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
   ok(!/var onStep:/.test(pager),                 '没有 onStep 回调');
   ok(/var onNeedChapter:/.test(pager),           '改成「需要某章正文」的回调');
   ok(/ensureNeighbor/.test(pager),                '接近章尾就预取邻章');
-  const sess = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'ReaderSession.swift'), 'utf8');
   ok(/func prefetch\(index i: Int\) async -> Bool/.test(sess), 'ReaderSession 有 prefetch');
   ok(/@discardableResult/.test(sess),            '预取结果不用也不报警告');
 

@@ -169,9 +169,10 @@ struct ReaderWebView: View {
                 if !ok { /* 翻到那一页时会显示占位/失败 */ }
             }
         }
+        // 用户翻到了别的章 → 通知上层把 session.index 跟过来（**只跟，不跳**）
         pager.onChapterChange = { (c: Int) in
-            guard c >= 0 else { return }
-            if session.index != c { session.jump(to: c) }
+            guard c >= 0, session.index != c else { return }
+            session.followIndex(c)
         }
         pager.onPageChange = { (p: Int, total: Int) in
             pageInfo = (p, total)
@@ -182,19 +183,30 @@ struct ReaderWebView: View {
         if session.index == pagedChapter && session.chapterText == pagedText && sig == pagedLayout {
             return
         }
+        let switchedChapter = session.index != pagedChapter
+        // 先记下来，chapterTextProvider 才认这一章（见上面的三重判断）
         pagedChapter = session.index
         pagedText = session.chapterText
         pagedTitle = session.chapterTitle
         pagedLayout = sig
         pager.chapterTextProvider = { (c: Int) -> PagedChapterPager.ChapterText? in
-            // 只有当前章的正文在 session 里；邻章由 prefetch 拉回来后
-            // 由 chapterTextArrived 显式回填
-            guard c == session.index else { return nil }
+            // ⚠️ 必须**同时**卡住章号和文本版本。
+            //    只判 c == session.index 是不够的：换章时 jump() 先改 index、
+            //    chapterText 后到（异步），这中间 pager 来问会拿到**上一章的正文**，
+            //    于是新章的页是用旧文本排的 —— 标题消失 / 页码跳，全在这。
+            guard c == session.index, c == pagedChapter, !session.chapterText.isEmpty else {
+                return nil
+            }
             return PagedChapterPager.ChapterText(title: session.chapterTitle,
                                                  body: session.chapterText)
         }
         pager.chapterCount = session.flat.count
-        pager.loadChapter(session.index)
+        // 换章才跳首页；同一章只是文本更新（异步加载完成）→ 保持当前页
+        if switchedChapter {
+            pager.loadChapter(session.index)
+        } else {
+            pager.chapterTextArrived(session.index)
+        }
     }
 
     /// 正文到齐 / 出错 → 通知 pager 更新该章的页

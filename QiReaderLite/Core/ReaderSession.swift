@@ -136,6 +136,18 @@ final class ReaderSession: ObservableObject {
         Task { await load(index: i) }
     }
 
+    /// 只把 index 跟到 pager 的当前位置并把正文取过来。
+    ///
+    /// ⚠️ 不能用 jump(to:) —— 那边会重新 load，而 pager 侧 chapterText 到位后
+    ///    又会触发一次重排，两边互相触发就是用户看到的「控件乱跳」。
+    ///    这里只做「同步章号 + 拉文本」，不碰分页器。
+    func followIndex(_ i: Int) {
+        guard flat.indices.contains(i) else { return }
+        index = i
+        host.apply(chapters: flat, at: i, progress: nil)
+        Task { await load(index: i) }
+    }
+
     /// 预取指定章（不改变 index，不更新 chapterText）
     ///
     /// ⚠️ 为什么要预取：pager 的 `viewControllerBefore/After` 是 UIKit 的

@@ -42,8 +42,10 @@ final class PagedChapterPager: NSObject {
 
     /// 全书页序列：章 → 章内页号
     private(set) var spine: [GlobalPage] = []
-    /// 各章排好的文本缓存（预取来的也在这）
-    private var texts: [Int: ChapterText] = [:]
+    /// 各章排好的结果（预取来的也在这）。
+    /// ⚠️ 文本和页数**必须绑在一起缓存**：之前 pageCount 不带标题、makePage 带标题，
+    ///    两边基准不一致 → 页边界和实际渲染对不上，标题页就错位了。
+    private var renders: [Int: ChapterRender] = [:]
     private var loadingChapters: Set<Int> = []
     private var failedChapters: Set<Int> = []
     /// 当前在全书序列里的位置
@@ -59,6 +61,12 @@ final class PagedChapterPager: NSObject {
     struct ChapterText {
         let title: String
         let body: String
+    }
+
+    /// 一章的排版结果
+    struct ChapterRender {
+        let title: String
+        let pageCount: Int
     }
 
     // MARK: 生命周期
@@ -82,6 +90,7 @@ final class PagedChapterPager: NSObject {
                 || abs(size.height - pageSize.height) > 0.5 else { return }
         pageSize = size
         guard chapterCount > 0 else { return }
+        renders.removeAll()          // 页宽变了，每章页数都得重算
         let at = cursor
         rebuildSpine(around: chapter)
         // 尽量落回原来那一页
@@ -91,23 +100,47 @@ final class PagedChapterPager: NSObject {
     // MARK: 灌数据
 
     /// 换章：重建 spine，落在该章第一页
+    /// **真正换章**：落在该章第一页。
+    /// 只有从目录跳、或首帧时才用这个。
     func loadChapter(_ c: Int) {
         chapter = c
-        // ⚠️ 字典下标赋值不接受 Optional：chapterTextProvider?() 出来是
-        //    ChapterText??，必须 if let 摊平，否则报
-        //    "type of expression is ambiguous without a type annotation"
-        if texts[c] == nil, let t = chapterTextProvider?(c) { texts[c] = t }
+        renders.removeValue(forKey: c)
+        render(c)
         failedChapters.remove(c)
         rebuildSpine(around: c)
         show(cursor: firstIndex(ofChapter: c), animated: false)
         onChapterChange?(c)
     }
 
-    /// 章文本到齐（首次加载完 / 预取完）→ 重排该章在 spine 里的页
+    /// 章文本到齐 → 重排 spine，但**保持当前页**。
+    ///
+    /// ⚠️ 之前这里直接 `show(cursor: firstIndex(ofChapter:))`，等于「文本一到就跳首页」。
+    ///    而 chapterText 是异步到的（换章时章号先变、文本后到），于是：
+    ///      ① 章号切到新章但 chapterText 还是旧的 → 拿旧文本排新章的页
+    ///      ② 旧文本到齐 → 强制跳到该章第一页 → 底部控件页码/章号乱跳
+    ///    这就是用户报的「下面控件上的目录显示乱跳」。
     func chapterTextArrived(_ c: Int) {
-        if let t = chapterTextProvider?(c) { texts[c] = t }
         loadingChapters.remove(c)
+        renders.removeValue(forKey: c)   // 尺寸/排版可能变了，重算
+        render(c)
+        failedChapters.remove(c)
+        let at = cursor
         rebuildSpine(around: chapter)
+        // 位置不变，只在越界时才夹回来
+        if spine.indices.contains(at) {
+            refresh(at: at)
+        } else {
+            show(cursor: min(max(at, 0), max(spine.count - 1, 0)), animated: false)
+        }
+    }
+
+    /// 原地重画当前页（不换页）
+    private func refresh(at idx: Int) {
+        guard spine.indices.contains(idx) else { return }
+        cursor = idx
+        container?.setViewControllers([makePage(spine[idx], slot: idx)],
+                                      direction: .forward, animated: false)
+        report()
     }
 
     func chapterFailed(_ c: Int, _ msg: String) {
@@ -132,12 +165,21 @@ final class PagedChapterPager: NSObject {
     }
 
     /// 某章有几页。没缓存文本的按 1 页算（占位），到齐了会 rebuild 纠正。
-    private func pageCount(of c: Int) -> Int {
-        guard let t = texts[c], !t.body.isEmpty else { return 1 }
-        guard pageSize.width > 1, pageSize.height > 1 else { return 1 }
-        let attr = config.attributed(title: "", body: t.body)
+    private func pageCount(of c: Int) -> Int { renders[c]?.pageCount ?? 1 }
+
+    /// 排一章（**带标题**），缓存结果。标题只在章首页，所以只有 page 0 的
+    /// 帧要带标题 —— 但页数必须按「带标题」那个基准算，否则页边界对不上。
+    @discardableResult
+    private func render(_ c: Int) -> ChapterRender? {
+        if let r = renders[c] { return r }
+        guard let t = chapterTextProvider?(c), !t.body.isEmpty,
+              pageSize.width > 1, pageSize.height > 1 else { return nil }
+        let attr = config.attributed(title: t.title, body: t.body)
         let p = ReaderPaginator()
-        return max(1, p.paginateJustified(attr, pageSize: pageSize, config: config).count)
+        let n = max(1, p.paginateJustified(attr, pageSize: pageSize, config: config).count)
+        let r = ChapterRender(title: t.title, pageCount: n)
+        renders[c] = r
+        return r
     }
 
     private func firstIndex(ofChapter c: Int) -> Int {
@@ -182,7 +224,7 @@ final class PagedChapterPager: NSObject {
         guard forwardNeed || backNeed else { return }
         let target = forward ? c + 1 : c - 1
         guard target >= 0, target < chapterCount else { return }
-        guard texts[target] == nil, !loadingChapters.contains(target) else { return }
+        guard renders[target] == nil, !loadingChapters.contains(target) else { return }
         loadingChapters.insert(target)
         onNeedChapter?(target)
     }
@@ -191,7 +233,7 @@ final class PagedChapterPager: NSObject {
 
     private func makePage(_ gp: GlobalPage, slot: Int) -> ReaderPageVC {
         // 该章文本还没到 / 取失败 → 占位页
-        if texts[gp.chapter] == nil {
+        if renders[gp.chapter] == nil {
             let v = ReaderPageVC(kind: .loading)
             v.slot = slot
             v.background = background
@@ -206,8 +248,12 @@ final class PagedChapterPager: NSObject {
         let v = ReaderPageVC(kind: .page)
         v.slot = slot
         v.background = background
-        let t = texts[gp.chapter]!
-        let attr = config.attributed(title: gp.page == 0 ? t.title : "", body: t.body)
+        let r = renders[gp.chapter]!
+        // 标题只出现在该章首页，所以只有 page 0 带标题；
+        // 但页数是按「带标题」算的，两边基准一致，不会错位。
+        let t = chapterTextProvider?(gp.chapter)
+        let attr = config.attributed(title: gp.page == 0 ? r.title : "",
+                                     body: t?.body ?? "")
         let fr = ReaderPaginator.oneOffFrame(at: gp.page, pageSize: pageSize, attributed: attr)
         v.setPage(frame: fr, pageSize: pageSize, bg: background,
                   baseline: config.showBaseline, baselineColor: config.baselineColor,
