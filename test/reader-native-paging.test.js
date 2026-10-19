@@ -131,11 +131,15 @@ ok(/ReaderLayoutConfig\(\)/.test(pager), '用 ReaderLayoutConfig() 初始化');
 ok(!/\.baselineScope\.rawValue/.test(web), 'ReaderBaselineScope 用 .raw 不是 .rawValue');
 ok(/scope == \.full/.test(pageVC) && /else/.test(pageVC),
    '底线范围用 == 比较（ReaderBaselineScope 是 struct，对它 switch 报 must be exhaustive）');
-ok(/CGRect\(origin: origins\[i\], size: \.zero\)/.test(pageVC),
-   'CTLineGetImageBounds 第二参是 CGRect，传 CGPoint 编译不过');
+ok(/CTLineGetImageBounds\(line, nil\)/.test(pageVC),
+   'CTLineGetImageBounds 照抄 ReaderPaginator 里编译通过过的写法（传 nil）');
+ok(!/CTLineGetImageBounds\(line, CGRect/.test(pageVC),
+   '第二参别自己传 CGRect —— 报错说 CGContext 但实参是 rect，纯误导');
 ok(/@State private var pageCtl/.test(web), 'UIViewController 用 @State 持有（不是 @StateObject，那个要 ObservableObject）');
 ok(!/@StateObject private var pageCtl/.test(web), '没给 UIViewController 挂 @StateObject');
 ok(/case failure\(String\)/.test(pageVC), 'Content 枚举不再用 message（跟参数名同名会推不出类型）');
+ok(/configure\(kind: \.failure\(msg\)/.test(pageVC),
+   '带关联值的 case 要写 .failure(msg)，光写 .failure 报 "expects argument of type String"');
 ok(!/var lastText = ""/.test(pager) || !/private var lastText/.test(pager),
    'lastText 不是 private（换容器时 PagedReaderController 在别的文件要用）');
 ok(/didFinishAnimating/.test(pager), '翻完动画后回写当前页');

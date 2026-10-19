@@ -71,7 +71,7 @@ final class ReaderPageVC: UIViewController {
             canvas.configure(kind: .spinner, message: "正在加载下一章…")
             canvas.isHidden = false
         case .failed(let msg):
-            canvas.configure(kind: .failure, message: msg,
+            canvas.configure(kind: .failure(msg), message: msg,
                             onRetry: { [weak self] in self?.onRetry?() },
                             onStepBack: { [weak self] in self?.onStepBack?() })
             canvas.isHidden = false
@@ -263,8 +263,11 @@ final class ReaderPageCanvasView: UIView {
             // 直接 let 会推成 Optional 再重名 —— 分两步写
             guard let raw = CFArrayGetValueAtIndex(lines, i) else { continue }
             let line = unsafeBitCast(raw, to: CTLine.self)
-            // ⚠️ CTLineGetImageBounds 第二参是 **CGRect**，传 CGPoint 编译不过
-            let r = CTLineGetImageBounds(line, CGRect(origin: origins[i], size: .zero))
+            // ⚠️ 第二参传 CGRect 编译不过（报 "cannot convert value of type
+            //    'CGRect' to expected argument type 'CGContext'"，报错提到 CGContext
+            //    但实参其实是 rect，纯误导）。ReaderPaginator.swift 里那个**编译通过
+            //    过**的写法就是传 nil —— 直接照抄，别自己发挥。
+            let r = CTLineGetImageBounds(line, nil)
             // CTLineGetTypographicBounds 返回 Double，CGFloat 减 Double 要显式转
             let desc = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             let baselineY = origins[i].y - desc
