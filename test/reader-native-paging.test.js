@@ -363,6 +363,19 @@ ok(/presentationDetents\(\[\.fraction\(0\.62\), \.large\], selection: \$detent\)
    'detent 列表保留 .large（栖阅按住顶部横线上滑是会变大的，不是定死）');
 ok(/presentationDragIndicator\(\.visible\)/.test(catalog),
    '有 grabber —— 用户就是靠按住它上滑变大');
+ok(/var bookTitle: String\?/.test(catalog) && /var sourceLabel: String\?/.test(catalog),
+   '目录顶部是【书名】+【书源名】两个参数（栖阅那样）');
+ok(!/subtitle: book\.origin|subtitle: session\.book\.origin/.test(web + catalog),
+   '**没把 book.origin（书源 URL）当副标题** —— 真机效果是 ' +
+   '`https://cxb-pro.cread.com@通知` 这种没法看的东西');
+ok(/source\?\.name/.test(catalog) || /sources\.source\(id: book\.origin\)\?\.name/.test(catalog),
+   '副标题走 BookSource.name（优先 bookSourceName，不是 URL）');
+ok(/if let t = bookTitle\?\.trimming/.test(catalog),
+   '标题优先用书名，没传才退回「目录 (N)」');
+ok(/\.font\(c\.isVolume \? \.subheadline\.weight\(\.bold\) : \.subheadline\)/.test(catalog),
+   '章节正文用 .subheadline（不是 .body —— 行高一大就撑得松散）');
+ok(/\.padding\(\.vertical, 9\)/.test(catalog),
+   '行内上下留白收紧到 9（栖阅一行紧贴一行）');
 ok(/\.background\(NoScrollExpand\(\)\)/.test(catalog),
    '目录挂了 NoScrollExpand —— 「目录上滑只滚目录，页面不变大」靠它');
 {

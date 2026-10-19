@@ -102,9 +102,17 @@ struct ReaderWebView: View {
     }
 
     /// 目录顶部那行副标题（栖阅显示的是「🍎大灰狼聚合 5.9.30(vip完全版)」）
+    /// 目录顶部副标题 = **书源名**（`BookSource.name` 优先取 bookSourceName）。
+    /// ⚠️ 别用 `book.origin` —— 那是书源 URL，真机上会显示成
+    ///    `https://cxb-pro.cread.com@通知` 这种没法看的东西。
     private var sourceSubtitle: String? {
-        let name = session.book.origin
-        return name.isEmpty ? nil : name
+        sources.source(id: session.book.origin)?.name
+    }
+
+    /// 目录顶部大字 = 书名（栖阅就是这样，不是「目录 (N)」）
+    private var catalogBookTitle: String? {
+        let n = session.book.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return n.isEmpty ? nil : n
     }
 
     /// 底线颜色：存成 hex，ColorPicker 要的是 Binding<Color>
@@ -345,7 +353,8 @@ struct ReaderWebView: View {
         }
         .sheet(isPresented: $showCatalog) {
             CatalogSheet(chapters: chapters, start: session.current,
-                         subtitle: sourceSubtitle,
+                         bookTitle: catalogBookTitle,
+                         sourceLabel: sourceSubtitle,
                          preloaded: Set(pageCtl.pager.preloadedChapters())) { ch in
                 showCatalog = false
                 if let i = session.flat.firstIndex(where: { $0.url == ch.url }) {

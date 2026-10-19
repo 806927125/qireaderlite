@@ -74,7 +74,8 @@ struct BookDetailView: View {
         .task { await loadDetail() }
         .sheet(isPresented: $showCatalog) {
             CatalogSheet(chapters: chapters, start: readerChapter,
-                         subtitle: book.origin.isEmpty ? nil : book.origin) { ch in
+                         bookTitle: book.name.isEmpty ? nil : book.name,
+                         sourceLabel: source?.name) { ch in
                 showCatalog = false
                 readerChapter = ch
             }
@@ -325,8 +326,12 @@ struct CatalogSheet: View {
     @Environment(\.dismiss) private var dismiss
     let chapters: [Chapter]
     let start: Chapter?
-    /// 顶部那一行的副标题（栖阅显示的是书源名 + 版本）
-    var subtitle: String? = nil
+    /// 顶部那一行的大字标题 —— **书名**（栖阅就显示书名，不是「目录 (N)」）
+    var bookTitle: String? = nil
+    /// 副标题 —— 书源名（栖阅是「🍎大灰狼聚合 5.9.30(vip完全版)」）
+    /// ⚠️ 千万别把 `book.origin`（书源 **URL**）直接怼上去，
+    ///    真机效果是 `https://cxb-pro.cread.com@通知` 这种没法看的东西。
+    var sourceLabel: String? = nil
     /// 已预载到内存的章号集合。栖阅那边是 `ChapterCacheService` 的磁盘缓存，
     /// 轻阅还没做磁盘缓存，所以只标「内存里已有」——不假装成离线可读。
     var preloaded: Set<Int> = []
@@ -393,8 +398,8 @@ struct CatalogSheet: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
+                if let sourceLabel, !sourceLabel.isEmpty {
+                    Text(sourceLabel)
                         .font(.caption2)
                         .foregroundStyle(Theme.ink.opacity(0.6))
                         .lineLimit(1)
@@ -418,7 +423,11 @@ struct CatalogSheet: View {
         .padding(.bottom, 8)
     }
 
+    /// 栖阅这里显示的是**书名**，不是「目录 (N)」。
+    /// 没传书名时才退回章节数（总得有标题）。
     private var titleText: String {
+        if let t = bookTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !t.isEmpty { return t }
         let n = chapters.filter { !$0.isVolume }.count
         return "目录 (\(n.formatted()))"
     }
@@ -449,7 +458,7 @@ struct CatalogSheet: View {
                         if c.id != ordered.last?.id {
                             Rectangle().fill(Theme.ink.opacity(0.07))
                                 .frame(height: 0.5)
-                                .padding(.leading, 16)
+                                .padding(.leading, 20)
                         }
                     }
                     if ordered.isEmpty {
@@ -499,7 +508,7 @@ struct CatalogSheet: View {
                         .foregroundStyle(Theme.ink.opacity(0.35))
                 }
                 Text(c.title)
-                    .font(c.isVolume ? .subheadline.weight(.bold) : .body)
+                    .font(c.isVolume ? .subheadline.weight(.bold) : .subheadline)
                     .foregroundStyle(isCurrent ? Theme.accent : (c.isVolume ? Theme.accent : Theme.ink))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -510,8 +519,8 @@ struct CatalogSheet: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 9)
             // 当前章：浅色圆角底 + 蓝色文字（栖阅截图就是这样，不是整行填充）
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
