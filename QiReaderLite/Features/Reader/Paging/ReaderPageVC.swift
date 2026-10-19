@@ -1,4 +1,3 @@
-import CoreText
 import SwiftUI
 import UIKit
 
@@ -79,14 +78,18 @@ final class ReaderPageVC: UIViewController {
         }
     }
 
-    /// 把一页的 CTFrame 装上去
-    func setPage(frame: CTFrame?, pageSize: CGSize,
+    /// 把一页装上去。
+    ///
+    /// 传 **paginator + 页号**，不是传一个画好的 frame ——
+    /// 分页和绘制必须共用同一个 layout manager（见 ReaderPaginator 顶部说明），
+    /// 否则边界和内容会漂。paginator 可以是 nil（页装不下），那是空页。
+    func setPage(paginator: ReaderPaginator?, page: Int,
                  bg: UIColor, baseline: Bool, baselineColor: UIColor,
                  scope: ReaderBaselineScope) {
         guard case .page = kind else { return }
         canvas.configure(kind: .text, message: nil)
-        canvas.setFrame(frame, pageSize: pageSize, background: bg,
-                        showBaseline: baseline, baselineColor: baselineColor, scope: scope)
+        canvas.setPage(paginator: paginator, page: page, background: bg,
+                       showBaseline: baseline, baselineColor: baselineColor, scope: scope)
     }
 
     func setBackground(_ bg: UIColor) {
@@ -103,7 +106,7 @@ final class ReaderPageVC: UIViewController {
 
 // MARK: - 页画布
 
-/// 把一页 CTFrame 画到屏幕上。
+/// 把一页画到屏幕上。
 ///
 /// 用 UIView 而不是 SwiftUI `Text` —— 分页要求**精确到字**，
 /// Text 没法指定"这一页只显示这些字"。
@@ -117,7 +120,9 @@ final class ReaderPageCanvasView: UIView {
         case failure(String)
     }
 
-    private var ctFrame: CTFrame?
+    /// 分页 + 绘制共用它（不要拆成两个对象）
+    private var paginator: ReaderPaginator?
+    private var pageIndex: Int = 0
     private var pageSize: CGSize = .zero
     private var baseline: Bool = false
     private var baselineColor: UIColor = .lightGray
@@ -220,10 +225,11 @@ final class ReaderPageCanvasView: UIView {
     @objc private func tapRetry() { retryAction?() }
     @objc private func tapBack() { backAction?() }
 
-    func setFrame(_ f: CTFrame?, pageSize: CGSize, background: UIColor,
-                  showBaseline: Bool, baselineColor: UIColor, scope: ReaderBaselineScope) {
-        ctFrame = f
-        self.pageSize = pageSize
+    func setPage(paginator: ReaderPaginator?, page: Int, background: UIColor,
+                 showBaseline: Bool, baselineColor: UIColor, scope: ReaderBaselineScope) {
+        self.paginator = paginator
+        self.pageIndex = page
+        self.pageSize = paginator?.pageSize ?? .zero
         self.baseline = showBaseline
         self.baselineColor = baselineColor
         self.scope = scope
@@ -232,16 +238,13 @@ final class ReaderPageCanvasView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard let frame = ctFrame, contentIsText else { return }
+        guard let p = paginator, contentIsText else { return }
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.saveGState()
-        ctx.textMatrix = .identity
-        ctx.translateBy(x: 0, y: bounds.height)
-        ctx.scaleBy(x: 1, y: -1)
-        if baseline {
-            drawBaselines(in: frame, ctx: ctx)
-        }
-        CTFrameDraw(frame, ctx)
+        // NSLayoutManager 用 UIKit 坐标（左上角原点）→ **不要翻转**。
+        // CoreText 那套 translate+scale 在这里是反的，会上下颠倒。
+        if baseline { drawBaselines(p, ctx) }
+        p.drawPage(pageIndex, in: ctx, origin: .zero)
         ctx.restoreGState()
     }
 
@@ -252,47 +255,45 @@ final class ReaderPageCanvasView: UIView {
 
     /// 行底线：栖阅「开启后会在正文每一行底部绘制整行横线」
     /// 支持「整行 / 按文字」两种范围。
-    private func drawBaselines(in frame: CTFrame, ctx: CGContext) {
-        // ⚠️ 新 SDK 的 CTFrameGetPath 返回**非可选** CGPath，旧的 `!` 会报
-        //    "cannot force unwrap value of non-optional type 'CGPath'"
-        let path = CTFrameGetPath(frame)
+    ///
+    /// 用 `NSLayoutManager.numberOfLineFragments(forGlyphRange:)` 数行、
+    /// `usedRect(for:)` 量实际排版高度，两者都取自**同一个** layout manager，
+    /// 所以线一定贴在真正的行下面（CoreText 时代要手动算基线偏移，
+    /// 字体 fallback 一换就错位）。
+    private func drawBaselines(_ p: ReaderPaginator, _ ctx: CGContext) {
+        guard let lm = p.layoutManager else { return }
+        let g = p.glyphRange(at: pageIndex)
+        guard g.length > 0 else { return }
+        let n = lm.numberOfLineFragments(forGlyphRange: g)
+        guard n > 0 else { return }
+        // ⚠️ `textContainer(forGlyphAt:)` 返回**可选** NSTextContainer，
+        //    而 `usedRect(for:)` 要非可选 → 直接内传会编译报
+        //    "value of optional type 'NSTextContainer?' must be unwrapped"。
+        //    拿到的是页面**第一个** container，用它的 usedRect 量整页排版高度。
+        guard let pageContainer = lm.textContainer(forGlyphAt: g.location, effectiveRange: nil)
+        else { return }
+        let used = lm.usedRect(for: pageContainer)
+        guard used.height > 0 else { return }
+        let lineH = used.height / CGFloat(n)
         ctx.saveGState()
-        ctx.addPath(path)
-        ctx.clip()
-        ctx.setStrokeColor(baselineColor.cgColor)
-        ctx.setLineWidth(max(1.0, 1.0 / (UIScreen.main.scale)))
-        let lines = CTFrameGetLines(frame)
-        let count = CFArrayGetCount(lines)
-        guard count > 0 else { ctx.restoreGState(); return }
-        var origins = [CGPoint](repeating: .zero, count: count)
-        CTFrameGetLineOrigins(frame, CFRangeMake(0, 0), &origins)
-        for i in 0..<count {
-            // CFArrayGetValueAtIndex 拿的是 UnsafeRawPointer，
-            // 直接 let 会推成 Optional 再重名 —— 分两步写
-            guard let raw = CFArrayGetValueAtIndex(lines, i) else { continue }
-            let line = unsafeBitCast(raw, to: CTLine.self)
-            // ⚠️ 第二参传 CGRect 编译不过（报 "cannot convert value of type
-            //    'CGRect' to expected argument type 'CGContext'"，报错提到 CGContext
-            //    但实参其实是 rect，纯误导）。ReaderPaginator.swift 里那个**编译通过
-            //    过**的写法就是传 nil —— 直接照抄，别自己发挥。
-            let r = CTLineGetImageBounds(line, nil)
-            // CTLineGetTypographicBounds 返回 Double，CGFloat 减 Double 要显式转
-            let desc = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-            let baselineY = origins[i].y - desc
-            var x0: CGFloat, x1: CGFloat
+        ctx.setFillColor(baselineColor.cgColor)
+        for i in 0..<n {
+            let y = lineH * CGFloat(i + 1) - 1
+            var x0: CGFloat = 0
+            var x1: CGFloat = (pageSize.width > 1 ? pageSize.width : bounds.width)
             // ⚠️ ReaderBaselineScope 是 **struct** 不是 enum，
             //    对它 switch 要求穷尽 → 编译报 "switch must be exhaustive"。
             //    改用 == 比较（它本来就 Hashable/Equatable）。
-            if scope == .full {
-                x0 = 0
-                x1 = pageSize.width
-            } else {              // 栖阅叫「按文字」，枚举里是 .word 不是 .text
-                x0 = CGFloat(r.origin.x)
-                x1 = CGFloat(r.origin.x + r.width)
+            if scope != .full {          // 栖阅叫「按文字」，枚举里是 .word 不是 .text
+                var eff = NSRange()
+                let r = lm.lineFragmentRect(forGlyphAt: g.location + i, effectiveRange: &eff)
+                if r.width > 0 {
+                    x0 = r.minX
+                    x1 = r.maxX
+                }
             }
-            ctx.move(to: CGPoint(x: x0, y: baselineY))
-            ctx.addLine(to: CGPoint(x: x1, y: baselineY))
-            ctx.strokePath()
+            guard x1 > x0 else { continue }
+            ctx.fill(CGRect(x: x0, y: y, width: x1 - x0, height: 1))
         }
         ctx.restoreGState()
     }

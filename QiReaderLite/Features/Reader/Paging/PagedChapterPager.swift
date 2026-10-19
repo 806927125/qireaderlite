@@ -77,6 +77,11 @@ final class PagedChapterPager: NSObject {
     struct ChapterRender {
         let title: String
         let pageCount: Int
+        /// 排版上下文。**必须保留** —— 分页和绘制共用同一个 layout manager，
+        /// 现排现用才能保证「算出来的页」就是「画出来的字」。
+        /// 以前是每翻一页重新 oneOffFrame 从字符 0 跑一遍，
+        /// 那个「跑几遍」的重叠逻辑就是标题丢失 / 尾页空白的根源。
+        let paginator: ReaderPaginator
     }
 
     // MARK: 生命周期
@@ -201,8 +206,11 @@ final class PagedChapterPager: NSObject {
               pageSize.width > 1, pageSize.height > 1 else { return nil }
         let attr = config.attributed(title: t.title, body: t.body)
         let p = ReaderPaginator()
+        // ⚠️ 标题**只进 page 0**，但页数按「带标题」算 —— 两边同一基准。
+        //    paginateJustified 内部可能为「垂直两端对齐」改行距重排一次，
+        //    所以一定要用它的返回值，别自己数 pages.count。
         let n = max(1, p.paginateJustified(attr, pageSize: pageSize, config: config).count)
-        let r = ChapterRender(title: t.title, pageCount: n)
+        let r = ChapterRender(title: t.title, pageCount: n, paginator: p)
         renders[c] = r
         return r
     }
@@ -291,11 +299,12 @@ final class PagedChapterPager: NSObject {
         v.slot = slot
         v.background = background
         let r = renders[gp.chapter]!
-        // 标题只出现在该章首页；页数按「带标题」算，两边基准一致
-        let t = texts[gp.chapter] ?? ChapterText(title: "", body: "")
-        let attr = config.attributed(title: gp.page == 0 ? r.title : "", body: t.body)
-        let fr = ReaderPaginator.oneOffFrame(at: gp.page, pageSize: pageSize, attributed: attr)
-        v.setPage(frame: fr, pageSize: pageSize, bg: background,
+        // 直接用该章排好的 paginator + 页号。
+        // ⚠️ **不要**再 `config.attributed(title:...)` 重新造一遍：
+        //    重新造就等于换了一个排版基准，页边界会和 pageCount 对不上
+        //    （以前 oneOffFrame 就是这么错的：算页时带标题、
+        //    取页时不带标题，两边差一整个标题的高度）。
+        v.setPage(paginator: r.paginator, page: gp.page, bg: background,
                   baseline: config.showBaseline, baselineColor: config.baselineColor,
                   scope: config.baselineScope)
         return v

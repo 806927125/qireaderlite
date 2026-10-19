@@ -24,6 +24,9 @@ const ROOT = path.join(__dirname, '..', 'QiReaderLite', 'Features', 'Reader', 'P
 const src = fs.readFileSync(path.join(ROOT, 'ReaderPaginator.swift'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\/\/[^\n]*/g, '');
+const pagerSrc = fs.readFileSync(path.join(ROOT, 'PagedChapterPager.swift'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/[^\n]*/g, '');
 
 // ── 照搬 Swift 的两段逻辑 ─────────────────────────────────
 // 假 framesetter：从 offset 开始最多再装 perPage 个字
@@ -117,10 +120,10 @@ ok(mismatches === 0, `修复后 oneOffFrame 与 paginate 页边界完全一致�
 }
 
 // ── ④ 源码别退回 max(1, index) ───────────────────────────
-const body = src.slice(src.indexOf('static func oneOffFrame'),
-                       src.indexOf('static func oneOffFrame') + 1400);
-ok(/0\.\.<max\(0, index\)/.test(body), '源码用 0..<max(0, index)');
-ok(!/0\.\.<max\(1, index\)/.test(body), '没退回 0..<max(1, index)（那会让每页偏移一页）');
+ok(!/0\.\.<max\(0, index\)/.test(src) && !/0\.\.<max\(1, index\)/.test(src),
+   'oneOffFrame 的 0..<max(0,index) 整体移除（页号不再二次换算）');
+ok(!/0\.\.<max\(0, index\)/.test(src) && !/0\.\.<max\(1, index\)/.test(src),
+   'oneOffFrame 的 0..<max(0,index) 整体移除（页号不再二次换算）');
 
 // ── ⑤ 诊断输出里的插值没被 \\) 截断 ────────────────────────
 {

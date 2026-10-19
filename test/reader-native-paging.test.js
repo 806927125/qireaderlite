@@ -76,14 +76,24 @@ ok(!fs.existsSync(path.join(P, 'PagedReaderView.swift')), '老的手写翻页实
 ok(!/rotation3DEffect/.test(pager + pageVC + readerUI), '不再用 rotation3DEffect 硬凑卷曲');
 
 console.log('\n── 分页器：CoreText，页边界要精确 ──');
-ok(/import CoreText/.test(paginator), '用了 CoreText');
-ok(/CTFramesetterCreateWithAttributedString/.test(paginator), '用 CTFramesetter 排版');
-ok(/CTFrameGetVisibleStringRange/.test(paginator), '用 visibleStringRange 取页边界');
-ok(/CTFrameDraw/.test(paginator), '用 CTFrameDraw 画页');
-ok(/Math\.ceil|visible\.length > 0/.test(paginator), '页数按实际排版算，不是猜的');
-ok(/guard visible\.length > 0 else \{ break \}/.test(paginator),
+ok(!/import CoreText|CTFramesetter|CTFrameGetVisibleStringRange|CTFrameDraw/.test(paginator),
+   '分页器**不再用 CoreText**（栖阅二进制里 CTFramesetter 0 处，用的是 NSLayoutManager）');
+ok(/NSTextStorage\(attributedString:/.test(paginator), '用 NSTextStorage 装文本');
+ok(/NSLayoutManager\(\)/.test(paginator), '用 NSLayoutManager 排版');
+ok(/lm\.glyphRange\(for: c\)/.test(paginator), '页边界取自 glyphRange(for: container)');
+ok(/lm\.drawGlyphs\(forGlyphRange: g, at: origin\)/.test(paginator),
+   '绘制用**同一个** layoutManager 的 drawGlyphs（边界与内容同源，不可能对不齐）');
+ok(/lm\.characterRange\(forGlyphRange: g, actualGlyphRange: nil\)/.test(paginator),
+   '同时记录 glyph 范围（绘制直接用，不做换算）');
+ok(!/translateBy|scaleBy/.test(paginator) || /不要翻转|不翻转/.test(paginator),
+   '绘制不翻坐标系（NSLayoutManager 用 UIKit 坐标，翻了会上下颠倒）');
+ok(/g\.length > 0\] else \{ break \}|guard g\.length > 0/.test(paginator),
+   '页数按实际排版算：循环次数 = 排版出的 container 数，不是估的');
+ok(/guard g\.length > 0 else \{ break \}/.test(paginator),
    '装不下字必须 break（否则死循环）');
-ok(/NSRange\(location: start, length: visible\.length\)/.test(paginator), '每页记精确字范围');
+ok(/result\.count > 20000/.test(paginator), '页数上限兜底（异常文本不吃穿内存）');
+ok(/if NSMaxRange\(g\) >= lm\.numberOfGlyphs \{ break \}/.test(paginator),
+   '排到末尾即停（终止条件用 numberOfGlyphs，不是估算）');
 
 console.log('\n── 翻页方式：5 种齐全，且都真的实现 ──');
 for (const [raw, name] of [['flip','仿真'],['slide','滑动'],['flat','平移'],['none','无动画'],['scroll','上下滚动']]) {
@@ -130,7 +140,14 @@ ok(/@discardableResult[\s\S]{0,80}private func render\(_ c: Int\)/.test(pager), 
 //   两边不一致 → 页边界和渲染对不上，标题页错位（用户报的「标题去哪了」）
 ok(/config\.attributed\(title: t\.title, body: t\.body\)/.test(pager),
    '页数按「带标题」的基准算');
-ok(/title: gp\.page == 0 \? r\.title : ""/.test(pager), '只有该章首页渲染标题');
+ok(/paginateJustified\(attr, pageSize: pageSize, config: config\)/.test(pager),
+   '页数用 paginateJustified 的返回值算（垂直两端对齐会改行距重排，不能自己数）');
+ok(/let attr = config\.attributed\(title: t\.title, body: t\.body\)/.test(pager),
+   '标题只排一次进章首页');
+ok(/v\.setPage\(paginator: r\.paginator, page: gp\.page/.test(pager),
+   '绘制直接用该章排好的 paginator + 页号（不再重新造 attr / 重算页边界）');
+ok(!/config\.attributed\(title: gp\.page/.test(pager),
+   '**不要**在 makePage 里按页号重新造 attributed（算页带标题、取页不带标题 → 差一整个标题高度）');
 ok(/func setPageSize\(_ size: CGSize\)/.test(pager), '视口变化要能重算页数');
 ok(/func diagnose\(sessionIndex: Int = -1/.test(pager), 'pager 有自检输出');
 ok(/chapterChangeSent/.test(pager) && /followReceived/.test(pager),
@@ -179,12 +196,16 @@ ok(!/ReaderLayoutConfig\.default/.test(pager), '没有用不存在的 ReaderLayo
 ok(/ReaderLayoutConfig\(\)/.test(pager), '用 ReaderLayoutConfig() 初始化');
 // ReaderBaselineScope 是 struct（不是 enum），成员是 .word 不是 .text
 ok(!/\.baselineScope\.rawValue/.test(web), 'ReaderBaselineScope 用 .raw 不是 .rawValue');
-ok(/scope == \.full/.test(pageVC) && /else/.test(pageVC),
+ok(/scope != \.full/.test(pageVC),
    '底线范围用 == 比较（ReaderBaselineScope 是 struct，对它 switch 报 must be exhaustive）');
-ok(/CTLineGetImageBounds\(line, nil\)/.test(pageVC),
-   'CTLineGetImageBounds 照抄 ReaderPaginator 里编译通过过的写法（传 nil）');
-ok(!/CTLineGetImageBounds\(line, CGRect/.test(pageVC),
-   '第二参别自己传 CGRect —— 报错说 CGContext 但实参是 rect，纯误导');
+ok(/lm\.usedRect\(for: pageContainer/.test(pageVC) && /textContainer\(forGlyphAt: g\.location/.test(pageVC),
+   '行底线高度取自 usedRect（不手动算基线偏移，字体 fallback 就不会错位）');
+ok(/numberOfLineFragments\(forGlyphRange: g\)/.test(pageVC), '行底线行数取自 layoutManager');
+ok(!/CTLineGetImageBounds|unsafeBitCast|CFArray/.test(pageVC),
+   '页画布里没有 CoreText 调用');
+ok(/lineFragmentRect\(forGlyphAt:/.test(pageVC),
+   '行范围用 lineFragmentRect（CoreText 那套 CTLineGetImageBounds 换成了 UIKit API）');
+ok(!/CTLineGetImageBounds/.test(pageVC), '页画布里不再有 CTLine 调用');
 ok(/@State private var pageCtl/.test(web), 'UIViewController 用 @State 持有（不是 @StateObject，那个要 ObservableObject）');
 ok(!/@StateObject private var pageCtl/.test(web), '没给 UIViewController 挂 @StateObject');
 ok(/case failure\(String\)/.test(pageVC), 'Content 枚举不再用 message（跟参数名同名会推不出类型）');
@@ -285,7 +306,7 @@ for (const [raw, hint] of [
 console.log('\n── 这些项要真接上，不能只是摆位 ──');
 ok(/paginateJustified/.test(pager), '垂直两端对齐真接进分页器');
 ok(/showBaseline/.test(pager + pageVC) && /drawBaselines/.test(pageVC + paginator), '行底线真画了');
-ok(/CTLineGetImageBounds/.test(paginator), '「按文字」范围用了行内字形边界');
+ok(/lineFragmentRect\(forGlyphAt:/.test(paginator), '「按文字」范围用了行 fragment 边界');
 ok(/paraAlign\.textAlignment/.test(layout), '段落对齐真进排版');
 // 点击翻页交给系统容器，不再手写 tap —— 避免和系统手势互相打架
 ok(!/tapAnywhereTurnsPage/.test(pager), '不再手写 tap 翻页');
@@ -325,13 +346,11 @@ ok(/ForEach\(Array\(tiles\.enumerated\(\)\)/.test(web) === false, '没有 enumer
 // iOS SDK 里没有 CTLineGetOffsetForIndex
 // 只查**调用**（注释里提一嘴名字不算）
 ok(!/CTLineGetOffsetForIndex\(/.test(paginator), '别用 CTLineGetOffsetForIndex（SDK 里没这符号）');
-ok(/CTLineGetImageBounds/.test(paginator), '行内字形范围用 CTLineGetImageBounds');
+ok(/lineFragmentRect/.test(paginator), '行范围用 lineFragmentRect');
 ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报 always succeed）');
-ok(/unsafeBitCast\(raw, to: CTLine\.self\)/.test(paginator), 'CTLine 用 CFArray 取指针 + unsafeBitCast');
-ok(/CFArrayGetCount\(lines\)/.test(paginator), 'CFArray 用 CFArrayGetCount 取长度');
+ok(!/unsafeBitCast/.test(paginator), '没有 unsafeBitCast 取 CoreFoundation 类型');
 // CFArray 没有 count
-ok(!/CTFrameGetLines\([a-z]+\)\.count/.test(paginator), 'CFArray 要先 as NSArray 再取 count');
-ok(/CTFrameGetLines\([a-z]+\) as NSArray\)\.count/.test(paginator), 'CTFrameGetLines 先 as NSArray');
+ok(/lineCount\(at index: Int\)/.test(paginator), '有量行数的方法（垂直两端对齐要用）');
 // NSMutableAttributedString 的标签
 ok(/NSMutableAttributedString\(attributedString:/.test(paginator), 'NSMutableAttributedString 用 attributedString: 标签');
 ok(!/NSMutableAttributedString\(attributed:/.test(paginator), '没有 attributed: 标签的写法');
@@ -345,9 +364,11 @@ ok(!/Color\(uiColor: config\.backgroundColor\)/.test(web + pager + pageVC),
    '页面已是 UIViewController，不需要把 UIColor 包成 Color');
 ok(!/\.font\(config\.resolvedFont\)/.test(web + pager + pageVC), '.font() 不再直接吃 UIFont');
 ok(!/window\.QiReader\.enable/.test(host), '别再把分页方法打到 window.QiReader 上');
-ok(/CTFramesetterCreateFrame/.test(paginator), '页框用 framesetter 生成');
-ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
-   'CoreText 绘制要翻转坐标系（否则字是反的）');
+ok(/addTextContainer/.test(paginator), '分页靠连续 addTextContainer（UIKit 自动接着往下排）');
+ok(/lineFragmentPadding = 0/.test(paginator),
+   '清掉 lineFragmentPadding（默认左右各 5pt，不清每页都会少排几个字）');
+ok(!/ctx\.translateBy|ctx\.scaleBy/.test(paginator),
+   '绘制不翻转坐标系（NSLayoutManager 用 UIKit 坐标）');
 
 // ── 跨章翻页：加载竞态 + 失败必须可见 ────────────────────────────
 // 症状：翻到第二章末尾再往下翻，回到第二章开始且内容不变。

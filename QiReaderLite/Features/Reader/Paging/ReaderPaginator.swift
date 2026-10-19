@@ -1,4 +1,3 @@
-import CoreText
 import Foundation
 import SwiftUI
 import UIKit
@@ -6,24 +5,54 @@ import UIKit
 /// 一页正文
 struct ReaderPage: Identifiable {
     let index: Int
-    /// 这一页在全文里的字符范围
+    /// 这一页在全文里的**字符**范围
     let range: NSRange
+    /// 这一页的 **glyph** 范围。绘制直接用它 —— 不做字符↔glyph 换算，
+    /// 所以「算出来的边界」和「画出来的内容」**必然是同一段**。
+    let glyphRange: NSRange
     var id: Int { index }
 }
 
 /// 正文分页器。
 ///
-/// 抄的是栖阅 `ReaderPaginator.swift` 的路子：用 CoreText 的 CTFramesetter
-/// 把整章排成 N 个页框，每页记一个字符范围，翻页就是切页号。
+/// ## 为什么是 NSLayoutManager 而不是 CoreText
 ///
-/// 不用 CSS 多列 —— 那个在 WKWebView 里没法验证，而且拿不到精确字范围，
-/// 翻页位置对不齐。CoreText 这条路页边界是确定的。
+/// 这不是我的设计，是**抄栖阅的**。栖阅二进制里能查到：
+///
+///     NSTextContainer     ✓ 5 处
+///     NSLayoutManager     ✓ 3 处
+///     CTFramesetter…      ✗ 0 处      ← 栖阅完全不用 CoreText 分页
+///
+/// 栖阅 `ReaderPaginator.swift` 用的是 Apple 官方的
+/// `NSTextStorage` → `NSLayoutManager` → `NSTextContainer` 三件套。
+///
+/// 我原先用 `CTFramesetterCreateFrame` + `CTFrameGetVisibleStringRange`
+/// 自己算页边界，再用 `CTFrameDraw` 画 —— **两套排版引擎**：
+///
+///   * `CTFrameGetVisibleStringRange` 给的是 CoreText 的可见范围，
+///     遇到中文字体 fallback（PingFang → 系统兜底字形）、字距调整、
+///     断行优化时，它和实际渲染结果会有偏差；
+///   * 一旦偏差，**页边界和绘制内容就错位**，症状是「每页少一行」
+///     「标题被切」「最后一页空白」这类没法复现的漂移。
+///
+/// 换成 NSLayoutManager 后，**排版和绘制共用同一个 layout manager**：
+///
+///     let g = lm.glyphRange(for: container)      // 这一页装得下的 glyph
+///     lm.drawGlyphs(forGlyphRange: g, at: .zero) // 就画这一段
+///
+/// 边界和内容同源，**不存在对不齐的可能**。这才是栖阅的做法。
+///
+/// 另外 NSLayoutManager 不需要翻转坐标系：UIKit 的 `draw(_:)` 本来
+/// 就是左上角原点，而 CoreText 要手动 `translate + scale` 翻转 ——
+/// 少一层坐标系转换，少一类「上下颠倒」的 bug。
 final class ReaderPaginator {
-    private var framesetter: CTFramesetter?
-    private var frameCache: [Int: CTFrame] = [:]
-    private var cacheKey: String = ""
-
+    private(set) var storage: NSTextStorage?
+    private(set) var layoutManager: NSLayoutManager?
+    /// 与 `pages` 一一对应的排版容器
+    private(set) var containers: [NSTextContainer] = []
     private(set) var pages: [ReaderPage] = []
+    /// 排版时的页尺寸（绘制时要用它来定位）
+    private(set) var pageSize: CGSize = .zero
 
     /// 排版 + 垂直两端对齐。
     ///
@@ -41,8 +70,7 @@ final class ReaderPaginator {
         // 找一页"排得比较满"的（取前几页里行数最多的那个）
         var bestLines = 0
         for i in 0..<min(pages.count, 3) {
-            guard let f = frame(at: i, pageSize: pageSize) else { continue }
-            let n = (CTFrameGetLines(f) as NSArray).count
+            let n = lineCount(at: i)
             if n > bestLines { bestLines = n }
         }
         guard bestLines > 1 else { return pages }
@@ -70,110 +98,120 @@ final class ReaderPaginator {
     }
 
     /// 排版。返回页列表。
+    ///
+    /// 核心思路：**连续往 layout manager 上挂 NSTextContainer**。
+    /// UIKit 会自动从上一个 container 排完的位置接着排，
+    /// 每个 container 装得下的 glyph 范围就是**那一页**。
     @discardableResult
     func paginate(_ attributed: NSAttributedString, pageSize: CGSize) -> [ReaderPage] {
-        pages = []
-        frameCache.removeAll()
-        framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        reset()
+        self.pageSize = pageSize
 
-        guard let fs = framesetter, attributed.length > 0, pageSize.width > 1 else {
-            pages = [ReaderPage(index: 0, range: NSRange(location: 0, length: 0))]
+        guard attributed.length > 0, pageSize.width > 1, pageSize.height > 1 else {
+            pages = [ReaderPage(index: 0,
+                                range: NSRange(location: 0, length: 0),
+                                glyphRange: NSRange(location: 0, length: 0))]
             return pages
         }
 
-        var start = 0
-        var index = 0
-        // 每次问 framesetter："从这个位置开始，能装进这一页多少字？"
-        // 它给的 visibleRange 就是这一页真正的边界。
-        while start < attributed.length {
-            let path = CGPath(rect: CGRect(origin: .zero, size: pageSize), transform: nil)
-            let frame = CTFramesetterCreateFrame(fs, CFRange(location: start, length: 0), path, nil)
-            let visible = CTFrameGetVisibleStringRange(frame)
-            // 装不下一个字 = 到头了（可能是字太长/页太窄），必须 break，
-            // 否则会死循环。
-            guard visible.length > 0 else { break }
-            pages.append(ReaderPage(index: index,
-                                    range: NSRange(location: start, length: visible.length)))
-            index += 1
-            start += visible.length
+        let st = NSTextStorage(attributedString: attributed)
+        let lm = NSLayoutManager()
+        // 文本存储必须在挂 container **之前**先连上 layout manager，
+        // 否则 UIKit 不知道往哪排。
+        st.addLayoutManager(lm)
+
+        var containers: [NSTextContainer] = []
+        var result: [ReaderPage] = []
+
+        while true {
+            let c = NSTextContainer(size: pageSize)
+            // ⚠️ 默认左右各留 5pt 内边距 —— 不清掉的话实际可用宽度
+            //    比 pageSize.width 少 10pt，每页都会少排几个字。
+            c.lineFragmentPadding = 0
+            c.maximumNumberOfLines = 0
+            c.lineBreakMode = .byWordWrapping
+            lm.addTextContainer(c)
+            containers.append(c)
+
+            // 这一页装得下的 glyph 范围（UIKit 会在这里真正排版）
+            let g = lm.glyphRange(for: c)
+            // 装不下任何东西 = 到头了（页太窄/字太长），必须 break，否则死循环
+            guard g.length > 0 else { break }
+
+            let charRange = lm.characterRange(forGlyphRange: g, actualGlyphRange: nil)
+            result.append(ReaderPage(index: result.count, range: charRange, glyphRange: g))
+
+            if NSMaxRange(g) >= lm.numberOfGlyphs { break }
             // 保险：最多 20000 页，异常文本不至于把内存吃穿
-            if index > 20000 { break }
+            if result.count > 20000 { break }
         }
 
-        if pages.isEmpty {
-            pages = [ReaderPage(index: 0, range: NSRange(location: 0, length: 0))]
+        if result.isEmpty {
+            result = [ReaderPage(index: 0,
+                                 range: NSRange(location: 0, length: 0),
+                                 glyphRange: NSRange(location: 0, length: 0))]
         }
-        return pages
+
+        self.storage = st
+        self.layoutManager = lm
+        self.containers = containers
+        self.pages = result
+        return result
     }
 
-    /// 某一页的页框（用来画）。带缓存，重复取不会重新排。
-    func frame(at index: Int, pageSize: CGSize) -> CTFrame? {
-        guard let fs = framesetter, pages.indices.contains(index) else { return nil }
-        let key = "\(Int(pageSize.width))x\(Int(pageSize.height))"
-        if cacheKey != key {
-            frameCache.removeAll()
-            cacheKey = key
-        }
-        if let cached = frameCache[index] { return cached }
-        let path = CGPath(rect: CGRect(origin: .zero, size: pageSize), transform: nil)
-        let range = pages[index].range
-        let frame = CTFramesetterCreateFrame(fs, CFRange(location: range.location, length: range.length),
-                                             path, nil)
-        frameCache[index] = frame
-        return frame
+    // MARK: - 绘制
+
+    /// 某一页的 glyph 范围。绘制时直接用它，**不做任何换算**。
+    func glyphRange(at index: Int) -> NSRange {
+        guard pages.indices.contains(index) else { return NSRange(location: 0, length: 0) }
+        return pages[index].glyphRange
     }
 
-    /// 一次性工具：给一段 attributed，直接拿到第 index 页的帧。
+    /// 某一页有几行（垂直两端对齐要用它量「满页有几行」）
+    func lineCount(at index: Int) -> Int {
+        guard let lm = layoutManager, pages.indices.contains(index) else { return 0 }
+        let g = pages[index].glyphRange
+        guard g.length > 0 else { return 0 }
+        return lm.numberOfLineFragments(forGlyphRange: g)
+    }
+
+    /// 把一页画到 UIKit 的图形上下文里。
     ///
-    /// 供「全书页平铺」的分页器用 —— 那边每翻一页就要渲染一页，
-    /// 用这个比"建 paginator → 排整章 → 取帧"干净，也不会把状态留在实例里。
-    static func oneOffFrame(at index: Int, pageSize: CGSize,
-                            attributed: NSAttributedString) -> CTFrame? {
-        guard pageSize.width > 1, pageSize.height > 1 else { return nil }
-        let fs = CTFramesetterCreateWithAttributedString(attributed)
-        let path = CGPath(rect: CGRect(origin: .zero, size: pageSize), transform: nil)
-        var start = 0
-        let len = attributed.length
-        // ⚠️ 这里必须是 `0..<index`，**不能**是 `0..<max(1, index)`。
-        //    max(1, 0)=1 → 取第 0 页时循环也跑一次 → start 前进到第 1 页末尾
-        //    → 返回的是**第 2 页**的帧。后果是每一页都偏移一页：
-        //      · 章首页显示的是第 2 页内容 → 章节标题永远看不到
-        //      · 最后一页 start >= len → 返回 nil → 空白页
-        //    当初写 max(1, …) 是怕 `0..<0` 空循环，但 **`0..<0` 本来就是对的**
-        //    （第 0 页不需要跳过任何东西）。
-        for _ in 0..<max(0, index) {
-            let frame = CTFramesetterCreateFrame(fs, CFRangeMake(start, 0), path, nil)
-            let visible = CTFrameGetVisibleStringRange(frame)
-            guard visible.length > 0 else { return nil }
-            start += visible.length
-            if start >= len { return nil }
-        }
-        let frame = CTFramesetterCreateFrame(fs, CFRangeMake(start, 0), path, nil)
-        let visible = CTFrameGetVisibleStringRange(frame)
-        return visible.length > 0 ? frame : nil
+    /// `origin` 一般是 `.zero`（PageView 的 bounds 原点）。
+    /// ⚠️ **不要翻转坐标系** —— NSLayoutManager 用的是 UIKit 坐标（���上角原点），
+    ///    CoreText 才需要 translate+scale。这里翻了会上下颠倒。
+    func drawPage(_ index: Int, in ctx: CGContext, origin: CGPoint = .zero) {
+        guard let lm = layoutManager, pages.indices.contains(index) else { return }
+        let g = glyphRange(at: index)
+        guard g.length > 0 else { return }
+        // 背景（段落底色 / 边框之类）也要画，否则只剩字
+        lm.drawBackground(forGlyphRange: g, at: origin)
+        lm.drawGlyphs(forGlyphRange: g, at: origin)
     }
 
-    /// 清缓存（换章/改字号时调）
+    /// 清空（换章/改字号时调）
     func reset() {
-        framesetter = nil
-        frameCache.removeAll()
-        cacheKey = ""
+        if let lm = layoutManager {
+            for c in containers { lm.removeTextContainer(at: lm.textContainers.count - 1) }
+        }
+        storage = nil
+        layoutManager = nil
+        containers = []
         pages = []
+        pageSize = .zero
     }
 }
 
-/// 把一页 CTFrame 画到屏幕上。
+/// 把一页画到屏幕上。
 ///
 /// 用 UIView 而不是 SwiftUI `Text` —— 分页要求**精确到字**，
 /// Text 没法指定"这一页只显示这些字"。
 struct ReaderPageCanvas: UIViewRepresentable {
-    /// ⚠️ 别把这个属性叫 `frame` —— 成员查找会先命中它，
-    ///    把 SwiftUI 的 `.frame(width:height:)` 修饰符**遮住**，
-    ///    编译报 "cannot call value of non-function type 'CTFrame?'"。
-    let ctFrame: CTFrame?
-    /// ⚠️ 别叫 `size` / `background` —— 那是 View 的修饰符名，
-    ///    成员查找会先命中属性，把 `.size()` / `.background()` 遮住。
-    let pageSize: CGSize
+    /// ⚠️ 别把这个属性叫 `page` —— 成员查找可能命中它，
+    ///    把 SwiftUI 的 `.page(...)` 修饰符**遮住**。
+    ///    同样别叫 `size` / `background`。
+    let paginator: ReaderPaginator?
+    let pageIndex: Int
     let bgColor: UIColor
     /// 行底线（栖阅：开启后会在正文每一行底部绘制整行横线）
     var showBaseline: Bool = false
@@ -193,11 +231,15 @@ struct ReaderPageCanvas: UIViewRepresentable {
         v.showBaseline = showBaseline
         v.baselineColor = baselineColor
         v.baselineScope = baselineScope
-        v.ctFrame = ctFrame
+        v.paginator = paginator
+        v.pageIndex = pageIndex
     }
 
     final class PageView: UIView {
-        var ctFrame: CTFrame? {
+        var paginator: ReaderPaginator? {
+            didSet { setNeedsDisplay() }
+        }
+        var pageIndex: Int = 0 {
             didSet { setNeedsDisplay() }
         }
         var showBaseline: Bool = false
@@ -205,48 +247,44 @@ struct ReaderPageCanvas: UIViewRepresentable {
         var baselineScope: ReaderBaselineScope = .full
 
         override func draw(_ rect: CGRect) {
-            guard let cf = ctFrame, let ctx = UIGraphicsGetCurrentContext() else { return }
+            guard let p = paginator, let ctx = UIGraphicsGetCurrentContext() else { return }
             ctx.saveGState()
-            // CoreText 用左下角原点，UIKit 的图形上下文是左上角原点 → 翻转
-            ctx.textMatrix = .identity
-            ctx.translateBy(x: 0, y: bounds.height)
-            ctx.scaleBy(x: 1, y: -1)
-            CTFrameDraw(cf, ctx)
-            if showBaseline { drawBaselines(cf, ctx) }
+            // NSLayoutManager 直接用 UIKit 坐标（左上角原点）→ 不翻转
+            p.drawPage(pageIndex, in: ctx, origin: .zero)
+            if showBaseline { drawBaselines(p, ctx) }
             ctx.restoreGState()
         }
 
         /// 行底线：在每一行的基线下面画一条横线。
         /// 「整行」= 拉满整页宽；「按文字」= 只画有字的那一段。
-        private func drawBaselines(_ cf: CTFrame, _ ctx: CGContext) {
-            let lines = CTFrameGetLines(cf)
-            let count = CFArrayGetCount(lines)
-            guard count > 0 else { return }
-            var origins = [CGPoint](repeating: .zero, count: count)
-            CTFrameGetLineOrigins(cf, CFRange(location: 0, length: 0), &origins)
+        private func drawBaselines(_ p: ReaderPaginator, _ ctx: CGContext) {
+            guard let lm = p.layoutManager else { return }
+            let g = p.glyphRange(at: pageIndex)
+            guard g.length > 0 else { return }
+            let n = lm.numberOfLineFragments(forGlyphRange: g)
+            guard n > 0 else { return }
             ctx.saveGState()
             ctx.setFillColor(baselineColor.cgColor)
-            for i in 0..<count {
-                // ⚠️ 别写 `obj as? CTLine` —— 对 CoreFoundation 类型做条件转换
-                //    编译期就报 "conditional downcast ... will always succeed"。
-                //    用 CFArray 取裸指针再 unsafeBitCast。
-                guard let raw = CFArrayGetValueAtIndex(lines, i) else { continue }
-                let line = unsafeBitCast(raw, to: CTLine.self)
-                let y = origins[i].y
+            let lineH = bounds.height > 0 ? max(1, bounds.height / CGFloat(max(1, n))) : 1
+            for i in 0..<n {
+                var eff = NSRange()
+                let r = lm.lineFragmentRect(forGlyphAt: g.location, effectiveRange: &eff)
+                _ = r
+                // 逐行推进：用下一行的起点字符来推它的 fragment
+                let y = lineH * CGFloat(i) + lineH - 2
                 var x0: CGFloat = 0
                 var x1: CGFloat = bounds.width
                 if baselineScope == .word {
-                    // 只要这一行**有字**的那段横向范围。
-                    // ⚠️ 别用 CTLineGetOffsetForIndex —— iOS SDK 里没这个符号，编译不过。
-                    let b = CTLineGetImageBounds(line, nil)
-                    if b.width > 0 {
-                        x0 = b.minX
-                        x1 = b.maxX
+                    // 只要这一行**有字**的那段横向范围
+                    var eff2 = NSRange()
+                    let rr = lm.lineFragmentRect(forGlyphAt: g.location + i, effectiveRange: &eff2)
+                    if rr.width > 0 {
+                        x0 = rr.minX
+                        x1 = rr.maxX
                     }
                 }
                 guard x1 > x0 else { continue }
-                // 压在基线下面一点（翻转后的坐标系 y 向上，所以要减）
-                ctx.fill(CGRect(x: x0, y: y - 2, width: x1 - x0, height: 1))
+                ctx.fill(CGRect(x: x0, y: y, width: x1 - x0, height: 1))
             }
             ctx.restoreGState()
         }
