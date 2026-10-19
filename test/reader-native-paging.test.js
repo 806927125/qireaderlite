@@ -221,8 +221,29 @@ ok(/session\.prefetchedText\(index: c\)/.test(web), '邻章文本从 session 预
 ok(/func followIndex\(_ i: Int\)/.test(sess), '有 followIndex（只跟章号不跳页）');
 ok(/pager\.onChapterChange[\s\S]{0,200}?session\.followIndex\(c\)/.test(web),
    'onChapterChange 只跟不跳');
-ok(!/if switchedChapter \{\s*\n\s*pager\.loadChapter/.test(web) === false,
-   '换章才 loadChapter，同章文本更新走 chapterTextArrived');
+// ⚠️ session.index 现在会跟着 pager 走了（点击翻页也通知），
+//    所以 syncPager 里**绝不能**按 switchedChapter 调 loadChapter ——
+//    那会把用户刚点着翻到「第4章第2页」打回第1页。
+ok(!/pager\.loadChapter\(session\.index\)/.test(web),
+   'syncPager 里不调 loadChapter（会跳章首页，把用户的页打回去）');
+ok(/func jumpToChapter\(_ c: Int\)/.test(pager), '目录跳章有独立入口 jumpToChapter');
+ok(/pager\.jumpToChapter\(i\)/.test(web), '从目录选章才调 jumpToChapter');
+
+// ★ 点击翻页跨章必须通知上层 —— 之前只有 didFinishAnimating 有，
+//   点着翻页走 show() 那条路完全不通知 → session.index 停在 0
+//   → 底栏永远「第一章 上岸被斩 · 第1章」（用户实机报的）
+ok(/private func syncChapterIfNeeded\(_ gp: GlobalPage\)/.test(pager), '章变化同步抽成一处');
+{
+  const showBody = pager.slice(pager.indexOf('func show(cursor idx: Int'),
+                                  pager.indexOf('func turn(_ delta: Int)'));
+  ok(/syncChapterIfNeeded\(target\)/.test(showBody),
+     'show(cursor:) 也通知（点击翻页跨章靠这条）');
+  const refreshBody = pager.slice(pager.indexOf('private func refresh(at idx: Int)'),
+                                  pager.indexOf('// MARK: - 页面构造'));
+  ok(/syncChapterIfNeeded\(spine\[idx\]\)/.test(refreshBody), 'refresh 也通知');
+  const didFin = pager.slice(pager.indexOf('didFinishAnimating'));
+  ok(/syncChapterIfNeeded\(gp\)/.test(didFin), 'didFinishAnimating 也通知');
+}
 ok(/func attributed\(title: String, body: String\)/.test(layout), '排版支持标题+正文');
 ok(/fontSize \* 1\.18/.test(layout), '标题字号 = 正文 × 1.18（照栖阅 reader.css）');
 ok(/head\.paragraphSpacing = 28/.test(layout), '标题下边距 28（照栖阅 reader.css）');
@@ -385,7 +406,8 @@ ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
   ok(/pager\.onNeedChapter = /.test(web), '接了 onNeedChapter');
   ok(/pager\.onChapterChange = /.test(web), '接了 onChapterChange');
   ok(!/pager\.onStep = /.test(web), '不再接 onStep');
-  ok(/pager\.loadChapter\(session\.index\)/.test(web), '灌当前章');
+  ok(/pager\.chapterCount = session\.flat\.count/.test(web), '告诉 pager 一共几章');
+ok(/pager\.chapterTextArrived\(session\.index, text\)/.test(web), '把当前章正文 push 给 pager');
   ok(/pager\.chapterTextArrived\(session\.index, text\)/.test(web),
      '上层 push 章节文本给 pager（不再用 provider 回调）');
 }

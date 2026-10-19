@@ -187,8 +187,7 @@ struct ReaderWebView: View {
         if session.index == pagedChapter && session.chapterText == pagedText && sig == pagedLayout {
             return
         }
-        let switchedChapter = session.index != pagedChapter
-        // 先记下来，chapterTextProvider 才认这一章（见上面的三重判断）
+        // 先记下来，下面的 chapterTextProvider 才认这一章
         pagedChapter = session.index
         pagedText = session.chapterText
         pagedTitle = session.chapterTitle
@@ -197,11 +196,15 @@ struct ReaderWebView: View {
         let text = PagedChapterPager.ChapterText(title: session.chapterTitle,
                                                  body: session.chapterText)
         // 上层 push，pager 自己存 —— 不再用回调问（回调只会给当前章）
+        //
+        // ⚠️ 这里**不再**按 switchedChapter 调 loadChapter。
+        //    spine 是全书连续的，跨章时 rebuildSpine 自动把新章纳进去，
+        //    保持 cursor 就够了。loadChapter 会跳该章首页 ——
+        //    现在 session.index 会跟着 pager 走（点击翻页也通知了），
+        //    switchedChapter 就常为 true，用户刚点着翻到「第4章第2页」，
+        //    load 一回来就被打回第1页。
+        //    只有「从目录选章」才该落首页，那条路走 pager.jumpToChapter。
         pager.chapterTextArrived(session.index, text)
-        if switchedChapter {
-            // 真正换章才落该章第一页；同一章只是文本更新，保持当前页
-            pager.loadChapter(session.index)
-        }
     }
 
     /// 正文到齐 / 出错 → 通知 pager 更新该章的页
@@ -326,6 +329,11 @@ struct ReaderWebView: View {
                 showCatalog = false
                 if let i = session.flat.firstIndex(where: { $0.url == ch.url }) {
                     session.jump(to: i)
+                    // 从目录选章 = 明确要落到该章第一页
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 120_000_000)
+                        pageCtl.pager.jumpToChapter(i)
+                    }
                 }
             }
         }

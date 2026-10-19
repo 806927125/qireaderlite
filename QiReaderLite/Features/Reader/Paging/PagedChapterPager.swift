@@ -106,6 +106,12 @@ final class PagedChapterPager: NSObject {
 
     // MARK: 灌数据
 
+    /// 从目录选章：明确落到该章第一页。
+    /// 跟「翻页跨章」区分开 —— 后者保持当前位置，不跳页。
+    func jumpToChapter(_ c: Int) {
+        loadChapter(c)
+    }
+
     /// 换章：重建 spine，落在该章第一页
     /// **真正换章**：落在该章第一页。
     /// 只有从目录跳、或首帧时才用这个。
@@ -150,6 +156,7 @@ final class PagedChapterPager: NSObject {
     private func refresh(at idx: Int) {
         guard spine.indices.contains(idx) else { return }
         cursor = idx
+        syncChapterIfNeeded(spine[idx])
         container?.setViewControllers([makePage(spine[idx], slot: idx)],
                                       direction: .forward, animated: false)
         report()
@@ -207,6 +214,7 @@ final class PagedChapterPager: NSObject {
         guard spine.indices.contains(idx) else { return }
         let target = spine[idx]
         cursor = idx
+        syncChapterIfNeeded(target)
         let v = makePage(target, slot: idx)
         container?.setViewControllers([v],
                                       direction: target.page == 0 ? .forward : .reverse,
@@ -229,6 +237,20 @@ final class PagedChapterPager: NSObject {
 
     private func report() {
         onPageChange?(cursor + 1, spine.count)
+    }
+
+    /// 当前位置的章变了就通知上层。
+    ///
+    /// ⚠️ 必须**两条路径都调**：
+    ///    · 滑动翻页 → didFinishAnimating
+    ///    · 点击翻页 → show(cursor:)  ← 之前漏了这条，
+    ///      于是点着翻页跨章时 session.index 一直停在 0，
+    ///      底栏永远显示「第一章 上岸被斩 · 第1章」（用户实机报的）。
+    ///      而且 saveProgress 也用 session.index，阅读进度一起存错。
+    private func syncChapterIfNeeded(_ gp: GlobalPage) {
+        guard gp.chapter != chapter else { return }
+        chapter = gp.chapter
+        onChapterChange?(gp.chapter)
     }
 
     /// 邻近章提前把文本拉好，章界那一页才是现成的
@@ -306,11 +328,7 @@ extension PagedChapterPager: UIPageViewControllerDataSource, UIPageViewControlle
               spine.indices.contains(v.slot) else { return }
         cursor = v.slot
         let gp = spine[cursor]
-        // 翻到了别的章 → 通知上层把 session.index 跟过来（换章不再靠 onEdge）
-        if gp.chapter != chapter {
-            chapter = gp.chapter
-            onChapterChange?(gp.chapter)
-        }
+        syncChapterIfNeeded(gp)
         report()
         ensureNeighbor(for: gp, forward: gp.page == 0 ? false : true)
     }
