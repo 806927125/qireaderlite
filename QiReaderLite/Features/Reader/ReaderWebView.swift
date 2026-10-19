@@ -817,6 +817,8 @@ struct ReaderWebView: View {
             //    QRSlider 照 ui.txt 的 `<input type=range>` 逐项自绘：
             //    轨道 6、thumb 26 白圆带阴影、已填充段 #4a90d9。
             QRSlider(value: $fontSize, range: 14...28, step: 1)
+                // 别抢「小 / 大」按钮的宽度（它们是 fixedSize 的固定 34）
+                .layoutPriority(0)
             sizeKnob("大", pointSize: 14)
             fontMenu
         }
@@ -825,11 +827,20 @@ struct ReaderWebView: View {
     }
 
     /// 小 / 大：灰底圆角方块
+    /// ui.txt: .fs-btn { width:34; height:34; border-radius:50%;
+    ///                  background:rgba(0,0,0,.05); font-size:14; color:#555 }
+    ///
+    /// ⚠️ 必须 `.fixedSize()`：旁边 QRSlider 内部是 GeometryReader（**贪婪**），
+    ///    在 HStack 里会抢走可分配宽度，把这两个按钮挤变形 ——
+    ///    真机表现：圆圈被压成缺角的椭圆（用户：「把大、小字体的圆圈补全」）。
+    ///    `.fixedSize()` 让按钮按自己的 34×34 走，谁也挤不动它。
     private func sizeKnob(_ text: String, pointSize: CGFloat) -> some View {
         Text(text)
             .font(.system(size: pointSize, weight: .medium))
             .foregroundStyle(Theme.ink)
             .frame(width: 34, height: 34)   // ui.txt: .fs-btn { width:34; height:34; border-radius:50% }
+            .fixedSize()
+            .layoutPriority(1)
             .background(Self.qrFill, in: Circle())
     }
 

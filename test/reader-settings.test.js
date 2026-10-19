@@ -281,6 +281,15 @@ ok(/hardCap = screenH \* 0\.70/.test(web), '高度有屏幕 70% 硬上限');
 
 // 字号行
 ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
+// ⚠️ 必须 fixedSize —— QRSlider 内部是 GeometryReader（贪婪），
+//    在 HStack 里会抢宽度，把这两个圆压成缺角的椭圆
+//    （用户：「把大、小字体的圆圈补全」）。
+{
+  const knob = web.slice(web.indexOf('private func sizeKnob'));
+  ok(/frame\(width: 34, height: 34\)[\s\S]{0,120}fixedSize\(\)/.test(knob),
+     '「小/大」按钮 .fixedSize()（不被贪婪的 QRSlider 挤变形）');
+  ok(/layoutPriority\(1\)/.test(knob), '「小/大」按钮 layoutPriority(1)（优先拿宽度）');
+}
 ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 // ⚠️ SwiftUI 的 Slider 在 iOS 26 新样式下**滑轨会画到自己 frame 之外**。
 //    HStack 的 spacing 只管视图框、管不住绘制外延 →
