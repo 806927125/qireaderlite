@@ -194,6 +194,15 @@ final class PagedChapterPager: NSObject {
     /// 某章有几页。没缓存文本的按 1 页算（占位），到齐了会 rebuild 纠正。
     private func pageCount(of c: Int) -> Int { renders[c]?.pageCount ?? 1 }
 
+    /// 内存里已经拿到正文的章号（目录里打「已预载」小图标用）。
+    ///
+    /// ⚠️ 栖阅那边是 `ChapterCacheService` 的**磁盘**缓存，
+    ///    轻阅还没做离线缓存 —— 这里只标「内存里已有」，
+    ///    不能让用户以为断网也能读。
+    func preloadedChapters() -> [Int] {
+        texts.keys.filter { !(texts[$0]?.body.isEmpty ?? true) }.sorted()
+    }
+
     /// 排一章（**带标题**），缓存结果。标题只在章首页，所以只有 page 0 的
     /// 帧要带标题 —— 但页数必须按「带标题」那个基准算，否则页边界对不上。
     @discardableResult

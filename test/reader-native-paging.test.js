@@ -62,6 +62,7 @@ const webRaw   = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.
 const web      = stripComments(webRaw);
 const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8');
 const sess     = fs.readFileSync(path.join(ROOT, 'Core/ReaderSession.swift'), 'utf8');
+const catalog  = stripComments(fs.readFileSync(path.join(ROOT, 'Features/BookDetail/BookDetailView.swift'), 'utf8'));
 
 ok(selfTestStripComments(), 'stripComments 自检通过（门禁工具自己出错的话下面全是随机结果）');
 
@@ -353,6 +354,37 @@ ok(/ForEach\(Array\(tiles\.enumerated\(\)\)/.test(web) === false, '没有 enumer
 ok(!/CTLineGetOffsetForIndex\(/.test(paginator), '别用 CTLineGetOffsetForIndex（SDK 里没这符号）');
 ok(/lineFragmentRect/.test(paginator), '行范围用 lineFragmentRect');
 ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报 always succeed）');
+
+// ── 目录面板（照栖阅 ReaderChapterListView）────────────────────
+ok(/func preloadedChapters\(\) -> \[Int\]/.test(pager), 'pager 能报出内存已预载的章号');
+ok(!/ChapterCacheService|diskCache/.test(catalog),
+   '目录没有假装有磁盘缓存（栖阅那个能力轻阅还没做）');
+ok(/presentationDetents\(\[\.fraction\(0\.62\), \.large\]\)/.test(catalog),
+   '目录是 partial sheet（不是全屏）');
+ok(/presentationBackground\(\.clear\)/.test(catalog),
+   'sheet 背景是 .clear —— 自己设 presentationBackground 会盖掉系统玻璃');
+ok(/presentationDragIndicator\(\.visible\)/.test(catalog), '有 grabber');
+ok(/TextField\("搜索章节名"/.test(catalog) && /glassCapsule\(\)/.test(catalog),
+   '底部是玻璃胶囊搜索框（栖阅那样），不是 .searchable');
+ok(/sortAscending/.test(catalog) && /arrow\.up/.test(catalog) && /arrow\.down"/.test(catalog),
+   '有正倒序切换（栖阅的 _sortAscending）');
+ok(/iconInCapsule\(systemName: "arrow\.down\.circle", enabled: cacheEnabled\)/.test(catalog),
+   '缓存按钮走 enabled: cacheEnabled');
+ok(/\.disabled\(!enabled\)/.test(catalog) && /Theme\.ink\.opacity\(0\.28\)/.test(catalog),
+   '未实现的按钮是**置灰**而不是弹假提示');
+ok(/Theme\.accent\.opacity\(0\.12\)/.test(catalog) && /location\.fill/.test(catalog),
+   '当前章是浅色圆角底 + 蓝色字（栖阅截图那样，不是整行填充）');
+ok(/ScrollViewReader/.test(catalog) && /proxy\.scrollTo\(cur\.id, anchor: \.center\)/.test(catalog),
+   '打开自动停在当前章');
+ok(/preloaded: Set\(pageCtl\.pager\.preloadedChapters\(\)\)/.test(web),
+   '阅读器把预载状态喂给目录');
+{
+  // 三个调用点都得能编（subtitle / preloaded 都有默认值，但显式检查）
+  const n = (web.match(/CatalogSheet\(/g) || []).length;
+  ok(n >= 1, 'ReaderWebView 还在用 CatalogSheet');
+  ok(!/CatalogSheet\(chapters: chapters, start: session\.current\) \{/.test(web),
+     'ReaderWebView 的调用点已传 subtitle / preloaded');
+}
 
 // ── 真机自检实测出来的回归（build64）────────────────────────────────
 // 「底栏永远停在第一章」：followIndex 收到 10 次、最后收到第 8 章，

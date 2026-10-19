@@ -132,6 +132,54 @@ extension View {
     func glassCircle(tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
         modifier(LiquidGlass(cornerRadius: 999, tint: tint, isCircle: true))
     }
+
+    /// 玻璃胶囊（栖阅顶栏那种图标组、目录底部的搜索框）
+    func glassCapsule(strength: Double = 1.1,
+                      tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
+        modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength))
+    }
+
+    /// 只设玻璃的**形状**，不碰别的修饰链。
+    ///
+    /// iOS 26 → `glassEffect(_:in:)`，形状可以是 `.capsule` / `.circle` /
+    /// `.rect(cornerRadius:)`。iOS 17~25 → 手搓版按同一形状画。
+    ///
+    /// ⚠️ 别在 glassEffect 之后再叠 `.clipShape()` / `.background()` ——
+    ///    系统玻璃自带高光和描边，叠上去会把折射盖掉，
+    ///    效果退化成「半透明白卡片」（这坑 Components.swift 里也标注过）。
+    @ViewBuilder
+    func glassEffectShape(_ shape: GlassShape) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            switch shape {
+            case .capsule:
+                self.glassEffect(.regular, in: .capsule)
+            case .circle:
+                self.glassEffect(.regular, in: .circle)
+            case .rounded(let r):
+                self.glassEffect(.regular, in: .rect(cornerRadius: r))
+            }
+        } else {
+            self.liquidGlass(cornerRadius: shape.cornerRadiusFallback)
+        }
+        #else
+        self.liquidGlass(cornerRadius: shape.cornerRadiusFallback)
+        #endif
+    }
+}
+
+/// 玻璃形状。用自己的 enum 统一两条路，避免在调用点写 `#if`。
+enum GlassShape {
+    case capsule
+    case circle
+    case rounded(CGFloat)
+
+    var cornerRadiusFallback: CGFloat {
+        switch self {
+        case .capsule, .circle: return 999
+        case .rounded(let r): return r
+        }
+    }
 }
 
 /// 背景装饰：栖阅每个页面底下都有一层淡淡的插画。

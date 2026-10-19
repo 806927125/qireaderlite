@@ -84,7 +84,8 @@ struct ReaderView: View {
             }
         }
         .sheet(isPresented: $showCatalog) {
-            CatalogSheet(chapters: chapters, start: current) { ch in
+            CatalogSheet(chapters: chapters, start: current,
+                         subtitle: book.origin.isEmpty ? nil : book.origin) { ch in
                 showCatalog = false
                 if let i = flat.firstIndex(where: { $0.url == ch.url }) { index = i }
             }

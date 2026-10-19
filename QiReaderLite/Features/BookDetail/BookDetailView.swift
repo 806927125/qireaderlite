@@ -73,7 +73,8 @@ struct BookDetailView: View {
         }
         .task { await loadDetail() }
         .sheet(isPresented: $showCatalog) {
-            CatalogSheet(chapters: chapters, start: readerChapter) { ch in
+            CatalogSheet(chapters: chapters, start: readerChapter,
+                         subtitle: book.origin.isEmpty ? nil : book.origin) { ch in
                 showCatalog = false
                 readerChapter = ch
             }
@@ -303,44 +304,240 @@ struct BookDetailView: View {
     }
 }
 
+/// 目录面板 —— 照栖阅 `ReaderChapterListView.swift` 重做。
+///
+/// 从栖阅二进制里挖到的结构（strings）：
+/// ```
+/// /ReaderChapterListView.swift          目录视图本体
+/// ChapterCacheService(Protocol)         章节缓存服务 → 已缓存章打云图标
+/// _sortAscending / sortAscending        正倒序切换
+/// VolumeButtonPageTurn*                 卷分组（isVolume）
+/// ReaderSearchView / chapterListEmpty   目录内搜索 / 空态
+/// ```
+///
+/// 视觉照栖阅截图：partial sheet + **系统玻璃**（iOS 26 的 `.glassEffect()`
+/// 由 `LiquidGlass` 统一处理，iOS 17~25 走手搓四层），顶部一行
+/// 「胶囊按钮组 + 书名/副标题 + 关闭圆钮」，底部一个玻璃胶囊搜索框。
+///
+/// ⚠️ sheet 背景**不能**自己设 `presentationBackground` —— 那会把系统玻璃盖掉，
+///    栖阅那种「透出后面正文」的效果就没了（设置面板已经踩过一次）。
 struct CatalogSheet: View {
     @Environment(\.dismiss) private var dismiss
     let chapters: [Chapter]
     let start: Chapter?
+    /// 顶部那一行的副标题（栖阅显示的是书源名 + 版本）
+    var subtitle: String? = nil
+    /// 已预载到内存的章号集合。栖阅那边是 `ChapterCacheService` 的磁盘缓存，
+    /// 轻阅还没做磁盘缓存，所以只标「内存里已有」——不假装成离线可读。
+    var preloaded: Set<Int> = []
+    /// 磁盘缓存还没实现 → 按钮置灰，不做假动作。
+    var cacheEnabled: Bool = false
     let onPick: (Chapter) -> Void
+
     @State private var filter = ""
+    @State private var sortAscending = true
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(shown) { c in
-                    Button {
-                        onPick(c)
-                    } label: {
-                        HStack {
-                            if c.isVolume {
-                                Text(c.title).font(.subheadline.bold()).foregroundStyle(Theme.accent)
-                            } else {
-                                Text(c.title).font(.subheadline).foregroundStyle(Theme.ink)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            if c.url == start?.url { Image(systemName: "location.fill").font(.caption) }
+        VStack(spacing: 0) {
+            header
+            list
+            searchBar
+        }
+        // partial sheet + 系统玻璃：不设 presentationBackground，
+        // 让 iOS 26 的 glass 自己透出后面的正文。
+        .presentationDetents([.fraction(0.62), .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.62)))
+        .presentationBackground(.clear)
+    }
+
+    // MARK: 顶部行
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            // 左：胶囊按钮组（正倒序 + 缓存）
+            HStack(spacing: 0) {
+                iconInCapsule(systemName: sortAscending ? "arrow.up" : "arrow.down") {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        sortAscending.toggle()
+                    }
+                }
+                Rectangle().fill(Theme.ink.opacity(0.16))
+                    .frame(width: 1, height: 18)
+                iconInCapsule(systemName: "arrow.down.circle", enabled: cacheEnabled) {
+                    // 磁盘缓存还没做 —— 置灰就是置灰，不弹「即将支持」糊弄
+                }
+            }
+            .glassCapsule()
+            .glassEffectShape(.capsule)
+
+            // 中：书名 + 副标题
+            VStack(alignment: .leading, spacing: 1) {
+                Text(titleText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ink.opacity(0.6))
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // 右：关闭
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .glassCircle()
+            .accessibilityLabel("关闭目录")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+    }
+
+    private var titleText: String {
+        let n = chapters.filter { !$0.isVolume }.count
+        return "目录 (\(n.formatted()))"
+    }
+
+    private func iconInCapsule(systemName: String, enabled: Bool = true,
+                               action: @escaping () -> Void) -> some View {
+        Button { if enabled { action() } } label: {
+            Image(systemName: systemName)
+                .font(.footnote.weight(.semibold))
+                // ⚠️ 未实现的功能置灰：半透明 + 弱化色，
+                //    一眼能看出点不动，而不是点了给个假反馈。
+                .foregroundStyle(enabled ? Theme.ink : Theme.ink.opacity(0.28))
+                .frame(width: 42, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    // MARK: 列表
+
+    private var list: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(ordered) { c in
+                        row(c)
+                        if c.id != ordered.last?.id {
+                            Rectangle().fill(Theme.ink.opacity(0.07))
+                                .frame(height: 0.5)
+                                .padding(.leading, 16)
                         }
+                    }
+                    if ordered.isEmpty {
+                        Text("没有匹配的章节")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.ink.opacity(0.5))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
                     }
                 }
             }
-            .listStyle(.plain)
-            .searchable(text: $filter, prompt: "搜章节名")
-            .navigationTitle("目录 (\(chapters.filter { !$0.isVolume }.count))")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+            .onAppear {
+                // 打开就停在当前章（栖阅也是这么做的）
+                if let cur = start {
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(cur.id, anchor: .center)
+                    }
+                }
             }
+            // 排序/搜索变了要把「当前章高亮」重新滚进视野
+            .onChange(of: sortAscending) { _, _ in resyncCurrent(proxy) }
+            .onChange(of: filter) { _, _ in resyncCurrent(proxy) }
         }
     }
 
-    private var shown: [Chapter] {
-        filter.isEmpty ? chapters : chapters.filter { $0.title.localizedCaseInsensitiveContains(filter) }
+    private func resyncCurrent(_ proxy: ScrollViewProxy) {
+        guard let cur = start else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            proxy.scrollTo(cur.id, anchor: .center)
+        }
+    }
+
+    private func row(_ c: Chapter) -> some View {
+        let isCurrent = c.url == start?.url
+        return Button {
+            onPick(c)
+        } label: {
+            HStack(spacing: 10) {
+                // 已预载标记（栖阅是云图标 = 磁盘缓存，这里是内存预载）
+                if preloaded.contains(c.index) && !isCurrent {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.ink.opacity(0.35))
+                }
+                Text(c.title)
+                    .font(c.isVolume ? .subheadline.weight(.bold) : .body)
+                    .foregroundStyle(isCurrent ? Theme.accent : (c.isVolume ? Theme.accent : Theme.ink))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 8)
+                if isCurrent {
+                    Image(systemName: "location.fill")
+                        .font(.caption)
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            // 当前章：浅色圆角底 + 蓝色文字（栖阅截图就是这样，不是整行填充）
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isCurrent ? Theme.accent.opacity(0.12) : .clear)
+                    .padding(.horizontal, 8)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .id(c.id)
+    }
+
+    // MARK: 底部搜索
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.subheadline)
+                .foregroundStyle(Theme.ink.opacity(0.55))
+            TextField("搜索章节名", text: $filter)
+                .font(.subheadline)
+                .foregroundStyle(Theme.ink)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !filter.isEmpty {
+                Button { filter = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.ink.opacity(0.45))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 40)
+        .glassCapsule()
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: 数据
+
+    private var ordered: [Chapter] {
+        let base = filter.isEmpty
+            ? chapters
+            : chapters.filter { $0.title.localizedCaseInsensitiveContains(filter) }
+        return sortAscending ? base : base.reversed()
     }
 }

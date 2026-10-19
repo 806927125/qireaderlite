@@ -101,6 +101,12 @@ struct ReaderWebView: View {
         session.pagingOwnsIndex = want
     }
 
+    /// 目录顶部那行副标题（栖阅显示的是「🍎大灰狼聚合 5.9.30(vip完全版)」）
+    private var sourceSubtitle: String? {
+        let name = session.book.origin
+        return name.isEmpty ? nil : name
+    }
+
     /// 底线颜色：存成 hex，ColorPicker 要的是 Binding<Color>
     private var baselineColorBinding: Binding<Color> {
         Binding(
@@ -338,7 +344,9 @@ struct ReaderWebView: View {
             await session.start(settings: settingsPayload(coverDataURL: bg))
         }
         .sheet(isPresented: $showCatalog) {
-            CatalogSheet(chapters: chapters, start: session.current) { ch in
+            CatalogSheet(chapters: chapters, start: session.current,
+                         subtitle: sourceSubtitle,
+                         preloaded: Set(pageCtl.pager.preloadedChapters())) { ch in
                 showCatalog = false
                 if let i = session.flat.firstIndex(where: { $0.url == ch.url }) {
                     session.jump(to: i)
