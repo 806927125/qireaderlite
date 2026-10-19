@@ -62,9 +62,11 @@ struct ReaderWebView: View {
 
     @Environment(\.colorScheme) private var darkScheme
 
-    /// 分页容器。UIPageViewController 是 UIViewController，用 @StateObject 持有
-    /// （它不是 ObservableObject，但 @StateObject 能保住实例不被重建）。
-    @StateObject private var pageCtl = PagedReaderController()
+    /// 分页容器。
+    /// ⚠️ @StateObject 要求 ObservableObject，PagedReaderController 不是
+    ///    （它也不需要 —— 它的状态在 pager 里，SwiftUI 侧只做命令式调用），
+    ///    所以用 @State 持有。引用类型，@State 能保住实例不被重建。
+    @State private var pageCtl = PagedReaderController()
 
     /// 已经喂给 pager 的正文。用它判断「这一章要不要重排」——
     /// 之前老实现靠 chapterKey 变没变来判断，但那是 chapterKey 立刻变、正文异步到，

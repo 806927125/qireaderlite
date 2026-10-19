@@ -71,7 +71,7 @@ final class ReaderPageVC: UIViewController {
             canvas.configure(kind: .spinner, message: "正在加载下一章…")
             canvas.isHidden = false
         case .failed(let msg):
-            canvas.configure(kind: .message, message: msg,
+            canvas.configure(kind: .failure, message: msg,
                             onRetry: { [weak self] in self?.onRetry?() },
                             onStepBack: { [weak self] in self?.onStepBack?() })
             canvas.isHidden = false
@@ -104,7 +104,9 @@ final class ReaderPageCanvasView: UIView {
     enum Content {
         case text
         case spinner
-        case message(String)
+        /// 命名参数也叫 message 时，`kind: .message` 会推不出类型
+        /// （报 "member 'message' expects argument of type 'String'"）→ 改名
+        case failure(String)
     }
 
     private var ctFrame: CTFrame?
@@ -185,7 +187,7 @@ final class ReaderPageCanvasView: UIView {
             label.isHidden = false
             retryBtn.isHidden = true
             backBtn.isHidden = true
-        case .message(let m):
+        case .failure(let m):
             spinner.stopAnimating()
             label.text = m
             label.isHidden = false
@@ -261,16 +263,19 @@ final class ReaderPageCanvasView: UIView {
             // 直接 let 会推成 Optional 再重名 —— 分两步写
             guard let raw = CFArrayGetValueAtIndex(lines, i) else { continue }
             let line = unsafeBitCast(raw, to: CTLine.self)
-            let r = CTLineGetImageBounds(line, origins[i])
+            // ⚠️ CTLineGetImageBounds 第二参是 **CGRect**，传 CGPoint 编译不过
+            let r = CTLineGetImageBounds(line, CGRect(origin: origins[i], size: .zero))
             // CTLineGetTypographicBounds 返回 Double，CGFloat 减 Double 要显式转
             let desc = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             let baselineY = origins[i].y - desc
             var x0: CGFloat, x1: CGFloat
-            switch scope {
-            case .full:
+            // ⚠️ ReaderBaselineScope 是 **struct** 不是 enum，
+            //    对它 switch 要求穷尽 → 编译报 "switch must be exhaustive"。
+            //    改用 == 比较（它本来就 Hashable/Equatable）。
+            if scope == .full {
                 x0 = 0
                 x1 = pageSize.width
-            case .word:          // 栖阅叫「按文字」，枚举里是 .word 不是 .text
+            } else {              // 栖阅叫「按文字」，枚举里是 .word 不是 .text
                 x0 = CGFloat(r.origin.x)
                 x1 = CGFloat(r.origin.x + r.width)
             }

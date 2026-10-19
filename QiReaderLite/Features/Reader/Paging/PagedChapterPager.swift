@@ -31,9 +31,10 @@ final class PagedChapterPager: NSObject {
     var turnMode: String = "slide"
     var background: UIColor = .systemBackground
 
-    /// 最近一次喂进来的正文（重试时要用）
-    private var lastText = ""
-    private var lastTitle = ""
+    /// 最近一次喂进来的正文（重试/换翻页方式重建容器时要用，
+    /// PagedReaderController 在另一个文件里，所以不能是 private）
+    var lastText = ""
+    var lastTitle = ""
     /// 当前章的排版结果
     private var paginator = ReaderPaginator()
     private(set) var pages: [ReaderPage] = []

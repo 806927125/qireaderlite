@@ -129,7 +129,15 @@ ok(!/ReaderLayoutConfig\.default/.test(pager), '没有用不存在的 ReaderLayo
 ok(/ReaderLayoutConfig\(\)/.test(pager), '用 ReaderLayoutConfig() 初始化');
 // ReaderBaselineScope 是 struct（不是 enum），成员是 .word 不是 .text
 ok(!/\.baselineScope\.rawValue/.test(web), 'ReaderBaselineScope 用 .raw 不是 .rawValue');
-ok(/case \.word/.test(pageVC), '底线范围用 .word（栖阅叫「按文字」，枚举名是 word）');
+ok(/scope == \.full/.test(pageVC) && /else/.test(pageVC),
+   '底线范围用 == 比较（ReaderBaselineScope 是 struct，对它 switch 报 must be exhaustive）');
+ok(/CGRect\(origin: origins\[i\], size: \.zero\)/.test(pageVC),
+   'CTLineGetImageBounds 第二参是 CGRect，传 CGPoint 编译不过');
+ok(/@State private var pageCtl/.test(web), 'UIViewController 用 @State 持有（不是 @StateObject，那个要 ObservableObject）');
+ok(!/@StateObject private var pageCtl/.test(web), '没给 UIViewController 挂 @StateObject');
+ok(/case failure\(String\)/.test(pageVC), 'Content 枚举不再用 message（跟参数名同名会推不出类型）');
+ok(!/var lastText = ""/.test(pager) || !/private var lastText/.test(pager),
+   'lastText 不是 private（换容器时 PagedReaderController 在别的文件要用）');
 ok(/didFinishAnimating/.test(pager), '翻完动画后回写当前页');
 // 换章判定不再靠「chapterKey 立刻变、正文异步到」，而是正文真变了才重排
 // —— 老做法每次换章都先闪一下上一章第一页，看着就像翻页坏了
