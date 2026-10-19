@@ -193,6 +193,16 @@ final class PagedChapterPager: NSObject {
         }
     }
 
+    /// 点击翻页。章内切页；到边则换章（requestStep 里会排占位页）。
+    func turn(_ delta: Int) {
+        let target = current + delta
+        if pages.indices.contains(target) {
+            show(at: target, animated: turnMode != "none")
+        } else {
+            requestStep(delta > 0 ? 1 : -1)
+        }
+    }
+
     /// 章界：不是返回 nil，而是排一个占位页并触发换章
     private func requestStep(_ dir: Int) {
         if loading { return }

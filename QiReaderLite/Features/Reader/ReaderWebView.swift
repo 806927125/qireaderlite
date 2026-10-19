@@ -75,6 +75,12 @@ struct ReaderWebView: View {
     @State private var pagedTitle: String = ""
     @State private var pagedChapter: Int = -1
     @State private var pagedLayout: String = ""
+    /// 真实的可视区尺寸。
+    /// ⚠️ 之前 onChange(chapterText) 里直接 `syncPager(size: .zero)` ——
+    ///    `pageSize(in: .zero)` 走的是 `max(80, …)`，算出 **80×80 的迷你页**，
+    ///    整页正文被塞进 80×80 再拉成全屏 → 满屏米色只露几个字。
+    ///    正文变了要重排，但重排必须用**当初量到的真实尺寸**，不是 .zero。
+    @State private var pagerViewport: CGSize = .zero
 
     /// 用原生分页（CoreText 排版 + 翻页动画）还是 webview 上下滚动。
     /// 只有「上下滚动」这一种走 webview —— 栖阅也是这么分的：
@@ -114,9 +120,37 @@ struct ReaderWebView: View {
 
     /// 换章加载中 / 换章失败 的提示层。
     /// 失败时给「重试」按钮 —— 只报错不给出口等于把用户堵死。
+    /// 原生分页模式下的点击分发。
+    /// 中间区域出目录；「点击任意位置翻到下一页」开着的话，其余位置翻页。
+    /// 翻页直接调 pager.show(at:)，不碰系统手势。
+    private func handleReaderTap(zone: CGFloat) {
+        if showChrome {
+            withAnimation(.easeInOut(duration: 0.18)) { showChrome = false }
+            return
+        }
+        if tapAnywhereTurnsPage {
+            if zone > 0.35 && zone < 0.65 {
+                withAnimation(.easeInOut(duration: 0.18)) { showChrome = true }
+            } else {
+                pageCtl.pager.turn(zone >= 0.5 ? 1 : -1)
+            }
+        } else {
+            if zone < 0.25 {
+                pageCtl.pager.turn(-1)
+            } else if zone > 0.75 {
+                pageCtl.pager.turn(1)
+            } else {
+                withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
+            }
+        }
+    }
+
     /// 把 SwiftUI 侧的配置和正文推进 pager。
     /// 幂等 —— 只有「章变了 / 正文变了 / 排版参数变了」才真的重排。
     private func syncPager(size: CGSize) {
+        // 尺寸没量到就什么都别做：拿 .zero 去算页宽会算出 80×80 的迷你页
+        guard size.width > 1, size.height > 1 else { return }
+        pagerViewport = size
         let c = layoutConfig
         let sig = "\(c.fontSize)|\(c.lineSpacing)|\(c.paragraphSpacing)|\(c.horizontalMargin)|\(c.topMargin)|\(c.verticalJustify)|\(c.baselineScope.raw)|\(themeKey)|\(darkScheme == .dark)"
         let pager = pageCtl.pager
@@ -183,12 +217,19 @@ struct ReaderWebView: View {
                         .onChange(of: geo.size) { _, s in syncPager(size: s) }
                 }
                 .onChange(of: session.errorText) { _, _ in syncPagerFailures() }
-                .onChange(of: session.chapterText) { _, _ in syncPager(size: .zero) }
+                .onChange(of: session.chapterText) { _, _ in syncPager(size: pagerViewport) }
                 if useNativePaging {
                     // 原生分页：容器交给 UIPageViewController（系统管手势/边界/动画），
                     // CoreText 只负责把一章文本切成若干页。
                     PagedReaderUI(controller: pageCtl)
                         .ignoresSafeArea(edges: .bottom)
+                        .onAppear {
+                            // 点中间出目录，左右翻页。
+                            // 翻页本身交给系统容器，这里只做菜单和（按设置）点两侧翻页
+                            pageCtl.onTapZone = { zone in
+                                handleReaderTap(zone: zone)
+                            }
+                        }
                 } else {
                     ReaderWebContainer(
                         host: session.host,

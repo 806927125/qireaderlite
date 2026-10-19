@@ -284,5 +284,34 @@ ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
   ok(/case \.loading/.test(pageVC) && /case \.failed/.test(pageVC), '页有加载态和失败态两种');
 }
 
+// ── 重构时自己踩的两个坑（真机才发现）────────────────────────
+// 症状一：满屏米色，正文只剩左下角几个字（第 / 0001章）
+//   根因：onChange(chapterText) 里 `syncPager(size: .zero)`，
+//         而 pageSize(in:) 是 `max(80, w-边距)` → 算出 **80×80 迷你页**，
+//         整章正文塞进 80×80 再拉成全屏。
+// 症状二：点不出目录
+//   根因：重构删掉了老 SwiftUI 层的 SpatialTapGesture，
+//         session.onTap 只在 webview 模式接 —— 原生分页模式**没有任何 tap**。
+{
+  // ① 不许拿 .zero 去算页宽
+  ok(/@State private var pagerViewport: CGSize = .zero/.test(web),
+     '存了真实可视区尺寸');
+  ok(/guard size\.width > 1, size\.height > 1 else \{ return \}/.test(web),
+     '尺寸没量到就直接返回，不拿 .zero 去算');
+  ok(!/syncPager\(size: \.zero\)/.test(web), '没有任何地方拿 .zero 当视口传进 syncPager');
+  ok(/onChange\(of: session\.chapterText\)[^\n]*syncPager\(size: pagerViewport\)/.test(web),
+     '正文变了用存下来的真实尺寸重排');
+  // ② tap 必须在 UIKit 层，且和系统手势共存
+  ok(/UITapGestureRecognizer/.test(readerUI), 'tap 挂在 UIKit 层（SwiftUI 的会被 UIScrollView 吃掉）');
+  ok(/tap\.cancelsTouchesInView = false/.test(readerUI), 'cancelsTouchesInView = false，不吞分页滑动');
+  ok(/shouldRecognizeSimultaneouslyWith/.test(readerUI), '和系统手势同时识别');
+  ok(/var onTapZone: \(\(CGFloat\) -> Void\)\?/.test(readerUI), '有 tap 分区回调');
+  ok(/pageCtl\.onTapZone = /.test(web), 'SwiftUI 侧接上了 onTapZone');
+  ok(/func handleReaderTap\(zone: CGFloat\)/.test(web), '有 tap 分发');
+  ok(/showChrome = true/.test(web), '中间区域能出目录了');
+  ok(/pager\.turn\(/.test(web), '左右能翻页');
+  ok(/func turn\(_ delta: Int\)/.test(pager), 'pager 支持命令式翻页');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);
