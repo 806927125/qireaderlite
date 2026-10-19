@@ -583,7 +583,16 @@ struct ReaderWebView: View {
             // ⚠️ overlay 没有 detent 撑着，NavigationStack 会把面板吃成**全屏**，
             //    背景铺满整屏、内容居中（真机就是这样炸的）。
             //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
-            .frame(height: sheetHeight)
+            // ⚠️ 内容区高度 = 内容自然高（sheetHeight 是「量到的内容高 + 4」，
+            //    这里减掉那 4 的余量）。
+            //
+            //    之前直接用 sheetHeight，而内部 padding 要 12 + 16 = 28pt，
+            //    内容区只比内容自然高 4pt —— **内容被压了 24pt**，
+            //    视觉上就是「内容顶在面板上沿、下面空一截」。
+            //
+            //    减掉 4 之后，内容区正好等于内容自然高，
+            //    上下留白完全由 padding 决定。
+            .frame(height: max(sheetHeight - 4, 200))
 
             // ── ui.txt 的 .panel 有**两个不同层级**的留白，别写成重复的 ──
             //
@@ -598,7 +607,10 @@ struct ReaderWebView: View {
             //   内容 → ②内部 padding → 玻璃 → ①定位留白
             //
             // ② 内部 padding（玻璃**里面**）
-            .padding(.top, 12)
+            //
+            // 顶部 12 → **30**：用户要「里面整体往下挪」。
+            // 栖阅真机面板顶到「小」那行的距离约 40pt，这里原来只有 12pt。
+            .padding(.top, 30)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 

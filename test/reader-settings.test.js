@@ -233,11 +233,13 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
 {
   const glassAt = panel.indexOf('glassEffect');
   const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 12)');
+  const innerTop = panel.indexOf('.padding(.top, 30)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
   const outerBot = panel.lastIndexOf('.padding(.bottom, 14)');
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding 12/16');
+  // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 30 / bottom 16）');
+  ok(/\.padding\(\.top, 30\)/.test(panel), '内部顶部留白 30（内容不贴面板上沿）');
   ok(innerPad >= 0 && innerPad < glassAt,
      '内部 padding 在 glassEffect **之前**（玻璃里面）');
   ok(innerBot < glassAt, '内部底 padding 在 glassEffect 之前');
@@ -263,7 +265,12 @@ ok(!/\.shadow\(color: Color\.black\.opacity\(0\.12\), radius: 15/.test(panel),
    '不叠 .shadow（glassEffect 自带 ambient shadow，再叠会双影）');
 ok(!/\.background \{[\s\S]{0,200}RoundedRectangle\(cornerRadius: 22/.test(web),
    '不写 .background { RoundedRectangle(...) }（flexible Shape 会铺满）');
-ok(/\.frame\(height: sheetHeight\)/.test(panel), '面板显式高度（overlay 没 detent 撑）');
+// ⚠️ 内容区高度必须**等于内容自然高**，不能是「内容高 + 余量」：
+//    否则内部 padding(30+16) 吃不掉，内容被压 → 视觉上顶在上沿。
+ok(/\.frame\(height: max\(sheetHeight - 4, 200\)\)/.test(panel),
+   '内容区高 = 内容自然高（sheetHeight - 4），内容不被 padding 压扁');
+ok(/\.frame\(height: sheetHeight\)/.test(panel) === false,
+   '不直接用 sheetHeight 当内容区高（会压掉 24pt）');
 ok(/hardCap = screenH \* 0\.70/.test(web), '高度有屏幕 70% 硬上限');
 
 // 字号行
