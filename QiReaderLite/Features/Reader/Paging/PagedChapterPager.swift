@@ -326,7 +326,7 @@ extension PagedChapterPager {
         L.append("页尺寸 \(Int(pageSize.width))×\(Int(pageSize.height))")
         L.append("总章数 \(chapterCount) · 当前章 \(chapter) · 已缓存文本 \(texts.count) 章")
         L.append("全书 spine \(spine.count) 页 · cursor \(cursor)")
-        L.append("当前页：\(cursor < spine.count ? "章 \(spine[cursor].chapter)+1 第 \(spine[cursor].page + 1) 页" : "越界")")
+        L.append("当前页：\(cursor < spine.count ? "章 \(spine[cursor].chapter + 1) 第 \(spine[cursor].page + 1) 页" : "越界")")
         L.append("当前章渲染：\(renders[chapter].map { "已排 \($0.pageCount) 页，标题「\($0.title)」" } ?? "❌ 没排出来")")
         L.append("正文长度：\(texts[chapter].map { "\($0.body.count) 字" } ?? "❌ 没文本")")
         L.append("最近 push：第 \(lastPushedChapter) 章，标题「\(lastPushedTitle)」")

@@ -134,7 +134,14 @@ final class ReaderPaginator {
         let path = CGPath(rect: CGRect(origin: .zero, size: pageSize), transform: nil)
         var start = 0
         let len = attributed.length
-        for _ in 0..<max(1, index) {
+        // ⚠️ 这里必须是 `0..<index`，**不能**是 `0..<max(1, index)`。
+        //    max(1, 0)=1 → 取第 0 页时循环也跑一次 → start 前进到第 1 页末尾
+        //    → 返回的是**第 2 页**的帧。后果是每一页都偏移一页：
+        //      · 章首页显示的是第 2 页内容 → 章节标题永远看不到
+        //      · 最后一页 start >= len → 返回 nil → 空白页
+        //    当初写 max(1, …) 是怕 `0..<0` 空循环，但 **`0..<0` 本来就是对的**
+        //    （第 0 页不需要跳过任何东西）。
+        for _ in 0..<max(0, index) {
             let frame = CTFramesetterCreateFrame(fs, CFRangeMake(start, 0), path, nil)
             let visible = CTFrameGetVisibleStringRange(frame)
             guard visible.length > 0 else { return nil }
