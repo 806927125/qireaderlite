@@ -571,12 +571,24 @@ struct ReaderWebView: View {
                 if abs(target - sheetHeight) > 1 { sheetHeight = target }
             }
             .padding(.horizontal, 14)
-            .padding(.top, 6)
-            .padding(.bottom, 10)
+            // 栖阅面板顶部有**一块呼吸区**（grabber 下面留白），
+            // 内容不是顶格贴上去的。原来 6 顶得太死。
+            .padding(.top, 14)
+            .padding(.bottom, 12)
             // ⚠️ 整个导航栏藏掉：没有「阅读设置」大标题，也没有右上角「完成」。
             //    栖阅那个面板顶部直接就是「小 ▬ 大 [系统字体]」，标题栏压根不存在。
             //    NavigationStack 还得留着 —— 子页（显示/间距/更多）是 push 进去的。
             .toolbar(.hidden, for: .navigationBar)
+            // ⚠️⚠️ **这才是「面板看着是米黄色实心」的真正元凶**。
+            //
+            //    NavigationStack 内部的 `containerBackground` 默认是**不透明**的
+            //    `systemBackground`。我只给三个**子页**写了 ClearNavigationBackground，
+            //    **根页漏了** → 系统玻璃被这一层不透明底整个遮死，
+            //    后面插画透不出来，面板看着像一块米黄色的板子。
+            //
+            //    栖阅那块能透出后面的枯枝和小熊，就是因为它没有这层底。
+            //    （对照：目录面板我重写时去掉了 NavigationStack，所以它是透明的 —— 对得上）
+            .modifier(ClearNavigationBackground())
             // ⚠️ 这里**没有 toolbar** —— 「完成」按钮整个去掉了。
             //    栖阅那个面板就没有右上角任何按钮，靠下拉关闭。
             //    留着它不仅占宽度，还和磁贴里那格「大小 / 显示设置」语义重复。
@@ -828,9 +840,15 @@ struct ReaderWebView: View {
                 Text(name).font(.footnote.weight(.semibold))
                 Text(subtitle ?? "").font(.caption2)
             }
+            // ⚠️ 栖阅那 8 格**底色是统一的淡米色**，区分「已实现 / 没实现」
+            //    靠的是**文字深浅**，不是有没有底。
+            //    我原来分成「已实现 = 明显白卡片 / 未实现 = 几乎透明」两档，
+            //    结果 4 亮 4 暗，看着像两套东西。
             .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+            .background(Self.qrFill,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .background(Color.white.opacity(ready ? 0.34 : 0.16),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }

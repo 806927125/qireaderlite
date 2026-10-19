@@ -73,6 +73,23 @@ ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有 FitSheetHeight 
 //    结果后面透不出插画，看着像「一堆卡片」而不是「一块面板」。
 ok((web.match(/Color\.white\.opacity\(0\.34\)/g) || []).length === 0,
    '面板内部**没有任何独立的半透明白卡片底**（栖阅是一整块玻璃）');
+// ⚠️⚠️ build79 之后用户还是说「不像」，这才是真凶：
+//    NavigationStack 的 containerBackground 默认是**不透明** systemBackground，
+//    我只给三个**子页**写了 ClearNavigationBackground，**根页漏了** →
+//    系统玻璃被这层不透明底整个遮死，后面插画透不出来，面板是块米黄色板子。
+//    对照证据：目录面板没有 NavigationStack，所以它是透明的。
+ok((web.match(/ClearNavigationBackground\(\)/g) || []).length === 4,
+   'ClearNavigationBackground 出现 4 次：根页 + 3 个子页（根页以前漏了）');
+ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackground\(\)/.test(web),
+   '根页藏导航栏的同时**必须**清 containerBackground');
+// 磁贴：8 格统一淡色底，靠文字深浅区分状态（不是两档底色）
+{
+  const ft = web.slice(web.indexOf('private func featureTileLabel'));
+  ok(/background\(Self\.qrFill,[\s\S]{0,60}RoundedRectangle\(cornerRadius: 12/.test(ft),
+     '8 格磁贴底色**统一**（栖阅那样，不是「亮/暗」两档）');
+}
+ok(/padding\(\.top, 14\)[\s\S]{0,60}padding\(\.bottom, 12/.test(web),
+   '面板顶部有呼吸区（原来 top 6 顶得太死）');
 ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
 ok(/fontSize: 12,[\s\S]{0,40}cornerRadius: 15,[\s\S]{0,40}fillsWidth: true/.test(web),
    '翻页方式字号 12（13 时「上下滚动」被截成「上下...」）');
