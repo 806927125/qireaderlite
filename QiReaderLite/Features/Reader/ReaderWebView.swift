@@ -608,26 +608,35 @@ struct ReaderWebView: View {
             //
             // ② 内部 padding（玻璃**里面**）
             //
-            // 顶部 12 → 30 → **42**：用户连续要「里面整体往下挪」。
+            // 顶部 12 → 30 → 42 → **50**：用户连续要「按钮整体下移一点」。
             // 栖阅真机面板顶到「小」那行的距离约 **42pt**（截图量）。
-            .padding(.top, 42)
+            .padding(.top, 50)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 
-            // 面板背景 = **液态玻璃**（iOS 26+ 唯一解）。
+            // 面板背景 = **磨砂玻璃**（半透明白 + 强模糊），**不用** .glassEffect。
             //
-            // 部署目标已经是 iOS 26，所以 `.glassEffect(.regular, in: shape)`
-            // 可以**直接调用**。那是 iOS 26 新增 API：折射背后的内容、
-            // 真实 depth、自带 ambient shadow。
+            // ⚠️⚠️ 这条我绕了太久：
+            //   · build84~101 一直用 `.glassEffect(.regular)`（iOS 26 真液态玻璃），
+            //     用户从 build84 起就**连续**反馈「滑块/按钮被挡」——
+            //   · 原因：iOS 26 的**折射玻璃会在边缘把靠近的内容扭掉**，
+            //     面板上沿附近的控件（字号行、色块）看着就变形、被"挡"。
+            //   · 而栖阅那块（以及 ui.txt 的 .panel）其实是
+            //     `rgba(255,255,255,.82) + blur(24px)` —— **磨砂，不折射**。
             //
-            // **不照搬** ui.txt 的 white@.82 —— 那是普通磨砂（塑料感），不是玻璃。
+            // 用户要的「栖阅风格液态玻璃」= 半透明 + 模糊能透出后面内容，
+            // **不等于** iOS 26 的折射玻璃。要的是前者。
             //
             // ⚠️ 必须用 `background(_:in:)` 重载，**不能**写 `.background { Shape }`：
             //    后者闭包里的 Shape 是 flexible view，ZStack 给多大 proposal
             //    它就撑多大 → 背景铺满整屏（build88 炸过）。
             .background(
-                Color.clear
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                Color.white.opacity(0.82),
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
             )
 
             // ① 定位留白（玻璃**外面**）：面板离屏幕左右各 14、离底 14

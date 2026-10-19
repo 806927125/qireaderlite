@@ -173,9 +173,17 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 // ★ iOS 26 的系统玻璃必须是 partial-height sheet。
 //   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
 //   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
-// 玻璃：iOS 26 用 .glassEffect(.regular, in: shape) 是真液态玻璃
-// 比 .ultraThinMaterial 层次更深（折射背后的内容，不是模糊）
-ok(/glassEffect\(\.regular/.test(web), '面板用 .glassEffect(.regular) 真液态玻璃');
+// ⚠️⚠️ 面板用**磨砂玻璃**（white .82 + .ultraThinMaterial），不用 .glassEffect。
+//    iOS 26 的折射玻璃会在**边缘把靠近的内容扭掉** —— 面板上沿附近的控件
+//    （字号行 / 色块）看着变形、被"挡"。用户从 build84 到 build101 连续反馈
+//    「被挡」，根因就是这个。
+//    栖阅那块（ui.txt 的 .panel）本来就是 rgba(255,255,255,.82) + blur(24px)。
+ok(/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel),
+   '面板底色 white@0.82（磨砂白，ui.txt .panel 原值）');
+ok(/\.background\(\s*\.ultraThinMaterial/.test(panel),
+   '面板用 .ultraThinMaterial 模糊（ui.txt backdrop-filter: blur(24px)）');
+ok(!/glassEffect\(/.test(panel),
+   '**不**用 .glassEffect（折射会扭掉边缘的控件，看着像被挡）');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
 // 目录 sheet 本来就该有 detent（.medium/.large）；
 // 只判定**设置面板**那一段没有 detent。
@@ -234,23 +242,25 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
 // 写成重复的 .padding(.horizontal, 14) 会累加成左右各 28
 // → 玻璃撑宽 → 内容溢出屏幕被裁（真机：色块第8个、宫格「高亮」被切）。
 {
-  const glassAt = panel.indexOf('glassEffect');
+  // 玻璃层 = 第一个 `.background(... in: RoundedRectangle(cornerRadius: 22)`
+  const glassAt = panel.indexOf('in: RoundedRectangle(cornerRadius: 22');
   const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 42)');
+  const innerTop = panel.indexOf('.padding(.top, 50)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
   const outerBot = panel.lastIndexOf('.padding(.bottom, 14)');
   // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 42 / bottom 16）');
+  // 顶部 12 → 30 → 42 → 50：用户连续要「按钮整体下移一点」。
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 50 / bottom 16）');
   // 顶部 12 → 30 → 42：用户连续要「里面整体往下挪」，
   // 栖阅真机面板顶到「小」那行的距离约 42pt（截图量）。
-  ok(/\.padding\(\.top, 42\)/.test(panel), '内部顶部留白 42（对齐栖阅真机）');
+  ok(/\.padding\(\.top, 50\)/.test(panel), '内部顶部留白 50（按钮整体下移）');
   ok(innerPad >= 0 && innerPad < glassAt,
-     '内部 padding 在 glassEffect **之前**（玻璃里面）');
-  ok(innerBot < glassAt, '内部底 padding 在 glassEffect 之前');
+     '内部 padding 在 玻璃**之前**（玻璃里面）');
+  ok(innerBot < glassAt, '内部底 padding 在玻璃之前');
   ok(outerPad > glassAt && outerPad !== innerPad,
-     '定位 padding 在 glassEffect **之后**（玻璃外面），且不与内部那个重复');
-  ok(outerBot > glassAt, '定位底 padding 在 glassEffect 之后');
+     '定位 padding 在玻璃**之后**（玻璃外面），且不与内部那个重复');
+  ok(outerBot > glassAt, '定位底 padding 在玻璃之后');
   // 左右 padding 在玻璃前后各出现一次，且**不能**都在玻璃前
   const hP = [...panel.matchAll(/\.padding\(\.horizontal, 14\)/g)].map(m => m.index);
   ok(hP.length === 2 && hP[0] < glassAt && hP[1] > glassAt,
@@ -259,15 +269,11 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 ok(!/\.background\(Color\.white\.opacity\(0\.82\)/.test(panel),
    '**不**留 white@.82（那是普通毛玻璃，不是液态玻璃）');
-// ⚠️⚠️ 面板背景**必须是液态玻璃**（.glassEffect(.regular, in:shape)），
-// 不是 ui.txt 的 white @ 0.82。用户一开始就要求栖阅风格液态玻璃，
-// ui.txt 那份不是栖阅源码，那 .82 是普通毛玻璃，迁就它会失去玻璃的深度。
-ok(/glassEffect\(\.regular, in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '面板用 .glassEffect(.regular) 液态玻璃（不是 ui.txt 的 white@.82）');
-// ⚠️ 不照搬 ui.txt 的 box-shadow 0 4px 30px rgba(0,0,0,.12)：
-// glassEffect 在 iOS 26 自带 ambient shadow，再叠 .shadow() 会出双影。
-ok(!/\.shadow\(color: Color\.black\.opacity\(0\.12\), radius: 15/.test(panel),
-   '不叠 .shadow（glassEffect 自带 ambient shadow，再叠会双影）');
+// ⚠️⚠️ 面板背景 = **磨砂玻璃**：white@0.82 + .ultraThinMaterial。
+//    不用 .glassEffect —— 折射玻璃会把边缘的控件扭掉，看着像被挡。
+ok(/\.background\(\s*Color\.white\.opacity\(0\.82\),\s*\n?\s*in: RoundedRectangle/.test(panel),
+   '面板是磨砂玻璃：white@0.82（ui.txt .panel 原值）');
+ok(!/glassEffect\(/.test(panel), '不用 .glassEffect（折射会扭掉边缘控件）');
 ok(!/\.background \{[\s\S]{0,200}RoundedRectangle\(cornerRadius: 22/.test(web),
    '不写 .background { RoundedRectangle(...) }（flexible Shape 会铺满）');
 // ⚠️ 内容区高度必须**等于内容自然高**，不能是「内容高 + 余量」：
