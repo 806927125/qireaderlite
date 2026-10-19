@@ -247,19 +247,20 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
   // 玻璃层 = 第一个 `.background(... in: RoundedRectangle(cornerRadius: 22)`
   const glassAt = panel.indexOf('in: RoundedRectangle(cornerRadius: 22');
   const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 56)');
+  const innerTop = panel.indexOf('.padding(.top, 34)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
   const outerBot = panel.lastIndexOf('.padding(.bottom, Self.bottomSafeInset + 14)');
   // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
   // 顶部 12 → 30 → 42 → 50：用户连续要「按钮整体下移一点」。
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 56 / bottom 16）');
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 34 / bottom 16）');
   // 顶部 12 → 30 → 42：用户连续要「里面整体往下挪」，
   // 栖阅真机面板顶到「小」那行的距离约 42pt（截图量）。
   // 顶部 12 → 30 → 42 → 56：栖阅那块是**磨砂白**（没有玻璃边缘折射），
 // 面板顶到「小」那行约 42pt；我们用**真液态玻璃**，边缘有折射区，
 // 控件离边缘太近会被"啃"掉一块（用户：「那缺口在上面啊」）。
-ok(/\.padding\(\.top, 56\)/.test(panel), '内部顶部留白 56（离玻璃边缘够远）');
+// 顶部总留白 = 面板内 34 + 字号行 8 = 42，对齐栖阅真机。
+ok(/\.padding\(\.top, 34\)/.test(panel), '面板内部顶部留白 34');
   ok(innerPad >= 0 && innerPad < glassAt,
      '内部 padding 在 玻璃**之前**（玻璃里面）');
   ok(innerBot < glassAt, '内部底 padding 在玻璃之前');
@@ -380,18 +381,18 @@ ok(/VStack\(spacing: 8\) \{\s*tileRow\(0\)/.test(web), '宫格间距 8（参考�
 //    之前我理解成「整体下移」，把面板内部 top padding 一路加到 56 —— 方向错了。
 ok(/private var featureGrid[\s\S]{0,400}padding\(\.top, 12\)/.test(web),
    '8 个宫格按钮自己往下挪（padding.top 12）');
-ok(/padding\(\.top, 56\)/.test(panel),
-   '面板内部顶留白 56（整体下移诉求已撤销，但要让开玻璃边缘折射区）');
+ok(/padding\(\.top, 34\)/.test(panel),
+   '面板内部顶留白 34（总留白 42 = 栖阅实测值）');
 // ⚠️ 字号行是面板内容的第一行，它上面就是玻璃边缘 —— 三个控件
 //    （小/大/楷体）同处这一行，所以一起被"啃"掉上沿。
-ok(/private var sizeRow[\s\S]{0,900}padding\(\.top, 10\)/.test(web),
-   '字号行自己再下移 10（离玻璃边缘留安全距离）');
+ok(/private var sizeRow[\s\S]{0,900}padding\(\.top, 8\)/.test(web),
+   '字号行自己下移 8（给玻璃边缘折射区留的安全距离）');
 // ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
 //    之前我理解成「整体下移」，把面板内部 top padding 一路加到 56 —— 方向错了。
 ok(/private var featureGrid[\s\S]{0,400}padding\(\.top, 12\)/.test(web),
    '8 个宫格按钮自己往下挪（padding.top 12）');
-ok(/padding\(\.top, 56\)/.test(panel),
-   '面板内部顶留白 56（整体下移诉求已撤销，但要让开玻璃边缘折射区）');
+ok(/padding\(\.top, 34\)/.test(panel),
+   '面板内部顶留白 34（总留白 42 = 栖阅实测值）');
 
 // ⚠️ 参考实现建议「去掉置灰（enabled:false）」让它看着正常 —— **不采纳**。
 //    未实现的功能（朗读 / 高亮 / 气泡 / 格式 / 页眉页脚）置灰是用户明确要的：
