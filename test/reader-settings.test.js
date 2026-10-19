@@ -296,6 +296,14 @@ ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
      '「小/大」按钮 .fixedSize()（不被贪婪的 QRSlider 挤变形）');
   ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(knob),
      '「小/大」用 ZStack + Circle.fill 直接画圆（保证完整正圆）');
+  // ⭐ 必须 `.aspectRatio(1, .fit)` —— **锁死宽高比**。
+  //    `.frame(width:34,height:34)` + `.fixedSize()` 只锁"理想尺寸"，
+  //    锁不住"实际分配比例"：HStack 里被压时圆照样会变成椭圆。
+  //    `.aspectRatio(1,.fit)` 保证宽高永远相等 → 圆不可能变形。
+  ok(/aspectRatio\(1, contentMode: \.fit\)/.test(knob),
+     '「小/大」.aspectRatio(1,.fit) 锁死宽高比（圆不会被压成椭圆）');
+  ok(/\.fixedSize\(horizontal: false, vertical: true\)/.test(fontMenu),
+     '「字体」胶囊 fixedSize（不被 HStack 压变形）');
 }
 ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 // ⚠️ SwiftUI 的 Slider 在 iOS 26 新样式下**滑轨会画到自己 frame 之外**。

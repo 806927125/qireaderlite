@@ -850,6 +850,12 @@ struct ReaderWebView: View {
                 .foregroundStyle(Color(white: 0x33 / 0xff))
         }
         .frame(width: 34, height: 34)
+        // ⭐ `.aspectRatio(1, .fit)` = **锁死宽高比**：
+        //    无论父容器（HStack / GeometryReader 贪婪）怎么压，
+        //    宽高永远相等 → 圆**不可能**变形。
+        //    之前只用 .frame(width:height:) + .fixedSize() 还是被挤过，
+        //    because fixedSize 只锁"理想尺寸"，锁不住"实际分配比例"。
+        .aspectRatio(1, contentMode: .fit)
         .fixedSize()
     }
 
@@ -872,6 +878,8 @@ struct ReaderWebView: View {
             .padding(.vertical, 7)
             .background(Color.black.opacity(0.06),
                         in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // 同样：别让 HStack 把它压变形（用户圈了这三个）
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
