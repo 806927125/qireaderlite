@@ -361,6 +361,10 @@ struct CatalogSheet: View {
         .presentationDetents([.fraction(0.62), .large], selection: $detent)
         .presentationDragIndicator(.visible)
         .presentationBackground(.clear)
+        // 目录上滑 = 滚目录，页面尺寸不动。
+        // SwiftUI 没这个开关（`prefersScrollingExpandsWhenScrolledToEdge` 默认 true），
+        // 走 UIKit 设成 false。少了这行，用户往目录顶部上滑就会把 sheet 撑大。
+        .background(NoScrollExpand())
     }
 
     // MARK: 顶部行
@@ -457,6 +461,10 @@ struct CatalogSheet: View {
                     }
                 }
             }
+            // ⚠️ 这是 ScrollView 的修饰符，不能挂在外面的 VStack 上
+            //    （挂错位置编译直接报 no member 'scrollBounceBehavior'）。
+            //    .basedOnSize = 内容不够高时才允许 bounce。
+            .scrollBounceBehavior(.basedOnSize)
             .onAppear {
                 // 打开就停在当前章（栖阅也是这么做的）
                 if let cur = start {

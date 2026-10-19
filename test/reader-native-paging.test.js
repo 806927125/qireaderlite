@@ -363,6 +363,24 @@ ok(/presentationDetents\(\[\.fraction\(0\.62\), \.large\], selection: \$detent\)
    'detent 列表保留 .large（栖阅按住顶部横线上滑是会变大的，不是定死）');
 ok(/presentationDragIndicator\(\.visible\)/.test(catalog),
    '有 grabber —— 用户就是靠按住它上滑变大');
+ok(/\.background\(NoScrollExpand\(\)\)/.test(catalog),
+   '目录挂了 NoScrollExpand —— 「目录上滑只滚目录，页面不变大」靠它');
+{
+  const lgl = stripComments(fs.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8'));
+  ok(/prefersScrollingExpandsWhenScrolledToEdge = false/.test(lgl),
+     '设了 prefersScrollingExpandsWhenScrolledToEdge = false（默认 true = 滚到边缘自动展开）');
+  ok(/sheetPresentationController/.test(lgl) && /UIViewControllerRepresentable/.test(lgl),
+     '走 UIKit 拿 sheetPresentationController（SwiftUI 的 presentationDetents 没暴露这个开关）');
+  ok(/viewDidAppear/.test(lgl) && /didMoveToWindow/.test(lgl),
+     'present 完成 + 入窗两个时机都试（只写一个可能拿不到）');
+}
+ok(/scrollBounceBehavior\(\.basedOnSize\)/.test(catalog), '列表用 basedOnSize bounce');
+{
+  // 必须挂在 ScrollView 上，不能挂外面的 VStack（挂错位置编译报 no member）
+  const iSb = catalog.indexOf('scrollBounceBehavior');
+  const iSV = catalog.indexOf('ScrollView {');
+  ok(iSb > iSV, 'scrollBounceBehavior 在 ScrollView 之后（没挂到 VStack 上）');
+}
 ok(!/presentationBackgroundInteraction/.test(catalog),
    '**绝对没开** presentationBackgroundInteraction：那个修饰符的语义就是' +
    '「sheet 背景区域也接管手势」，开了随便在空白处一拖 sheet 就变形 —— ' +

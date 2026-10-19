@@ -211,3 +211,63 @@ struct GlassBackdrop: View {
         .ignoresSafeArea()
     }
 }
+
+
+// MARK: - sheet 手势行为修正（SwiftUI 没暴露，得走 UIKit）
+
+/// 关掉「列表滚到边缘后继续拖 → sheet 自动展开」。
+///
+/// ## 症状
+/// 用户在目录里**上滑**想翻看前面的章节，结果**页面自己变大了** ——
+/// 期望是「目录滚动」，实际是「sheet resize」。
+///
+/// ## 根因
+/// `UISheetPresentationController.prefersScrollingExpandsWhenScrolledToEdge`
+/// **默认就是 `true`**：滚动内容到边缘后，剩余手势会被 sheet 接管去展开到下一个 detent。
+/// SwiftUI 的 `.presentationDetents` **完全没有**暴露这个开关
+/// （也没有任何等价修饰符），所以纯 SwiftUI 写不出栖阅那个行为。
+///
+/// 栖阅能用是因为它有 UIKit 层 / 或者它关了这个属性。
+/// 轻阅这里用一个透明 UIViewController 往上找 `sheetPresentationController` 把它设成 false：
+/// · 拖列表内容 → 永远是滚列表，滚到顶就 bounce，**页面尺寸不动**
+/// · 拖 grabber → 系统 detent 手势不受影响，照样能在 .fraction / .large 之间切
+///
+/// 这才是「按住横线上滑才变大，目录上滑只滚目录」的正确拆法。
+struct NoScrollExpand: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Host { Host() }
+    func updateUIViewController(_ vc: Host, context: Context) { vc.apply() }
+
+    final class Host: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            apply()
+        }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            // sheet 的 presentingViewController 要等 present 完才拿得到，
+            // 所以两个时机都试一遍（缺一个就可能不生效）。
+            DispatchQueue.main.async { [weak self] in self?.apply() }
+            apply()
+        }
+
+        func apply() {
+            guard let sheet = findSheet() else { return }
+            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+        }
+
+        private func findSheet() -> UISheetPresentationController? {
+            var v: UIViewController? = self
+            while let cur = v {
+                if let s = cur.sheetPresentationController { return s }
+                v = cur.parent
+            }
+            // contentViewController 自己的 presenting 链上再找一次
+            v = presentingViewController
+            while let cur = v {
+                if let s = cur.sheetPresentationController { return s }
+                v = cur.presentingViewController
+            }
+            return nil
+        }
+    }
+}
