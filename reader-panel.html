@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>轻阅 · 阅读面板预览</title>
+<style>
+:root{
+  --panel-x:12; --panel-b:12; --panel-r:26;
+  --card-t:24; --card-l:12; --card-b:12; --card-r:12; --card-rd:22; --card-a:0.35;
+  --knob:36; --chip-h:38; --chip-r:19; --chip-fs:13; --chip-gap:6;
+  --sw:44; --sw-rd:12; --sw-gap:6;
+  --tile-h:76; --tile-rd:16; --tile-gap:10; --tile-ico:18; --tile-tfs:15; --tile-sfs:11;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font:14px/1.5 -apple-system,"PingFang SC",sans-serif;background:#20242b;color:#e8e8ea}
+.wrap{display:flex;gap:20px;max-width:1180px;margin:0 auto;padding:16px;align-items:flex-start;flex-wrap:wrap}
+
+/* ── 手机预览 ── */
+.stage{flex:0 0 auto;width:390px}
+.phone{position:relative;width:390px;height:844px;border-radius:44px;overflow:hidden;
+  background:linear-gradient(168deg,#f3ecdc 0%,#e8e2d0 45%,#dfe4d8 100%);box-shadow:0 18px 50px #0009}
+.status{position:absolute;top:0;left:0;right:0;height:54px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 30px;font-size:13px;font-weight:600;color:#3a3a3c}
+.wall{position:absolute;inset:0;background:
+  radial-gradient(120px 90px at 12% 12%,#d8cdb4 0 60%,transparent 70%),
+  radial-gradient(90px 70px at 84% 22%,#cfd8c0 0 60%,transparent 70%),
+  radial-gradient(140px 60px at 70% 88%,#d6cdb6 0 60%,transparent 72%)}
+.text{position:absolute;left:26px;right:26px;top:92px;font-size:15px;line-height:2.05;color:#3d3a34}
+.text p{margin:0 0 20px;text-indent:2em}
+.scrim{position:absolute;inset:0;background:#000;opacity:.20}
+
+/* ── 面板：等价 SwiftUI 的 overlay ── */
+.panel{position:absolute;left:0;right:0;bottom:0;padding:0 var(--panel-x) var(--panel-b);
+  max-height:70%;display:flex;align-items:flex-end}
+.pglass{position:relative;width:100%;border-radius:var(--panel-r);overflow:hidden;
+  background:rgba(239,231,214,.90);backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);box-shadow:0 -1px 0 #fff6 inset}
+
+/* ── 内层白卡 ── */
+.card{margin:0 0 0;padding:var(--card-t) var(--card-r) var(--card-b) var(--card-l);
+  background:rgba(255,255,255,var(--card-a));border-radius:var(--card-rd)}
+
+/* 字号行 */
+.row{display:flex;align-items:center}
+.knob{width:var(--knob);height:var(--knob);border-radius:50%;background:#00000014;
+  display:flex;align-items:center;justify-content:center;font-size:13px;color:#000000d8;flex:0 0 auto}
+.slider{flex:1;margin:0 10px;height:4px;border-radius:2px;background:linear-gradient(90deg,#4C7DF0 22%,#00000022 22%);position:relative}
+.slider i{position:absolute;top:50%;left:22%;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0003}
+.pill{background:#00000014;border-radius:20px;padding:7px 12px;display:flex;align-items:center;gap:4px;
+  font-size:14px;color:#000000d8;flex:0 0 auto}
+
+/* 配色行 */
+.crow{display:flex;align-items:center;gap:var(--sw-gap)}
+.crow .ic{font-size:18px;width:20px;text-align:center;flex:0 0 auto;color:#000000c0}
+.swaps{flex:1;display:flex;gap:var(--sw-gap)}
+.sw{flex:1;height:var(--sw);border-radius:var(--sw-rd);display:flex;align-items:center;justify-content:center;
+  font-size:15px;border:2px solid transparent}
+.sw.on{border-color:#4C7DF0}
+
+/* 跟随 */
+.follow{display:flex;align-items:center;gap:8px;font-size:15px;color:#000000d8}
+.switch{margin-left:auto;width:51px;height:31px;border-radius:16px;background:#4C7DF0;position:relative;flex:0 0 auto}
+.switch i{position:absolute;top:2px;right:2px;width:27px;height:27px;border-radius:50%;background:#fff}
+
+hr{border:0;height:1px;background:#00000014;margin:12px 0}
+
+/* chips */
+.chips{display:flex;gap:var(--chip-gap);align-items:center}
+.chips .ic{font-size:18px;width:20px;flex:0 0 auto;color:#000000c0}
+.chip{flex:1;height:var(--chip-h);border-radius:var(--chip-r);background:#00000012;
+  display:flex;align-items:center;justify-content:center;font-size:var(--chip-fs);
+  color:#000000d8;white-space:nowrap;overflow:hidden}
+.chip.on{background:#4C7DF0;color:#fff}
+
+/* 宫格 */
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--tile-gap)}
+.grid+.grid{margin-top:var(--tile-gap)}
+.tile{height:var(--tile-h);border-radius:var(--tile-rd);background:#0000000f;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.tile .i{font-size:var(--tile-ico);line-height:1}
+.tile .t{font-size:var(--tile-tfs);font-weight:700;color:#000000d8}
+.tile .s{font-size:var(--tile-sfs);color:#0000008c}
+.tile.off .i,.tile.off .t,.tile.off .s{opacity:.38}
+
+/* ── 右侧调参 ── */
+.ctrl{flex:1;min-width:300px;background:#171a20;border-radius:16px;padding:16px 18px;max-height:844px;overflow:auto}
+.ctrl h1{font-size:16px;margin:0 0 4px}
+.ctrl .sub{font-size:12px;color:#8b8f98;margin-bottom:14px;line-height:1.6}
+.grp{font-size:11px;color:#6f757f;letter-spacing:.08em;margin:16px 0 8px;text-transform:uppercase}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
+.f{display:flex;align-items:center;gap:8px;font-size:12px}
+.f label{flex:0 0 88px;color:#a8adb6}
+.f input[type=range]{flex:1;accent-color:#4C7DF0;height:3px}
+.f b{flex:0 0 34px;text-align:right;color:#fff;font-weight:600;font-variant-numeric:tabular-nums}
+.reset{margin-top:16px;width:100%;padding:9px;border:0;border-radius:9px;background:#4C7DF0;
+  color:#fff;font-size:13px;font-weight:600}
+.pend{margin-top:10px;padding:9px 11px;background:#0f1216;border-radius:9px;font-size:11px;
+  color:#7d838d;line-height:1.7;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,monospace}
+.note{margin-top:12px;padding:9px 11px;background:#2a1f10;border:1px solid #4a3418;border-radius:9px;
+  font-size:11.5px;color:#d9a441;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <div class="phone">
+      <div class="wall"></div>
+      <div class="status"><span>18:33</span><span>5G ▮▮▮</span></div>
+      <div class="text">
+        <p>山中的早秋格外的冷。天还不曾亮出轮廓，东方 的天际雾影中微微现出一丝曙光，莽莽大山的山野草 际间不断传出秋虫密集如雨的鸣声。</p>
+        <p>随着渐渐亮起的曙光，一弯残月已下林梢，山林 间渐渐响起了清脆的鸟鸣声。</p>
+        <p>突然，两个小黑影从山谷旁的峭壁上流星般的急 速扑下，一只身上布满黄黑条纹、猫般大小的小花狗 和另一只黑得像墨一样的野猫。</p>
+      </div>
+      <div class="scrim"></div>
+      <div class="panel"><div class="pglass"><div class="card">
+
+        <div class="row">
+          <div class="knob">小</div>
+          <div class="slider"><i></i></div>
+          <div class="knob">大</div>
+          <div class="pill">楷体 <span style="font-size:11px">⌄</span></div>
+        </div>
+
+        <div class="crow" style="margin-top:12px">
+          <div class="ic">☀</div>
+          <div class="swaps">
+            <div class="sw" style="background:#fff;color:#000000c0">文</div>
+            <div class="sw" style="background:#CDEBD6;color:#000000b0">文</div>
+            <div class="sw" style="background:#F0E3C0;color:#000000b0">文</div>
+            <div class="sw" style="background:#F6EFE6;color:#000000b0">文</div>
+            <div class="sw on" style="background:#EDE9DC;color:#000000b0">文</div>
+            <div class="sw" style="background:#232323;color:#fff">文</div>
+            <div class="sw" style="background:#E3E7EF;color:#000000b0">文</div>
+            <div class="sw" style="background:#fff;color:#000000c0">文</div>
+          </div>
+        </div>
+
+        <div class="crow" style="margin-top:8px">
+          <div class="ic">☾</div>
+          <div class="swaps">
+            <div class="sw on" style="background:#1C1C1E;color:#fff">文</div>
+            <div class="sw" style="background:#1E2A38;color:#fff">文</div>
+            <div class="sw" style="background:#1E2E22;color:#fff">文</div>
+            <div class="sw" style="background:#241C2B;color:#fff">文</div>
+            <div class="sw" style="background:#1A1A1A;color:#fff">文</div>
+            <div class="sw" style="background:#20241F;color:#fff">文</div>
+            <div class="sw" style="background:#1F2733;color:#fff">文</div>
+          </div>
+        </div>
+
+        <div class="follow" style="margin-top:14px">
+          <span style="font-size:18px;width:20px;text-align:center">◐</span> 跟随系统深浅色
+          <div class="switch"><i></i></div>
+        </div>
+
+        <hr>
+
+        <div class="chips">
+          <div class="ic">▤</div>
+          <div class="chip">仿真</div>
+          <div class="chip on">滑动</div>
+          <div class="chip">平移</div>
+          <div class="chip">无动画</div>
+          <div class="chip">上下滚动</div>
+        </div>
+
+      </div>
+
+      <div class="grid" style="margin-top:12px">
+        <div class="tile"><div class="i">▤</div><div class="t">大小</div><div class="s">显示设置</div></div>
+        <div class="tile"><div class="i">≡</div><div class="t">间隔</div><div class="s">间隔设置</div></div>
+        <div class="tile off"><div class="i">◖</div><div class="t">朗读</div><div class="s">朗读设置</div></div>
+        <div class="tile off"><div class="i">✎</div><div class="t">高亮</div><div class="s">高亮设置</div></div>
+      </div>
+      <div class="grid">
+        <div class="tile off"><div class="i">☁</div><div class="t">气泡</div><div class="s">设置</div></div>
+        <div class="tile off"><div class="i"></div><div class="t">格式</div><div class="s">标题样式</div></div>
+        <div class="tile off"><div class="i">▤</div><div class="t">页眉</div><div class="s">页脚</div></div>
+        <div class="tile"><div class="i">⋯</div><div class="t">更多</div><div class="s">设置</div></div>
+      </div>
+
+      </div></div></div>
+    </div>
+  </div>
+
+  <div class="ctrl">
+    <h1>阅读面板 · 实时调参</h1>
+    <div class="sub">左边是按当前 build 89 的 SwiftUI 数值复刻的。拖滑块看效果，<b>对了告诉我哪几个数</b>，我一次性合进 Swift。</div>
+
+    <div class="grp">面板容器（overlay）</div>
+    <div class="row2">
+      <div class="f"><label>左右留白</label><input type="range" id="panel-x" min="0" max="40" value="12"><b></b></div>
+      <div class="f"><label>底部留白</label><input type="range" id="panel-b" min="0" max="40" value="12"><b></b></div>
+      <div class="f"><label>面板圆角</label><input type="range" id="panel-r" min="0" max="40" value="26"><b></b></div>
+    </div>
+
+    <div class="grp">内层白卡</div>
+    <div class="row2">
+      <div class="f"><label>上</label><input type="range" id="card-t" min="0" max="48" value="24"><b></b></div>
+      <div class="f"><label>左</label><input type="range" id="card-l" min="0" max="32" value="12"><b></b></div>
+      <div class="f"><label>下</label><input type="range" id="card-b" min="0" max="32" value="12"><b></b></div>
+      <div class="f"><label>右</label><input type="range" id="card-r" min="0" max="32" value="12"><b></b></div>
+      <div class="f"><label>圆角</label><input type="range" id="card-rd" min="0" max="34" value="22"><b></b></div>
+      <div class="f"><label>底色透明</label><input type="range" id="card-a" min="0" max="80" value="35"><b></b></div>
+    </div>
+
+    <div class="grp">字号行</div>
+    <div class="row2">
+      <div class="f"><label>小/大 直径</label><input type="range" id="knob" min="24" max="48" value="36"><b></b></div>
+    </div>
+
+    <div class="grp">配色格</div>
+    <div class="row2">
+      <div class="f"><label>高度</label><input type="range" id="sw" min="28" max="60" value="44"><b></b></div>
+      <div class="f"><label>圆角</label><input type="range" id="sw-rd" min="0" max="24" value="12"><b></b></div>
+      <div class="f"><label>间距</label><input type="range" id="sw-gap" min="0" max="16" value="6"><b></b></div>
+    </div>
+
+    <div class="grp">翻页 chips</div>
+    <div class="row2">
+      <div class="f"><label>高度</label><input type="range" id="chip-h" min="26" max="52" value="38"><b></b></div>
+      <div class="f"><label>圆角</label><input type="range" id="chip-r" min="0" max="26" value="19"><b></b></div>
+      <div class="f"><label>字号</label><input type="range" id="chip-fs" min="9" max="18" value="13"><b></b></div>
+      <div class="f"><label>间距</label><input type="range" id="chip-gap" min="0" max="14" value="6"><b></b></div>
+    </div>
+
+    <div class="grp">功能宫格</div>
+    <div class="row2">
+      <div class="f"><label>高度</label><input type="range" id="tile-h" min="56" max="104" value="76"><b></b></div>
+      <div class="f"><label>圆角</label><input type="range" id="tile-rd" min="0" max="26" value="16"><b></b></div>
+      <div class="f"><label>间距</label><input type="range" id="tile-gap" min="0" max="20" value="10"><b></b></div>
+      <div class="f"><label>图标</label><input type="range" id="tile-ico" min="12" max="28" value="18"><b></b></div>
+      <div class="f"><label>主标题</label><input type="range" id="tile-tfs" min="10" max="20" value="15"><b></b></div>
+      <div class="f"><label>副标题</label><input type="range" id="tile-sfs" min="8" max="16" value="11"><b></b></div>
+    </div>
+
+    <button class="reset" onclick="reset()">恢复 build 89 的值</button>
+    <div class="note" id="note"></div>
+    <div class="pend" id="pend"></div>
+  </div>
+</div>
+
+<script>
+const DEF={}; const ids=[...document.querySelectorAll('input[type=range]')];
+ids.forEach(i=>DEF[i.id]=+i.value);
+const r=document.documentElement.style;
+
+function apply(){
+  const v=id=>+document.getElementById(id).value;
+  const set=(k,val)=>document.querySelectorAll('#'+k).forEach(e=>e.textContent=val);
+  ids.forEach(i=>set(i.id,i.value));
+
+  r.setProperty('--panel-x',v('panel-x')+'px'); r.setProperty('--panel-b',v('panel-b')+'px');
+  r.setProperty('--panel-r',v('panel-r')+'px');
+  r.setProperty('--card-t',v('card-t')+'px'); r.setProperty('--card-l',v('card-l')+'px');
+  r.setProperty('--card-b',v('card-b')+'px'); r.setProperty('--card-r',v('card-r')+'px');
+  r.setProperty('--card-rd',v('card-rd')+'px'); r.setProperty('--card-a',(v('card-a')/100));
+  r.setProperty('--knob',v('knob')+'px');
+  r.setProperty('--sw',v('sw')+'px'); r.setProperty('--sw-rd',v('sw-rd')+'px');
+  r.setProperty('--sw-gap',v('sw-gap')+'px');
+  r.setProperty('--chip-h',v('chip-h')+'px'); r.setProperty('--chip-r',v('chip-r')+'px');
+  r.setProperty('--chip-fs',v('chip-fs')+'px'); r.setProperty('--chip-gap',v('chip-gap')+'px');
+  r.setProperty('--tile-h',v('tile-h')+'px'); r.setProperty('--tile-rd',v('tile-rd')+'px');
+  r.setProperty('--tile-gap',v('tile-gap')+'px'); r.setProperty('--tile-ico',v('tile-ico')+'px');
+  r.setProperty('--tile-tfs',v('tile-tfs')+'px'); r.setProperty('--tile-sfs',v('tile-sfs')+'px');
+
+  // chips 溢出提示
+  const chips=[...document.querySelectorAll('.chip')];
+  const ov=chips.some(c=>c.scrollWidth>c.clientWidth+1);
+  document.getElementById('note').innerHTML = ov
+    ? '⚠️ <b>「上下滚动」被截断了</b> —— 字号或 chip 太大，5 个等分装不下。'
+    : '✓ 五个 chips 都完整（「上下滚动」没被截）。';
+
+  document.getElementById('pend').textContent =
+`FitSheetHeight 已删除；面板 = overlay
+panelX \${v('panel-x')}  panelB \${v('panel-b')}  panelR \${v('panel-r')}
+card  \${v('card-t')}/\${v('card-l')}/\${v('card-b')}/\${v('card-r')}  r\${v('card-rd')}  a\${v('card-a')/100}
+knob \${v('knob')}   swatch \${v('sw')} r\${v('sw-rd')} gap\${v('sw-gap')}
+chip \${v('chip-h')} r\${v('chip-r')} \${v('chip-fs')}pt gap\${v('chip-gap')}
+tile \${v('tile-h')} r\${v('tile-rd')} gap\${v('tile-gap')} ico\${v('tile-ico')} \${v('tile-tfs')}/\${v('tile-sfs')}`;
+}
+ids.forEach(i=>i.addEventListener('input',apply));
+function reset(){ ids.forEach(i=>i.value=DEF[i.id]); apply(); }
+apply();
+</script>
+</body>
+</html>
