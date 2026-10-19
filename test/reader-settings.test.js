@@ -44,6 +44,8 @@ function ok(c, label, extra) {
 
 const web = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
 const chip = web.slice(web.indexOf('private struct ChipButton'));
+const panel = web.slice(web.indexOf('private var settingsSheet'),
+                         web.indexOf('private var settingsContent'));
 const pageTurn = web.slice(web.indexOf('private var pageTurnRow'),
                             web.indexOf('private var featureGrid'));
 const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
@@ -71,8 +73,7 @@ console.log('\n── 液态玻璃：用系统层级的，不是自己糊一层 
 //   · iOS 26 的 partial-height sheet **默认就是液态玻璃**
 //   · .large 全屏 detent 是不透明的
 //   · 自定义 presentationBackground 会**覆盖掉**系统的玻璃 → 要去掉
-const fit = web.slice(web.indexOf('private struct FitSheetHeight'));
-ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有 FitSheetHeight 修饰符');
+ok(!/FitSheetHeight/.test(web.replace(/\/\/[^\n]*/g,'')), '不再有 FitSheetHeight（面板改 overlay）');
 // ⚭� 结构差异：栖阅那块面板是**一整块玻璃**，内部只有细分隔线，
 //    配色格 / 磁贴 / 翻页行都直接坐在玻璃上，**没有各自的半透明卡片底**。
 //    我原来给每张卡片都垫了 Color.white.opacity(0.34)，
@@ -98,12 +99,17 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
      '8 格磁贴底色**统一**一层（栖阅那样，不是「亮/暗」两档）');
   ok(!/Color\.white\.opacity\(ready \?/.test(ft), '磁贴不再叠第二层白底');
   ok(/cornerRadius: 16/.test(ft), '磁贴圆角 16（第 4 版）');
-  ok(/frame\(height: 88\)/.test(ft), '磁贴高 88（第 4 版）');
+  // ⚠️ frame 必须在 background **之前**，否则缺图标的「格式」格
+  //    背景比别格矮一截，八格对不齐。
+  ok(/frame\(height: 76\)[\s\S]{0,120}\.background\(Self\.qrFill/.test(ft),
+     '磁贴等高 76，且 frame 在 background 之前（八格才能对齐）');
+  ok(/else \{\s*Color\.clear\.frame\(width: 18, height: 18\)/.test(ft),
+     '空图标用 18×18 占位（「格式」格内容基线一致）');
 }
 // 面板内边距照参考实现 EdgeInsets.fromLTRB(16, 16, 16, 28)：
 // 底部 28 是给 home indicator 让的，面板贴到屏边但最后一行磁贴不压指示条。
-ok(/padding\(\.horizontal, 12\)[\s\S]{0,80}padding\(\.top, 12\)[\s\S]{0,60}padding\(\.bottom, 12/.test(web),
-   '面板内边距 12/12/12/12（第 4 版）');
+ok(/padding\(\.horizontal, 12\)[\s\S]{0,80}padding\(\.top, 0\)[\s\S]{0,60}padding\(\.bottom, 12/.test(web),
+   '面板内边距左右12/顶0/底12（贴边后内容整体下坐）');
 {
   const ub = web.slice(web.indexOf('private var upperPanelCard'),
                        web.indexOf('private func hairLine'));
@@ -117,9 +123,20 @@ ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，
 ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,200}allowsHitTesting\(false\)/.test(web),
    '有幕布（黑色 20%）');
 ok(/opacity\(showSettings \? 1 : 0\)/.test(web), '幕布跟着面板显隐淡入淡出');
-ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,80}GlassBackdrop\(\)/.test(web) ||
-   /ZStack \{\s*theme\.bg[\s\S]{0,400}Color\.black\.opacity\(0\.20\)/.test(web),
-   '幕布在 ZStack 里（正文之下、sheet 之下，才能透出来）');
+ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(web),
+   '幕布不可命中（不能吃掉面板的下拉关闭手势）');
+// 面板必须是 overlay 不是 .sheet —— sheet 在独立窗口里贴不了边，
+// 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
+ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
+   '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
+ok(/ZStack\(alignment: \.bottom\)/.test(web), '根容器是 bottom 对齐的 ZStack');
+ok(/settingsSheet/.test(web.slice(web.indexOf('ZStack(alignment: .bottom)'))),
+   '面板挂在 ZStack 里（等价于 Positioned(bottom:0)）');
+ok(/\.background\(\.ultraThinMaterial\)/.test(web),
+   '面板用 .ultraThinMaterial（overlay 里才真的能模糊到下面）');
+ok(/cornerRadius: 26/.test(web), '面板圆角 26');
+ok(/DragGesture\(minimumDistance: 8\)[\s\S]{0,400}showSettings = false/.test(web),
+   '自己实现了下拉关闭（overlay 没有系统 sheet 手势可依赖）');
 // ⚠️ 「上下滚动」被截成「上下...」的**根因**不是字号，是 `fillsWidth` 强制
 //    5 个 chip 平分宽度。v2 参考实现用的是 Wrap（可换行）。
 //    我当时的修法是缩字号 —— 治错了地方。
@@ -142,40 +159,13 @@ ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), 
 // ★ iOS 26 的系统玻璃必须是 partial-height sheet。
 //   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
 //   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
-const fitBody = web.slice(web.indexOf('private struct FitSheetHeight'));
-const iOS26 = fitBody.slice(fitBody.indexOf('#available(iOS 26.0'), fitBody.indexOf('} else {'));
-ok(/presentationDetents\(\[\.fraction\(frac\)\]\)/.test(iOS26),
-   'iOS 26 用 .fraction → 原生 floating 卡片（不贴边 + 四角圆角 + 玻璃）');
-// `.height()` 这种「精确高度」detent 在 iOS 26 上会把 sheet 背景一路画到屏幕最底，
-// 底部没有安全区内缩也没有收口圆角 —— 真机对比栖阅时发现的。
-ok(/presentationDetents\(\[\.fraction\(frac\)\]\)/.test(fitBody), 'FitSheetHeight 用 .fraction');
-// ⚠️ build83 用 .fraction() 是**过度修正**：iOS 26 会把 partial detent
-//    渲染成 floating 卡片（左右内缩 + 底部收口），栖阅那个面板不是这个形态
-//    ——它是「顶部圆角 + 底部贴屏边」。真机反馈「越弄越窄」。
-ok(/screenH - insets\.top - insets\.bottom/.test(fitBody),
-   '.fraction 分母扣掉上下安全区（可用高度，不是屏幕全高）');
-ok(/safeAreaInsets\.top/.test(fitBody) && /safeAreaInsets\.bottom/.test(fitBody),
-   '安全区从 UIWindow.safeAreaInsets 实测，不写死');
-ok(/contentHeight \/ avail/.test(fitBody), '.fraction 仍按内容高度换算，不是写死比例');
-// ⚠️ 分母必须是「可用高度」（扣掉上下安全区），不是屏幕全高 ——
-//    用全屏高会让面板凭空矮一截，控件全被挤小（build83 的坑）。
-
-ok(!/presentationSizing/.test(iOS26), 'iOS 26 分支不再单靠 presentationSizing(.fitted)');
-ok(!/presentationBackground/.test(iOS26), 'iOS 26 分支不覆盖系统玻璃背景');
-ok(/\.presentationDetents\(\[\.fraction\(frac\)\]\)/.test(fitBody), 'detent 高度可动态传入');
-ok(/private struct SheetContentHeightKey: PreferenceKey/.test(web), '有测高 preference');
-ok(/preference\(key: SheetContentHeightKey\.self, value: geo\.size\.height\)/.test(web), '背景 GeometryReader 量内容高度');
-ok(/fixedSize\(horizontal: false, vertical: true\)/.test(web), '内容固定成自然高度（否则量到的是 detent 高度，成死循环）');
-ok(/if #available\(iOS 26\.0, \*\)/.test(fit), 'iOS 26 单独一条分支');
-// iOS 26 分支里不能有 presentationBackground
-const ios26Branch = fit.slice(fit.indexOf('if #available(iOS 26.0, *)'), fit.indexOf('} else {'));
-ok(!/presentationBackground/.test(ios26Branch),
-   'iOS 26 分支**不设** presentationBackground（会覆盖掉系统的玻璃）');
-ok(!/presentationCornerRadius/.test(fit), '不用 presentationCornerRadius 覆盖系统圆角');
-// 旧系统才自己糊
-ok(/presentationBackground\(\.ultraThinMaterial\)/.test(fit), 'iOS 17~25 用 ultraThinMaterial 兜底');
-// 全屏 detent 会让玻璃消失
-ok(!/presentationDetents\(\[\.large\]\)/.test(web), '不能用 .large（全屏不透明，玻璃就没了）');
+// 玻璃：overlay 里 .ultraThinMaterial 真的能模糊到下面的正文
+ok(/\.background\(\.ultraThinMaterial\)/.test(web), '面板用 .ultraThinMaterial');
+// 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
+// 目录 sheet 本来就该有 detent（.medium/.large）；
+// 只判定**设置面板**那一段没有 detent。
+ok(!/presentationDetents/.test(panel),
+   '设置面板不使用 presentationDetents（走 overlay，不是 sheet）');
 // 推入的子页要透明，否则玻璃被盖
 ok((web.match(/modifier\(ClearNavigationBackground\(\)\)/g) || []).length >= 3,
    '三个子页都用了 ClearNavigationBackground');
@@ -278,8 +268,8 @@ for (const [raw, name] of [['flip','仿真'],['slide','滑动'],['flat','平移'
 //    build76 对照：磁贴 190px vs 栖阅 120px / 配色格 70 vs 60 / 面板占屏 70% vs 46%
 // 图标 20 / spacing 4 —— build77「整体收小」改成 15 / 3 是收过头了，
 // 栖阅参考实现是 Icons 的 size: 20 + SizedBox(height: 4)。
-ok(/Image\(systemName: icon\)\.font\(\.system\(size: 20\)\)/.test(web),
-   '磁贴图标 20pt（照参考实现 size:20）');
+ok(/Image\(systemName: icon\)\.font\(\.system\(size: 18\)\)/.test(web),
+   '磁贴图标 18pt');
 ok(/VStack\(spacing: 4\)/.test(web), '磁贴内间距 4（照参考实现 SizedBox(4)）');
 {
   const ft = web.slice(web.indexOf('private func featureTileLabel'));

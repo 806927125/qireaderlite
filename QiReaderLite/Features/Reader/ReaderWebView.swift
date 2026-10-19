@@ -311,7 +311,7 @@ struct ReaderWebView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            ZStack {
+            ZStack(alignment: .bottom) {
                 theme.bg.ignoresSafeArea()
                 GlassBackdrop()
                 // 幕布（scrim）：面板弹出时把后面内容压暗一层。
@@ -377,6 +377,9 @@ struct ReaderWebView: View {
                     .padding(.top, 96)
                     .transition(.opacity)
             }
+
+                // 面板 overlay：贴在页面底部（等价于 Positioned(bottom: 0)）
+                settingsSheet
         }
         .background(theme.bg)
         .task {
@@ -430,7 +433,7 @@ struct ReaderWebView: View {
                 }
             }
         }
-        .sheet(isPresented: $showSettings) { settingsSheet }
+        // 面板走 overlay（在下面的 ZStack 底部），不用 .sheet
         .sheet(isPresented: $showPageDiag) {
             NavigationStack {
                 ScrollView {
@@ -558,10 +561,53 @@ struct ReaderWebView: View {
     ///
     /// 面板本身是**半透明磨砂**（能看到底下的正文），
     /// 高度**贴合内容**（下面不留一大块空白）。
+    /// 面板 = 页面底部的 **overlay**，不是 `.sheet`。
+    ///
+    /// 为什么不用 sheet（绕了好几天才想明白）：
+    ///   · iOS 的 sheet 活在**独立窗口**里 → 顶部**必然**留一截空，永远贴不了边；
+    ///   · 面板在那个窗口里，`BackdropFilter` / `.ultraThinMaterial`
+    ///     **模糊不到后面的正文和主题插画** —— 那就不是玻璃，是一块贴在屏幕上的板子。
+    ///
+    /// 参考实现本来就是这么摆的：
+    ///     Stack(children: [
+    ///       Container(decoration: BoxDecoration(image: ...wallpaper)),
+    ///       Positioned(left: 0, right: 0, bottom: 0, child: ReaderPanel()),
+    ///     ])
+    /// 代价是失去系统 sheet 自带的下滑关闭手势 —— 下面自己实现了一个。
     private var settingsSheet: some View {
         settingsContent
-            .background(Color.clear)
-            .modifier(FitSheetHeight(contentHeight: sheetHeight))
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+            // 玻璃：材质真的能模糊到**下面的正文和主题插画**，这才是液态玻璃
+            .background {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Self.qrPanel)              // 浅米底 0xE6EFE7D6
+                    .background(.ultraThinMaterial)  // ← overlay 里才有效
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .offset(y: showSettings ? 0 : sheetHeight + 48)
+            .opacity(showSettings ? 1 : 0)
+            .animation(.spring(response: 0.34, dampingFraction: 0.86),
+                       value: showSettings)
+            .allowsHitTesting(showSettings)
+            // 下拉关闭：grabber 那条区域往下拖
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onEnded { v in
+                        if v.translation.height > 42
+                            || v.predictedEndTranslation.height > 90 {
+                            showSettings = false
+                        }
+                    }
+            )
+            .accessibilityIdentifier("readerSettingsPanel")
+    }
+
+    /// 面板浅米底（参考实现 `Color(0xE6EFE7D6)`）
+    private static var qrPanel: Color {
+        Color(red: 239.0/255.0, green: 231.0/255.0, blue: 214.0/255.0)
+            .opacity(0.90)
     }
 
     /// 面板内容
@@ -589,7 +635,8 @@ struct ReaderWebView: View {
             // 面板贴到屏边但最后一行磁贴不会压在指示条上。
             // 参考实现 padding: fromLTRB(12, 14, 12, 14)
             .padding(.horizontal, 12)
-            .padding(.top, 12)
+            // 顶部不再留呼吸区 —— overlay 贴底之后内容整体往下坐
+            .padding(.top, 0)
             .padding(.bottom, 12)
             // ⚠️ 整个导航栏藏掉：没有「阅读设置」大标题，也没有右上角「完成」。
             //    栖阅那个面板顶部直接就是「小 ▬ 大 [系统字体]」，标题栏压根不存在。
@@ -888,7 +935,10 @@ struct ReaderWebView: View {
                 // 栖阅「格式」那格是空的 —— 图标为空串时**不占位**，
                 // 文字整体往上提，跟截图对得上
                 if !icon.isEmpty {
-                    Image(systemName: icon).font(.system(size: 20))
+                    Image(systemName: icon).font(.system(size: 18))
+                } else {
+                    // 空图标用同尺寸占位，保证八格内容基线一致
+                    Color.clear.frame(width: 18, height: 18)
                 }
                 Text(name).font(.system(size: 15, weight: .bold))   // 第 4 版 15 / w700
                 Text(subtitle ?? "").font(.system(size: 11))   // 第 4 版 subtitle 11
@@ -898,13 +948,17 @@ struct ReaderWebView: View {
             //    我原来分成「已实现 = 明显白卡片 / 未实现 = 几乎透明」两档，
             //    结果 4 亮 4 暗，看着像两套东西。
             .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
+            // ⚠️ **frame 必须在 background 之前**。
+            //    之前写成 `.background(...)` 然后 `.frame(height: 88)` ——
+            //    结果「格式」那格因为**没有图标**，内容少一整行，
+            //    背景就比别格矮一截，八格没对齐
+            //    （用户反馈：「应该改成格式那个按钮的大小，然后对齐」）。
+            //    顺序一换，八格等高；缺图标那格由 Color.clear 占位补上。
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            // 参考实现是 `Colors.grey @ 0.12` **一层**，圆角 14。
-            // 我原来叠了 qrFill + 一层白 = 两档底色，4 亮 4 暗，不像一套东西。
+            .frame(height: 76)                 // 88 → 76（「小一点」）
+            // 参考实现是 `Colors.grey @ 0.12` **一层**，圆角 16。
             .background(Self.qrFill,
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .frame(height: 88)
         }
         .buttonStyle(.plain)
         .disabled(!ready)
@@ -1253,77 +1307,6 @@ private struct ChipButton: View {
                 .minimumScaleFactor(0.85)
         }
         .buttonStyle(.plain)
-    }
-}
-
-
-/// sheet 的高度**贴合内容**，并且**用系统级的液态玻璃**。
-///
-/// ── iOS 26：系统 sheet 本来就是液态玻璃 ──
-/// Apple 的规则（WWDC25 session 323）：
-///   · **partial-height**（.medium / .height / fitted）的 sheet **默认就是玻璃**；
-///   · **.large 全屏 detent 是不透明的**；
-///   · 自定义 `presentationBackground(_:)` 会**覆盖掉系统的玻璃** —— 要去掉。
-/// 所以 iOS 26 这条分支**什么都不设背景**，让系统材质自己出来。
-///
-/// ── iOS 17~25：没有系统玻璃，自己糊一层材质 ──
-/// `.ultraThinMaterial` 是最接近玻璃的退路。
-///
-/// ── iOS 26：partial-height sheet 才有系统液态玻璃 ──
-/// Apple 的原话（WWDC25 session 323）：
-///   "we need to specify presentation detents in the sheet content and
-///    **include at least one partial height option**, such as medium or
-///    a custom height detent."
-/// 而且 ".large 全屏 detent 的背景会变成不透明"。
-///
-/// 踩过的坑：只给 `presentationSizing(.fitted)`、**不给 detent** —— sheet 走默认
-/// 全屏，就是不透明的，玻璃出不来，面板还撑满整屏。**detent 必须是 partial**。
-///
-/// `.height(n)` 是 partial ✓ → 系统玻璃 ✓
-///
-/// ⚠️ 别用 `presentationBackground` 覆盖 iOS 26 的背景，那样系统玻璃就没了。
-/// iOS 17~25 没有系统玻璃，才自己糊 `.ultraThinMaterial` 兜底。
-private struct FitSheetHeight: ViewModifier {
-    let contentHeight: CGFloat
-
-    private static var safeInsets: (top: CGFloat, bottom: CGFloat) {
-        let scenes = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-        let wins = scenes.flatMap(\.windows)
-        let win = wins.first { $0.isKeyWindow } ?? wins.first
-        return (win?.safeAreaInsets.top ?? 0, win?.safeAreaInsets.bottom ?? 0)
-    }
-
-    func body(content: Content) -> some View {
-        // 参考实现的���器是：
-        //     Padding(fromLTRB(10, 0, 10, 10))
-        //       └ ClipRRect(borderRadius: 28)            ← **四角**圆角 + 左右留边
-        //           └ BackdropFilter(blur 26) + white @ .35
-        //
-        // 这在 iOS 26 上就是 **floating sheet** 的原生形态 ——
-        // 「边缘不贴屏 + 四角圆角 + 系统液态玻璃」，所以 detent 必须给 partial。
-        //
-        // 我走过一次弯路：build84 换成 `.height()`，面板贴边、只有顶部圆角，
-        // 真机反馈「面板位置不对 / 圆角不对」。build83 的方向其实对，
-        // 错在把分母当成了屏幕全高 → 面板凭空矮 40pt → 控件全被挤小（「越弄越窄」）。
-        //
-        // `.fraction(f)` 的 f 是**可用高度**的比例，不是屏幕全高：
-        //     可用高度 = 屏幕高 − 顶部安全区 − 底部安全区
-        // （Apple 原文：smaller than the full screen because it accounts for
-        //   safe areas and the status bar）
-        // 这里用真实的 `safeAreaInsets` 算，不拍脑袋估。
-        let insets = Self.safeInsets
-        let screenH = UIScreen.main.bounds.height
-        let avail = max(screenH - insets.top - insets.bottom, 1)
-        let frac = min(max(contentHeight / avail, 0.2), 1.0)
-        if #available(iOS 26.0, *) {
-            // partial detent → iOS 26 原生 Liquid Glass floating 卡片
-            content.presentationDetents([.fraction(frac)])
-        } else {
-            content
-                .presentationDetents([.fraction(frac)])
-                .presentationBackground(.ultraThinMaterial)
-        }
     }
 }
 
