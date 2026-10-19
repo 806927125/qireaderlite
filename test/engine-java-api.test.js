@@ -83,5 +83,23 @@ ok(/hasPrefix\("<"\)/.test(src) && /raw\.githubusercontent\.com/.test(src),
    '拿到 HTML（GitHub /blob/ 页）会明确提示换 raw 域名');
 ok(/\.frame\(maxWidth: \.infinity\)|TextField/.test(src), 'URL 输入框存在');
 
+// ⚠️ Swift 保留字当参数名 → 编译期就挂，报错信息还特别看不懂：
+//    `from where: String` → "Expected expression in list of expressions"
+//    （编译器以为你在写 where 子句）。这里扫一遍常见保留字。
+{
+  const SWIFT_KW = ['where','class','func','enum','struct','protocol','return','true',
+                    'false','nil','is','as','in','for','if','else','switch','case',
+                    'default','break','continue','import','operator','static',
+                    'deinit','extension','typealias','internal','private','public',
+                    'open','fileprivate','rethrows','throws','get','set','init','sub'];
+  const bad = [];
+  for (const m of src.matchAll(/\(([^()]*\b(?:func|let|var)\s+\w+[^()]*)\)\s*->/g)) {
+    for (const kw of SWIFT_KW) {
+      if (new RegExp('\\b' + kw + '\\s*:').test(m[1])) bad.push(`${kw} (在 ${m[1].trim().slice(0,40)})`);
+    }
+  }
+  ok(bad.length === 0, `参数名用了 Swift 保留字：${bad.join(', ') || '无'}`);
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

@@ -314,14 +314,52 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         defer { currentSource = prev }
 
         let argJSON = Self.jsonString(payload)
-        // 引擎那边 __qrInvoke 返回 Promise；callAsyncJavaScript 会自动 await 并把结果送回来
-        let script = "return window.__qrInvoke(\(Self.jsonString(op)), \(argJSON));"
+        // ⚠️⚠️ 必须 JSON.stringify 成字符串再返回，**不能**把 JS 对象直接过桥。
+        //
+        // callAsyncJavaScript 会把 Promise 的 resolved value 直接桥接成 Foundation 对象，
+        // 而返回值里只要出现下面任意一个，就抛 WKError.resultTypeIsUnsupported
+        // （中文本地化就是「执行 JavaScript 返回结果的类型不受支持」）：
+        //     · 属性值是 undefined（哪怕对象本身有别的键）
+        //     · 函数 / Symbol / BigInt / DOM 节点
+        //
+        // 引擎返回的 { books, total, nextUrl } / { kinds, error } 这类对象，
+        // 只要哪个分支走了 `error: undefined` 或漏了某个键，真机就整页报错，
+        // 而 **jsdom 沙盒完全测不出来**（jsdom 没有「返回值桥接回 Swift」这一步，
+        // `vm.runInContext` 会直接把对象给你，看着一切正常）。
+        //
+        // 字符串永远桥接得过去，所以：JS 侧一律 JSON.stringify，Swift 侧再解析。
+        // 顺带把 undefined 变成"字段缺失"，解码时行为可预期。
+        let script = """
+        try {
+            var v = await window.__qrInvoke(\(Self.jsonString(op)), \(argJSON));
+            return JSON.stringify(v === undefined ? null : v);
+        } catch (e) {
+            return JSON.stringify({ error: String((e && e.message) || e) });
+        }
+        """
         do {
             let r = try await webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
+            // 结果是 JSON 文本；解析不了就把原文带出来，别只丢一句"返回结果的类型不受支持"
+            if let text = r as? String {
+                return Self.bridgeJSON(text) ?? (text as Any)
+            }
+            if let dict = r as? [String: Any] { return dict }
             return r ?? NSNull()
+        } catch let e as WKError {
+            // 把 code 带上：.resultTypeIsUnsupported 说的还是那句人话，
+            // 带上 code + 原文才查得出是哪个 op 的哪个字段出的问题
+            throw SandboxError(message: "引擎调用 \(op) 失败 [\(e.code.rawValue, privacy: .public)]: \(e.localizedDescription)")
         } catch {
             throw SandboxError(message: "引擎调用 \(op) 失败: \(error.localizedDescription)")
         }
+    }
+
+    /// JS 侧 JSON.stringify 的文本 → Foundation 对象。
+    /// 解析失败返回 nil，交给调用方把原文带出来（比静默吞掉强）。
+    static func bridgeJSON(_ text: String) -> Any? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, t != "null" else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(t.utf8), options: [.fragmentsAllowed])
     }
 
     static func jsonString(_ o: Any) -> String {

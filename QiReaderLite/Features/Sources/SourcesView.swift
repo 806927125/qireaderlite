@@ -215,11 +215,13 @@ struct SourcesView: View {
     }
 
     /// 文件和链接共用这一条，失败提示带上来源好排查
-    private func importData(_ data: Data, from where: String) {
+    // ⚠️ 参数名不能叫 `where` —— Swift 保留字，会报
+    //    "Expected expression in list of expressions"（字面看不懂：以为在写 where 子句）
+    private func importData(_ data: Data, from source: String) {
         do {
             let list = try BookSourceParser.parse(data)
             let n = store.importSources(list)
-            Toast.show("从\(where)导入 \(n) 个书源")
+            Toast.show("从\(source)导入 \(n) 个书源")
         } catch {
             importError = error.localizedDescription
         }
