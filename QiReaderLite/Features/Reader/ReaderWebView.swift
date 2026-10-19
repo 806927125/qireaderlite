@@ -466,7 +466,7 @@ struct ReaderWebView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.ink)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 34, height: 34)
                     .glassCircle()
             }
             VStack(alignment: .leading, spacing: 1) {
@@ -580,8 +580,8 @@ struct ReaderWebView: View {
             //    背景铺满整屏、内容居中（真机就是这样炸的）。
             //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
             .frame(height: sheetHeight)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
             // ⚠️⚠️ 玻璃背景**必须**用 `background(_:in:)` 这个重载，**不能**写
             //      `.background { RoundedRectangle()... }`。
             //      区别不是风格，是**尺寸**：
@@ -590,11 +590,18 @@ struct ReaderWebView: View {
             //          → 背景铺满整屏
             //        · `.background(.ultraThinMaterial, in: RoundedRectangle())`
             //          —— 材质尺寸**跟随视图**，不会溢出
-            .background(Self.qrPanel,
-                        in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .padding(.top, 12)          // 参考实现 padding: 12px 14px 16px
+            .padding(.horizontal, 14)
+            .padding(.bottom, 16)
+            // ⚠️ 用 `background(_:in:)` 重载（不是 `.background { Shape }`，
+            //    那个闭包里的 Shape 是 flexible view，会撑成全屏 —— build88 炸过）
+            .background(Color.white.opacity(0.82),
+                        in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            // 「那块阴影」= 面板自己投的 shadow，不是内层白块
+            .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 4)
             .offset(y: showSettings ? 0 : sheetHeight + 48)
             .opacity(showSettings ? 1 : 0)
             .animation(.spring(response: 0.34, dampingFraction: 0.86),
@@ -622,10 +629,8 @@ struct ReaderWebView: View {
     /// 面板内容
     private var settingsContent: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                upperPanelCard
-                featureGrid
-            }
+            panelContent
+            featureGrid
             // 固定成内容本来的高度 —— 这样量出来的才是真实高度，
             // 不会被 detent 限制（限住就成了循环依赖）
             .fixedSize(horizontal: false, vertical: true)
@@ -713,31 +718,27 @@ struct ReaderWebView: View {
     ///   build76 — 每块各垫一层 → 太碎，8 个磁贴多出一排小卡片
     ///   build79 — 索性全删 → 删过头，上半不够「亮」，和下半糊成一片
     /// 正确的是**上半一整块亮底 + 轻阴影，下半不垫**。
-    private var upperPanelCard: some View {
+    /// 面板内容 —— **没有内层白卡**。
+    ///
+    /// ⚠️ 我从 build82 起就以为用户说的「中间有一块阴影」= 一层白色块，
+    ///    于是加了个 `white @ 0.35 / radius 22` 的内嵌卡。第 5 版参考实现说清楚了：
+    ///
+    ///        .panel { background: rgba(255,255,255,.82);
+    ///                 backdrop-filter: blur(24px);
+    ///                 box-shadow: 0 4px 30px rgba(0,0,0,.12); }
+    ///
+    ///    「阴影」= **这个玻璃容器自己投的 box-shadow**，
+    ///    控件坐在**容器**里，不是在「容器里的白块」里。
+    ///    从 build82 到 build89 一直多加了一层不该有的东西。
+    private var panelContent: some View {
         VStack(spacing: 0) {
             sizeRow
+            hairLine
             paletteGrid
             followSystemRow
-            // ⚠️ 分割线在**「跟随系统」下面**（把 chips 那一段隔开）。
-            //    我原来放在「字号」下面 —— 真机并排看的，位置错了。
             hairLine
             pageTurnRow
         }
-        // 这一块就是用户说的「中间有一块阴影，控件坐在里面」的内嵌卡
-        // （color: white @ 0.35、borderRadius: 22）。
-        //
-        // ⚠️ **padding 上下左右必须对称**，否则白卡上面看着是「通」的。
-        //   左右：面板 padding 12 + 本块 padding 12 = 24
-        //   上面：面板 padding 0   + 本块 padding 24 = 24   ← 补齐
-        //   下面：面板 padding 12  + 本块 padding 12 = 24
-        //   （面板 top padding 必须留 0 —— 面板本身要贴边，
-        //     有距离的是**白卡到面板**这一层，不是面板到屏幕。）
-        .padding(EdgeInsets(top: 24, leading: 12, bottom: 12, trailing: 12))
-        .background(
-            Color.white.opacity(0.35),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .padding(.bottom, 12)
     }
     private var hairLine: some View {
         Divider().overlay(Self.qrLine).padding(.vertical, 2)
@@ -796,21 +797,21 @@ struct ReaderWebView: View {
     }
 
     private func paletteRow(_ list: [ReaderTheme], icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 18)).foregroundStyle(Theme.sub)
-                .frame(width: 18)
+        // 参考实现 .swatch { width/height 42; border-radius 9 } gap 8
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 17)).foregroundStyle(Theme.sub)
+                .frame(width: 28)
             ForEach(list) { t in
                 Button { themeKey = t.key } label: {
                     Text("文")
                         // 参考实现：width 42、cornerRadius 12、字号 15、
                         // 边框 = 选中 blue 2px / 否则 black @ .08 1px
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(t.ink)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(t.bg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(width: 42, height: 42)
+                        .background(t.bg, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
                                 .strokeBorder(themeKey == t.key ? Theme.accent
                                               : Color.black.opacity(0.08),
                                               lineWidth: themeKey == t.key ? 2 : 1)
@@ -834,31 +835,29 @@ struct ReaderWebView: View {
     /// 自己的底**并进 upperPanelCard** 了，这里只留内容 + 上下留白。
     private var pageTurnRow: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "description").font(.system(size: 18)).foregroundStyle(Theme.sub)
-            // chips：**等分一行，五个并排，绝不换行**。
+            Image(systemName: "book.closed").font(.system(size: 17)).foregroundStyle(Theme.sub)
+                .frame(width: 28)
+            // 参考实现：`.pill { flex-shrink:0; padding:8px 17px; radius:18; fs:14 }`
+            // **不等分** —— 每个 pill 按内容宽度排，放不下就**横向滚动**。
             //
-            // 为这个走过三轮弯路才找对：
-            //   ① HStack + fillsWidth 平分 → 「上下滚动」被截成「上下...」，
-            //      我当时**缩字号到 12** 去补 —— 治错了地方
-            //   ② 照上一份参考实现改 Wrap / LazyVGrid 可换行 → 真机换行成
-            //      「无动\n画」「上下\n滚动」，更难看
-            //   ③ 正解：**等分**，字号 13 / 圆角 19 / 高 38
-            //
-            // 「上下滚动」4 字 × 13pt ≈ 52pt，等分每格约 65pt，本来就放得下。
-            // 真正要的是**等分**，不是换行，更不是缩字号。
-            HStack(spacing: 6) {
-                ForEach(PageTurnMode.all) { m in
-                    ChipButton(title: m.name,
-                               selected: pageTurnMode == m.raw,
-                               fillsWidth: true) {
-                        pageTurnMode = m.raw
-                        pageTurn = m.raw != "scroll"
+            // 我在 build86 死磕了三轮等分（fillsWidth）：
+            //   ① 平分装不下「上下滚动」→ 缩字号 13→12 去补   ← 治错了
+            //   ② 改 Wrap/LazyVGrid 换行 → 真机断成「无动\n画」 ← 又错
+            //   ③ 现在才知道正解是**不等分 + 横向滚动**，
+            //      「上下滚动」字号 14 也完整，因为没人跟它抢宽度。
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(PageTurnMode.all) { m in
+                        ChipButton(title: m.name, selected: pageTurnMode == m.raw) {
+                            pageTurnMode = m.raw
+                            pageTurn = m.raw != "scroll"
+                        }
                     }
                 }
             }
+            .scrollDisabled(false)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.bottom, 12)
     }
 
     // MARK: - ⑦ 功能磁贴（4 + 4，照栖阅截图）
@@ -891,8 +890,8 @@ struct ReaderWebView: View {
     ]
 
     private var featureGrid: some View {
-        // 行间距 10（参考实现 GridView.count 的 mainAxisSpacing: 10）
-        VStack(spacing: 10) {
+        // 参考实现 .grid { gap: 8px 8px }
+        VStack(spacing: 8) {
             tileRow(0)
             tileRow(4)
         }
@@ -945,40 +944,26 @@ struct ReaderWebView: View {
             guard ready else { return }
             action()
         } label: {
-            // ⚠️ 高度必须照栖阅：真机并排量，**栖阅磁贴 ≈120px，
-            //    我之前 190px**（图标 19 + spacing 6 + 上下各 14 撑的）。
-            //    `FitSheetHeight` 按内容高度设 detent → 磁贴高就把整个 sheet 顶高，
-            //    面板能占到屏 70%（栖阅只有 46%）。这是「变大了」的真正来源。
-            // 图标 20 / spacing 4 —— build77 那次「整体收小」我改成 15 / 3，
-            // 按参考实现（Icons 的 size: 20、SizedBox(height: 4)）是收过头了。
+            // 参考实现是**两行文字**、没有图标行：
+            //     <span class="ic">大小</span><span class="t1">显示设置</span>
+            //     .cell { padding: 9px 4px 8px; border-radius: 12px; gap: 4px }
+            //     .ic 18px  /  .t1 13px  /  .t2 display:none
+            //
+            // 所以**不需要空图标占位那个 hack**（那是我为了对齐自造图标行才加的），
+            // 也**不需要固定高度** —— 内容高度自然就一样。
             VStack(spacing: 4) {
-                // 栖阅「格式」那格是空的 —— 图标为空串时**不占位**，
-                // 文字整体往上提，跟截图对得上
-                if !icon.isEmpty {
-                    Image(systemName: icon).font(.system(size: 18))
-                } else {
-                    // 空图标用同尺寸占位，保证八格内容基线一致
-                    Color.clear.frame(width: 18, height: 18)
-                }
-                Text(name).font(.system(size: 15, weight: .bold))   // 第 4 版 15 / w700
-                Text(subtitle ?? "").font(.system(size: 11))   // 第 4 版 subtitle 11
+                Text(name).font(.system(size: 18, weight: .semibold))
+                Text(subtitle ?? "").font(.system(size: 13))
             }
-            // ⚠️ 栖阅那 8 格**底色是统一的淡米色**，区分「已实现 / 没实现」
-            //    靠的是**文字深浅**，不是有没有底。
-            //    我原来分成「已实现 = 明显白卡片 / 未实现 = 几乎透明」两档，
-            //    结果 4 亮 4 暗，看着像两套东西。
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            // 区分「已实现 / 没实现」靠**文字深浅**，不是有没有底
             .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
-            // ⚠️ **frame 必须在 background 之前**。
-            //    之前写成 `.background(...)` 然后 `.frame(height: 88)` ——
-            //    结果「格式」那格因为**没有图标**，内容少一整行，
-            //    背景就比别格矮一截，八格没对齐
-            //    （用户反馈：「应该改成格式那个按钮的大小，然后对齐」）。
-            //    顺序一换，八格等高；缺图标那格由 Color.clear 占位补上。
             .frame(maxWidth: .infinity)
-            .frame(height: 76)                 // 88 → 76（「小一点」）
-            // 参考实现是 `Colors.grey @ 0.12` **一层**，圆角 16。
+            .padding(.vertical, 9)
+            .padding(.horizontal, 4)
             .background(Self.qrFill,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!ready)
@@ -1302,8 +1287,8 @@ struct ReaderWebContainer: UIViewRepresentable {
 private struct ChipButton: View {
     let title: String
     let selected: Bool
-    var fontSize: CGFloat = 13
-    var cornerRadius: CGFloat = 19
+    var fontSize: CGFloat = 14
+    var cornerRadius: CGFloat = 18
     var fillsWidth: Bool = false
     let action: () -> Void
 
@@ -1312,19 +1297,15 @@ private struct ChipButton: View {
             Text(title)
                 .font(.system(size: fontSize))
                 .foregroundStyle(selected ? Color.white : Theme.ink)
-                // 参考实现 _chip：padding 16/9、cornerRadius 22、字号 14、
-                // 选中 blue 底白字 / 未选中 black @ .08 底，**无描边**
-                // 等分时不能再加宽内边距（会把字挤掉），
-                // 固定高 38、圆角 19（= 38/2，正好是胶囊）。
-                .padding(.horizontal, 2)
-                .padding(.vertical, 9)
+                // 参考实现 .pill { padding: 8px 17px; border-radius: 18px }
+                .padding(.horizontal, 17)
+                .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(selected ? Theme.accent : Color.black.opacity(0.07))
+                        .fill(selected ? Theme.accent : Color.black.opacity(0.06))
                 )
+                .fixedSize()
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
-                .frame(height: 38)
-                .minimumScaleFactor(0.85)
         }
         .buttonStyle(.plain)
     }
