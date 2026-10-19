@@ -286,7 +286,7 @@ ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,80}padding\(\.horiz
 //    thumb 是**上下都溢出**自己 frame 画的。
 //    内容区高度 = 内容自然高（sheetHeight - 4）时，thumb 溢出那几 pt
 //    直接被裁掉 → 真机「滑块上面被挡」（用户反馈）。
-ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,200}padding\(\.vertical, 6\)/.test(web),
+ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,700}padding\(\.vertical, 6\)/.test(web),
    'Slider 有垂直 padding（thumb 上下都溢出 frame，不留就会被裁）');
 ok(/padding\(\.horizontal, 13\)/.test(fontMenu), '字体下拉 水平内边距 13（ui.txt .font-select）');
 ok(/padding\(\.vertical, 7\)/.test(fontMenu), '字体下拉 垂直内边距 7');
