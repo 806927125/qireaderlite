@@ -111,8 +111,8 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
 // 圆在 ZStack 里是 flexible view，会填满 34×34，保证完整正圆，
 // 不用跟背景裁剪 / 布局挤压较劲。
 ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(web), '「小/大」的圆是直接画出来的（ZStack + Circle.fill）');
-ok(/in: Circle\(\)/.test(web) || /Circle\(\)\.fill\(Self\.qrFill\)/.test(web),
-   '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
+ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.06\)\)/.test(web),
+   '「小 / 大」是圆形底（纯黑 6%，在玻璃上任何角度都均匀可见）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -125,7 +125,8 @@ ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(w
 // 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
 ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
    '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
-ok(/Circle\(\)\.fill\(Self\.qrFill\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
+ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.06\)\)/.test(web),
+   '「小 / 大」是圆形底（纯黑 6%，玻璃上任何角度都均匀可见）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。

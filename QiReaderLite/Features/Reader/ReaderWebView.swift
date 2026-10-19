@@ -838,11 +838,16 @@ struct ReaderWebView: View {
     /// 圆在 ZStack 里是 flexible view，会填满 34×34，**保证是完整正圆**，
     /// 不用再跟背景裁剪 / 布局挤压较劲。
     private func sizeKnob(_ text: String, pointSize: CGFloat) -> some View {
+        // ui.txt: .fs-btn 是个 `<button>`，34×34 圆形、rgba(0,0,0,.05) 底、字号 14。
+        //
+        // ⚠️ 用**纯黑 6%** 而不是 `--fill`（冷灰 12%）：
+        //    冷灰在米色**液态玻璃**上对比度太低，圆只有一部分能看出来 ——
+        //    真机看着就像「缺了一块」。纯黑低透明度在任何底色上都均匀。
         ZStack {
-            Circle().fill(Self.qrFill)
+            Circle().fill(Color.black.opacity(0.06))
             Text(text)
                 .font(.system(size: pointSize, weight: .medium))
-                .foregroundStyle(Theme.ink)
+                .foregroundStyle(Color(white: 0x33 / 0xff))
         }
         .frame(width: 34, height: 34)
         .fixedSize()

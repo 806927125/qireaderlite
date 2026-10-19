@@ -298,8 +298,8 @@ for (const [label, re] of [
   ['段落对齐 左/居中/右/两端', /段落对齐/],
 ]) ok(re.test(webRaw), label);
 ok(/private func sizeKnob/.test(web), '小/大 是灰底圆角方块（参考截图就是这样，不是 SF Symbol）');
-ok(/Circle\(\)\.fill\(Self\.qrFill\)/.test(web),
-   '小/大方块用栖阅 --fill 冷灰底 + **圆形**（ZStack + Circle.fill 直接画出完整正圆）');
+ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.06\)\)/.test(web),
+   '小/大方块是**圆形** + 纯黑 6% 底（冷灰在玻璃上对比度太低，看着像缺一块）');
 ok(/circle\.lefthalf\.filled/.test(web), '跟随系统用 circle.lefthalf.filled');
 for (const [raw, hint] of [
   ['flip','模拟真实翻书效果，页面卷曲翻转'],
