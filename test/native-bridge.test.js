@@ -44,6 +44,19 @@ ok(/static func bridgeJSON/.test(swift), '有 bridgeJSON 解析器');
 ok(/catch let e as WKError/.test(invoke) && /e\.code\.rawValue/.test(invoke),
    'WKError 分支带上 code，原来的 localizedDescription 太笼统查不出问题');
 
+// ⚠️ 普通 String 插值不支持 `\(v, privacy: .public)` —— 那是 SwiftUI Text 的插值语法。
+//    在字符串里写会报两句跟真正原因完全不沾边的错：
+//      cannot infer contextual base in reference to member 'public'
+//      extra argument 'privacy' in call
+// ⚠️ 必须先剥注释再查 —— 我自己写的那条「反例说明」注释里就带着
+//    `\(v, privacy: .public)` 这段文本，不剥会把注释当成代码（同一个坑踩第二次）。
+const swiftNoComment = swift
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/[^\n]*/g, '');
+ok(!/\\\([^)]*privacy\s*:/.test(swiftNoComment),
+   '普通 String 插值里没用 privacy:（剥掉注释后查，否则被注释里的反例文本误报）');
+ok(!/Text\s*\(\s*"[^"]*\bprivacy\s*:/.test(swiftNoComment), '也没在 Text() 里混用');
+
 /* ---------- ② 真跑：证明 JSON 字符串桥本身能还原原对象 ---------- */
 
 {

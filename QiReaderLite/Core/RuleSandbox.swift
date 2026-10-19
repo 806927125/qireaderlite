@@ -348,7 +348,11 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         } catch let e as WKError {
             // 把 code 带上：.resultTypeIsUnsupported 说的还是那句人话，
             // 带上 code + 原文才查得出是哪个 op 的哪个字段出的问题
-            throw SandboxError(message: "引擎调用 \(op) 失败 [\(e.code.rawValue, privacy: .public)]: \(e.localizedDescription)")
+            // ⚠️ 普通 String 插值**不支持** `\(v, privacy: .public)` ——
+            //    那是 SwiftUI Text 的插值语法，在这里报
+            //    "cannot infer contextual base in reference to member 'public'"
+            //    + "extra argument 'privacy' in call"，两行且都跟真正原因不沾边
+            throw SandboxError(message: "引擎调用 \(op) 失败 [\(e.code.rawValue)]: \(e.localizedDescription)")
         } catch {
             throw SandboxError(message: "引擎调用 \(op) 失败: \(error.localizedDescription)")
         }
