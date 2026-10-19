@@ -353,6 +353,34 @@ ok(/ForEach\(Array\(tiles\.enumerated\(\)\)/.test(web) === false, '没有 enumer
 ok(!/CTLineGetOffsetForIndex\(/.test(paginator), '别用 CTLineGetOffsetForIndex（SDK 里没这符号）');
 ok(/lineFragmentRect/.test(paginator), '行范围用 lineFragmentRect');
 ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报 always succeed）');
+
+// ── 真机自检实测出来的回归（build64）────────────────────────────────
+// 「底栏永远停在第一章」：followIndex 收到 10 次、最后收到第 8 章，
+// 但 session.index == 0。原因是 ReaderHost（栖阅那套 WebView 阅读器）
+// 在后台自己也在跑章节逻辑，通过 progress / visibleChapter 消息
+// 把章号**回声**给 session，而 wire() 里那两个回调直接写 self.index。
+// WebView 的 postMessage 是**异步**的，所以把 index = i 挪到
+// host.apply 之后也挡不住 —— 只能让原生分页接管时禁掉回声。
+ok(/var pagingOwnsIndex: Bool/.test(sess), 'session 有 pagingOwnsIndex（章号归属标记）');
+ok(/guard !self\.pagingOwnsIndex else \{ return \}/.test(sess),
+   'pagingOwnsIndex 时 host 的 progress/visibleChapter 回声被丢弃');
+ok(/guard !self\.pagingOwnsIndex else \{ return \}/.test(sess),
+   '两个 host 回声回调都加了守卫（onProgress + onVisibleChapter）');
+{
+  const onProg = sess.slice(sess.indexOf('host.onProgress'));
+  const onVis  = sess.slice(sess.indexOf('host.onVisibleChapter'));
+  const cutP = onProg.slice(0, onProg.indexOf('host.onRequestChapter'));
+  ok(/pagingOwnsIndex/.test(cutP), 'onProgress 里有守卫');
+  ok(/pagingOwnsIndex/.test(onVis.slice(0, 400)), 'onVisibleChapter 里有守卫');
+}
+ok(/func syncPagingOwnership\(\)/.test(web), '视图有 syncPagingOwnership');
+ok(/session\.pagingOwnsIndex = want/.test(web) && /let want = useNativePaging/.test(web),
+   '章号归属跟着翻页模式走（滚动模式要把控制权还给 WebView，否则滑块会把章号冻住）');
+ok(/private func saveProgressNow\(\)/.test(sess), '分页模式下自己存阅读进度');
+{
+  const fp = sess.slice(sess.indexOf('func followIndex'));
+  ok(/saveProgressNow\(\)/.test(fp.slice(0, 600)), 'followIndex 里存进度（onProgress 被跳过的那份不补上就不记进度了）');
+}
 ok(!/unsafeBitCast/.test(paginator), '没有 unsafeBitCast 取 CoreFoundation 类型');
 // CFArray 没有 count
 ok(/func lineCount\(at index: Int\)/.test(paginator), '有量行数的方法（垂直两端对齐要用）');

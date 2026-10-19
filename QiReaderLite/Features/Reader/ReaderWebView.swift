@@ -90,6 +90,17 @@ struct ReaderWebView: View {
         pageTurnMode != "scroll"
     }
 
+    /// 跟着翻页模式走：原生分页接管章号，滚动模式把章号还给 WebView。
+    ///
+    /// ⚠️ 不能只在 `followIndex` / `jump` 里顺手置位 —— 那样用户在滚动模式下
+    ///    用一次章号滑块，`pagingOwnsIndex` 就永远是 true，
+    ///    WebView 的 progress 回声被丢掉，滚动模式的章号就冻住了。
+    private func syncPagingOwnership() {
+        let want = useNativePaging
+        guard session.pagingOwnsIndex != want else { return }
+        session.pagingOwnsIndex = want
+    }
+
     /// 底线颜色：存成 hex，ColorPicker 要的是 Binding<Color>
     private var baselineColorBinding: Binding<Color> {
         Binding(
@@ -151,6 +162,8 @@ struct ReaderWebView: View {
     private func syncPager(size: CGSize) {
         // 尺寸没量到就什么都别做：拿 .zero 去算页宽会算出 80×80 的迷你页
         guard size.width > 1, size.height > 1 else { return }
+        // 章号归属跟着翻页模式走（原生分页 vs WebView 滚动，二者只能有一个写者）
+        syncPagingOwnership()
         pagerViewport = size
         let c = layoutConfig
         let sig = "\(c.fontSize)|\(c.lineSpacing)|\(c.paragraphSpacing)|\(c.horizontalMargin)|\(c.topMargin)|\(c.verticalJustify)|\(c.baselineScope.raw)|\(themeKey)|\(darkScheme == .dark)"

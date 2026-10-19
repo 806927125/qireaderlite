@@ -52,6 +52,26 @@ final class ReaderSession: ObservableObject {
     /// followIndex **收到**次数（诊断用）
     private(set) var followReceived: Int = 0
     private(set) var lastFollowIndex: Int = -1
+
+    /// 原生分页是否已经接管章号。
+    ///
+    /// ## 这是「底栏永远停在第一章」的根因
+    ///
+    /// `ReaderHost` 是栖阅那套 WebView 阅读器，它在后台**自己也在跑章节逻辑**，
+    /// 会通过 `progress` / `visibleChapter` 消息把章号**回声**给 session。
+    /// 而 `wire()` 里那两个回调是直接写 `self.index` 的：
+    ///
+    ///     host.onProgress = { self.index = i }        // ← 回声
+    ///     host.onVisibleChapter = { self.index = i }  // ← 回声
+    ///
+    /// 原生分页模式下 WebView 只是个**影子**（真机自检实测：
+    /// `followIndex 收到 10 次、最后收到第 8 章`，但 `session.index == 0`）——
+    /// 每设好一次就被回声覆盖一次。WebView 消息是**异步** postMessage，
+    /// 所以把 `index = i` 挪到 `host.apply` 之后也挡不住。
+    ///
+    /// 修法：**原生分页一旦接管，章号就只有 Swift 侧一个写者**，
+    /// host 的回声直接丢弃（进度改由 `followIndex` / `jump` 自己存）。
+    var pagingOwnsIndex: Bool = false
     @Published var hostReady = false
     /// 当前章正文（原生分页模式自己排版用；webview 模式不用）
     @Published var chapterText: String = ""
@@ -81,6 +101,8 @@ final class ReaderSession: ObservableObject {
 
         host.onProgress = { [weak self] i, ratio in
             guard let self, self.flat.indices.contains(i) else { return }
+            // 原生分页接管后，WebView 的回声不再有权改章号
+            guard !self.pagingOwnsIndex else { return }
             self.index = i
             self.library?.saveProgress(bookID: self.book.id,
                                       chapterIndex: i,
@@ -90,6 +112,7 @@ final class ReaderSession: ObservableObject {
 
         host.onVisibleChapter = { [weak self] i in
             guard let self, self.flat.indices.contains(i) else { return }
+            guard !self.pagingOwnsIndex else { return }
             self.index = i
         }
 
@@ -137,6 +160,7 @@ final class ReaderSession: ObservableObject {
     func jump(to i: Int) {
         guard flat.indices.contains(i) else { return }
         index = i
+        saveProgressNow()
         host.apply(chapters: flat, at: i, progress: nil)
         Task { await load(index: i) }
     }
@@ -151,8 +175,19 @@ final class ReaderSession: ObservableObject {
         lastFollowIndex = i
         guard flat.indices.contains(i) else { return }
         index = i
+        saveProgressNow()
         host.apply(chapters: flat, at: i, progress: nil)
         Task { await load(index: i) }
+    }
+
+    /// 原生分页自己存进度 —— 原来这一份挂在 host.onProgress 里，
+    /// 现在那条路在分页模式下被跳过了，不补上就完全不记阅读进度。
+    private func saveProgressNow() {
+        guard flat.indices.contains(index) else { return }
+        library?.saveProgress(bookID: book.id,
+                              chapterIndex: index,
+                              ratio: 0,
+                              chapterTitle: flat[index].title)
     }
 
     /// 预取指定章（不改变 index，不更新 chapterText）
