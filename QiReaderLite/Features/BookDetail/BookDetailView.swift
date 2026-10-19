@@ -337,9 +337,13 @@ struct CatalogSheet: View {
     var preloaded: Set<Int> = []
     /// 磁盘缓存还没实现 → 按钮置灰，不做假动作。
     var cacheEnabled: Bool = false
+    /// 换源还没实现 → 同样置灰
+    var switchSourceEnabled: Bool = false
     let onPick: (Chapter) -> Void
 
     @State private var filter = ""
+    /// 正倒序。入口**暂时没挂** —— 栖阅那个胶囊位是「缓存 / 换源」，
+    /// 自作主张塞个排序按钮进去位置就对不上了。数据层先留着，以后有地方再接。
     @State private var sortAscending = true
     /// 当前停在哪个 detent（`.medium` 对应 0.62，`.large` 是拖满屏）
     @State private var detent: PresentationDetent = .fraction(0.62)
@@ -376,31 +380,36 @@ struct CatalogSheet: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            // 左：胶囊按钮组（正倒序 + 缓存）
+            // 左：胶囊按钮组。**图标和顺序照栖阅截图**：
+            // 第一个是「↓ 缓存全书」，第二个是「⟳ 换源」，中间一条竖分隔线。
+            //
+            // ⚠️ 别自作主张往里塞「正序/倒序」这种栖阅没有的按钮 —— 位置对了、
+            //    图标不对，一样跟栖阅对不上。
+            //    排序功能保留在代码里（sortAscending），但入口不占这个位置。
             HStack(spacing: 0) {
-                iconInCapsule(systemName: sortAscending ? "arrow.up" : "arrow.down") {
-                    withAnimation(.snappy(duration: 0.2)) {
-                        sortAscending.toggle()
-                    }
-                }
-                Rectangle().fill(Theme.ink.opacity(0.16))
-                    .frame(width: 1, height: 18)
-                iconInCapsule(systemName: "arrow.down.circle", enabled: cacheEnabled) {
+                iconInCapsule(systemName: "arrow.down", enabled: cacheEnabled) {
                     // 磁盘缓存还没做 —— 置灰就是置灰，不弹「即将支持」糊弄
                 }
+                Rectangle().fill(Theme.ink.opacity(0.18))
+                    .frame(width: 1, height: 20)
+                iconInCapsule(systemName: "arrow.triangle.2.circlepath", enabled: switchSourceEnabled) {
+                    // 换源还没做
+                }
             }
+            // ⚠️ 只能有一层玻璃。LiquidGlass 在 iOS 26 内部就走系统 glassEffect，
+            //    后面再跟一个 .glassEffectShape(.capsule) 就是玻璃套玻璃，
+            //    折射叠描边 → 真机上一坨发灰的糊状物。
             .glassCapsule()
-            .glassEffectShape(.capsule)
 
             // 中：书名 + 副标题
             VStack(alignment: .leading, spacing: 1) {
                 Text(titleText)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                 if let sourceLabel, !sourceLabel.isEmpty {
                     Text(sourceLabel)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(Theme.ink.opacity(0.6))
                         .lineLimit(1)
                 }
@@ -482,8 +491,7 @@ struct CatalogSheet: View {
                     }
                 }
             }
-            // 排序/搜索变了要把「当前章高亮」重新滚进视野
-            .onChange(of: sortAscending) { _, _ in resyncCurrent(proxy) }
+            // 搜索变了要把「当前章高亮」重新滚进视野
             .onChange(of: filter) { _, _ in resyncCurrent(proxy) }
         }
     }

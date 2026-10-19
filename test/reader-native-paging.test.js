@@ -376,6 +376,18 @@ ok(/\.font\(c\.isVolume \? \.subheadline\.weight\(\.bold\) : \.subheadline\)/.te
    '章节正文用 .subheadline（不是 .body —— 行高一大就撑得松散）');
 ok(/\.padding\(\.vertical, 9\)/.test(catalog),
    '行内上下留白收紧到 9（栖阅一行紧贴一行）');
+{
+  // 真机 bug：.glassCapsule() 后面又跟 .glassEffectShape(.capsule)
+  // = 两个 glassEffect 叠在一起 → 玻璃套玻璃，折射叠描边，真机上一坨发灰的糊
+  const iCap = catalog.indexOf('.glassCapsule()');
+  const iNext = catalog.indexOf('\n', iCap + 40);
+  const after = catalog.slice(iCap, iNext);
+  ok(!/glassEffectShape/.test(after),
+     '.glassCapsule() 后面没有再跟 .glassEffectShape —— 玻璃不许叠两层');
+  const lgl2 = stripComments(fs.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8'));
+  ok(/func glassCapsule/.test(lgl2) && /glassEffect\(\.regular, in: \.capsule\)/.test(lgl2),
+     'glassCapsule 自己分流到系统 .capsule（iOS26）/ 手搓 999（17~25），一个修饰符搞定');
+}
 ok(/\.background\(NoScrollExpand\(\)\)/.test(catalog),
    '目录挂了 NoScrollExpand —— 「目录上滑只滚目录，页面不变大」靠它');
 {
@@ -413,10 +425,14 @@ ok(/presentationBackground\(\.clear\)/.test(catalog),
 ok(/presentationDragIndicator\(\.visible\)/.test(catalog), '有 grabber');
 ok(/TextField\("搜索章节名"/.test(catalog) && /glassCapsule\(\)/.test(catalog),
    '底部是玻璃胶囊搜索框（栖阅那样），不是 .searchable');
-ok(/sortAscending/.test(catalog) && /arrow\.up/.test(catalog) && /arrow\.down"/.test(catalog),
-   '有正倒序切换（栖阅的 _sortAscending）');
-ok(/iconInCapsule\(systemName: "arrow\.down\.circle", enabled: cacheEnabled\)/.test(catalog),
-   '缓存按钮走 enabled: cacheEnabled');
+ok(/iconInCapsule\(systemName: "arrow\.down", enabled: cacheEnabled\)/.test(catalog) &&
+   /iconInCapsule\(systemName: "arrow\.triangle\.2\.circlepath", enabled: switchSourceEnabled\)/.test(catalog),
+   '胶囊里两个按钮的**图标和顺序照栖阅截图**：↓ 缓存 + ⟳ 换源');
+ok(!/sortAscending \? "arrow\.up"/.test(catalog),
+   '没自作主张把「正序/倒序」塞进胶囊位（位置对了图标不对，一样对不上栖阅）');
+ok(/switchSourceEnabled: Bool = false/.test(catalog) && /cacheEnabled: Bool = false/.test(catalog),
+   '缓存和换源都置灰（两个都还没实现）');
+ok(/\.frame\(width: 1, height: 20\)/.test(catalog), '胶囊中间有竖分隔线（栖阅那样）');
 ok(/\.disabled\(!enabled\)/.test(catalog) && /Theme\.ink\.opacity\(0\.28\)/.test(catalog),
    '未实现的按钮是**置灰**而不是弹假提示');
 ok(/Theme\.accent\.opacity\(0\.12\)/.test(catalog) && /location\.fill/.test(catalog),

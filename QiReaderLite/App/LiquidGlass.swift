@@ -134,9 +134,23 @@ extension View {
     }
 
     /// 玻璃胶囊（栖阅顶栏那种图标组、目录底部的搜索框）
+    ///
+    /// ⚠️ **不要再在这后面跟一个 `.glassEffectShape(.capsule)`** ——
+    ///    `LiquidGlass` 在 iOS 26 内部**自己就走系统 `glassEffect`**，
+    ///    再叠一个就是**玻璃套玻璃**：折射叠折射、描边叠描边，
+    ///    出来是一坨发灰的糊状物（真机一眼就看出来"怪"）。
+    ///    这个修饰符已经把两条路都封了（iOS26 → 系统 `.capsule`，
+    ///    17~25 → 手搓 cornerRadius 999），**一个就够**。
     func glassCapsule(strength: Double = 1.1,
                       tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
-        modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength))
+        #if compiler(>=6.2)
+        if USE_SYSTEM_GLASS, #available(iOS 26.0, *) {
+            return AnyView(self.glassEffect(.regular, in: .capsule))
+        }
+        return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength)))
+        #else
+        return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength)))
+        #endif
     }
 
     /// 只设玻璃的**形状**，不碰别的修饰链。
