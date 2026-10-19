@@ -43,6 +43,9 @@ function ok(c, label, extra) {
 }
 
 const web = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
+const chip = web.slice(web.indexOf('private struct ChipButton'));
+const pageTurn = web.slice(web.indexOf('private var pageTurnRow'),
+                            web.indexOf('private var featureGrid'));
 const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
 
 console.log('\n── 面板结构（照参考截图 1:1）──');
@@ -91,15 +94,22 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
   // 参考实现只有**一层**底色（Colors.grey @ 0.12）。
   // 我原来叠了 qrFill + 一层白（ready 0.34 / 未实现 0.16）= 两档，
   // 结果 4 亮 4 暗，看着像两套东西。
-  ok(/background\(Self\.qrFill,[\s\S]{0,60}RoundedRectangle\(cornerRadius: 18/.test(ft),
+  ok(/background\(Self\.qrFill,[\s\S]{0,60}RoundedRectangle\(cornerRadius: 16/.test(ft),
      '8 格磁贴底色**统一**一层（栖阅那样，不是「亮/暗」两档）');
   ok(!/Color\.white\.opacity\(ready \?/.test(ft), '磁贴不再叠第二层白底');
-  ok(/cornerRadius: 18/.test(ft), '磁贴圆角 18（v2 参考实现 BorderRadius.circular(18)）');
+  ok(/cornerRadius: 16/.test(ft), '磁贴圆角 16（第 4 版）');
+  ok(/frame\(height: 88\)/.test(ft), '磁贴高 88（第 4 版）');
 }
 // 面板内边距照参考实现 EdgeInsets.fromLTRB(16, 16, 16, 28)：
 // 底部 28 是给 home indicator 让的，面板贴到屏边但最后一行磁贴不压指示条。
-ok(/padding\(\.horizontal, 12\)[\s\S]{0,80}padding\(\.top, 14\)[\s\S]{0,60}padding\(\.bottom, 14/.test(web),
-   '面板内边距 12/14/12/14（v2 参考实现 fromLTRB(12,14,12,14)）');
+ok(/padding\(\.horizontal, 12\)[\s\S]{0,80}padding\(\.top, 12\)[\s\S]{0,60}padding\(\.bottom, 12/.test(web),
+   '面板内边距 12/12/12/12（第 4 版）');
+{
+  const ub = web.slice(web.indexOf('private var upperPanelCard'),
+                       web.indexOf('private func hairLine'));
+  ok(/sizeRow[\s\S]{0,40}paletteGrid[\s\S]{0,40}followSystemRow[\s\S]{0,40}hairLine[\s\S]{0,40}pageTurnRow/.test(ub),
+     '分割线在「跟随系统」下面（分隔 chips 段），不在字号下面');
+}
 ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
@@ -114,13 +124,18 @@ ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,80}GlassBackdrop\(\)/.test(web) ||
 //    5 个 chip 平分宽度。v2 参考实现用的是 Wrap（可换行）。
 //    我当时的修法是缩字号 —— 治错了地方。
 //    现在：字号回 14 / 圆角 22 / 改可换行网格，挤不下就换行，不截字。
-ok(/fontSize: CGFloat = 14/.test(web) && /cornerRadius: CGFloat = 22/.test(web),
-   'chip 字号 14 / 圆角 22（v2 参考实现 _chip）');
-ok(!/fillsWidth: true/.test(web), 'chip 不再 fillsWidth（「上下滚动」被截的真正根因）');
-ok(/padding\(\.horizontal, 12\)[\s\S]{0,40}padding\(\.vertical, 9\)/.test(web),
-   'chip 内边距 12/9（v2 参考实现 symmetric(horizontal:16, vertical:9) 量级）');
-ok(/LazyVGrid\([\s\S]{0,90}adaptive\(minimum: 58\)/.test(web),
-   '翻页 chip 用可换行网格（v2 是 Wrap，不是 HStack 强制一行）');
+// 「上下滚动」被截成「上下...」→ 三轮弯路，根因是**排布**不是字号：
+//   ① HStack + fillsWidth 平分放不下 → 我缩字号到 12  ← 治错了
+//   ② 改 Wrap / LazyVGrid 可换行 → 真机换行成「无动\n画」，更难看
+//   ③ 正解：**等分一行**，13pt 本就放得下（4字≈52pt vs 每格≈65pt）
+ok(/fontSize: CGFloat = 13/.test(web) && /cornerRadius: CGFloat = 19/.test(web),
+   'chip 字号 13 / 圆角 19（第 4 版）');
+ok(/fillsWidth: true/.test(web), 'chip 等分铺满');
+ok(!/LazyVGrid/.test(pageTurn), '翻页 chip 不用 LazyVGrid（真机换行成「无动/画」）');
+ok(/HStack\(spacing: 6\)[\s\S]{0,240}ForEach\(PageTurnMode\.all\)/.test(pageTurn),
+   'chips = HStack(spacing:6) + ForEach，一行五个等分');
+ok(/frame\(height: 38\)/.test(chip), 'chip 高 38（第 4 版）');
+ok(/minimumScaleFactor\(0\.85\)/.test(chip), '极端情况缩字兜底，常态不触发');
 ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), web.indexOf('var displayCard'))),
    '主面板没有 Spacer（会把 sheet 撑满）');
 
@@ -199,7 +214,8 @@ ok(!/private var fontRow/.test(web), '没有单独的字体行');
 // 翻页方式卡片：灰底圆角 + 左侧图标
 // 圆角按栖阅 designer.css 的 token 阶梯：--r-sm 8 / --r-md 12 / --r-lg 16
 // （翻页方式**不再有卡片底**了 —— 栖阅那行是直接坐在面板玻璃上的）
-ok(/cornerRadius: 18/.test(web), '磁贴圆角 18（v2 参考实现 BorderRadius.circular(18)）');
+ok(/cornerRadius: 16/.test(web), '磁贴圆角 16（第 4 版）');
+ok(/font\(\.system\(size: 15, weight: \.bold\)\)/.test(web), '磁贴主标题 15/w700（第 4 版）');
 ok(/Slider\(value: \$fontSize, in: 14\.\.\.34/.test(web),
    '字号滑块 14...34（v2 参考实现 min:14 max:34）');
 // ⭐ 填充色必须**带蓝调**（栖阅 --fill: rgba(120,120,128,0.12)），
@@ -213,9 +229,10 @@ ok(/Color\(red: 60\/255, green: 60\/255, blue: 67\/255\)\.opacity\(0\.12\)/.test
 ok(/Image\(systemName: "description"\)/.test(web), '翻页方式左边有图标（v2 用 description_outlined，18pt）');
 // 磁贴：图标 + 粗体标题 + 副标题
 ok(/Image\(systemName: icon\)/.test(web), '磁贴有图标');
-ok(/font\(\.subheadline\.weight\(\.semibold\)\)/.test(web), '磁贴标题是粗体');
-ok(/Text\(subtitle \?\? ""\)\.font\(\.system\(size: 10\)\)/.test(web),
-   '磁贴副标题 10pt（v2 参考实现 size:10）');
+ok(/Text\(name\)\.font\(\.system\(size: 15, weight: \.bold\)\)/.test(web),
+   '磁贴主标题 15 / w700（第 4 版）');
+ok(/Text\(subtitle \?\? ""\)\.font\(\.system\(size: 11\)\)/.test(web),
+   '磁贴副标题 11pt（第 4 版 size:11）');
 // ⭐ 文案逐格照抄栖阅截图，不是我自己起的名
 const TILES = [
   ['大小', '显示设置', 'doc.text'],
@@ -269,12 +286,12 @@ ok(/VStack\(spacing: 4\)/.test(web), '磁贴内间距 4（照参考实现 SizedB
   ok(/\.padding\(\.vertical, 8\)/.test(ft), '磁贴上下留白 8（原来 14）');
   ok(/VStack\(spacing: 4\)/.test(ft), '磁贴内间距 4');
 }
-ok(/frame\(height: 42\)/.test(web), '配色格高 42（v2 参考实现 height:42）');
-ok(/font\(\.system\(size: 15, weight: \.medium\)\)[\s\S]{0,240}frame\(height: 42\)[\s\S]{0,140}cornerRadius: 12/.test(web),
-   '配色格：字号 15 / 高 42 / 圆角 12');
+ok(/frame\(height: 44\)/.test(web), '配色格高 44（第 4 版 height:44）');
+ok(/font\(\.system\(size: 15, weight: \.medium\)\)[\s\S]{0,240}frame\(height: 44\)[\s\S]{0,140}cornerRadius: 12/.test(web),
+   '配色格：字号 15 / 高 44 / 圆角 12');
 ok(/private var featureGrid[\s\S]{0,120}VStack\(spacing: 10\)/.test(web),
    '宫格行间距 10（照参考实现 mainAxisSpacing:10）');
-ok(/frame\(width: 34, height: 34\)/.test(web), '小/大圆形 34x34（v2 参考实现 _circleLabel）');
+ok(/frame\(width: 36, height: 36\)/.test(web), '小/大圆形 36x36（第 4 版 _circle）');
 // 栖阅那个面板**顶部就是内容**，没有标题栏也没有右上角按钮
 ok(!/navigationTitle\("阅读设置"\)/.test(web), '没有「阅读设置」大标题');
 ok(!/Button\("完成"\)/.test(web), '没有「完成」按钮');
@@ -328,3 +345,10 @@ ok(!/rows\[\.\.<0\]/.test(web), '没有那个恒等于 0 的 id 计算残留');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);
+
+// ⚠️ 参考实现建议「去掉置灰（enabled:false）」让它看着正常 —— **不采纳**。
+//    未实现的功能（朗读 / 高亮 / 气泡 / 格式 / 页眉页脚）置灰是用户明确要的：
+//    宁可看起来淡，也不能让用户以为点得动。撤置灰 = 伪装成已完成。
+ok(/foregroundStyle\(ready \? Theme\.ink : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
+   '未实现功能仍置灰（不采纳参考实现「去掉置灰」的建议）');
+ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假完成提示');

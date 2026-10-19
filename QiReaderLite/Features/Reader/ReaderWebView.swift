@@ -479,7 +479,7 @@ struct ReaderWebView: View {
                 } placeholder: {
                     Color.clear
                 }
-                .frame(width: 34, height: 34)
+                .frame(width: 36, height: 36)
                 .clipShape(Circle())
                 .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
                 .shadow(radius: 2, y: 1)
@@ -589,8 +589,8 @@ struct ReaderWebView: View {
             // 面板贴到屏边但最后一行磁贴不会压在指示条上。
             // 参考实现 padding: fromLTRB(12, 14, 12, 14)
             .padding(.horizontal, 12)
-            .padding(.top, 14)
-            .padding(.bottom, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
             // ⚠️ 整个导航栏藏掉：没有「阅读设置」大标题，也没有右上角「完成」。
             //    栖阅那个面板顶部直接就是「小 ▬ 大 [系统字体]」，标题栏压根不存在。
             //    NavigationStack 还得留着 —— 子页（显示/间距/更多）是 push 进去的。
@@ -655,9 +655,10 @@ struct ReaderWebView: View {
     private var upperPanelCard: some View {
         VStack(spacing: 0) {
             sizeRow
-            hairLine
             paletteGrid
             followSystemRow
+            // ⚠️ 分割线在**「跟随系统」下面**（把 chips 那一段隔开）。
+            //    我原来放在「字号」下面 —— 真机并排看的，位置错了。
             hairLine
             pageTurnRow
         }
@@ -728,8 +729,8 @@ struct ReaderWebView: View {
     }
 
     private func paletteRow(_ list: [ReaderTheme], icon: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(Theme.sub)
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 18)).foregroundStyle(Theme.sub)
                 .frame(width: 18)
             ForEach(list) { t in
                 Button { themeKey = t.key } label: {
@@ -739,7 +740,7 @@ struct ReaderWebView: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(t.ink)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 42)
+                        .frame(height: 44)
                         .background(t.bg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -767,18 +768,22 @@ struct ReaderWebView: View {
     private var pageTurnRow: some View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: "description").font(.system(size: 18)).foregroundStyle(Theme.sub)
-            // 参考实现用的是 **Wrap**（可换行），不是 HStack 强制一行。
-            // 我原来用 HStack + fillsWidth 硬塞 5 个，5 个平分宽度装不下
-            // 「上下滚动」，真机被截成「上下...」，我当时的修法是**把字号缩到 12**
-            // —— 根因搞错了：根因是「强制一行」，该换 Wrap，不是该缩字号。
-            // 现在字号回到 14，挤不下就让它换行，宁可换行也不截字。
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 58), spacing: 8)],
-                      alignment: .leading, spacing: 8) {
+            // chips：**等分一行，五个并排，绝不换行**。
+            //
+            // 为这个走过三轮弯路才找对：
+            //   ① HStack + fillsWidth 平分 → 「上下滚动」被截成「上下...」，
+            //      我当时**缩字号到 12** 去补 —— 治错了地方
+            //   ② 照上一份参考实现改 Wrap / LazyVGrid 可换行 → 真机换行成
+            //      「无动\n画」「上下\n滚动」，更难看
+            //   ③ 正解：**等分**，字号 13 / 圆角 19 / 高 38
+            //
+            // 「上下滚动」4 字 × 13pt ≈ 52pt，等分每格约 65pt，本来就放得下。
+            // 真正要的是**等分**，不是换行，更不是缩字号。
+            HStack(spacing: 6) {
                 ForEach(PageTurnMode.all) { m in
-                // ⚠️ 字号 13 + 左右各 9 时，5 个平分宽度装不下「上下滚动」四个字
-                //    （真机被截成「上下...」）。收到 12 + 左右各 7。
                     ChipButton(title: m.name,
-                               selected: pageTurnMode == m.raw) {
+                               selected: pageTurnMode == m.raw,
+                               fillsWidth: true) {
                         pageTurnMode = m.raw
                         pageTurn = m.raw != "scroll"
                     }
@@ -885,8 +890,8 @@ struct ReaderWebView: View {
                 if !icon.isEmpty {
                     Image(systemName: icon).font(.system(size: 20))
                 }
-                Text(name).font(.footnote.weight(.semibold))
-                Text(subtitle ?? "").font(.system(size: 10))   // 参考实现 subtitle size:10
+                Text(name).font(.system(size: 15, weight: .bold))   // 第 4 版 15 / w700
+                Text(subtitle ?? "").font(.system(size: 11))   // 第 4 版 subtitle 11
             }
             // ⚠️ 栖阅那 8 格**底色是统一的淡米色**，区分「已实现 / 没实现」
             //    靠的是**文字深浅**，不是有没有底。
@@ -898,7 +903,8 @@ struct ReaderWebView: View {
             // 参考实现是 `Colors.grey @ 0.12` **一层**，圆角 14。
             // 我原来叠了 qrFill + 一层白 = 两档底色，4 亮 4 暗，不像一套东西。
             .background(Self.qrFill,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(height: 88)
         }
         .buttonStyle(.plain)
         .disabled(!ready)
@@ -1222,8 +1228,8 @@ struct ReaderWebContainer: UIViewRepresentable {
 private struct ChipButton: View {
     let title: String
     let selected: Bool
-    var fontSize: CGFloat = 14
-    var cornerRadius: CGFloat = 22
+    var fontSize: CGFloat = 13
+    var cornerRadius: CGFloat = 19
     var fillsWidth: Bool = false
     let action: () -> Void
 
@@ -1234,14 +1240,17 @@ private struct ChipButton: View {
                 .foregroundStyle(selected ? Color.white : Theme.ink)
                 // 参考实现 _chip：padding 16/9、cornerRadius 22、字号 14、
                 // 选中 blue 底白字 / 未选中 black @ .08 底，**无描边**
-                .padding(.horizontal, 12)
+                // 等分时不能再加宽内边距（会把字挤掉），
+                // 固定高 38、圆角 19（= 38/2，正好是胶囊）。
+                .padding(.horizontal, 2)
                 .padding(.vertical, 9)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(selected ? Theme.accent : Color.black.opacity(0.08))
+                        .fill(selected ? Theme.accent : Color.black.opacity(0.07))
                 )
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
-                .frame(height: fillsWidth ? 32 : nil)
+                .frame(height: 38)
+                .minimumScaleFactor(0.85)
         }
         .buttonStyle(.plain)
     }
