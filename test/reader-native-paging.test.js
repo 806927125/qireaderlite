@@ -203,5 +203,36 @@ ok(/CTFramesetterCreateFrame/.test(paginator), '页框用 framesetter 生成');
 ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
    'CoreText 绘制要翻转坐标系（否则字是反的）');
 
+// ── 跨章翻页：加载竞态 + 失败必须可见 ────────────────────────────
+// 症状：翻到第二章末尾再往下翻，回到第二章开始且内容不变。
+// 根因两条：
+//   ① load(index:) 没有竞态防护 —— load(2)/load(3) 同时在飞，
+//      旧结果后到就把 chapterText 覆盖回上一章
+//   ② load 失败时 errorText 写了但**没有任何 UI 显示**，
+//      正文静默停在上一章第一页，看着就是「翻页卡住」
+{
+  const sess = fs.readFileSync(
+    path.join(__dirname, '..', 'QiReaderLite', 'Core', 'ReaderSession.swift'), 'utf8');
+  const web = fs.readFileSync(
+    path.join(__dirname, '..', 'QiReaderLite', 'Features', 'Reader', 'ReaderWebView.swift'), 'utf8');
+
+  const loadBody = sess.slice(sess.indexOf('func load(index i: Int)'),
+                              sess.indexOf('func load(index i: Int)') + 1800);
+  ok(/guard self\.index == i else \{ return \}/.test(loadBody),
+     'load 落地前校验 index 没被后续翻页改掉（防竞态）');
+  ok(/loadingChapter = true/.test(sess), '有 loadingChapter 状态');
+  ok(/@Published var loadingChapter/.test(sess), 'loadingChapter 是 @Published，UI 才收得到');
+
+  // 失败必须给正文 + 给出口
+  const catchBody = loadBody.slice(loadBody.indexOf('} catch {'));
+  ok(/chapterText = ""/.test(catchBody),
+     '换章失败时清空正文 —— 不清就会静默停在上一章第一页');
+  ok(/chapterStatusOverlay/.test(web), '分页视图上有状态提示层');
+  ok(/session\.errorText/.test(web), '提示层真的读了 errorText');
+  ok(/Button\("重试"\)/.test(web), '失败时给重试按钮（只报错不给出口等于堵死用户）');
+  ok(/Button\("回上一章"\)/.test(web), '并给回上一章的退路');
+  ok(/session\.loadingChapter/.test(web), '加载中也显示出来');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);

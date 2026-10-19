@@ -44,6 +44,9 @@ final class ReaderSession: ObservableObject {
 
     @Published var index: Int = 0
     @Published var errorText: String = ""
+    /// 正在换章拉正文。UI 必须显示出来 —— 否则换章失败时正文停在上一章第一页，
+    /// 看上去就是「翻页卡住 / 翻回去」，用户完全不知道发生了什么。
+    @Published var loadingChapter: Bool = false
     @Published var hostReady = false
     /// 当前章正文（原生分页模式自己排版用；webview 模式不用）
     @Published var chapterText: String = ""
@@ -133,12 +136,22 @@ final class ReaderSession: ObservableObject {
         Task { await load(index: i) }
     }
 
+    /// 拉第 i 章正文。
+    ///
+    /// ⚠️ 竞态：快速连划时 load(2) / load(3) 会同时在飞，网络返回顺序不保证。
+    ///    旧的结果后到就会把 chapterText 覆盖成**上一章**的内容 ——
+    ///    表现是「翻到第 N 章末尾，再往下翻回到第 N 章开始」且内容还是第 N 章。
+    ///    所以落地前必须校验 index 没被后续翻页改掉，改掉了就丢弃。
     func load(index i: Int) async {
         guard flat.indices.contains(i),
               let s = sources?.source(id: book.origin) else { return }
         let ch = flat[i]
+        loadingChapter = true
+        defer { if self.index == i { loadingChapter = false } }
         do {
             let dto = try await SourceService.shared.content(source: s, chapter: ch)
+            // 用户已经翻到别的章了，这份结果作废
+            guard self.index == i else { return }
             host.update(index: i, text: dto.content,
                         title: dto.title.isEmpty ? ch.title : dto.title)
             // 原生分页模式要用纯文本自己排版
@@ -146,8 +159,12 @@ final class ReaderSession: ObservableObject {
             chapterTitle = dto.title.isEmpty ? ch.title : dto.title
             errorText = ""
         } catch {
+            guard self.index == i else { return }
             host.fail(index: i, message: error.localizedDescription)
             errorText = error.localizedDescription
+            // 换章失败必须让用户看见。不给正文就是「静默停在上一章」，
+            // 跟「翻页坏了」在用户眼里一模一样。
+            chapterText = ""
         }
     }
 }

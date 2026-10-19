@@ -98,6 +98,45 @@ struct ReaderWebView: View {
         )
     }
 
+    /// 换章加载中 / 换章失败 的提示层。
+    /// 失败时给「重试」按钮 —— 只报错不给出口等于把用户堵死。
+    @ViewBuilder
+    private var chapterStatusOverlay: some View {
+        if session.loadingChapter {
+            ProgressView().controlSize(.large).scaleEffect(1.4)
+        } else if !session.errorText.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(.orange)
+                Text("这一章加载失败")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                Text(session.errorText)
+                    .font(.caption)
+                    .foregroundStyle(Theme.sub)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    .lineLimit(6)
+                HStack(spacing: 10) {
+                    Button("重试") {
+                        Task { await session.load(index: session.index) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    if session.index > 0 {
+                        Button("回上一章") { session.step(-1) }
+                            .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.top, 2)
+            }
+            .padding(.vertical, 22)
+            .padding(.horizontal, 18)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.horizontal, 28)
+        }
+    }
+
     /// 分页模式下把页码比例存成阅读进度
     private func saveProgress(ratio: Double) {
         library.saveProgress(bookID: book.id,
@@ -137,6 +176,11 @@ struct ReaderWebView: View {
                         tapAnywhereTurnsPage: tapAnywhereTurnsPage
                     )
                     .ignoresSafeArea(edges: .bottom)
+                    .overlay {
+                        // ⚠️ 这层以前完全没有 → 换章失败时正文静默停在上一章第一页，
+                        //    看着就像「翻页坏了」。加载中/失败必须让人看见。
+                        chapterStatusOverlay
+                    }
                 } else {
                     ReaderWebContainer(
                         host: session.host,
