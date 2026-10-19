@@ -359,8 +359,12 @@ ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报
 ok(/func preloadedChapters\(\) -> \[Int\]/.test(pager), 'pager 能报出内存已预载的章号');
 ok(!/ChapterCacheService|diskCache/.test(catalog),
    '目录没有假装有磁盘缓存（栖阅那个能力轻阅还没做）');
-ok(/presentationDetents\(\[\.fraction\(0\.62\), \.large\]\)/.test(catalog),
-   '目录是 partial sheet（不是全屏）');
+ok(/presentationDetents\(\[\.fraction\(0\.62\)\]\)/.test(catalog),
+   '目录是定高 partial sheet —— **只有一个 detent**，往上拖不会弹成全屏');
+ok(!/presentationDetents\(\[[^\]]*\.large/.test(catalog),
+   'detent 列表里没有 .large（用户实测：原来带 .large，目录会自己变大窗口）');
+ok(!/presentationBackgroundInteraction/.test(catalog),
+   '没开 presentationBackgroundInteraction（透明区域接管手势会和底下正文抢事件）');
 ok(/presentationBackground\(\.clear\)/.test(catalog),
    'sheet 背景是 .clear —— 自己设 presentationBackground 会盖掉系统玻璃');
 ok(/presentationDragIndicator\(\.visible\)/.test(catalog), '有 grabber');

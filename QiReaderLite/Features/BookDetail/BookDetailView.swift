@@ -345,9 +345,14 @@ struct CatalogSheet: View {
         }
         // partial sheet + 系统玻璃：不设 presentationBackground，
         // 让 iOS 26 的 glass 自己透出后面的正文。
-        .presentationDetents([.fraction(0.62), .large])
+        //
+        // ⚠️ **只给一个 detent**。原来写了 `[.fraction(0.62), .large]`，
+        //    结果用户往上拖目录会「啪」地弹成全屏 —— 栖阅那边目录是定高的，
+        //    没有这个全屏态。章节多就多滚动几屏，不要让它自己长。
+        .presentationDetents([.fraction(0.62)])
         .presentationDragIndicator(.visible)
-        .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.62)))
+        // 背景透明才留得住系统玻璃；但**别开** presentationBackgroundInteraction
+        // —— 那会让透明区域接管手势，和底下的正文抢事件。
         .presentationBackground(.clear)
     }
 
