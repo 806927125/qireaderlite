@@ -55,7 +55,7 @@ for (const [label, re] of [
   ['配色格子（深色一排）',            /paletteRow\(ReaderTheme\.darkRow/],
   ['跟随系统深浅色',                  /跟随系统深浅色/],
   ['翻页方式在灰底圆角卡片里',        /private var pageTurnCard/],
-  ['功能磁贴 4+5',                    /private var featureGrid/],
+  ['功能磁贴 4+4（照栖阅）',          /private var featureGrid/],
   ['子页：显示设置',                  /private var displaySettingsPage/],
   ['子页：间距设置',                  /private var layoutSettingsPage/],
 ]) ok(re.test(web), label);
@@ -123,10 +123,32 @@ ok(/Image\(systemName: "doc\.text"\)/.test(web), '翻页方式卡片左边有图
 // 磁贴：图标 + 粗体标题 + 副标题
 ok(/Image\(systemName: icon\)/.test(web), '磁贴有图标');
 ok(/font\(\.subheadline\.weight\(\.semibold\)\)/.test(web), '磁贴标题是粗体');
-ok(/Text\(subtitle\)\.font\(\.caption2\)/.test(web), '磁贴有副标题');
-ok(/name: "大小", subtitle: "显示设置"/.test(web), '「大小/显示设置」磁贴');
-for (const n of ['间距设置','朗读设置','高亮设置','气泡设置','格式','标题样式','页眉页脚','更多设置']) {
-  ok(web.includes(`name: "${n}"`), `磁贴「${n}」在`);
+ok(/Text\(subtitle \?\? ""\)\.font\(\.caption2\)/.test(web), '磁贴有副标题');
+// ⭐ 文案逐格照抄栖阅截图，不是我自己起的名
+const TILES = [
+  ['大小', '显示设置', 'doc.text'],
+  ['间隔', '间隔设置', 'line.3.horizontal.decrease'],
+  ['朗读', '朗读设置', 'speaker.wave.2'],
+  ['高亮', '高亮设置', 'highlighter'],
+  ['气泡', '设置', 'bubble.left.and.bubble.right'],
+  ['格式', '标题样式', ''],          // ← 栖阅这格没有图标
+  ['页眉', '页脚', 'doc.text'],
+  ['更多', '设置', 'ellipsis.circle'],
+];
+for (const [n, sub] of TILES) {
+  ok(web.includes(`("${n}", "${sub}"`), `磁贴「${n} / ${sub}」在（栖阅原文案）`);
+}
+ok(TILES.length === 8, '一共 8 格');
+ok(/private func tileRow\(_ from: Int\)/.test(web) &&
+   /Self\.tiles\[from\.\.<min\(from \+ 4/.test(web),
+   '按 4 + 4 两行排（不是 4 + 5 —— 那样第二行长一截，就是用户说的「怪」）');
+ok(!/name: "标题样式"/.test(web) && !/name: "页眉页脚"/.test(web),
+   '「格式/标题样式」是**一格**、「页眉/页脚」也是一格 —— 不拆成 9 格');
+{
+  const fmt = web.slice(web.indexOf('("格式", "标题样式"'),
+                         web.indexOf('("格式", "标题样式"') + 60);
+  ok(/"", false\)/.test(fmt),
+     '「格式」那格图标是空串 —— 栖阅截图里它**没有图标**，图标为空时还不占位');
 }
 // 色板 8 + 8
 ok(/static let light: \[ReaderTheme\] = \[[^\]]*\]/.test(view), '浅色色板在');
@@ -143,15 +165,15 @@ for (const [raw, name] of [['flip','仿真'],['slide','滑动'],['flat','平移'
 }
 
 console.log('\n── 没接的功能：摆位但不点 ──');
-const tiles = web.slice(web.indexOf('private var featureGrid'), web.indexOf('private func featureTileLabel'));
-const notReady = (tiles.match(/ready:\s*false/g) || []).length;
-ok(notReady >= 6, `6 个功能标了 ready:false（还没接的）`, `实际 ${notReady}`);
-ok(/ready:\s*true/.test(tiles), '有 ready:true 的磁贴（大小/间距/更多设置 是接上的）');
-ok(/\.disabled\(!t\.ready\)/.test(web), 'ready:false 的宫格是 disabled');
-ok(/guard t\.ready else \{ return \}/.test(web), '点击前先挡一道（不只靠 disabled）');
+const tiles = web.slice(web.indexOf('private static let tiles:'),
+                        web.indexOf('private func tileRow'));
+const notReady = (tiles.match(/,\s*false\)/g) || []).length;
+ok(notReady === 5, `5 个功能标了 false（还没接的）`, `实际 ${notReady}`);
+ok(/,\s*true\)/.test(tiles), '有接上的磁贴（大小 / 间隔 / 更多）');
+ok(/\.disabled\(!ready\)/.test(web), 'ready:false 的宫格是 disabled');
+ok(/guard ready else \{ return \}/.test(web), '点击前先挡一道（不只靠 disabled）');
 ok(/foregroundStyle\(ready \? Theme\.ink : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
    '未接的格子画成灰的，一眼看得出还没做');
-ok(/\.disabled\(!t\.ready\)/.test(web), 'ready:false 的磁贴是 disabled');
 
 console.log('\n── 真接上的功能 ──');
 // 栖阅的排版项是**真实控件行**，不是宫格：

@@ -725,63 +725,82 @@ struct ReaderWebView: View {
         .padding(.bottom, 10)
     }
 
-    // MARK: - ⑦ 功能磁贴（4 + 5）
+    // MARK: - ⑦ 功能磁贴（4 + 4，照栖阅截图）
+
+    /// **照栖阅截图逐格抄的文案**，不是我自己起的名：
+    ///
+    /// | 格 | 大字 | 小字     | 图标 |
+    /// |---|---|---|---|
+    /// | 1 | 大小 | 显示设置 | doc.text |
+    /// | 2 | 间隔 | 间隔设置 | ≡ 横线 |
+    /// | 3 | 朗读 | 朗读设置 | speaker |
+    /// | 4 | 高亮 | 高亮设置 | highlighter |
+    /// | 5 | 气泡 | 设置     | bubble |
+    /// | 6 | 格式 | 标题样式 | **无** |
+    /// | 7 | 页眉 | 页脚     | doc.text |
+    /// | 8 | 更多 | 设置     | ellipsis.circle |
+    ///
+    /// ⚠️ 必须是 **4 + 4 = 8 格**。我之前是 4 + 5（把「格式」和「标题样式」
+    ///    拆成了两格），第二行比第一行长一截 —— 这就是「怪」的来源之一。
+    ///    栖阅那个「格式」是大字、「标题样式」是它的小字，本来就是**一格**。
+    private static let tiles: [(name: String, subtitle: String, icon: String, ready: Bool)] = [
+        ("大小", "显示设置", "doc.text", true),
+        ("间隔", "间隔设置", "line.3.horizontal.decrease", true),
+        ("朗读", "朗读设置", "speaker.wave.2", false),
+        ("高亮", "高亮设置", "highlighter", false),
+        ("气泡", "设置", "bubble.left.and.bubble.right", false),
+        ("格式", "标题样式", "", false),          // ← 栖阅这格**没有图标**
+        ("页眉", "页脚", "doc.text", false),
+        ("更多", "设置", "ellipsis.circle", true),
+    ]
 
     private var featureGrid: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Button { showDisplaySettings = true } label: {
-                    featureTileLabel(name: "大小", subtitle: "显示设置",
-                                     icon: "", ready: true)
-                }
-                .buttonStyle(.plain)
-                featureTile(FeatureTile(name: "间距设置", icon: "text.alignleft", ready: true)) {
-                    showLayoutSettings = true
-                }
-                featureTile(FeatureTile(name: "朗读设置", icon: "speaker.wave.2", ready: false)) {}
-                featureTile(FeatureTile(name: "高亮设置", icon: "highlighter", ready: false)) {}
-            }
-            HStack(spacing: 8) {
-                featureTile(FeatureTile(name: "气泡设置", icon: "bubble.left.and.bubble.right", ready: false)) {}
-                featureTile(FeatureTile(name: "格式", icon: "text.alignleft", ready: false)) {}
-                featureTile(FeatureTile(name: "标题样式", icon: "doc.text", ready: false)) {}
-                featureTile(FeatureTile(name: "页眉页脚", icon: "book", ready: false)) {}
-                featureTile(FeatureTile(name: "更多设置", icon: "ellipsis.circle", ready: true)) {
-                    showMoreSettings = true
+            tileRow(0)
+            tileRow(4)
+        }
+    }
+
+    private func tileRow(_ from: Int) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(Self.tiles[from..<min(from + 4, Self.tiles.count)]), id: \.name) { t in
+                featureTileLabel(name: t.name, subtitle: t.subtitle,
+                                 icon: t.icon, ready: t.ready) {
+                    if t.name == "大小" { showDisplaySettings = true }
+                    else if t.name == "间隔" { showLayoutSettings = true }
+                    else if t.name == "更多" { showMoreSettings = true }
                 }
             }
         }
     }
 
-    /// 一个磁贴（图标 + 粗体标题 + 副标题）
-    private func featureTileLabel(name: String, subtitle: String?, icon: String, ready: Bool) -> some View {
-        VStack(spacing: 6) {
-            if !icon.isEmpty {
-                Image(systemName: icon).font(.system(size: 19))
-            }
-            Text(name).font(.subheadline.weight(.semibold))
-            if let subtitle {
-                Text(subtitle).font(.caption2)
-            }
-        }
-        .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(Color.white.opacity(ready ? 0.34 : 0.16),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    /// 没接的**只摆位不点**：灰掉、点不动。
-    /// 给用户一个点下去只会挨骂的按钮，比没有更糟。
-    private func featureTile(_ t: FeatureTile, action: @escaping () -> Void) -> some View {
+    /// 一个磁贴（图标 + 粗体大字 + 小字副标题）。
+    ///
+    /// 没接的**只摆位不点**：灰掉、点不动。给用户一个点下去只会挨骂的
+    /// 按钮，比没有更糟（用户明确要求过）。
+    private func featureTileLabel(name: String, subtitle: String?, icon: String,
+                                  ready: Bool, action: @escaping () -> Void = {}) -> some View {
         Button {
-            guard t.ready else { return }
+            guard ready else { return }
             action()
         } label: {
-            featureTileLabel(name: t.name, subtitle: t.subtitle, icon: t.icon, ready: t.ready)
+            VStack(spacing: 6) {
+                // 栖阅「格式」那格是空的 —— 图标为空串时**不占位**，
+                // 文字整体往上提，跟截图对得上
+                if !icon.isEmpty {
+                    Image(systemName: icon).font(.system(size: 19))
+                }
+                Text(name).font(.subheadline.weight(.semibold))
+                Text(subtitle ?? "").font(.caption2)
+            }
+            .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color.white.opacity(ready ? 0.34 : 0.16),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(!t.ready)
+        .disabled(!ready)
     }
 
     // MARK: - 子页：显示设置
@@ -978,14 +997,6 @@ struct ReaderWebView: View {
 }
 
 /// 宫格里的一项。`ready = false` = 还没接，只摆位不点。
-struct FeatureTile: Identifiable {
-    let name: String
-    let icon: String
-    let ready: Bool
-    var subtitle: String? = nil
-    var raw: String { name }
-    var id: String { name }
-}
 
 /// 字体
 struct ReaderFont: Identifiable, Hashable {
