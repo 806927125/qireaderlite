@@ -238,15 +238,22 @@ struct NoScrollExpand: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: Host, context: Context) { vc.apply() }
 
     final class Host: UIViewController {
+        // ⚠️ `didMoveToWindow()` 是 **UIView** 的方法，不是 UIViewController 的 ——
+        //    写上去编译直接报
+        //    "method does not override any method from its superclass"。
+        //    VC 这里只能挂 viewWillAppear / viewDidAppear。
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            DispatchQueue.main.async { [weak self] in self?.apply() }
+        }
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
             apply()
         }
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
             // sheet 的 presentingViewController 要等 present 完才拿得到，
-            // 所以两个时机都试一遍（缺一个就可能不生效）。
-            DispatchQueue.main.async { [weak self] in self?.apply() }
+            // 布局完成后再兜一次（缺哪个时机都可能不生效）。
             apply()
         }
 

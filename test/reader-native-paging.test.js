@@ -371,8 +371,11 @@ ok(/\.background\(NoScrollExpand\(\)\)/.test(catalog),
      '设了 prefersScrollingExpandsWhenScrolledToEdge = false（默认 true = 滚到边缘自动展开）');
   ok(/sheetPresentationController/.test(lgl) && /UIViewControllerRepresentable/.test(lgl),
      '走 UIKit 拿 sheetPresentationController（SwiftUI 的 presentationDetents 没暴露这个开关）');
-  ok(/viewDidAppear/.test(lgl) && /didMoveToWindow/.test(lgl),
-     'present 完成 + 入窗两个时机都试（只写一个可能拿不到）');
+  ok(/viewDidAppear/.test(lgl) && /viewWillAppear/.test(lgl),
+     'present 完成 + 即将出现两个时机都试（只写一个可能拿不到 sheetPresentationController）');
+  ok(!/override func didMoveToWindow/.test(lgl),
+     '没有 override didMoveToWindow —— 那是 **UIView** 的方法不是 UIViewController 的，' +
+     '写上去编译报 does not override any method from its superclass');
 }
 ok(/scrollBounceBehavior\(\.basedOnSize\)/.test(catalog), '列表用 basedOnSize bounce');
 {
