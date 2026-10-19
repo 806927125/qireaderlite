@@ -4,6 +4,12 @@ import SwiftUI
 /// 栖阅的分组式列表：会员中心卡片 → 配置/朗读/替换净化/目录规则 → 阅读设置/字体/预缓存 → 外观/统计
 /// 轻阅还没有替换净化、目录规则、字体管理这些，先把**已有能力**摆出来，
 /// 没做的做成灰态而不是弹「还没接」。
+/// 从 Info.plist 的 CFBundleVersion 读 build 号（CI 注入的 CURRENT_PROJECT_VERSION）。
+enum AppBuildInfo {
+    /// CI 注入的 CURRENT_PROJECT_VERSION（拼在 CFBundleVersion 里）
+    static let number: String = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var store: SourceStore
     @EnvironmentObject private var library: LibraryStore
@@ -100,7 +106,11 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
 
-                    Text("轻阅 Lite · iOS 26+")
+                    // ⭐ 把 **build 号**显示出来。
+                    //    这轮来回里最大的坑是「用户装的到底是哪一版」——
+                    //    build 107 之后又出了 108 / 109，拿旧版截图对栖阅
+                    //    会白改好几轮。版本号摆在这儿，一眼就能确认。
+                    Text("轻阅 Lite · iOS 26+ · build \(AppBuildInfo.number)")
                         .font(.caption)
                         .foregroundStyle(Theme.sub)
                         .padding(.top, 6)

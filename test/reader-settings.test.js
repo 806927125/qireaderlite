@@ -392,3 +392,13 @@ ok(/padding\(\.top, 42\)/.test(panel),
 ok(/foregroundStyle\(ready \? Theme\.ink : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
    '未实现功能仍置灰（不采纳参考实现「去掉置灰」的建议）');
 ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假完成提示');
+
+// ── 版本号可见 ──
+// 这一轮最大的坑是「用户装的到底是哪一版」：build 107 之后又出了 108/109，
+// 拿旧版截图对栖阅会白改好几轮。设置页显示 build 号，一眼可确认。
+{
+  const fs2 = require('fs');
+  const sv = fs2.readFileSync(path.join(ROOT, 'Features/Settings/SettingsView.swift'), 'utf8');
+  ok(sv.includes('build \\(AppBuildInfo.number)'), '设置页显示 build 号');
+  ok(/CFBundleVersion/.test(sv), 'build 号从 Info.plist 读');
+}
