@@ -9,7 +9,9 @@ struct ReaderWebView: View {
     @Environment(\.dismiss) private var dismiss
 
     let book: Book
-    let chapters: [Chapter]
+    @State private var chapters: [Chapter]
+    /// 「刷新目录」正在跑（按钮转圈 / 防连点）
+    @State private var isRefreshingCatalog = false
     let start: Chapter
 
     @AppStorage("reader.fontSize") private var fontSize: Double = 18
@@ -54,6 +56,7 @@ struct ReaderWebView: View {
 
     /// ReaderSession 是 @MainActor 类，init 也得在主线程（Swift 5 模式强检查）
     @MainActor init(book: Book, chapters: [Chapter], start: Chapter) {
+        _chapters = State(initialValue: chapters)
         self.book = book
         self.chapters = chapters
         self.start = start
@@ -102,6 +105,47 @@ struct ReaderWebView: View {
     }
 
     /// 目录顶部那行副标题（栖阅显示的是「🍎大灰狼聚合 5.9.30(vip完全版)」）
+    /// 目录胶囊第一个按钮：直接跳到全书最后一章第一页。
+    private func jumpToLastChapter() {
+        guard let last = chapters.last(where: { !$0.isVolume }), !last.isEmpty else { return }
+        guard let i = session.flat.firstIndex(where: { $0.url == last.url }) else { return }
+        showCatalog = false
+        session.jump(to: i)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            pageCtl.pager.jumpToChapter(i)
+        }
+    }
+
+    /// 目录胶囊第二个按钮：重新向书源要一次目录。
+    ///
+    /// 小说站的目录经常半夜补章/改标题，靠刷新拿到最新的。
+    /// 拉不到就保持原样 —— 宁可没反应，也不要把用户正在读的目录搞坏。
+    private func refreshCatalog() {
+        guard !isRefreshingCatalog else { return }
+        let bk = session.book
+        guard let src = sources.source(id: bk.origin) else {
+            onPageEdge?("换源信息不全，刷新不了目录")
+            return
+        }
+        isRefreshingCatalog = true
+        Task {
+            defer { isRefreshingCatalog = false }
+            do {
+                let fresh = try await sources.service.toc(source: src, tocUrl: bk.tocUrl, bookUrl: bk.bookUrl)
+                if session.replaceChapters(fresh) {
+                    chapters = fresh.filter { !$0.isVolume }
+                    pageCtl.pager.adoptFreshChapterList(chapters.count)
+                    onPageEdge?("目录已刷新，共 \(chapters.count) 章")
+                } else {
+                    onPageEdge?("目录没有变化")
+                }
+            } catch {
+                onPageEdge?("刷新失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
     /// 目录顶部副标题 = **书源名**（`BookSource.name` 优先取 bookSourceName）。
     /// ⚠️ 别用 `book.origin` —— 那是书源 URL，真机上会显示成
     ///    `https://cxb-pro.cread.com@通知` 这种没法看的东西。
@@ -355,7 +399,9 @@ struct ReaderWebView: View {
             CatalogSheet(chapters: chapters, start: session.current,
                          bookTitle: catalogBookTitle,
                          sourceLabel: sourceSubtitle,
-                         preloaded: Set(pageCtl.pager.preloadedChapters())) { ch in
+                         preloaded: Set(pageCtl.pager.preloadedChapters()),
+                         onJumpToEnd: jumpToLastChapter,
+                         onRefreshCatalog: refreshCatalog) { ch in
                 showCatalog = false
                 if let i = session.flat.firstIndex(where: { $0.url == ch.url }) {
                     session.jump(to: i)

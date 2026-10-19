@@ -9,7 +9,8 @@ import Foundation
 final class ReaderSession: ObservableObject {
     let host = ReaderHost()
     let book: Book
-    let flat: [Chapter]
+    /// 章节表。**可替换** —— 目录面板那个「刷新目录」按钮要能换掉整张表。
+    private(set) var flat: [Chapter]
     /// SwiftUI 的 EnvironmentObject 在 init 里拿不到，.task 里再挂进来
     private var sources: SourceStore?
     private var library: LibraryStore?
@@ -218,6 +219,31 @@ final class ReaderSession: ObservableObject {
     }
 
     /// 重试当前章（「重试」按钮走这条）
+    /// 用新拉到的章节表替换整本书的目录，并停在原处（章号夹到新范围内）。
+    ///
+    /// 目录面板「刷新目录」按钮用。替换后：
+    ///   · 章号变了（网页更新了新章）→ 位置被夹住，不会越界
+    ///   · host 重新喂一份 chapters，WebView 那边也跟着更新
+    ///   · pager 的 spine 用 chapterTextArrived 重建，本章文本没变就不用重排
+    @discardableResult
+    func replaceChapters(_ newFlat: [Chapter]) -> Bool {
+        let usable = newFlat.filter { !$0.isVolume }
+        guard !usable.isEmpty else { return false }
+        // 目录没实质变化就别折腾，避免无谓的重排和位置跳动
+        let sameCount = usable.count == flat.count
+        if sameCount {
+            var identical = true
+            for i in usable.indices where identical {
+                if usable[i].url != flat[i].url { identical = false }
+            }
+            if identical { return false }
+        }
+        flat = usable
+        index = max(0, min(index, flat.count - 1))
+        host.apply(chapters: flat, at: index, progress: nil)
+        return true
+    }
+
     func reloadCurrent() async {
         let i = index
         errorText = ""

@@ -339,6 +339,10 @@ struct CatalogSheet: View {
     var cacheEnabled: Bool = false
     /// 换源还没实现 → 同样置灰
     var switchSourceEnabled: Bool = false
+    /// 胶囊第一个按钮：跳到全书最后一章
+    var onJumpToEnd: (() -> Void)? = nil
+    /// 胶囊第二个按钮：重新拉一次目录
+    var onRefreshCatalog: (() -> Void)? = nil
     let onPick: (Chapter) -> Void
 
     @State private var filter = ""
@@ -387,13 +391,16 @@ struct CatalogSheet: View {
             //    图标不对，一样跟栖阅对不上。
             //    排序功能保留在代码里（sortAscending），但入口不占这个位置。
             HStack(spacing: 0) {
-                iconInCapsule(systemName: "arrow.down", enabled: cacheEnabled) {
-                    // 磁盘缓存还没做 —— 置灰就是置灰，不弹「即将支持」糊弄
+                // ↓ = 跳到全书最后一章（栖阅那个胶囊的语义对齐后的实际功能）
+                iconInCapsule(systemName: "arrow.down", enabled: onJumpToEnd != nil) {
+                    onJumpToEnd?()
                 }
                 Rectangle().fill(Theme.ink.opacity(0.18))
-                    .frame(width: 1, height: 20)
-                iconInCapsule(systemName: "arrow.triangle.2.circlepath", enabled: switchSourceEnabled) {
-                    // 换源还没做
+                    .frame(width: 1, height: 18)
+                // ⟳ = 重新拉一次目录
+                iconInCapsule(systemName: "arrow.triangle.2.circlepath",
+                              enabled: onRefreshCatalog != nil) {
+                    onRefreshCatalog?()
                 }
             }
             // ⚠️ 只能有一层玻璃。LiquidGlass 在 iOS 26 内部就走系统 glassEffect，
@@ -421,15 +428,15 @@ struct CatalogSheet: View {
                 Image(systemName: "xmark")
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(Theme.ink)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
             .glassCircle()
             .accessibilityLabel("关闭目录")
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 6)
     }
 
     /// 栖阅这里显示的是**书名**，不是「目录 (N)」。
@@ -449,7 +456,7 @@ struct CatalogSheet: View {
                 // ⚠️ 未实现的功能置灰：半透明 + 弱化色，
                 //    一眼能看出点不动，而不是点了给个假反馈。
                 .foregroundStyle(enabled ? Theme.ink : Theme.ink.opacity(0.28))
-                .frame(width: 42, height: 38)
+                .frame(width: 40, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

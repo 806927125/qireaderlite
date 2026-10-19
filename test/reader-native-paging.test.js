@@ -425,14 +425,29 @@ ok(/presentationBackground\(\.clear\)/.test(catalog),
 ok(/presentationDragIndicator\(\.visible\)/.test(catalog), '有 grabber');
 ok(/TextField\("搜索章节名"/.test(catalog) && /glassCapsule\(\)/.test(catalog),
    '底部是玻璃胶囊搜索框（栖阅那样），不是 .searchable');
-ok(/iconInCapsule\(systemName: "arrow\.down", enabled: cacheEnabled\)/.test(catalog) &&
-   /iconInCapsule\(systemName: "arrow\.triangle\.2\.circlepath", enabled: switchSourceEnabled\)/.test(catalog),
-   '胶囊里两个按钮的**图标和顺序照栖阅截图**：↓ 缓存 + ⟳ 换源');
+ok(/iconInCapsule\(systemName: "arrow\.down", enabled: onJumpToEnd != nil\)/.test(catalog) &&
+   /iconInCapsule\(systemName: "arrow\.triangle\.2\.circlepath",\s*enabled: onRefreshCatalog != nil\)/.test(catalog),
+   '胶囊里两个按钮的**图标和顺序照栖阅截图**：↓ + ⟳');
 ok(!/sortAscending \? "arrow\.up"/.test(catalog),
    '没自作主张把「正序/倒序」塞进胶囊位（位置对了图标不对，一样对不上栖阅）');
-ok(/switchSourceEnabled: Bool = false/.test(catalog) && /cacheEnabled: Bool = false/.test(catalog),
-   '缓存和换源都置灰（两个都还没实现）');
-ok(/\.frame\(width: 1, height: 20\)/.test(catalog), '胶囊中间有竖分隔线（栖阅那样）');
+// 这两个按钮现在是**真功能**，不是置灰
+ok(/onJumpToEnd\?\(\)/.test(catalog) && /onRefreshCatalog\?\(\)/.test(catalog),
+   '两个按钮都接了真实动作，不是摆件');
+ok(/func jumpToLastChapter\(\)/.test(web) && /func refreshCatalog\(\)/.test(web),
+   '阅读器实现了「跳到最后一章」和「刷新目录」');
+ok(/func replaceChapters\(_ newFlat: \[Chapter\]\) -> Bool/.test(sess),
+   'session 能整表替换章节（刷新目录要用）');
+ok(/func adoptFreshChapterList\(_ newCount: Int\)/.test(pager),
+   'pager 能按新章数重建 spine（且不清 texts，不弹走当前页）');
+ok(/toc\(source: src, tocUrl: bk\.tocUrl, bookUrl: bk\.bookUrl\)/.test(web),
+   '刷新目录是真发一次 toc 请求');
+ok(/if session\.replaceChapters\(fresh\)/.test(web),
+   '目录没变化时不动它（replaceChapters 返回 false 直接回报「无变化」）');
+// 尺寸：栖阅那个胶囊比 42x38 矮
+ok(/\.frame\(width: 40, height: 32\)/.test(catalog),
+   '按钮尺寸收到 40x32（按栖阅截图量出来的比例）');
+ok(/\.frame\(width: 30, height: 30\)/.test(catalog), '关闭圆钮同步收到 30x30');
+ok(/\.frame\(width: 1, height: 18\)/.test(catalog), '胶囊中间有竖分隔线（栖阅那样）');
 ok(/\.disabled\(!enabled\)/.test(catalog) && /Theme\.ink\.opacity\(0\.28\)/.test(catalog),
    '未实现的按钮是**置灰**而不是弹假提示');
 ok(/Theme\.accent\.opacity\(0\.12\)/.test(catalog) && /location\.fill/.test(catalog),

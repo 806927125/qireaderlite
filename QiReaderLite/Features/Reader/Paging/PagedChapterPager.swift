@@ -99,6 +99,22 @@ final class PagedChapterPager: NSObject {
     }
 
     /// 视口变了 → 页大小变 → spine 里每章的页数都得重算
+    /// 目录刷新后章节总数变了 —— spine 得按新章数重排。
+    ///
+    /// ⚠️ 只重建 spine，**不清 texts / renders**：本章正文还在内存里，
+    ///    没必要重排（重排会把用户正在看的那一页弹走）。
+    ///    章号被夹在有效范围内，`rebuildSpine` 找不到的章按 1 页占位，
+    ///    等 `chapterTextArrived` 到了再纠正。
+    func adoptFreshChapterList(_ newCount: Int) {
+        guard newCount > 0, newCount != chapterCount else { return }
+        chapterCount = newCount
+        let keep = max(0, min(chapter, newCount - 1))
+        rebuildSpine(around: keep)
+        if let i = firstIndex(ofChapter: keep), spine.indices.contains(i) {
+            show(cursor: i, animated: false)
+        }
+    }
+
     func setPageSize(_ size: CGSize) {
         guard size.width > 1, size.height > 1 else { return }
         guard abs(size.width - pageSize.width) > 0.5

@@ -32,6 +32,11 @@ final class SourceStore: ObservableObject {
 
     var enabled: [BookSource] { sources.filter { $0.enabled } }
 
+    /// 目录面板「刷新目录」要真发一次请求，所以这里挂一个 service。
+    /// 放 store 上是图省事（调用方拿得到 EnvironmentObject 就行），
+    /// 纯读路径（列源 / 搜索）不需要它。
+    let service = SourceService()
+
     func source(id: String) -> BookSource? { sources.first { $0.bookSourceUrl == id } }
 
     func replaceAll(_ list: [BookSource]) {
