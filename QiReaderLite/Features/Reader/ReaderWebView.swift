@@ -567,8 +567,7 @@ struct ReaderWebView: View {
     private var settingsContent: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                displayCard
-                pageTurnCard
+                upperPanelCard
                 featureGrid
             }
             // 固定成内容本来的高度 —— 这样量出来的才是真实高度，
@@ -633,21 +632,43 @@ struct ReaderWebView: View {
         }
     }
 
-    /// ① 字号 + 配色 + 跟随系统：一张大卡片
-    private var displayCard: some View {
+    /// 面板**上半**那块「被光打亮」的区域 —— 字号行 / 配色 / 跟随系统 /
+    /// 翻页方式，全都坐在**这一块**里面。
+    ///
+    /// 栖阅截图的确切结构（用户圈出来的那块）：
+    ///
+    ///   ┌───────────────────────────────┐  ← 这块整体更亮，边缘带柔和阴影
+    ///   │  小  ▬▬▬▬▬▬  大  [系统字体 ∨] │
+    ///   │  ☀ 文A 文B 文C …               │
+    ///   │  ◐ 跟随系统深浅色      [开关]   │
+    ///   │  📄 仿真 滑动 平移 无动画 上下 │
+    ///   └───────────────────────────────┘
+    ///   [大小][间隔][朗读][高亮]   ← 这块是**裸的面板玻璃**，磁贴没有底
+    ///   [气泡][格式][页眉][更多]       （能透出后面的插画）
+    ///
+    /// 走过两个弯路：
+    ///   build76 — 每块各垫一层 → 太碎，8 个磁贴多出一排小卡片
+    ///   build79 — 索性全删 → 删过头，上半不够「亮」，和下半糊成一片
+    /// 正确的是**上半一整块亮底 + 轻阴影，下半不垫**。
+    private var upperPanelCard: some View {
         VStack(spacing: 0) {
             sizeRow
             hairLine
             paletteGrid
             followSystemRow
+            hairLine
+            pageTurnRow
         }
-        .padding(.vertical, 4)
-        // ⚠️ 这里原本有 `.background(Color.white.opacity(0.34), ...)` —— 删掉了。
-        //    栖阅那块面板是**一整块玻璃**，内部只有细分隔线，没有一层层独立卡片底。
-        //    sheet 本身就是系统玻璃，再垫半透明白只会把它弄浑，后面透不出插画。
-        .padding(.bottom, 10)
+        .background(
+            Color.white.opacity(0.26),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        // 边缘那圈柔和阴影 —— 让这一块看起来是「浮起来」的一层，
+        // 而不是跟下半部分糊在一起的同一片玻璃。
+        .compositingGroup()
+        .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 3)
+        .padding(.bottom, 12)
     }
-
     private var hairLine: some View {
         Divider().overlay(Self.qrLine).padding(.vertical, 2)
     }
@@ -734,9 +755,10 @@ struct ReaderWebView: View {
         }
     }
 
-    // MARK: - ⑥ 翻页方式（灰底圆角卡片）
+    // MARK: - ⑥ 翻页方式那一行
 
-    private var pageTurnCard: some View {
+    /// 自己的底**并进 upperPanelCard** 了，这里只留内容 + 上下留白。
+    private var pageTurnRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(Theme.sub)
                 .frame(width: 16)
@@ -753,10 +775,8 @@ struct ReaderWebView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        // 同上：不垫独立卡片底（胶囊控件自己有底）
-        .padding(.bottom, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 
     // MARK: - ⑦ 功能磁贴（4 + 4，照栖阅截图）

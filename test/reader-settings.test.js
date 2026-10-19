@@ -54,8 +54,10 @@ for (const [label, re] of [
   ['配色格子（浅色一排）',            /paletteRow\(ReaderTheme\.light/],
   ['配色格子（深色一排）',            /paletteRow\(ReaderTheme\.darkRow/],
   ['跟随系统深浅色',                  /跟随系统深浅色/],
-  ['翻页方式在灰底圆角卡片里',        /private var pageTurnCard/],
+  ['翻页方式那一行（底并进上半卡片）',  /private var pageTurnRow/],
   ['功能磁贴 4+4（照栖阅）',          /private var featureGrid/],
+  ['上半一整块亮底（控件坐在里面）',  /upperPanelCard[\s\S]{0,900}Color\.white\.opacity\(0\.26\)[\s\S]{0,300}shadow\(/],
+  ['亮底含字号/配色/跟随/翻页四块',  /upperPanelCard[\s\S]{0,700}sizeRow[\s\S]{0,80}paletteGrid[\s\S]{0,80}followSystemRow[\s\S]{0,80}pageTurnRow/],
   ['子页：显示设置',                  /private var displaySettingsPage/],
   ['子页：间距设置',                  /private var layoutSettingsPage/],
 ]) ok(re.test(web), label);
@@ -143,7 +145,7 @@ ok(cb < navMod.indexOf('else'),
    'containerBackground 在 if 分支里，else 分支（iOS 17）走另一条路');
 
 console.log('\n── 高度贴合内容 ──');
-const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var displayCard'));
+const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var upperPanelCard'));
 ok(!/ScrollView/.test(mainSheet), '主面板不用 ScrollView（否则 fitted 撑不满）');
 ok(/VStack/.test(mainSheet), '主面板用 VStack（内容行数固定，高度确定）');
 
