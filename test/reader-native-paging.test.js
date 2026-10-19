@@ -323,7 +323,7 @@ console.log('\n── 踩过的坑不能再踩 ──');
 // 整个 HStack 塞一个表达式里 → 编译器类型检查超时
 ok(/private var paraAlignRow: some View/.test(web), '段落对齐行拆成独立子视图');
 ok(/private var baselineScopeRow: some View/.test(web), '底线范围行拆成独立子视图');
-ok(/private var pageTurnCard: some View/.test(web), '翻页方式在独立卡片视图里');
+ok(/private var pageTurnRow: some View/.test(web), '翻页方式在独立视图里（底并进 upperPanelCard）');
 // 光拆成子视图还不够 —— 按钮本体（Button + label + 嵌套 background + 三元）
 // 也必须抽成独立 View，否则类型检查器照样超时
 ok(/private struct ChipButton: View/.test(web), '小胶囊按钮抽成独立 View（防类型检查超时）');

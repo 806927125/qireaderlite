@@ -148,6 +148,17 @@ console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'), web.indexOf('private var upperPanelCard'));
 ok(!/ScrollView/.test(mainSheet), '主面板不用 ScrollView（否则 fitted 撑不满）');
 ok(/VStack/.test(mainSheet), '主面板用 VStack（内容行数固定，高度确定）');
+// 上半是一整块，磁贴是裸的 —— 别退回 build76 那种「每块各垫一层」
+// 也不要退回 build79 那种「全删」（上半会不够亮，和下半糊成一片）
+ok(/upperPanelCard\s*\n\s*featureGrid/.test(mainSheet),
+   '主面板 = 上半一整块 + 磁贴两块（不是每块各垫一层）');
+const gridBody = mainSheet.slice(mainSheet.indexOf('featureGrid'));
+ok(!/\.background\(\s*Color\.white/.test(gridBody),
+   '磁贴区不垫独立白底（裸的面板玻璃，能透出插画）');
+const upperBody = web.slice(web.indexOf('private var upperPanelCard'),
+                            web.indexOf('private var hairLine'));
+ok(!/private var (displayCard|pageTurnCard)/.test(web),
+   '旧的 displayCard / pageTurnCard 已并成 upperPanelCard');
 
 console.log('\n── 关键布局细节 ──');
 // 字体下拉必须跟滑块同一行（不是单独一行）
