@@ -115,6 +115,12 @@ ok(/padding\(\.horizontal, 12\)[\s\S]{0,80}padding\(\.top, 0\)[\s\S]{0,60}paddin
                        web.indexOf('private func hairLine'));
   ok(/sizeRow[\s\S]{0,40}paletteGrid[\s\S]{0,40}followSystemRow[\s\S]{0,40}hairLine[\s\S]{0,40}pageTurnRow/.test(ub),
      '分割线在「跟随系统」下面（分隔 chips 段），不在字号下面');
+  // ⚠️ 内层白卡的 padding **上下左右要对称**。
+  //    面板 top padding 是 0（面板本身贴边），
+  //    所以白卡上面的间距要靠自己补：top 24 配 left/right 12，
+  //    合计和下面 12(面板)+12(本块)=24 一样宽。
+  ok(/padding\(EdgeInsets\(top: 24, leading: 12, bottom: 12, trailing: 12\)\)/.test(ub),
+     '内层白卡 padding 上下对称（top24 / l12 / b12 / r12）');
 }
 ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。

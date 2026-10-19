@@ -709,10 +709,16 @@ struct ReaderWebView: View {
             hairLine
             pageTurnRow
         }
-        // 参考实现：color: white @ 0.35、borderRadius: 22、
-        //           padding: fromLTRB(12, 14, 12, 14)
-        // 这一块就是用户说的「中间有一块阴影，控件坐在里面」的那个内嵌块。
-        .padding(EdgeInsets(top: 14, leading: 12, bottom: 14, trailing: 12))
+        // 这一块就是用户说的「中间有一块阴影，控件坐在里面」的内嵌卡
+        // （color: white @ 0.35、borderRadius: 22）。
+        //
+        // ⚠️ **padding 上下左右必须对称**，否则白卡上面看着是「通」的。
+        //   左右：面板 padding 12 + 本块 padding 12 = 24
+        //   上面：面板 padding 0   + 本块 padding 24 = 24   ← 补齐
+        //   下面：面板 padding 12  + 本块 padding 12 = 24
+        //   （面板 top padding 必须留 0 —— 面板本身要贴边，
+        //     有距离的是**白卡到面板**这一层，不是面板到屏幕。）
+        .padding(EdgeInsets(top: 24, leading: 12, bottom: 12, trailing: 12))
         .background(
             Color.white.opacity(0.35),
             in: RoundedRectangle(cornerRadius: 22, style: .continuous)
