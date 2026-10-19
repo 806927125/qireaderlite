@@ -57,6 +57,7 @@ const featureGrid = web.slice(web.indexOf('private var featureGrid'),
 const ft = web.slice(web.indexOf('private func featureTileLabel'));
 const fontMenu = web.slice(web.indexOf('private var fontMenu'),
                               web.indexOf('private var paletteGrid'));   // paletteGrid 紧跟 fontMenu
+const slider = fs.readFileSync(path.join(ROOT, 'Features/Reader/Paging/QRSlider.swift'), 'utf8');
 const pageTurn = web.slice(web.indexOf('private var pageTurnRow'),
                             web.indexOf('private var featureGrid'));
 const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
@@ -280,14 +281,25 @@ ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 //    HStack 的 spacing 只管视图框、管不住绘制外延 →
 //    「小」按钮的圆形底会盖住滑轨左端一小截（用户反馈「滑块被挡了一点」）。
 //    所以 Slider 必须有水平 padding 给绘制外延留位置。
-ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,80}padding\(\.horizontal, 8\)/.test(web),
-   'Slider 有水平 padding（给滑轨两端的绘制外延留位置，别被「小/大」圆底压住）');
+// ⚠️ 用**自绘**的 QRSlider，不用系统 Slider。
+//    连续两次真机反馈「滑块被挡了一点」「上面被挡」：
+//    iOS 26 的系统 Slider frame 高度比 thumb 直径小（thumb 上下溢出自己
+//    frame 画的），跟相邻控件打架、还会被裁。
+ok(/QRSlider\(value: \$fontSize, range: 14\.\.\.28, step: 1\)/.test(web),
+   '字号滑块用自绘 QRSlider（不用系统 Slider）');
+ok(!/(?<![A-Za-z])Slider\(value: \$fontSize/.test(web), '不用系统 Slider');
+ok(/private let thumb: CGFloat = 26/.test(slider) && /private let track: CGFloat = 6/.test(slider),
+   '自绘滑块：thumb 26 / 轨道 6（照 ui.txt 的 input[type=range]）');
+ok(/\.shadow\(color: Color\.black\.opacity\(0\.25\), radius: 8, y: 2\)/.test(slider),
+   'thumb 带阴影（ui.txt box-shadow:0 2px 8px rgba(0,0,0,.25)）');
+ok(/thumb \/ 2 \+ usable \* ratio/.test(slider), 'thumb 位置两端各留半个 thumb，不会出 frame');
+ok(/Capsule\(\)\.fill\(Color\.black\.opacity\(0\.12\)\)/.test(slider) &&
+   /Capsule\(\)\.fill\(accent\)/.test(slider), '轨道：未填充灰 + 已填充蓝');
 // ⚠️⚠️ 垂直方向也必须留！SwiftUI 的 Slider **frame 高度比 thumb 直径小**，
 //    thumb 是**上下都溢出**自己 frame 画的。
 //    内容区高度 = 内容自然高（sheetHeight - 4）时，thumb 溢出那几 pt
 //    直接被裁掉 → 真机「滑块上面被挡」（用户反馈）。
-ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,700}padding\(\.vertical, 6\)/.test(web),
-   'Slider 有垂直 padding（thumb 上下都溢出 frame，不留就会被裁）');
+ok(/\.frame\(height: thumb\)/.test(slider), '自绘滑块高度 = thumb 直径（上下不裁）');
 ok(/padding\(\.horizontal, 13\)/.test(fontMenu), '字体下拉 水平内边距 13（ui.txt .font-select）');
 ok(/padding\(\.vertical, 7\)/.test(fontMenu), '字体下拉 垂直内边距 7');
 ok(/cornerRadius: CGFloat = 18/.test(chip) && /fontSize: CGFloat = 14/.test(chip),

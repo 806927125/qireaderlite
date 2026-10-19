@@ -805,19 +805,13 @@ struct ReaderWebView: View {
         //    同时把 HStack spacing 收窄，总视觉间距不变。
         HStack(spacing: 2) {
             sizeKnob("小", pointSize: 14)
-            Slider(value: $fontSize, in: 14...28, step: 1)   // ui.txt 14...28
-                // 给滑轨两端的绘制外延留位置，别被「小 / 大」圆形底压住
-                .padding(.horizontal, 8)
-                // ⚠️⚠️ 垂直方向也必须留！
-                //    SwiftUI 的 Slider **frame 高度比 thumb 直径小**，
-                //    thumb 是**上下都溢出**自己 frame 画的。
-                //    我把内容区高度设成「正好等于内容自然高」，
-                //    thumb 溢出那几 pt 就被裁掉了 ——
-                //    真机表现：滑块**上半部分被切**（用户反馈「上面被挡」）。
-                //
-                //    这段 padding 算进 VStack 自然高里，所以内容区会自动跟着长高，
-                //    内容相对面板顶的位置不变。
-                .padding(.vertical, 6)
+            // ⚠️ 用自绘的 QRSlider，**不用系统 Slider**。
+            //    连续两次真机反馈「滑块被挡了一点」「上面被挡」——
+            //    iOS 26 的系统 Slider frame 高度比 thumb 直径小（thumb 上下溢出
+            //    自己 frame 画的），跟相邻控件打架、还会被裁。
+            //    QRSlider 照 ui.txt 的 `<input type=range>` 逐项自绘：
+            //    轨道 6、thumb 26 白圆带阴影、已填充段 #4a90d9。
+            QRSlider(value: $fontSize, range: 14...28, step: 1)
             sizeKnob("大", pointSize: 14)
             fontMenu
         }
