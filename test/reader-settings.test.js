@@ -91,6 +91,15 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
 ok(/padding\(\.top, 14\)[\s\S]{0,60}padding\(\.bottom, 12/.test(web),
    '面板顶部有呼吸区（原来 top 6 顶得太死）');
 ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
+// 幕布（scrim）：面板弹出时后面内容要压暗。
+// iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
+// 所以手动加一层，放在 ZStack 最底层、正文之下。
+ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,200}allowsHitTesting\(false\)/.test(web),
+   '有幕布（黑色 20%）');
+ok(/opacity\(showSettings \? 1 : 0\)/.test(web), '幕布跟着面板显隐淡入淡出');
+ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,80}GlassBackdrop\(\)/.test(web) ||
+   /ZStack \{\s*theme\.bg[\s\S]{0,400}Color\.black\.opacity\(0\.20\)/.test(web),
+   '幕布在 ZStack 里（正文之下、sheet 之下，才能透出来）');
 ok(/fontSize: 12,[\s\S]{0,40}cornerRadius: 15,[\s\S]{0,40}fillsWidth: true/.test(web),
    '翻页方式字号 12（13 时「上下滚动」被截成「上下...」）');
 ok(/padding\(\.horizontal, 7\)/.test(web), '胶囊左右留白 7（原来 9，挤不下 4 个字）');

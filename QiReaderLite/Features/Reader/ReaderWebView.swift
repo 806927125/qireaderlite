@@ -313,6 +313,21 @@ struct ReaderWebView: View {
             ZStack {
                 theme.bg.ignoresSafeArea()
                 GlassBackdrop()
+                // 幕布（scrim）：面板弹出时把后面内容压暗一层。
+                //
+                // ⚠️ iOS 的 detent sheet **理论上**自带 dimmed background，
+                //    但 iOS 26 对 `.height()` 这类 detent 的 scrim 很淡/不显示 ——
+                //    真机对比：栖阅面板上方的正文区明显压暗（还能看到后面插画），
+                //    轻阅这边是正常亮度，完全没有幕布，看着像"贴了块板子上去"。
+                //
+                // 放在 ZStack **最底层**（正文之下、sheet 之下）：
+                // 面板本身是玻璃/透明，所以这层黑会透出来。
+                // `.allowsHitTesting(false)`：不能挡 sheet 的下滑关闭手势。
+                Color.black.opacity(0.20)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .opacity(showSettings ? 1 : 0)
+                    .animation(.easeOut(duration: 0.22), value: showSettings)
                 GeometryReader { geo in
                     Color.clear
                         .onAppear { syncPager(size: geo.size) }
