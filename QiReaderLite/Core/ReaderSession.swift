@@ -49,6 +49,9 @@ final class ReaderSession: ObservableObject {
     @Published var loadingChapter: Bool = false
     /// 预取到的各章正文（章号 → (标题, 正文)）
     private var prefetched: [Int: (String, String)] = [:]
+    /// followIndex **收到**次数（诊断用）
+    private(set) var followReceived: Int = 0
+    private(set) var lastFollowIndex: Int = -1
     @Published var hostReady = false
     /// 当前章正文（原生分页模式自己排版用；webview 模式不用）
     @Published var chapterText: String = ""
@@ -144,6 +147,8 @@ final class ReaderSession: ObservableObject {
     ///    又会触发一次重排，两边互相触发就是用户看到的「控件乱跳」。
     ///    这里只做「同步章号 + 拉文本」，不碰分页器。
     func followIndex(_ i: Int) {
+        followReceived += 1
+        lastFollowIndex = i
         guard flat.indices.contains(i) else { return }
         index = i
         host.apply(chapters: flat, at: i, progress: nil)

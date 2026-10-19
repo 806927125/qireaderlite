@@ -41,6 +41,9 @@ final class PagedChapterPager: NSObject {
     /// 最近一次 push 的章 / 标题（诊断用）
     private(set) var lastPushedChapter: Int = -1
     private(set) var lastPushedTitle: String = ""
+    /// onChapterChange **发出**次数与最后一次的值（诊断用）
+    private(set) var chapterChangeSent: Int = 0
+    private(set) var lastSentChapter: Int = -1
 
     /// 章总数
     var chapterCount: Int = 0
@@ -250,6 +253,8 @@ final class PagedChapterPager: NSObject {
     private func syncChapterIfNeeded(_ gp: GlobalPage) {
         guard gp.chapter != chapter else { return }
         chapter = gp.chapter
+        chapterChangeSent += 1
+        lastSentChapter = gp.chapter
         onChapterChange?(gp.chapter)
     }
 
@@ -338,7 +343,10 @@ extension PagedChapterPager: UIPageViewControllerDataSource, UIPageViewControlle
 
 extension PagedChapterPager {
     /// 真机排版自检 —— 沙盒验不了 CoreText，只能让 App 自己把状态吐出来
-    func diagnose() -> String {
+    func diagnose(sessionIndex: Int = -1,
+                   sessionChapterTitle: String? = nil,
+                   followReceived: Int = -1,
+                   lastFollow: Int = -1) -> String {
         var L: [String] = []
         L.append("翻页方式 \(turnMode) · 容器 \(container.map { _ in "已挂" } ?? "未挂")")
         L.append("页尺寸 \(Int(pageSize.width))×\(Int(pageSize.height))")
@@ -348,6 +356,13 @@ extension PagedChapterPager {
         L.append("当前章渲染：\(renders[chapter].map { "已排 \($0.pageCount) 页，标题「\($0.title)」" } ?? "❌ 没排出来")")
         L.append("正文长度：\(texts[chapter].map { "\($0.body.count) 字" } ?? "❌ 没文本")")
         L.append("最近 push：第 \(lastPushedChapter) 章，标题「\(lastPushedTitle)」")
+        L.append("章变化通知：发出 \(chapterChangeSent) 次，最后发第 \(lastSentChapter + 1) 章")
+        L.append("── session 侧 ──")
+        L.append("session.index = \(sessionIndex)（第 \(sessionIndex + 1) 章）")
+        L.append("session.current.title = \(sessionChapterTitle ?? "nil")")
+        L.append("followIndex 收到 \(followReceived) 次，最后收到第 \(lastFollow + 1) 章")
+        let ok = sessionIndex == chapter
+        L.append(ok ? "✅ 两边一致" : "❌ **两边不一致** —— pager 是第 \(chapter + 1) 章，session 是第 \(sessionIndex + 1) 章")
         L.append("")
         L.append("各章页数（只列前后各 3 章）：")
         let around = Set((0..<chapterCount).filter {

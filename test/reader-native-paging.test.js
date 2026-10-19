@@ -132,7 +132,11 @@ ok(/config\.attributed\(title: t\.title, body: t\.body\)/.test(pager),
    '页数按「带标题」的基准算');
 ok(/title: gp\.page == 0 \? r\.title : ""/.test(pager), '只有该章首页渲染标题');
 ok(/func setPageSize\(_ size: CGSize\)/.test(pager), '视口变化要能重算页数');
-ok(/func diagnose\(\) -> String/.test(pager), 'pager 有自检输出');
+ok(/func diagnose\(sessionIndex: Int = -1/.test(pager), 'pager 有自检输出');
+ok(/chapterChangeSent/.test(pager) && /followReceived/.test(pager),
+   '自检并排显示 pager 和 session 两边（断在哪一眼看到）');
+ok(/chapterChangeSent \+= 1/.test(pager), 'pager 记录章变化通知发出次数');
+ok(/followReceived \+= 1/.test(sess), 'session 记录 followIndex 收到次数');
 ok(/barItem\("自检"/.test(web), '阅读页底栏有自检入口（真机只能靠它拿状态）');
 ok(/guard size\.width > 1, size\.height > 1 else \{ return \}/.test(pager),
    'setPageSize 同样不让 .zero 进来（那会算出 80×80 迷你页）');

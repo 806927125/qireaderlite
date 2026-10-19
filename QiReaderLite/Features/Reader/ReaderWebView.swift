@@ -341,7 +341,10 @@ struct ReaderWebView: View {
         .sheet(isPresented: $showPageDiag) {
             NavigationStack {
                 ScrollView {
-                    Text(pageCtl.pager.diagnose())
+                    Text(pageCtl.pager.diagnose(sessionIndex: session.index,
+                                                sessionChapterTitle: session.current?.title,
+                                                followReceived: session.followReceived,
+                                                lastFollow: session.lastFollowIndex))
                         .font(.system(size: 12, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
