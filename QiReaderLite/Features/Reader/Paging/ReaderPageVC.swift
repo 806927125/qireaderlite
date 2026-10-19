@@ -23,6 +23,7 @@ final class ReaderPageVC: UIViewController {
     /// 失败页的两个出口：只报错不给路等于把用户堵死
     var onRetry: (() -> Void)?
     var onStepBack: (() -> Void)?
+    var background: UIColor = .systemBackground { didSet { canvas.backgroundColor = background } }
     /// 0 起。系统分页容器只认这个来定位。
     var slot: Int = 0 {
         didSet { view.tag = slot }
@@ -89,7 +90,14 @@ final class ReaderPageVC: UIViewController {
     }
 
     func setBackground(_ bg: UIColor) {
-        canvas.backgroundColor = bg
+        background = bg
+    }
+
+    /// 加载完事后改成失败（重试 / 回上一章）
+    func showFailure(_ msg: String, retry: @escaping () -> Void, stepBack: @escaping () -> Void) {
+        canvas.configure(kind: .failure(msg), message: msg,
+                         onRetry: { [weak self] in self?.onRetry = retry; retry() },
+                         onStepBack: { [weak self] in self?.onStepBack = stepBack; stepBack() })
     }
 }
 

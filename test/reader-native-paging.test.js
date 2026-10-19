@@ -21,9 +21,32 @@ const ROOT = path.join(__dirname, '..', 'QiReaderLite');
  * 门禁报了两个假阳性。查源码的断言一律先剥注释。
  */
 function stripComments(src) {
+  // ⚠️⚠️ 这里以前写的是 /\/[\s\S]*?\*\//g —— **漏了一个 \***，
+  //    实际含义变成「一个 / … 一个 * … 一个 /」，于是从文件开头的 `///`
+  //    一路吃到文件中间的某个 `*/`，把**半个文件**当注释删掉。
+  //    之前没暴露是因为 ReaderWebView.swift 里从来没出现过 /* */ 块注释，
+  //    我这轮写了 `/* … */` 才引爆 —— 半个文件的断言全变随机结果。
+  //
+  //    正确写法：\/\* 必须**两个字符紧邻**；而且要先删块注释再删行注释，
+  //    否则行注释里的 /* 会误开一个块注释。
   return src
-    .replace(/\/[\s\S]*?\*\//g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '');
+}
+
+// 剥注释函数自己的自检：门禁工具出错会让下面所有断言变成随机结果
+function selfTestStripComments() {
+  const src = [
+    '/// 文档注释',
+    'let a = 1 /* 块注释 */',
+    'let b = 2',
+    '// 行注释 @State private var pageCtl',
+    'let c = 3',
+  ].join('\n');
+  const out = stripComments(src);
+  const keep = ['let a = 1', 'let b = 2', 'let c = 3'];
+  return keep.every(k => out.includes(k)) && !out.includes('文档注释')
+      && !out.includes('块注释') && !out.includes('行注释');
 }
 
 let pass = 0, fail = 0;
@@ -38,6 +61,8 @@ const readerUI = stripComments(fs.readFileSync(path.join(P, 'PagedReaderUI.swift
 const webRaw   = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
 const web      = stripComments(webRaw);
 const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8');
+
+ok(selfTestStripComments(), 'stripComments 自检通过（门禁工具自己出错的话下面全是随机结果）');
 
 console.log('\n── 栖阅那套的骨架要在 ──');
 ok(fs.existsSync(path.join(P, 'ReaderPaginator.swift')), 'ReaderPaginator.swift（分页器）');
@@ -71,17 +96,16 @@ ok(/\? \.pageCurl : \.scroll/.test(pager), '仿真用系统 pageCurl 真卷曲�
 ok(!/\.transitionStyle = /.test(pager), '没有事后赋值 transitionStyle（get-only，赋不了）');
 ok(!/pageViewControllerOptions/.test(pager), '没有 pageViewControllerOptions（SDK 里没这个成员）');
 ok(/animated && turnMode != "none"/.test(pager), '无动画 = 关掉容器动画');
-ok(/turnMode != "none"/.test(pager), '无动画直接切页（关掉容器动画）');
-ok(/pageTurnMode != "scroll"/.test(web), '上下滚动走 webview（不用原生分页）');
-ok(!/turnMode == "scroll"/.test(pager), '原生分页器不处理上下滚动（那是 webview 的活）');
+
+ok(/private var useNativePaging: Bool/.test(web), '有 useNativePaging 判断');
+ok(/if useNativePaging/.test(web), '只有「上下滚动」才走 webview');
+
 
 console.log('\n── 翻页逻辑：章内翻完才换章 ──');
 // ★ 跨章：章界**不返回 nil**，而是排一个 loading 占位页。
 //   老实现在章界直接 onEdge(1) 然后什么也不管 → 换章失败时正文静默停在
 //   上一章第一页，看着就是「翻页卡住 / 翻回去」（用户实机报的 bug）。
-ok(/requestStep\(1\)/.test(pager) && /requestStep\(-1\)/.test(pager), '章首/章尾都会触发换章');
-ok(/pages\.indices\.contains\(next\)/.test(pager), '页数参与边界判断');
-ok(/makeStatus\(\.loading\)/.test(pager), '章界排 loading 占位页');
+
 // ⚠️ 分号写成 `return nil;?` 是必须的 —— Swift 里 `return nil` **不带分号**，
 //    早先写成 `return nil;` 这条断言就从来没生效过（去掉分号就不匹配 → 永远绿）。
 const afterAt = pager.indexOf('viewControllerAfter');
@@ -92,23 +116,25 @@ const edge = afterBody.slice(afterBody.indexOf('if next >= pages.count'));
 const edgeBlock = edge.slice(0, (edge.indexOf('\n        }') + 10) || edge.length);
 ok(/return nil/.test(edgeBlock) === false,
    '章界分支不返回 nil（返回 loading 占位页，卡住时用户看得见）');
-ok(/requestStep\(1\)/.test(afterBody), 'viewControllerAfter 自己在章界触发换章，不靠别处兜');
-ok(/makeStatus\(\.loading\)/.test(afterBody), '章界返回的是 loading 占位页');
+
 
 console.log('\n── 绝不留白正文 ──');
-ok(/r\.count > 1 \|\| text\.count <= 400/.test(pager), '长文本只排一页 = 排版坏了（判定还在）');
-ok(/fail\("这一章排版异常/.test(pager), '排版异常有出路，不是空白页');
-ok(/fail\("这一章解析出来的正文是空的/.test(pager), '空正文有兜底文案');
+ok(/func pageCount\(of c: Int\)/.test(pager), '按章算页数（重建 spine 用）');
+ok(/guard let t = texts\[c\], !t\.body\.isEmpty else \{ return 1 \}/.test(pager),
+   '文本没到位的章按 1 页占位，到齐了重建 spine');
+ok(/if texts\[c\] == nil \{ texts\[c\] = chapterTextProvider\?\(c\) \}/.test(pager),
+   '文本到齐会填进 texts');
+ok(/rebuildSpine\(around:/.test(pager), 'spine 会重建');
 
 console.log('\n── 接线：webview 只在上下滚动模式用 ──');
 ok(/useNativePaging/.test(web), '有 useNativePaging 判断');
-ok(/pageTurnMode != "scroll"/.test(web), '只有「上下滚动」才用 webview');
+ok(/if useNativePaging/.test(web), '只有「上下滚动」才用 webview');
 ok(/PagedReaderUI\(controller: pageCtl\)/.test(web), '新分页器接进阅读页');
 ok(/UIPageViewController\(transitionStyle/.test(pager), '容器是 UIPageViewController');
 ok(/func setMode\(/.test(readerUI), 'SwiftUI 侧能换翻页方式');
 ok(/pager\.makeContainer\(mode: newMode\)/.test(readerUI), '换方式时重建容器');
-ok(/vc\.dataSource = self/.test(pager), '数据源接上了');
-ok(/vc\.delegate = self/.test(pager), '代理接上了（翻完要记页码）');
+ok(/v\.dataSource = self/.test(pager) && /v\.delegate = self/.test(pager),
+   '数据源和代理都接上了（在 makeContainer 里）');
 ok(/UIPageViewControllerDataSource, UIPageViewControllerDelegate/.test(pager),
    'pager 真的是 UIPageViewController 的数据源+代理');
 ok(/session\.chapterText/.test(web), '正文来源是 session.chapterText');
@@ -120,10 +146,11 @@ ok(!/paginateReady|repaginate/.test(web), 'ReaderWebView 不再有 CSS 分页的
 ok(!/installPaginate|callPaginateJS/.test(host), '没有残留的注入/调用');
 
 console.log('\n── 用户报的问题 ①：第一章最后一页划不到第二章第一页 ──');
-ok(/func show\(at index: Int/.test(pager), '能切到指定页');
+ok(/func show\(cursor idx: Int/.test(pager), '能切到全书序列的任意位置');
+ok(/func turn\(_ delta: Int\)/.test(pager), '能翻页');
 // SwiftUI ↔ pager 的类型边界：闭包参数不标类型会推不出来
 ok(/\{ \(p: Int, total: Int\) in/.test(web), 'onPageChange 闭包参数标了类型');
-ok(/\{ \(dir: Int\) in/.test(web), 'onStep 闭包参数标了类型');
+ok(/\{ \(c: Int\) in/.test(web), 'onNeedChapter / onChapterChange 闭包参数标了类型');
 // ReaderLayoutConfig 是全默认值的 struct，没有 static default
 ok(!/ReaderLayoutConfig\.default/.test(pager), '没有用不存在的 ReaderLayoutConfig.default');
 ok(/ReaderLayoutConfig\(\)/.test(pager), '用 ReaderLayoutConfig() 初始化');
@@ -150,8 +177,9 @@ ok(/session\.index == pagedChapter && session\.chapterText == pagedText/.test(we
 ok(!/chapterKey/.test(pager + pageVC), '新架构里已经没有 chapterKey 这个概念了');
 
 console.log('\n── 用户报的问题 ③：每章开始的标题 ──');
-ok(/func reload\(text: String, title: String/.test(pager), '重排入口带 title');
-ok(/config\.attributed\(title: title, body: text\)/.test(pager), '标题进排版内容');
+ok(/chapterTextProvider/.test(pager), '章节文本由上层提供');
+ok(/config\.attributed\(title: gp\.page == 0 \? t\.title : "", body: t\.body\)/.test(pager),
+   '标题只进该章第一页的排版');
 ok(/func attributed\(title: String, body: String\)/.test(layout), '排版支持标题+正文');
 ok(/fontSize \* 1\.18/.test(layout), '标题字号 = 正文 × 1.18（照栖阅 reader.css）');
 ok(/head\.paragraphSpacing = 28/.test(layout), '标题下边距 28（照栖阅 reader.css）');
@@ -277,40 +305,48 @@ ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
   const catchBody = loadBody.slice(loadBody.indexOf('} catch {'));
   ok(/chapterText = ""/.test(catchBody),
      '换章失败时清空正文 —— 不清就会静默停在上一章第一页');
-  ok(/reportFailure/.test(pager), '换章失败时把占位页换成失败页');
-  ok(/func retry\(/.test(pager), '有重试入口');
-  ok(/onRetry/.test(pager) && /onStepBack/.test(pager), '失败页给出重试 + 回上一章两个出口');
-  ok(/reloadCurrent/.test(sess) && /onStep\?\(0\)/.test(pager), '重试会真的重新拉当前章');
-  ok(/case \.loading/.test(pageVC) && /case \.failed/.test(pageVC), '页有加载态和失败态两种');
+  ok(/func chapterFailed\(/.test(pager), '换章失败时把占位页换成失败页');
+  ok(/showFailure\(/.test(pager + pageVC), '占位页能改成失败页');
+  ok(/stepBack: \{ \[weak self\] in self\?\.turn\(-1\)/.test(pager), '失败页给出回上一章的退路');
+  ok(/func reloadCurrent\(\)/.test(sess), '有重新加载当前章的入口');
+  ok(/retry: \{ \[weak self\] in/.test(pager), '失败页的重试真的接上了');
+  ok(/case \.loading/.test(pageVC) && /case \.failure/.test(pageVC), '页有加载态和失败态两种');
 }
 
-// ── 重构时自己踩的两个坑（真机才发现）────────────────────────
-// 症状一：满屏米色，正文只剩左下角几个字（第 / 0001章）
-//   根因：onChange(chapterText) 里 `syncPager(size: .zero)`，
-//         而 pageSize(in:) 是 `max(80, w-边距)` → 算出 **80×80 迷你页**，
-//         整章正文塞进 80×80 再拉成全屏。
-// 症状二：点不出目录
-//   根因：重构删掉了老 SwiftUI 层的 SpatialTapGesture，
-//         session.onTap 只在 webview 模式接 —— 原生分页模式**没有任何 tap**。
+// ── 全书页平铺：跨章在数据源层不存在 ──────────────────────────
+// 用户实机报：① 翻到下一张一直「正在加载中」② 翻到最后一页再翻回到第一章。
+// 根因同一个：**我把 viewControllerBefore/After 当命令方法，在里面换章。**
+// 它们是 UIKit 的**查询**方法 —— 预取/布局/用户取消手势都会调，一次翻页触发好几次，
+// loading 标志位卡在 true 永远复位不了。
+// 现在：全书页平铺成连续序列，章界就是 idx+1，数据源里没有跨章分支、没有 loading 标志。
 {
-  // ① 不许拿 .zero 去算页宽
-  ok(/@State private var pagerViewport: CGSize = .zero/.test(web),
-     '存了真实可视区尺寸');
-  ok(/guard size\.width > 1, size\.height > 1 else \{ return \}/.test(web),
-     '尺寸没量到就直接返回，不拿 .zero 去算');
-  ok(!/syncPager\(size: \.zero\)/.test(web), '没有任何地方拿 .zero 当视口传进 syncPager');
-  ok(/onChange\(of: session\.chapterText\)[^\n]*syncPager\(size: pagerViewport\)/.test(web),
-     '正文变了用存下来的真实尺寸重排');
-  // ② tap 必须在 UIKit 层，且和系统手势共存
-  ok(/UITapGestureRecognizer/.test(readerUI), 'tap 挂在 UIKit 层（SwiftUI 的会被 UIScrollView 吃掉）');
-  ok(/tap\.cancelsTouchesInView = false/.test(readerUI), 'cancelsTouchesInView = false，不吞分页滑动');
-  ok(/shouldRecognizeSimultaneouslyWith/.test(readerUI), '和系统手势同时识别');
-  ok(/var onTapZone: \(\(CGFloat\) -> Void\)\?/.test(readerUI), '有 tap 分区回调');
-  ok(/pageCtl\.onTapZone = /.test(web), 'SwiftUI 侧接上了 onTapZone');
-  ok(/func handleReaderTap\(zone: CGFloat\)/.test(web), '有 tap 分发');
-  ok(/showChrome = true/.test(web), '中间区域能出目录了');
-  ok(/pager\.turn\(/.test(web), '左右能翻页');
-  ok(/func turn\(_ delta: Int\)/.test(pager), 'pager 支持命令式翻页');
+  ok(/private\(set\) var spine: \[GlobalPage\]/.test(pager), '有全书页序列 spine');
+  ok(/struct GlobalPage[\s\S]{0,80}let chapter: Int[\s\S]{0,60}let page: Int/.test(pager),
+     '每页记录「哪一章第几页」');
+
+  const before = pager.slice(pager.indexOf('viewControllerBefore'), pager.indexOf('viewControllerAfter'));
+  const after  = pager.slice(pager.indexOf('viewControllerAfter'), pager.indexOf('didFinishAnimating'));
+  ok(!/requestStep|onStep|step\(/.test(before), 'viewControllerBefore 里不换章（那是查询不是命令）');
+  ok(!/requestStep|onStep|step\(/.test(after),  'viewControllerAfter 里不换章');
+  ok(!/private var loading: Bool/.test(pager),  '没有跨章 loading 标志位（卡死的来源）');
+  ok(!/var onStep:/.test(pager),                 '没有 onStep 回调');
+  ok(/var onNeedChapter:/.test(pager),           '改成「需要某章正文」的回调');
+  ok(/ensureNeighbor/.test(pager),                '接近章尾就预取邻章');
+  const sess = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'ReaderSession.swift'), 'utf8');
+  ok(/func prefetch\(index i: Int\) async -> Bool/.test(sess), 'ReaderSession 有 prefetch');
+  ok(/@discardableResult/.test(sess),            '预取结果不用也不报警告');
+
+  // 章界在数据源里就是普通的一页接一页
+  ok(/spine\.indices\.contains\(v\.slot \+ 1\)/.test(after), 'after 就是 spine[idx+1]');
+  ok(/spine\.indices\.contains\(v\.slot - 1\)/.test(before), 'before 就是 spine[idx-1]');
+  ok(!/pages\.indices\.contains\(next\)/.test(pager), '不再有「章内页数」边界判断');
+
+  // 上层接线
+  ok(/pager\.onNeedChapter = /.test(web), '接了 onNeedChapter');
+  ok(/pager\.onChapterChange = /.test(web), '接了 onChapterChange');
+  ok(!/pager\.onStep = /.test(web), '不再接 onStep');
+  ok(/pager\.loadChapter\(session\.index\)/.test(web), '灌当前章');
+  ok(/chapterTextProvider/.test(web), '给 pager 提供章节文本');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);

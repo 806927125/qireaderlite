@@ -159,12 +159,19 @@ struct ReaderWebView: View {
         pageCtl.setMode(pageTurnMode)
         pager.setPageSize(c.pageSize(in: size))
 
-        pager.onStep = { (dir: Int) in
-            if dir == 0 {
-                Task { await session.reloadCurrent() }
-            } else {
-                session.step(dir)
+        // ── 全书页平铺：换章不再发生在「用户翻页」那一刻 ──
+        // 接近章尾时后台把邻章拉好；数据源那边只剩一条连续序列。
+        pager.onNeedChapter = { (c: Int) in
+            Task {
+                let ok = await session.prefetch(index: c)
+                // 预取成功但 chapterText 只留给当前章，这里显式回填
+                pageCtl.pager.chapterTextArrived(c)
+                if !ok { /* 翻到那一页时会显示占位/失败 */ }
             }
+        }
+        pager.onChapterChange = { (c: Int) in
+            guard c >= 0 else { return }
+            if session.index != c { session.jump(to: c) }
         }
         pager.onPageChange = { (p: Int, total: Int) in
             pageInfo = (p, total)
@@ -179,13 +186,21 @@ struct ReaderWebView: View {
         pagedText = session.chapterText
         pagedTitle = session.chapterTitle
         pagedLayout = sig
-        pager.reload(text: session.chapterText, title: session.chapterTitle, keepSlot: 0)
+        pager.chapterTextProvider = { (c: Int) -> PagedChapterPager.ChapterText? in
+            c == session.index
+                ? PagedChapterPager.ChapterText(title: session.chapterTitle, body: session.chapterText)
+                : nil
+        }
+        pager.chapterCount = session.flat.count
+        pager.loadChapter(session.index)
     }
 
-    /// 正文或章节号变了 → 重排；换章失败 → 把占位页换成失败页
+    /// 正文到齐 / 出错 → 通知 pager 更新该章的页
     private func syncPagerFailures() {
-        if !session.errorText.isEmpty {
-            pageCtl.pager.reportFailure(session.errorText)
+        if session.errorText.isEmpty {
+            pageCtl.pager.chapterTextArrived(session.index)
+        } else {
+            pageCtl.pager.chapterFailed(session.index, session.errorText)
         }
     }
 

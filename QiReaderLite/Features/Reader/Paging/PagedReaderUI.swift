@@ -63,9 +63,9 @@ final class PagedReaderController: UIViewController, UIGestureRecognizerDelegate
     /// 翻页方式变了 → 换容器 → 把当前章重新灌进去
     func setMode(_ m: String) {
         guard m != mode, isViewLoaded else { mode = m; return }
-        let text = pager.lastText, title = pager.lastTitle
+        let ch = pager.chapter
         install(mode: m)
-        if !text.isEmpty { pager.reload(text: text, title: title, keepSlot: 0) }
+        pager.loadChapter(ch)
     }
 }
 

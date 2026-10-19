@@ -136,6 +136,24 @@ final class ReaderSession: ObservableObject {
         Task { await load(index: i) }
     }
 
+    /// 预取指定章（不改变 index，不更新 chapterText）
+    ///
+    /// ⚠️ 为什么要预取：pager 的 `viewControllerBefore/After` 是 UIKit 的
+    ///    **查询**方法 —— 预取、布局、cancel 都会调，**不能在里面做换章这种副作用**。
+    ///    所以改成「接近章尾时后台把下一章拉好、排好页」，
+    ///    数据源那边就只剩一条连续的书页序列，章界不再是特殊边界。
+    @discardableResult
+    func prefetch(index i: Int) async -> Bool {
+        guard flat.indices.contains(i), i != index else { return false }
+        guard let s = sources?.source(id: book.origin) else { return false }
+        do {
+            let dto = try await SourceService.shared.content(source: s, chapter: flat[i])
+            return !dto.content.isEmpty
+        } catch {
+            return false
+        }
+    }
+
     /// 重试当前章（「重试」按钮走这条）
     func reloadCurrent() async {
         let i = index

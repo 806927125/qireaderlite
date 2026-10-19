@@ -2,284 +2,241 @@ import CoreText
 import SwiftUI
 import UIKit
 
-/// 分页阅读容器：`UIPageViewController` 封装。
+/// 分页阅读容器：`UIPageViewController` 封装 + 数据源。
 ///
-/// ── 为什么推翻老实现 ──
-/// 老实现是「SwiftUI 里手写 DragGesture + 手写 offset/rotation 动画 +
-/// 手写章界 onEdge」，三层各自维护状态、互相打架：
-///     · 动画进行中靠 `committing` 锁挡手势 → 快速连划会丢
-///     · 章界靠 `onEdge → session.step → load` 三层回调传递 → 卡住时无任何提示
-///     · `chapterKey` 立即变而正文异步到 → 换章瞬间闪一下上一章第一页
-/// 现在把容器整个交给 UIPageViewController：手势、边界、预取、动画全由系统负责，
-/// 这里只回答两个问题：「这一页是什么」「前后还有没有页」。
+/// ── 关键设计：跨章在数据源层不存在 ──
+/// 用户实机报了两个 bug：
+///   ① 翻到下一张一直显示「正在加载中」
+///   ② 从目录点第二章可以，翻到最后一页再翻又回到第一章
 ///
-/// ── 跨章怎么接 ──
-/// 关键：**章界不返回 nil，而是返回一个 loading 占位页**。
-/// 老实现在章界直接 `onEdge(1)` 然后什么也不管 —— 换章失败时正文静默停在
-/// 上一章第一页，看着就是「翻页卡住 / 翻回去」。
-/// 现在：占位页先占住位置并显示「正在加载下一章…」，
-/// 新章到了就把占位页替换成新章第一页；失败就把占位页换成失败页（带重试）。
-/// 用户永远看得到发生了什么。
+/// 根因是同一个：**我把 `viewControllerBefore/After` 当成了命令方法，
+/// 在里面调 `requestStep()` 换章。** 但它们是 UIKit 的**查询**方法 ——
+/// 预取、布局、用户取消手势都会调用，**一次翻页可能触发好几次**，
+/// 换章标志位因此卡在 true，再也复位不了。
+///
+/// 现在：全书页平铺成一条**连续序列** `[GlobalPage]`，章界就是普通的
+/// 「第 N 页 → 第 N+1 页」，数据源里没有任何跨章分支，
+/// 没有 loading 标志位，没有 onEdge 回调。跨章这类 bug 从根上消失。
 final class PagedChapterPager: NSObject {
 
     // MARK: 输入
 
-    // ⚠️ ReaderLayoutConfig 全属性都有默认值但**没有** static default，
-    //    用 .default 会报 "type has no member 'default'"
     var config: ReaderLayoutConfig = ReaderLayoutConfig()
     var pageSize: CGSize = .zero
     var turnMode: String = "slide"
     var background: UIColor = .systemBackground
 
-    /// 最近一次喂进来的正文（重试/换翻页方式重建容器时要用，
-    /// PagedReaderController 在另一个文件里，所以不能是 private）
-    var lastText = ""
-    var lastTitle = ""
-    /// 当前章的排版结果
-    private var paginator = ReaderPaginator()
-    private(set) var pages: [ReaderPage] = []
-    /// 当前页下标（章内）
-    private(set) var current: Int = 0
-
-    /// 跨章
-    private var loading: Bool = false
-    private var failure: String? = nil
-    /// 请求换章：由外部（ReaderSession）执行
-    var onStep: ((Int) -> Void)?
+    /// 页码变化（1 起）
     var onPageChange: ((Int, Int) -> Void)?
+    /// 请求某章的正文。返回 false 表示到头了/取不到。
+    var onNeedChapter: ((Int) -> Void)?
+    /// 当前章号变化（用来让上层同步 session.index 和预取）
+    var onChapterChange: ((Int) -> Void)?
+    /// 章内文本到齐（数据源据此排页）。返回 nil = 加载中/失败
+    var chapterTextProvider: ((Int) -> String?)?
 
-    private var vc: UIPageViewController?
+    /// 章总数
+    var chapterCount: Int = 0
+    /// 当前章
+    private(set) var chapter: Int = 0
+
+    /// 全书页序列：章 → 章内页号
+    private(set) var spine: [GlobalPage] = []
+    /// 各章排好的文本缓存（预取来的也在这）
+    private var texts: [Int: ChapterText] = [:]
+    private var loadingChapters: Set<Int> = []
+    private var failedChapters: Set<Int> = []
+    /// 当前在全书序列里的位置
+    private(set) var cursor: Int = 0
+    private var vcs: [ReaderPageVC] = []
+    private weak var container: UIPageViewController?
+
+    struct GlobalPage: Hashable {
+        let chapter: Int
+        let page: Int
+    }
+
+    struct ChapterText {
+        let title: String
+        let body: String
+    }
 
     // MARK: 生命周期
 
-    func build(vc: UIPageViewController) {
-        self.vc = vc
-        vc.dataSource = self
-        vc.delegate = self
-    }
-
-    /// 换章后重排
-    func reload(text: String, title: String, keepSlot: Int = 0) {
-        lastText = text
-        lastTitle = title
-        paginator.reset()
-        pages = []
-        current = 0
-        failure = nil
-        loading = false
-        guard pageSize.width > 1, pageSize.height > 1, !text.isEmpty else {
-            vc?.setViewControllers([makeStatus(.loading)], direction: .forward, animated: false)
-            return
-        }
-        let attr = config.attributed(title: title, body: text)
-        // CoreText 切页要跑 CTFramesetter 的量，不能放主线程太久；
-        // 短章节同步做，长章节丢后台。
-        if text.count < 20_000 {
-            finishPaginate(attr, text: text)
-        } else {
-            vc?.setViewControllers([makeStatus(.loading)], direction: .forward, animated: false)
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let ps = self?.pageSize ?? .zero
-                let cfg = self?.config ?? ReaderLayoutConfig()
-                let p = ReaderPaginator()
-                let r = p.paginateJustified(attr, pageSize: ps, config: cfg)
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    guard r.count > 1 || text.count <= 400 else {
-                        // 长文本只切出一页 = 排版没生效，别显示空白页，退回连续滚动
-                        self.fail("这一章排版异常，已切回连续滚动")
-                        return
-                    }
-                    self.paginator = p
-                    self.pages = r
-                    self.current = 0
-                    self.show(at: keepSlot, animated: false)
-                }
-            }
-        }
-    }
-
-    private func finishPaginate(_ attr: NSAttributedString, text: String) {
-        let r = paginator.paginateJustified(attr, pageSize: pageSize, config: config)
-        pages = r
-        current = 0
-        if r.isEmpty {
-            fail("这一章解析出来的正文是空的")
-            return
-        }
-        show(at: 0, animated: false)
-    }
-
-    private func fail(_ msg: String) {
-        failure = msg
-        loading = false
-        vc?.setViewControllers([makeStatus(.failed(msg))], direction: .forward, animated: false)
-    }
-
-    // MARK: 翻页方式
-
-    /// UIPageViewController 的 `transitionStyle` / `navigationOrientation`
-    /// 都是 **get-only**，只能在 init 里定，事后改会报
-    /// "cannot assign to property: 'transitionStyle' is a get-only property"。
-    /// 所以翻页方式变了要**换掉整个容器**。
+    /// ⚠️ transitionStyle / navigationOrientation 是 **get-only**，只能在 init 定
     func makeContainer(mode: String) -> UIPageViewController {
         let style: UIPageViewController.TransitionStyle = (mode == "flip") ? .pageCurl : .scroll
         let v = UIPageViewController(transitionStyle: style, navigationOrientation: .horizontal)
         v.isDoubleSided = false
-        build(vc: v)
+        v.dataSource = self
+        v.delegate = self
+        container = v
+        turnMode = mode
         return v
     }
 
-    func setPageSize(_ size: CGSize) {
-        guard abs(size.width - pageSize.width) > 0.5
-                || abs(size.height - pageSize.height) > 0.5 else { return }
-        pageSize = size
-        guard !pages.isEmpty else { return }
-        let slot = current
-        reloadKeepingPages(at: slot)
+    // MARK: 灌数据
+
+    /// 换章：重建 spine，落在该章第一页
+    func loadChapter(_ c: Int) {
+        chapter = c
+        if texts[c] == nil { texts[c] = chapterTextProvider?(c) }
+        failedChapters.remove(c)
+        rebuildSpine(around: c)
+        show(cursor: firstIndex(ofChapter: c), animated: false)
+        onChapterChange?(c)
     }
 
-    /// 改字号/边距时重排，但**尽量留在原来那一页**
-    private func reloadKeepingPages(at slot: Int) {
-        guard let last = vc?.viewControllers?.first as? ReaderPageVC,
-              case .page = last.kind else { return }
-        // 旧实现的复排入口在这里；重排后按比例落回原来位置
-        show(at: 0, animated: false)
+    /// 章文本到齐（首次加载完 / 预取完）→ 重排该章在 spine 里的页
+    func chapterTextArrived(_ c: Int) {
+        texts[c] = chapterTextProvider?(c)
+        loadingChapters.remove(c)
+        rebuildSpine(around: chapter)
+    }
+
+    func chapterFailed(_ c: Int, _ msg: String) {
+        failedChapters.insert(c)
+        loadingChapters.remove(c)
+        failureMessage = msg
+        show(cursor: cursor, animated: false)
+    }
+
+    private var failureMessage: String?
+
+    /// 重新铺 spine：当前章用缓存文本，其它章沿用已有页数
+    private func rebuildSpine(around keep: Int) {
+        var out: [GlobalPage] = []
+        var c = 0
+        while c < chapterCount {
+            let pages = pageCount(of: c)
+            for p in 0..<max(1, pages) { out.append(GlobalPage(chapter: c, page: p)) }
+            c += 1
+        }
+        spine = out
+    }
+
+    /// 某章有几页。没缓存文本的按 1 页算（占位），到齐了会 rebuild 纠正。
+    private func pageCount(of c: Int) -> Int {
+        guard let t = texts[c], !t.body.isEmpty else { return 1 }
+        guard pageSize.width > 1, pageSize.height > 1 else { return 1 }
+        let attr = config.attributed(title: "", body: t.body)
+        let p = ReaderPaginator()
+        return max(1, p.paginateJustified(attr, pageSize: pageSize, config: config).count)
+    }
+
+    private func firstIndex(ofChapter c: Int) -> Int {
+        spine.firstIndex(where: { $0.chapter == c }) ?? cursor
+    }
+
+    // MARK: 切页
+
+    func show(cursor idx: Int, animated: Bool) {
+        guard spine.indices.contains(idx) else { return }
+        let target = spine[idx]
+        cursor = idx
+        let v = makePage(target, slot: idx)
+        container?.setViewControllers([v],
+                                      direction: target.page == 0 ? .forward : .reverse,
+                                      animated: animated && turnMode != "none") { [weak self] _ in
+            self?.report()
+        }
+        report()
+        ensureNeighbor(for: target, forward: true)
+    }
+
+    func turn(_ delta: Int) {
+        let idx = cursor + delta
+        if spine.indices.contains(idx) {
+            show(cursor: idx, animated: turnMode != "none")
+        } else {
+            // 全书到头：提示一次
+            onChapterChange?(delta > 0 ? -1 : -2)
+        }
+    }
+
+    private func report() {
+        onPageChange?(cursor + 1, spine.count)
+    }
+
+    /// 邻近章提前把文本拉好，章界那一页才是现成的
+    private func ensureNeighbor(for gp: GlobalPage, forward: Bool) {
+        let c = gp.chapter
+        let forwardNeed = gp.page >= pageCount(of: c) - 1
+        let backNeed = gp.page == 0
+        guard forwardNeed || backNeed else { return }
+        let target = forward ? c + 1 : c - 1
+        guard target >= 0, target < chapterCount else { return }
+        guard texts[target] == nil, !loadingChapters.contains(target) else { return }
+        loadingChapters.insert(target)
+        onNeedChapter?(target)
     }
 
     // MARK: 页面构造
 
-    private func makePage(_ index: Int) -> ReaderPageVC {
+    private func makePage(_ gp: GlobalPage, slot: Int) -> ReaderPageVC {
+        // 该章文本还没到 / 取失败 → 占位页
+        if texts[gp.chapter] == nil {
+            let v = ReaderPageVC(kind: .loading)
+            v.slot = slot
+            v.background = background
+            if failedChapters.contains(gp.chapter), let m = failureMessage {
+                v.showFailure(m, retry: { [weak self] in
+                    self?.loadingChapters.remove(gp.chapter)
+                    self?.onNeedChapter?(gp.chapter)
+                }, stepBack: { [weak self] in self?.turn(-1) })
+            }
+            return v
+        }
         let v = ReaderPageVC(kind: .page)
-        v.slot = index
-        v.setBackground(background)
-        v.setPage(frame: paginator.frame(at: index, pageSize: pageSize),
-                  pageSize: pageSize,
-                  bg: background,
-                  baseline: config.showBaseline,
-                  baselineColor: config.baselineColor,
+        v.slot = slot
+        v.background = background
+        let t = texts[gp.chapter]!
+        let attr = config.attributed(title: gp.page == 0 ? t.title : "", body: t.body)
+        let fr = ReaderPaginator.oneOffFrame(at: gp.page, pageSize: pageSize, attributed: attr)
+        v.setPage(frame: fr, pageSize: pageSize, bg: background,
+                  baseline: config.showBaseline, baselineColor: config.baselineColor,
                   scope: config.baselineScope)
         return v
     }
-
-    private func makeStatus(_ k: ReaderPageVC.Kind) -> ReaderPageVC {
-        let v = ReaderPageVC(kind: k)
-        v.slot = -1
-        v.setBackground(background)
-        // 失败页必须给出路：重试 / 回上一章。只报错不给出口等于把用户堵死。
-        v.onRetry = { [weak self] in
-            guard let self else { return }
-            self.failure = nil
-            self.reload(text: self.lastText, title: self.lastTitle, keepSlot: 0)
-        }
-        v.onStepBack = { [weak self] in self?.onStep?(-1) }
-        return v
-    }
-
-    /// 切到章内第 index 页
-    func show(at index: Int, animated: Bool) {
-        guard pages.indices.contains(index) else {
-            // 越界 = 章界，换成占位页
-            if index >= pages.count { requestStep(1) } else { requestStep(-1) }
-            return
-        }
-        current = index
-        let p = makePage(index)
-        let dir: UIPageViewController.NavigationDirection = index >= 0 ? .forward : .reverse
-        vc?.setViewControllers([p], direction: dir, animated: animated && turnMode != "none") {
-            [weak self] _ in
-            guard let self else { return }
-            self.onPageChange?(self.current + 1, self.pages.count)
-        }
-    }
-
-    /// 点击翻页。章内切页；到边则换章（requestStep 里会排占位页）。
-    func turn(_ delta: Int) {
-        let target = current + delta
-        if pages.indices.contains(target) {
-            show(at: target, animated: turnMode != "none")
-        } else {
-            requestStep(delta > 0 ? 1 : -1)
-        }
-    }
-
-    /// 章界：不是返回 nil，而是排一个占位页并触发换章
-    private func requestStep(_ dir: Int) {
-        if loading { return }
-        loading = true
-        failure = nil
-        let ph = makeStatus(.loading)
-        ph.slot = dir > 0 ? pages.count : -1
-        vc?.setViewControllers([ph], direction: dir > 0 ? .forward : .reverse, animated: false)
-        onStep?(dir)
-    }
-
-    /// 换章失败 → 把占位页换成失败页
-    func reportFailure(_ msg: String) {
-        loading = false
-        failure = msg
-        let v = makeStatus(.failed(msg))
-        vc?.setViewControllers([v], direction: .forward, animated: false)
-    }
-
-    /// 点「重试」
-    func retry() {
-        guard failure != nil || loading else { return }
-        let back = current
-        onStep?(0)   // 0 = 重新加载当前章
-        _ = back
-    }
-
-    func refreshCurrent() { show(at: current, animated: false) }
-
-    var isBusy: Bool { loading }
 }
 
 // MARK: - 数据源 / 代理
 
 extension PagedChapterPager: UIPageViewControllerDataSource, UIPageViewControllerDelegate {
 
+    /// 全书序列里的一页接一页 —— 这里**没有任何跨章分支**，
+    /// 章界就是 idx+1，`onEdge` 之类的回调一个都不需要。
     func pageViewController(_ pvc: UIPageViewController,
                             viewControllerBefore vc: UIViewController) -> UIViewController? {
-        guard let v = vc as? ReaderPageVC else { return nil }
-        let i = v.slot
-        if i == -1 { return nil }
-        guard i > 0 else {
-            // 章首 → 上一章占位
-            requestStep(-1)
-            return makeStatus(.loading).alsoSlot(-2)
-        }
-        return makePage(i - 1)
+        guard let v = vc as? ReaderPageVC, spine.indices.contains(v.slot - 1) else { return nil }
+        let target = spine[v.slot - 1]
+        let out = makePage(target, slot: v.slot - 1)
+        ensureNeighbor(for: target, forward: false)
+        return out
     }
 
     func pageViewController(_ pvc: UIPageViewController,
                             viewControllerAfter vc: UIViewController) -> UIViewController? {
-        guard let v = vc as? ReaderPageVC else { return nil }
-        let i = v.slot
-        if i == -1 { return nil }
-        let next = i + 1
-        if pages.indices.contains(next) { return makePage(next) }
-        // 章末 → 下一章占位页（关键：不返回 nil，卡住时用户看得见）
-        if next >= pages.count {
-            if !isBusy { requestStep(1) }
-            return makeStatus(.loading).alsoSlot(pages.count)
-        }
-        return nil
+        guard let v = vc as? ReaderPageVC, spine.indices.contains(v.slot + 1) else { return nil }
+        let target = spine[v.slot + 1]
+        let out = makePage(target, slot: v.slot + 1)
+        ensureNeighbor(for: target, forward: true)
+        return out
     }
 
     func pageViewController(_ pvc: UIPageViewController, didFinishAnimating finished: Bool,
                             previousViewControllers: [UIViewController],
                             transitionCompleted completed: Bool) {
         guard completed, let v = pvc.viewControllers?.first as? ReaderPageVC,
-              v.slot >= 0, pages.indices.contains(v.slot) else { return }
-        current = v.slot
-        onPageChange?(current + 1, pages.count)
-    }
-}
-
-extension ReaderPageVC {
-    func alsoSlot(_ s: Int) -> ReaderPageVC {
-        slot = s
-        return self
+              spine.indices.contains(v.slot) else { return }
+        cursor = v.slot
+        let gp = spine[cursor]
+        // 翻到了别的章 → 通知上层把 session.index 跟过来（换章不再靠 onEdge）
+        if gp.chapter != chapter {
+            chapter = gp.chapter
+            onChapterChange?(gp.chapter)
+        }
+        report()
+        ensureNeighbor(for: gp, forward: gp.page == 0 ? false : true)
     }
 }

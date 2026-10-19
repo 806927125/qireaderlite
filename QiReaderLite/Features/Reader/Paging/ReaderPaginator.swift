@@ -123,6 +123,29 @@ final class ReaderPaginator {
         return frame
     }
 
+    /// 一次性工具：给一段 attributed，直接拿到第 index 页的帧。
+    ///
+    /// 供「全书页平铺」的分页器用 —— 那边每翻一页就要渲染一页，
+    /// 用这个比"建 paginator → 排整章 → 取帧"干净，也不会把状态留在实例里。
+    static func oneOffFrame(at index: Int, pageSize: CGSize,
+                            attributed: NSAttributedString) -> CTFrame? {
+        guard pageSize.width > 1, pageSize.height > 1 else { return nil }
+        let fs = CTFramesetterCreateWithAttributedString(attributed)
+        let path = CGPath(rect: CGRect(origin: .zero, size: pageSize), transform: nil)
+        var start = 0
+        let len = attributed.length
+        for _ in 0..<max(1, index) {
+            let frame = CTFramesetterCreateFrame(fs, CFRangeMake(start, 0), path, nil)
+            let visible = CTFrameGetVisibleStringRange(frame)
+            guard visible.length > 0 else { return nil }
+            start += visible.length
+            if start >= len { return nil }
+        }
+        let frame = CTFramesetterCreateFrame(fs, CFRangeMake(start, 0), path, nil)
+        let visible = CTFrameGetVisibleStringRange(frame)
+        return visible.length > 0 ? frame : nil
+    }
+
     /// 清缓存（换章/改字号时调）
     func reset() {
         framesetter = nil

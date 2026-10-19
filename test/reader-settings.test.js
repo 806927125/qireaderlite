@@ -20,9 +20,20 @@ const ROOT = path.join(__dirname, '..', 'QiReaderLite');
  * 门禁报了两个假阳性。查源码的断言一律先剥注释。
  */
 function stripComments(src) {
+  // ⚠️ 旧写法 /\/[\s\S]*?\*\//g **漏了一个 \***，实际含义变成
+  //    「/ … * … /」，从文件开头的 /// 一路吃到中间的 */，把半个文件删掉。
+  //    正确：\/\* 要两个字符紧邻，且先删块注释再删行注释。
   return src
-    .replace(/\/[\s\S]*?\*\//g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '');
+}
+
+/** stripComments 自检 —— 门禁工具自己出错，下面所有断言都是随机结果 */
+function selfTestStripComments() {
+  const src = ['/// 文档', 'let a = 1 /* 块 */', '// 行 @State x', 'let b = 2'].join('\n');
+  const out = stripComments(src);
+  return out.includes('let a = 1') && out.includes('let b = 2')
+      && !out.includes('文档') && !out.includes('块') && !out.includes('行 @State');
 }
 
 let pass = 0, fail = 0;
