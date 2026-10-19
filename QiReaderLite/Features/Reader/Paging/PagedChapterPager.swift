@@ -32,8 +32,15 @@ final class PagedChapterPager: NSObject {
     var onNeedChapter: ((Int) -> Void)?
     /// 当前章号变化（用来让上层同步 session.index 和预取）
     var onChapterChange: ((Int) -> Void)?
-    /// 章内文本到齐（数据源据此排页）。返回 nil = 加载中/失败
-    var chapterTextProvider: ((Int) -> ChapterText?)?
+    /// 各章正文（上层 push 进来，pager 自己存）
+    ///
+    /// ⚠️ 早前这里是 `chapterTextProvider: ((Int) -> ChapterText?)?` 回调，
+    ///    而 provider 只能给**当前章** → 邻章（预取来的）永远排不出页
+    ///    → pageCount=1 → 翻过去卡在加载页。现在改成上层 push、pager 存。
+    private var texts: [Int: ChapterText] = [:]
+    /// 最近一次 push 的章 / 标题（诊断用）
+    private(set) var lastPushedChapter: Int = -1
+    private(set) var lastPushedTitle: String = ""
 
     /// 章总数
     var chapterCount: Int = 0
@@ -102,6 +109,7 @@ final class PagedChapterPager: NSObject {
     /// 换章：重建 spine，落在该章第一页
     /// **真正换章**：落在该章第一页。
     /// 只有从目录跳、或首帧时才用这个。
+    /// 真正换章：需要上层先把该章文本 push 进来（chapterTextArrived）
     func loadChapter(_ c: Int) {
         chapter = c
         renders.removeValue(forKey: c)
@@ -119,9 +127,13 @@ final class PagedChapterPager: NSObject {
     ///      ① 章号切到新章但 chapterText 还是旧的 → 拿旧文本排新章的页
     ///      ② 旧文本到齐 → 强制跳到该章第一页 → 底部控件页码/章号乱跳
     ///    这就是用户报的「下面控件上的目录显示乱跳」。
-    func chapterTextArrived(_ c: Int) {
+    /// 上层把某章正文推进来（**唯一**的入口）
+    func chapterTextArrived(_ c: Int, _ text: ChapterText) {
+        lastPushedChapter = c
+        lastPushedTitle = text.title
         loadingChapters.remove(c)
-        renders.removeValue(forKey: c)   // 尺寸/排版可能变了，重算
+        if texts[c]?.body != text.body { renders.removeValue(forKey: c) }
+        texts[c] = text
         render(c)
         failedChapters.remove(c)
         let at = cursor
@@ -172,7 +184,10 @@ final class PagedChapterPager: NSObject {
     @discardableResult
     private func render(_ c: Int) -> ChapterRender? {
         if let r = renders[c] { return r }
-        guard let t = chapterTextProvider?(c), !t.body.isEmpty,
+        // ⚠️ 只能读**自己缓存的** texts。早前这里每次回头问上层
+        //    （chapterTextProvider），而 provider 卡了「章号 == 当前章」，
+        //    结果**邻章永远排不出页** → pageCount=1 → 翻过去卡在加载页。
+        guard let t = texts[c], !t.body.isEmpty,
               pageSize.width > 1, pageSize.height > 1 else { return nil }
         let attr = config.attributed(title: t.title, body: t.body)
         let p = ReaderPaginator()
@@ -249,11 +264,9 @@ final class PagedChapterPager: NSObject {
         v.slot = slot
         v.background = background
         let r = renders[gp.chapter]!
-        // 标题只出现在该章首页，所以只有 page 0 带标题；
-        // 但页数是按「带标题」算的，两边基准一致，不会错位。
-        let t = chapterTextProvider?(gp.chapter)
-        let attr = config.attributed(title: gp.page == 0 ? r.title : "",
-                                     body: t?.body ?? "")
+        // 标题只出现在该章首页；页数按「带标题」算，两边基准一致
+        let t = texts[gp.chapter] ?? ChapterText(title: "", body: "")
+        let attr = config.attributed(title: gp.page == 0 ? r.title : "", body: t.body)
         let fr = ReaderPaginator.oneOffFrame(at: gp.page, pageSize: pageSize, attributed: attr)
         v.setPage(frame: fr, pageSize: pageSize, bg: background,
                   baseline: config.showBaseline, baselineColor: config.baselineColor,
@@ -300,5 +313,32 @@ extension PagedChapterPager: UIPageViewControllerDataSource, UIPageViewControlle
         }
         report()
         ensureNeighbor(for: gp, forward: gp.page == 0 ? false : true)
+    }
+}
+
+// MARK: - 诊断
+
+extension PagedChapterPager {
+    /// 真机排版自检 —— 沙盒验不了 CoreText，只能让 App 自己把状态吐出来
+    func diagnose() -> String {
+        var L: [String] = []
+        L.append("翻页方式 \(turnMode) · 容器 \(container.map { _ in "已挂" } ?? "未挂")")
+        L.append("页尺寸 \(Int(pageSize.width))×\(Int(pageSize.height))")
+        L.append("总章数 \(chapterCount) · 当前章 \(chapter) · 已缓存文本 \(texts.count) 章")
+        L.append("全书 spine \(spine.count) 页 · cursor \(cursor)")
+        L.append("当前页：\(cursor < spine.count ? "章 \(spine[cursor].chapter)+1 第 \(spine[cursor].page + 1) 页" : "越界")")
+        L.append("当前章渲染：\(renders[chapter].map { "已排 \($0.pageCount) 页，标题「\($0.title)」" } ?? "❌ 没排出来")")
+        L.append("正文长度：\(texts[chapter].map { "\($0.body.count) 字" } ?? "❌ 没文本")")
+        L.append("最近 push：第 \(lastPushedChapter) 章，标题「\(lastPushedTitle)」")
+        L.append("")
+        L.append("各章页数（只列前后各 3 章）：")
+        let around = Set((0..<chapterCount).filter {
+            abs($0 - chapter) <= 2
+        }).sorted()
+        for c in around {
+            let n = renders[c]?.pageCount
+            L.append("  第\(c + 1)章：\(n.map { "\($0) 页" } ?? "未加载")")
+        }
+        return L.joined(separator: "\n")
     }
 }

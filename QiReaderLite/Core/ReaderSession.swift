@@ -47,6 +47,8 @@ final class ReaderSession: ObservableObject {
     /// 正在换章拉正文。UI 必须显示出来 —— 否则换章失败时正文停在上一章第一页，
     /// 看上去就是「翻页卡住 / 翻回去」，用户完全不知道发生了什么。
     @Published var loadingChapter: Bool = false
+    /// 预取到的各章正文（章号 → (标题, 正文)）
+    private var prefetched: [Int: (String, String)] = [:]
     @Published var hostReady = false
     /// 当前章正文（原生分页模式自己排版用；webview 模式不用）
     @Published var chapterText: String = ""
@@ -160,10 +162,19 @@ final class ReaderSession: ObservableObject {
         guard let s = sources?.source(id: book.origin) else { return false }
         do {
             let dto = try await SourceService.shared.content(source: s, chapter: flat[i])
-            return !dto.content.isEmpty
+            guard !dto.content.isEmpty else { return false }
+            prefetched[i] = (dto.title.isEmpty ? flat[i].title : dto.title, dto.content)
+            return true
         } catch {
             return false
         }
+    }
+
+    /// 预取到的正文（title, body）。pager 从这里拿邻章文本 ——
+    /// pager 只能靠这个拿到邻章，回调 provider 只会给当前章。
+    func prefetchedText(index i: Int) -> (title: String, body: String)? {
+        guard let t = prefetched[i] else { return nil }
+        return (t.0, t.1)
     }
 
     /// 重试当前章（「重试」按钮走这条）

@@ -42,6 +42,7 @@ struct ReaderWebView: View {
     @StateObject private var session: ReaderSession
     @State private var showCatalog = false
     @State private var showSettings = false
+    @State private var showPageDiag = false
     @State private var showChrome = false
     /// 子页：显示设置 / 间距设置
     @State private var showDisplaySettings = false
@@ -164,9 +165,12 @@ struct ReaderWebView: View {
         pager.onNeedChapter = { (c: Int) in
             Task {
                 let ok = await session.prefetch(index: c)
-                // 预取成功但 chapterText 只留给当前章，这里显式回填
-                pageCtl.pager.chapterTextArrived(c)
-                if !ok { /* 翻到那一页时会显示占位/失败 */ }
+                // 邻章文本只能从 session 的预取缓存拿 ——
+                // provider 回调只会给当前章，邻章永远拿不到（就会卡在加载页）
+                if ok, let t = session.prefetchedText(index: c) {
+                    pageCtl.pager.chapterTextArrived(
+                        c, PagedChapterPager.ChapterText(title: t.title, body: t.body))
+                }
             }
         }
         // 用户翻到了别的章 → 通知上层把 session.index 跟过来（**只跟，不跳**）
@@ -189,30 +193,24 @@ struct ReaderWebView: View {
         pagedText = session.chapterText
         pagedTitle = session.chapterTitle
         pagedLayout = sig
-        pager.chapterTextProvider = { (c: Int) -> PagedChapterPager.ChapterText? in
-            // ⚠️ 必须**同时**卡住章号和文本版本。
-            //    只判 c == session.index 是不够的：换章时 jump() 先改 index、
-            //    chapterText 后到（异步），这中间 pager 来问会拿到**上一章的正文**，
-            //    于是新章的页是用旧文本排的 —— 标题消失 / 页码跳，全在这。
-            guard c == session.index, c == pagedChapter, !session.chapterText.isEmpty else {
-                return nil
-            }
-            return PagedChapterPager.ChapterText(title: session.chapterTitle,
-                                                 body: session.chapterText)
-        }
         pager.chapterCount = session.flat.count
-        // 换章才跳首页；同一章只是文本更新（异步加载完成）→ 保持当前页
+        let text = PagedChapterPager.ChapterText(title: session.chapterTitle,
+                                                 body: session.chapterText)
+        // 上层 push，pager 自己存 —— 不再用回调问（回调只会给当前章）
+        pager.chapterTextArrived(session.index, text)
         if switchedChapter {
+            // 真正换章才落该章第一页；同一章只是文本更新，保持当前页
             pager.loadChapter(session.index)
-        } else {
-            pager.chapterTextArrived(session.index)
         }
     }
 
     /// 正文到齐 / 出错 → 通知 pager 更新该章的页
     private func syncPagerFailures() {
         if session.errorText.isEmpty {
-            pageCtl.pager.chapterTextArrived(session.index)
+            pageCtl.pager.chapterTextArrived(
+                session.index,
+                PagedChapterPager.ChapterText(title: session.chapterTitle,
+                                              body: session.chapterText))
         } else {
             pageCtl.pager.chapterFailed(session.index, session.errorText)
         }
@@ -332,6 +330,24 @@ struct ReaderWebView: View {
             }
         }
         .sheet(isPresented: $showSettings) { settingsSheet }
+        .sheet(isPresented: $showPageDiag) {
+            NavigationStack {
+                ScrollView {
+                    Text(pageCtl.pager.diagnose())
+                        .font(.system(size: 12, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+                .navigationTitle("分页自检")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("好") { showPageDiag = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 
     // MARK: - 顶栏 / 底栏
@@ -403,6 +419,9 @@ struct ReaderWebView: View {
                 // 给用户一个点下去只会挨骂的按钮，比没有更糟。先撤掉，
                 // 等真接上了（正文要从 WKWebView 里取）再加回来。
                 barItem("大小", "textformat.size") { showSettings = true }
+                // 真机排版自检 —— 沙盒验不了 CoreText，只能让 App 自己吐状态。
+                // 翻页/标题出问题时点一下截图，能省掉好几轮猜。
+                barItem("自检", "stethoscope") { showPageDiag = true }
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)

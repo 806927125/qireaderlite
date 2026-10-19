@@ -132,10 +132,17 @@ ok(/config\.attributed\(title: t\.title, body: t\.body\)/.test(pager),
    '页数按「带标题」的基准算');
 ok(/title: gp\.page == 0 \? r\.title : ""/.test(pager), '只有该章首页渲染标题');
 ok(/func setPageSize\(_ size: CGSize\)/.test(pager), '视口变化要能重算页数');
+ok(/func diagnose\(\) -> String/.test(pager), 'pager 有自检输出');
+ok(/barItem\("自检"/.test(web), '阅读页底栏有自检入口（真机只能靠它拿状态）');
 ok(/guard size\.width > 1, size\.height > 1 else \{ return \}/.test(pager),
    'setPageSize 同样不让 .zero 进来（那会算出 80×80 迷你页）');
-ok(/chapterTextProvider: \(\(Int\) -> ChapterText\?\)\?/.test(pager),
-   'provider 返回 ChapterText 不是 String');
+ok(!/chapterTextProvider/.test(pager), 'pager 不再回头问上层要文本（provider 只会给当前章）');
+ok(/private var texts: \[Int: ChapterText\]/.test(pager), 'pager 自己缓存各章正文');
+ok(/func chapterTextArrived\(_ c: Int, _ text: ChapterText\)/.test(pager),
+   '上层 push 文本给 pager（唯一入口）');
+ok(/guard let t = texts\[c\], !t\.body\.isEmpty/.test(pager),
+   '排版只读自己的缓存 → 邻章也能排出来');
+ok(/func prefetchedText\(index i: Int\)/.test(sess), '预取结果能取出来喂 pager');
 ok(/rebuildSpine\(around:/.test(pager), 'spine 会重建');
 
 console.log('\n── 接线：webview 只在上下滚动模式用 ──');
@@ -189,10 +196,10 @@ ok(/session\.index == pagedChapter && session\.chapterText == pagedText/.test(we
 ok(!/chapterKey/.test(pager + pageVC), '新架构里已经没有 chapterKey 这个概念了');
 
 console.log('\n── 用户报的问题 ③：每章开始的标题 ──');
-ok(/chapterTextProvider/.test(pager), '章节文本由上层提供');
+ok(/pager\.chapterTextArrived\(session\.index, text\)/.test(web), '上层 push 章节文本');
 // ★ chapterTextArrived 绝不能跳页 —— 文本是异步到的，一到就跳首页
 //   就是用户报的「下面控件上的目录显示乱跳」
-ok(/func chapterTextArrived\(_ c: Int\)/.test(pager), '有 chapterTextArrived');
+ok(/func chapterTextArrived\(_ c: Int, _ text: ChapterText\)/.test(pager), '有 chapterTextArrived');
 // ⚠️ 这条以前写成 `show(cursor: firstIndexOf` —— **正则里少了个 `(`**，
 //    `firstIndexOf` 跟源码里的 `firstIndex(ofChapter:` 压根不匹配，
 //    于是这条断言**永远绿**。正则写错比没有更危险：它假装在守，实际没守。
@@ -207,8 +214,10 @@ ok(/loadChapter[\s\S]{0,300}?show\(cursor: firstIndex\(ofChapter: c\)/.test(page
    '只有真正换章才落该章第一页');
 
 // ★ 串章防护：章号先变、文本后到（异步），provider 必须三重校验
-ok(/guard c == session\.index, c == pagedChapter, !session\.chapterText\.isEmpty/.test(web),
-   'provider 同时卡章号和文本版本（否则会用上一章正文排新章的页）');
+// ⚠️ 之前用 provider 回调 + 三重校验，**把邻章也堵死了**：
+//    回调只给当前章，邻章永远拿不到文本 → pageCount=1 → 翻过去卡在加载页。
+ok(!/chapterTextProvider/.test(web), '不用 provider 回调拿文本');
+ok(/session\.prefetchedText\(index: c\)/.test(web), '邻章文本从 session 预取缓存拿');
 ok(/func followIndex\(_ i: Int\)/.test(sess), '有 followIndex（只跟章号不跳页）');
 ok(/pager\.onChapterChange[\s\S]{0,200}?session\.followIndex\(c\)/.test(web),
    'onChapterChange 只跟不跳');
@@ -377,7 +386,8 @@ ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
   ok(/pager\.onChapterChange = /.test(web), '接了 onChapterChange');
   ok(!/pager\.onStep = /.test(web), '不再接 onStep');
   ok(/pager\.loadChapter\(session\.index\)/.test(web), '灌当前章');
-  ok(/chapterTextProvider/.test(web), '给 pager 提供章节文本');
+  ok(/pager\.chapterTextArrived\(session\.index, text\)/.test(web),
+     '上层 push 章节文本给 pager（不再用 provider 回调）');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
