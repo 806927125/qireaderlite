@@ -56,7 +56,8 @@ for (const [label, re] of [
   ['跟随系统深浅色',                  /跟随系统深浅色/],
   ['翻页方式那一行（底并进上半卡片）',  /private var pageTurnRow/],
   ['功能磁贴 4+4（照栖阅）',          /private var featureGrid/],
-  ['上半一整块亮底（控件坐在里面）',  /upperPanelCard[\s\S]{0,900}Color\.white\.opacity\(0\.26\)[\s\S]{0,300}shadow\(/],
+  // v2 参考实现：color white @ 0.35、borderRadius 22、padding fromLTRB(12,14,12,14)
+  ['上半一整块亮底（控件坐在里面）',  /upperPanelCard[\s\S]{0,900}Color\.white\.opacity\(0\.35\)[\s\S]{0,140}cornerRadius: 22/],
   ['亮底含字号/配色/跟随/翻页四块',  /upperPanelCard[\s\S]{0,700}sizeRow[\s\S]{0,80}paletteGrid[\s\S]{0,80}followSystemRow[\s\S]{0,80}pageTurnRow/],
   ['子页：显示设置',                  /private var displaySettingsPage/],
   ['子页：间距设置',                  /private var layoutSettingsPage/],
@@ -90,15 +91,15 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
   // 参考实现只有**一层**底色（Colors.grey @ 0.12）。
   // 我原来叠了 qrFill + 一层白（ready 0.34 / 未实现 0.16）= 两档，
   // 结果 4 亮 4 暗，看着像两套东西。
-  ok(/background\(Self\.qrFill,[\s\S]{0,60}RoundedRectangle\(cornerRadius: 14/.test(ft),
+  ok(/background\(Self\.qrFill,[\s\S]{0,60}RoundedRectangle\(cornerRadius: 18/.test(ft),
      '8 格磁贴底色**统一**一层（栖阅那样，不是「亮/暗」两档）');
   ok(!/Color\.white\.opacity\(ready \?/.test(ft), '磁贴不再叠第二层白底');
-  ok(/cornerRadius: 14/.test(ft), '磁贴圆角 14（参考实现 BorderRadius.circular(14)）');
+  ok(/cornerRadius: 18/.test(ft), '磁贴圆角 18（v2 参考实现 BorderRadius.circular(18)）');
 }
 // 面板内边距照参考实现 EdgeInsets.fromLTRB(16, 16, 16, 28)：
 // 底部 28 是给 home indicator 让的，面板贴到屏边但最后一行磁贴不压指示条。
-ok(/padding\(\.horizontal, 16\)[\s\S]{0,80}padding\(\.top, 16\)[\s\S]{0,60}padding\(\.bottom, 28/.test(web),
-   '面板内边距 16/16/16/28（底部 28 让给 home indicator）');
+ok(/padding\(\.horizontal, 12\)[\s\S]{0,80}padding\(\.top, 14\)[\s\S]{0,60}padding\(\.bottom, 14/.test(web),
+   '面板内边距 12/14/12/14（v2 参考实现 fromLTRB(12,14,12,14)）');
 ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
@@ -109,9 +110,17 @@ ok(/opacity\(showSettings \? 1 : 0\)/.test(web), '幕布跟着面板显隐淡入
 ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,80}GlassBackdrop\(\)/.test(web) ||
    /ZStack \{\s*theme\.bg[\s\S]{0,400}Color\.black\.opacity\(0\.20\)/.test(web),
    '幕布在 ZStack 里（正文之下、sheet 之下，才能透出来）');
-ok(/fontSize: 12,[\s\S]{0,40}cornerRadius: 15,[\s\S]{0,40}fillsWidth: true/.test(web),
-   '翻页方式字号 12（13 时「上下滚动」被截成「上下...」）');
-ok(/padding\(\.horizontal, 7\)/.test(web), '胶囊左右留白 7（原来 9，挤不下 4 个字）');
+// ⚠️ 「上下滚动」被截成「上下...」的**根因**不是字号，是 `fillsWidth` 强制
+//    5 个 chip 平分宽度。v2 参考实现用的是 Wrap（可换行）。
+//    我当时的修法是缩字号 —— 治错了地方。
+//    现在：字号回 14 / 圆角 22 / 改可换行网格，挤不下就换行，不截字。
+ok(/fontSize: CGFloat = 14/.test(web) && /cornerRadius: CGFloat = 22/.test(web),
+   'chip 字号 14 / 圆角 22（v2 参考实现 _chip）');
+ok(!/fillsWidth: true/.test(web), 'chip 不再 fillsWidth（「上下滚动」被截的真正根因）');
+ok(/padding\(\.horizontal, 12\)[\s\S]{0,40}padding\(\.vertical, 9\)/.test(web),
+   'chip 内边距 12/9（v2 参考实现 symmetric(horizontal:16, vertical:9) 量级）');
+ok(/LazyVGrid\([\s\S]{0,90}adaptive\(minimum: 58\)/.test(web),
+   '翻页 chip 用可换行网格（v2 是 Wrap，不是 HStack 强制一行）');
 ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), web.indexOf('var displayCard'))),
    '主面板没有 Spacer（会把 sheet 撑满）');
 
@@ -120,22 +129,25 @@ ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), 
 //   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
 const fitBody = web.slice(web.indexOf('private struct FitSheetHeight'));
 const iOS26 = fitBody.slice(fitBody.indexOf('#available(iOS 26.0'), fitBody.indexOf('} else {'));
-ok(/presentationDetents\(\[\.height\(contentHeight\)\]\)/.test(iOS26), 'iOS 26 用 .height() 精确贴合内容');
+ok(/presentationDetents\(\[\.fraction\(frac\)\]\)/.test(iOS26),
+   'iOS 26 用 .fraction → 原生 floating 卡片（不贴边 + 四角圆角 + 玻璃）');
 // `.height()` 这种「精确高度」detent 在 iOS 26 上会把 sheet 背景一路画到屏幕最底，
 // 底部没有安全区内缩也没有收口圆角 —— 真机对比栖阅时发现的。
-ok(/presentationDetents\(\[\.height\(contentHeight\)\]\)/.test(fitBody), 'FitSheetHeight 用 .height()');
+ok(/presentationDetents\(\[\.fraction\(frac\)\]\)/.test(fitBody), 'FitSheetHeight 用 .fraction');
 // ⚠️ build83 用 .fraction() 是**过度修正**：iOS 26 会把 partial detent
 //    渲染成 floating 卡片（左右内缩 + 底部收口），栖阅那个面板不是这个形态
 //    ——它是「顶部圆角 + 底部贴屏边」。真机反馈「越弄越窄」。
-ok(!/\.fraction\(/.test(fitBody), '不用 .fraction()（会变 floating 卡片，左右内缩）');
-ok(!/UIScreen\.main/.test(fitBody), '不用 UIScreen 估安全区（.height 不需要换算分母）');
-ok(/contentHeight: CGFloat/.test(fitBody), 'detent 高度直接由内容高度传入');
+ok(/screenH - insets\.top - insets\.bottom/.test(fitBody),
+   '.fraction 分母扣掉上下安全区（可用高度，不是屏幕全高）');
+ok(/safeAreaInsets\.top/.test(fitBody) && /safeAreaInsets\.bottom/.test(fitBody),
+   '安全区从 UIWindow.safeAreaInsets 实测，不写死');
+ok(/contentHeight \/ avail/.test(fitBody), '.fraction 仍按内容高度换算，不是写死比例');
 // ⚠️ 分母必须是「可用高度」（扣掉上下安全区），不是屏幕全高 ——
 //    用全屏高会让面板凭空矮一截，控件全被挤小（build83 的坑）。
 
 ok(!/presentationSizing/.test(iOS26), 'iOS 26 分支不再单靠 presentationSizing(.fitted)');
 ok(!/presentationBackground/.test(iOS26), 'iOS 26 分支不覆盖系统玻璃背景');
-ok(/\.presentationDetents\(\[\.height\(contentHeight\)\]\)/.test(fitBody), 'detent 高度可动态传入');
+ok(/\.presentationDetents\(\[\.fraction\(frac\)\]\)/.test(fitBody), 'detent 高度可动态传入');
 ok(/private struct SheetContentHeightKey: PreferenceKey/.test(web), '有测高 preference');
 ok(/preference\(key: SheetContentHeightKey\.self, value: geo\.size\.height\)/.test(web), '背景 GeometryReader 量内容高度');
 ok(/fixedSize\(horizontal: false, vertical: true\)/.test(web), '内容固定成自然高度（否则量到的是 detent 高度，成死循环）');
@@ -187,9 +199,9 @@ ok(!/private var fontRow/.test(web), '没有单独的字体行');
 // 翻页方式卡片：灰底圆角 + 左侧图标
 // 圆角按栖阅 designer.css 的 token 阶梯：--r-sm 8 / --r-md 12 / --r-lg 16
 // （翻页方式**不再有卡片底**了 —— 栖阅那行是直接坐在面板玻璃上的）
-ok(/cornerRadius: 14/.test(web), '磁贴圆角 14（栖阅参考实现 BorderRadius.circular(14)）');
-ok(/RoundedRectangle\(cornerRadius: 8, style: \.continuous\)/.test(web),
-   '小方块/配色格 cornerRadius 8 = 栖阅 --r-sm');
+ok(/cornerRadius: 18/.test(web), '磁贴圆角 18（v2 参考实现 BorderRadius.circular(18)）');
+ok(/Slider\(value: \$fontSize, in: 14\.\.\.34/.test(web),
+   '字号滑块 14...34（v2 参考实现 min:14 max:34）');
 // ⭐ 填充色必须**带蓝调**（栖阅 --fill: rgba(120,120,128,0.12)），
 //    不是纯灰 —— 纯灰叠在暖色纸背景上显脏。
 ok(/Color\(red: 120\/255, green: 120\/255, blue: 128\/255\)\.opacity\(0\.12\)/.test(web),
@@ -198,11 +210,12 @@ ok(!/\.background\(Color\.gray\.opacity/.test(web),
    '**没有**用 Color.gray.opacity 当填充 —— 那是纯灰，不是栖阅的冷灰');
 ok(/Color\(red: 60\/255, green: 60\/255, blue: 67\/255\)\.opacity\(0\.12\)/.test(web),
    '细分隔线用栖阅 --line (60,60,67,0.12)');
-ok(/Image\(systemName: "doc\.text"\)/.test(web), '翻页方式卡片左边有图标');
+ok(/Image\(systemName: "description"\)/.test(web), '翻页方式左边有图标（v2 用 description_outlined，18pt）');
 // 磁贴：图标 + 粗体标题 + 副标题
 ok(/Image\(systemName: icon\)/.test(web), '磁贴有图标');
 ok(/font\(\.subheadline\.weight\(\.semibold\)\)/.test(web), '磁贴标题是粗体');
-ok(/Text\(subtitle \?\? ""\)\.font\(\.caption2\)/.test(web), '磁贴有副标题');
+ok(/Text\(subtitle \?\? ""\)\.font\(\.system\(size: 10\)\)/.test(web),
+   '磁贴副标题 10pt（v2 参考实现 size:10）');
 // ⭐ 文案逐格照抄栖阅截图，不是我自己起的名
 const TILES = [
   ['大小', '显示设置', 'doc.text'],
@@ -256,10 +269,12 @@ ok(/VStack\(spacing: 4\)/.test(web), '磁贴内间距 4（照参考实现 SizedB
   ok(/\.padding\(\.vertical, 8\)/.test(ft), '磁贴上下留白 8（原来 14）');
   ok(/VStack\(spacing: 4\)/.test(ft), '磁贴内间距 4');
 }
-ok(/frame\(height: 38\)/.test(web), '配色格高 38（照参考实现 SizedBox(height:38)）');
+ok(/frame\(height: 42\)/.test(web), '配色格高 42（v2 参考实现 height:42）');
+ok(/font\(\.system\(size: 15, weight: \.medium\)\)[\s\S]{0,240}frame\(height: 42\)[\s\S]{0,140}cornerRadius: 12/.test(web),
+   '配色格：字号 15 / 高 42 / 圆角 12');
 ok(/private var featureGrid[\s\S]{0,120}VStack\(spacing: 10\)/.test(web),
    '宫格行间距 10（照参考实现 mainAxisSpacing:10）');
-ok(/frame\(width: 30, height: 30\)/.test(web), '小/大方块 30x30 圆形');
+ok(/frame\(width: 34, height: 34\)/.test(web), '小/大圆形 34x34（v2 参考实现 _circleLabel）');
 // 栖阅那个面板**顶部就是内容**，没有标题栏也没有右上角按钮
 ok(!/navigationTitle\("阅读设置"\)/.test(web), '没有「阅读设置」大标题');
 ok(!/Button\("完成"\)/.test(web), '没有「完成」按钮');

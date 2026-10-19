@@ -587,9 +587,10 @@ struct ReaderWebView: View {
             }
             // 16 / 16 / 16 / **28** —— 底部 28 是给 home indicator 让的位置，
             // 面板贴到屏边但最后一行磁贴不会压在指示条上。
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 28)
+            // 参考实现 padding: fromLTRB(12, 14, 12, 14)
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 14)
             // ⚠️ 整个导航栏藏掉：没有「阅读设置」大标题，也没有右上角「完成」。
             //    栖阅那个面板顶部直接就是「小 ▬ 大 [系统字体]」，标题栏压根不存在。
             //    NavigationStack 还得留着 —— 子页（显示/间距/更多）是 push 进去的。
@@ -660,14 +661,14 @@ struct ReaderWebView: View {
             hairLine
             pageTurnRow
         }
+        // 参考实现：color: white @ 0.35、borderRadius: 22、
+        //           padding: fromLTRB(12, 14, 12, 14)
+        // 这一块就是用户说的「中间有一块阴影，控件坐在里面」的那个内嵌块。
+        .padding(EdgeInsets(top: 14, leading: 12, bottom: 14, trailing: 12))
         .background(
-            Color.white.opacity(0.26),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            Color.white.opacity(0.35),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
         )
-        // 边缘那圈柔和阴影 —— 让这一块看起来是「浮起来」的一层，
-        // 而不是跟下半部分糊在一起的同一片玻璃。
-        .compositingGroup()
-        .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 3)
         .padding(.bottom, 12)
     }
     private var hairLine: some View {
@@ -679,7 +680,7 @@ struct ReaderWebView: View {
     private var sizeRow: some View {
         HStack(spacing: 10) {
             sizeKnob("小", pointSize: 13)
-            Slider(value: $fontSize, in: 14...30, step: 1)
+            Slider(value: $fontSize, in: 14...34, step: 1)   // 参考实现 min:14 max:34
             sizeKnob("大", pointSize: 17)
             fontMenu
         }
@@ -691,7 +692,7 @@ struct ReaderWebView: View {
         Text(text)
             .font(.system(size: pointSize, weight: .medium))
             .foregroundStyle(Theme.ink)
-            .frame(width: 30, height: 30)
+            .frame(width: 34, height: 34)
             // ⚠️ 栖阅的「小 / 大」是**圆形**灰底，不是圆角方形
             .background(Self.qrFill, in: Circle())
     }
@@ -707,11 +708,12 @@ struct ReaderWebView: View {
                 Text(ReaderFont.name(for: fontKey))
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
             }
-            .font(.subheadline)
+            // 参考实现 _pillDropdown：black @ .08 底、圆角 20、字号 14
+            .font(.system(size: 14))
             .foregroundStyle(Theme.ink)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(Self.qrFill, in: Capsule())
+            .background(Self.qrFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }
 
@@ -732,14 +734,17 @@ struct ReaderWebView: View {
             ForEach(list) { t in
                 Button { themeKey = t.key } label: {
                     Text("文")
-                        .font(.system(size: 13, weight: .medium))
+                        // 参考实现：width 42、cornerRadius 12、字号 15、
+                        // 边框 = 选中 blue 2px / 否则 black @ .08 1px
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(t.ink)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 38)
-                        .background(t.bg, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .frame(height: 42)
+                        .background(t.bg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(themeKey == t.key ? Theme.accent : .white.opacity(0.55),
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(themeKey == t.key ? Theme.accent
+                                              : Color.black.opacity(0.08),
                                               lineWidth: themeKey == t.key ? 2 : 1)
                         )
                 }
@@ -760,19 +765,23 @@ struct ReaderWebView: View {
 
     /// 自己的底**并进 upperPanelCard** 了，这里只留内容 + 上下留白。
     private var pageTurnRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(Theme.sub)
-                .frame(width: 16)
-            ForEach(PageTurnMode.all) { m in
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "description").font(.system(size: 18)).foregroundStyle(Theme.sub)
+            // 参考实现用的是 **Wrap**（可换行），不是 HStack 强制一行。
+            // 我原来用 HStack + fillsWidth 硬塞 5 个，5 个平分宽度装不下
+            // 「上下滚动」，真机被截成「上下...」，我当时的修法是**把字号缩到 12**
+            // —— 根因搞错了：根因是「强制一行」，该换 Wrap，不是该缩字号。
+            // 现在字号回到 14，挤不下就让它换行，宁可换行也不截字。
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 58), spacing: 8)],
+                      alignment: .leading, spacing: 8) {
+                ForEach(PageTurnMode.all) { m in
                 // ⚠️ 字号 13 + 左右各 9 时，5 个平分宽度装不下「上下滚动」四个字
                 //    （真机被截成「上下...」）。收到 12 + 左右各 7。
-                ChipButton(title: m.name,
-                           selected: pageTurnMode == m.raw,
-                           fontSize: 12,
-                           cornerRadius: 15,
-                           fillsWidth: true) {
-                    pageTurnMode = m.raw
-                    pageTurn = m.raw != "scroll"
+                    ChipButton(title: m.name,
+                               selected: pageTurnMode == m.raw) {
+                        pageTurnMode = m.raw
+                        pageTurn = m.raw != "scroll"
+                    }
                 }
             }
         }
@@ -877,7 +886,7 @@ struct ReaderWebView: View {
                     Image(systemName: icon).font(.system(size: 20))
                 }
                 Text(name).font(.footnote.weight(.semibold))
-                Text(subtitle ?? "").font(.caption2)
+                Text(subtitle ?? "").font(.system(size: 10))   // 参考实现 subtitle size:10
             }
             // ⚠️ 栖阅那 8 格**底色是统一的淡米色**，区分「已实现 / 没实现」
             //    靠的是**文字深浅**，不是有没有底。
@@ -889,7 +898,7 @@ struct ReaderWebView: View {
             // 参考实现是 `Colors.grey @ 0.12` **一层**，圆角 14。
             // 我原来叠了 qrFill + 一层白 = 两档底色，4 亮 4 暗，不像一套东西。
             .background(Self.qrFill,
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!ready)
@@ -1213,8 +1222,8 @@ struct ReaderWebContainer: UIViewRepresentable {
 private struct ChipButton: View {
     let title: String
     let selected: Bool
-    var fontSize: CGFloat = 12
-    var cornerRadius: CGFloat = 12
+    var fontSize: CGFloat = 14
+    var cornerRadius: CGFloat = 22
     var fillsWidth: Bool = false
     let action: () -> Void
 
@@ -1223,11 +1232,13 @@ private struct ChipButton: View {
             Text(title)
                 .font(.system(size: fontSize))
                 .foregroundStyle(selected ? Color.white : Theme.ink)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 5)
+                // 参考实现 _chip：padding 16/9、cornerRadius 22、字号 14、
+                // 选中 blue 底白字 / 未选中 black @ .08 底，**无描边**
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(selected ? Theme.accent : Color.white.opacity(0.5))
+                        .fill(selected ? Theme.accent : Color.black.opacity(0.08))
                 )
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .frame(height: fillsWidth ? 32 : nil)
@@ -1266,32 +1277,47 @@ private struct ChipButton: View {
 private struct FitSheetHeight: ViewModifier {
     let contentHeight: CGFloat
 
+    private static var safeInsets: (top: CGFloat, bottom: CGFloat) {
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+        let wins = scenes.flatMap(\.windows)
+        let win = wins.first { $0.isKeyWindow } ?? wins.first
+        return (win?.safeAreaInsets.top ?? 0, win?.safeAreaInsets.bottom ?? 0)
+    }
+
     func body(content: Content) -> some View {
-        // 面板是「**顶部圆角 + 底部贴屏边**」，不是 iOS 26 的 floating 卡片。
+        // 参考实现的���器是：
+        //     Padding(fromLTRB(10, 0, 10, 10))
+        //       └ ClipRRect(borderRadius: 28)            ← **四角**圆角 + 左右留边
+        //           └ BackdropFilter(blur 26) + white @ .35
         //
-        // 我 build83 误判过一次：查到「partial detent → floating 卡片」就
-        // 换成 `.fraction()`，结果面板被系统渲染成**左右内缩 + 底部收口**，
-        // 真机反馈「越弄越窄」—— 方向反了。
+        // 这在 iOS 26 上就是 **floating sheet** 的原生形态 ——
+        // 「边缘不贴屏 + 四角圆角 + 系统液态玻璃」，所以 detent 必须给 partial。
         //
-        // 栖阅那个面板的容器长这样（顶部 24 圆角，底部**方形贴边**，
-        // home indicator 落在面板内容里，而不是被面板托起来）：
-        //     borderRadius: BorderRadius.vertical(top: Radius.circular(24))
-        //     padding:      EdgeInsets.fromLTRB(16, 16, 16, 28)
-        //     color:        white @ 0.8  /  black @ 0.75
+        // 我走过一次弯路：build84 换成 `.height()`，面板贴边、只有顶部圆角，
+        // 真机反馈「面板位置不对 / 圆角不对」。build83 的方向其实对，
+        // 错在把分母当成了屏幕全高 → 面板凭空矮 40pt → 控件全被挤小（「越弄越窄」）。
         //
-        // `.height()` 才是「精确贴合内容 + 贴边」的那个；
-        // `.fraction()` / `.medium` 是 floating 卡片，别用。
+        // `.fraction(f)` 的 f 是**可用高度**的比例，不是屏幕全高：
+        //     可用高度 = 屏幕高 − 顶部安全区 − 底部安全区
+        // （Apple 原文：smaller than the full screen because it accounts for
+        //   safe areas and the status bar）
+        // 这里用真实的 `safeAreaInsets` 算，不拍脑袋估。
+        let insets = Self.safeInsets
+        let screenH = UIScreen.main.bounds.height
+        let avail = max(screenH - insets.top - insets.bottom, 1)
+        let frac = min(max(contentHeight / avail, 0.2), 1.0)
         if #available(iOS 26.0, *) {
-            // partial detent → 系统液态玻璃；不设 presentationBackground
-            content.presentationDetents([.height(contentHeight)])
+            // partial detent → iOS 26 原生 Liquid Glass floating 卡片
+            content.presentationDetents([.fraction(frac)])
         } else {
-            // iOS 17 / 18 没有系统玻璃，只能自己糊一层材质
             content
-                .presentationDetents([.height(contentHeight)])
+                .presentationDetents([.fraction(frac)])
                 .presentationBackground(.ultraThinMaterial)
         }
     }
 }
+
 
 
 
