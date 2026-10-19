@@ -131,6 +131,27 @@ ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(w
 ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
    '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
 ok(/ZStack\(alignment: \.bottom\)/.test(web), '根容器是 bottom 对齐的 ZStack');
+// ⚠️⚠️ build93 真机炸过：外层 ZStack 的 alignment 写成了 **.top**，
+//    外层把整个内容块（含内层 ZStack）当成一个子视图顶到屏幕上方 ——
+//    真机表现：面板跑到顶部、内容被裁掉一半。
+//    门禁必须盯死**所有** ZStack 都是 .bottom。
+{
+  const zs = web.match(/ZStack\(alignment: \.[a-z]+\)/g) || [];
+  ok(zs.length > 0 && zs.every(z => /\.bottom/.test(z)),
+     '所有 ZStack(alignment:) 都是 .bottom（写 .top 会把面板顶到屏幕上方）');
+  ok(!/ZStack\(alignment: \.top\)/.test(web), '不许出现 ZStack(alignment: .top)');
+}
+// ⚠️⚠️ 另一个坑：`.fixedSize` 和测高 GeometryReader 挂在**平级子元素**上时，
+//    只作用于紧挨着的那一个（featureGrid），量到的不是整个面板高度。
+//    必须用 VStack 把 panelContent + featureGrid 包起来再挂。
+{
+  const sc = web.slice(web.indexOf('private var settingsContent'),
+                        web.indexOf('private var panelContent'));
+  ok(/VStack\(spacing: 0\) \{\s*panelContent\s*featureGrid\s*\}\s*\n?\s*\.fixedSize/.test(sc),
+     'fixedSize 挂在**包住全部内容**的 VStack 上（不是只挂 featureGrid）');
+  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,60}featureGrid[\s\S]{0,600}SheetContentHeightKey/.test(sc),
+     '测高 GeometryReader 同样挂在包住全部内容的 VStack 上');
+}
 ok(/settingsSheet/.test(web.slice(web.indexOf('ZStack(alignment: .bottom)'))),
    '面板挂在 ZStack 里（等价于 Positioned(bottom:0)）');
 // 「上下滚动」被截 → 我绕了**四轮**弯路，每轮都改错了地方：

@@ -310,7 +310,11 @@ struct ReaderWebView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        // ⚠️⚠️ 这层外层 ZStack 的 alignment **必须是 .bottom**。
+        //    我之前手滑写成 .top —— 外层把整个内容块（含内层 ZStack）
+        //    当成一个子视图**顶到屏幕上方**，真机表现就是「面板跑到顶部、
+        //    内容被裁掉一半」。内层 .bottom 是给面板贴底用的，两层都要 .bottom。
+        ZStack(alignment: .bottom) {
             ZStack(alignment: .bottom) {
                 theme.bg.ignoresSafeArea()
                 GlassBackdrop()
@@ -632,8 +636,16 @@ struct ReaderWebView: View {
     /// 面板内容
     private var settingsContent: some View {
         NavigationStack {
-            panelContent
-            featureGrid
+            // ⚠️⚠️ 必须用 VStack 把 panelContent + featureGrid **包起来**，
+            //    再把 `.fixedSize` 和测高 GeometryReader 挂在 **VStack** 上。
+            //
+            //    之前是平级两个子元素，修饰符只作用于**紧挨着的那一个**
+            //    （featureGrid）—— 量到的只是宫格高度（≈160pt），
+            //    不是整个面板高度（≈500pt）。面板被压扁、内容溢出，就炸了。
+            VStack(spacing: 0) {
+                panelContent
+                featureGrid
+            }
             // 固定成内容本来的高度 —— 这样量出来的才是真实高度，
             // 不会被 detent 限制（限住就成了循环依赖）
             .fixedSize(horizontal: false, vertical: true)
