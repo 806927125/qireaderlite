@@ -350,7 +350,7 @@ struct CatalogSheet: View {
     /// 自作主张塞个排序按钮进去位置就对不上了。数据层先留着，以后有地方再接。
     @State private var sortAscending = true
     /// 当前停在哪个 detent（`.medium` 对应 0.62，`.large` 是拖满屏）
-    @State private var detent: PresentationDetent = .fraction(0.62)
+    @State private var detent: PresentationDetent = .fraction(0.55)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -371,7 +371,7 @@ struct CatalogSheet: View {
         //    开了以后**随便在空白处一拖**整个 sheet 就跟着变形，
         //    用户看到的正是「目录拉一下直接变大窗口」。
         //    这就是前两轮改来改去没改对的那一个。
-        .presentationDetents([.fraction(0.62), .large], selection: $detent)
+        .presentationDetents([.fraction(0.55), .large], selection: $detent)
         .presentationDragIndicator(.visible)
         .presentationBackground(.clear)
         // 目录上滑 = 滚目录，页面尺寸不动。
@@ -396,7 +396,7 @@ struct CatalogSheet: View {
                     onJumpToEnd?()
                 }
                 Rectangle().fill(Theme.ink.opacity(0.18))
-                    .frame(width: 1, height: 18)
+                    .frame(width: 1, height: 20)
                 // ⟳ = 重新拉一次目录
                 iconInCapsule(systemName: "arrow.triangle.2.circlepath",
                               enabled: onRefreshCatalog != nil) {
@@ -428,15 +428,15 @@ struct CatalogSheet: View {
                 Image(systemName: "xmark")
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(Theme.ink)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
             .glassCircle()
             .accessibilityLabel("关闭目录")
         }
         .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 6)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
     }
 
     /// 栖阅这里显示的是**书名**，不是「目录 (N)」。
@@ -456,7 +456,7 @@ struct CatalogSheet: View {
                 // ⚠️ 未实现的功能置灰：半透明 + 弱化色，
                 //    一眼能看出点不动，而不是点了给个假反馈。
                 .foregroundStyle(enabled ? Theme.ink : Theme.ink.opacity(0.28))
-                .frame(width: 40, height: 32)
+                .frame(width: 44, height: 40)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -474,7 +474,7 @@ struct CatalogSheet: View {
                         if c.id != ordered.last?.id {
                             Rectangle().fill(Theme.ink.opacity(0.07))
                                 .frame(height: 0.5)
-                                .padding(.leading, 20)
+                                .padding(.leading, 24)
                         }
                     }
                     if ordered.isEmpty {
@@ -486,10 +486,12 @@ struct CatalogSheet: View {
                     }
                 }
             }
-            // ⚠️ 这是 ScrollView 的修饰符，不能挂在外面的 VStack 上
-            //    （挂错位置编译直接报 no member 'scrollBounceBehavior'）。
+            // ⚠️ 这两个都是 **ScrollView** 的修饰符，不能挂在外面的 VStack 上
+            //    （挂错位置编译直接报 no member 'xxx'）。
             //    .basedOnSize = 内容不够高时才允许 bounce。
             .scrollBounceBehavior(.basedOnSize)
+            // 栖阅目录右侧有那根细滚动条，SwiftUI 默认不画，得显式开
+            .scrollIndicators(.visible)
             .onAppear {
                 // 打开就停在当前章（栖阅也是这么做的）
                 if let cur = start {
@@ -534,8 +536,8 @@ struct CatalogSheet: View {
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
             // 当前章：浅色圆角底 + 蓝色文字（栖阅截图就是这样，不是整行填充）
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

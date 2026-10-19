@@ -360,7 +360,7 @@ ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报
 ok(/func preloadedChapters\(\) -> \[Int\]/.test(pager), 'pager 能报出内存已预载的章号');
 ok(!/ChapterCacheService|diskCache/.test(catalog),
    '目录没有假装有磁盘缓存（栖阅那个能力轻阅还没做）');
-ok(/presentationDetents\(\[\.fraction\(0\.62\), \.large\], selection: \$detent\)/.test(catalog),
+ok(/presentationDetents\(\[\.fraction\(0\.55\), \.large\], selection: \$detent\)/.test(catalog),
    'detent 列表保留 .large（栖阅按住顶部横线上滑是会变大的，不是定死）');
 ok(/presentationDragIndicator\(\.visible\)/.test(catalog),
    '有 grabber —— 用户就是靠按住它上滑变大');
@@ -375,8 +375,7 @@ ok(/if let t = bookTitle\?\.trimming/.test(catalog),
    '标题优先用书名，没传才退回「目录 (N)」');
 ok(/\.font\(c\.isVolume \? \.subheadline\.weight\(\.bold\) : \.subheadline\)/.test(catalog),
    '章节正文用 .subheadline（不是 .body —— 行高一大就撑得松散）');
-ok(/\.padding\(\.vertical, 9\)/.test(catalog),
-   '行内上下留白收紧到 9（栖阅一行紧贴一行）');
+ok(/\.padding\(\.vertical, 10\)/.test(catalog), '行内上下留白 10');
 {
   // 真机 bug：.glassCapsule() 后面又跟 .glassEffectShape(.capsule)
   // = 两个 glassEffect 叠在一起 → 玻璃套玻璃，折射叠描边，真机上一坨发灰的糊
@@ -455,10 +454,23 @@ ok(/var service: SourceService \{ \.shared \}/.test(store),
 ok(/if session\.replaceChapters\(fresh\)/.test(web),
    '目录没变化时不动它（replaceChapters 返回 false 直接回报「无变化」）');
 // 尺寸：栖阅那个胶囊比 42x38 矮
-ok(/\.frame\(width: 40, height: 32\)/.test(catalog),
-   '按钮尺寸收到 40x32（按栖阅截图量出来的比例）');
-ok(/\.frame\(width: 30, height: 30\)/.test(catalog), '关闭圆钮同步收到 30x30');
-ok(/\.frame\(width: 1, height: 18\)/.test(catalog), '胶囊中间有竖分隔线（栖阅那样）');
+// 尺寸必须**照栖阅截图量出来**（上一轮我量反了，把按钮改小了，用户点出来了）
+// ⚠️ 尺寸这两条**不来自栖阅包**（见 commit message：SwiftUI 的 .frame
+//    编译成 ARM64 内联立即数，扫不出常量），而是按用户真机反馈调的：
+//    「按钮小了、界面又高了」→ 放大按钮 + 压低 sheet。
+//    build74 我量反了把按钮改成 40x32，用户当场点出来了。
+ok(/\.frame\(width: 44, height: 40\)/.test(catalog),
+   '按钮 44x40（比 build74 的 40x32 大 —— 用户反馈「按钮小了」）');
+ok(/\.frame\(width: 34, height: 34\)/.test(catalog), '关闭圆钮 34x34（比按钮小一档）');
+ok(/presentationDetents\(\[\.fraction\(0\.55\)/.test(catalog),
+   'sheet 55%（build74 是 62%，用户反馈「界面又高了」）');
+ok(/\.padding\(\.horizontal, 24\)/.test(catalog), '列表左右 24');
+ok(/\.padding\(\.vertical, 10\)/.test(catalog), '行内上下 10');
+ok(/\.padding\(\.top, 10\)[\s\S]*?\.padding\(\.bottom, 8\)/.test(catalog),
+   '顶部行留白 top10/bottom8（按钮放大后要给呼吸空间）');
+ok(/scrollIndicators\(\.visible\)/.test(catalog),
+   '有滚动指示条（栖阅右侧那根细条，SwiftUI 默认不画）');
+ok(/\.frame\(width: 1, height: 20\)/.test(catalog), '胶囊中间有竖分隔线（栖阅那样）');
 ok(/\.disabled\(!enabled\)/.test(catalog) && /Theme\.ink\.opacity\(0\.28\)/.test(catalog),
    '未实现的按钮是**置灰**而不是弹假提示');
 ok(/Theme\.accent\.opacity\(0\.12\)/.test(catalog) && /location\.fill/.test(catalog),
