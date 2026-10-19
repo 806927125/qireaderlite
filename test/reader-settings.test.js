@@ -107,7 +107,12 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
      '8 格磁贴底色统一一层（栖阅那样，不是「亮/暗」两档）');
   ok(!/Color\.white\.opacity\(ready \?/.test(ft), '磁贴不叠第二层白底');
 }
-ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
+// 「小 / 大」的圆用 ZStack + Circle().fill() **直接画出来** ——
+// 圆在 ZStack 里是 flexible view，会填满 34×34，保证完整正圆，
+// 不用跟背景裁剪 / 布局挤压较劲。
+ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(web), '「小/大」的圆是直接画出来的（ZStack + Circle.fill）');
+ok(/in: Circle\(\)/.test(web) || /Circle\(\)\.fill\(Self\.qrFill\)/.test(web),
+   '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -120,7 +125,7 @@ ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(w
 // 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
 ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
    '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
-ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
+ok(/Circle\(\)\.fill\(Self\.qrFill\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -288,7 +293,8 @@ ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
   const knob = web.slice(web.indexOf('private func sizeKnob'));
   ok(/frame\(width: 34, height: 34\)[\s\S]{0,120}fixedSize\(\)/.test(knob),
      '「小/大」按钮 .fixedSize()（不被贪婪的 QRSlider 挤变形）');
-  ok(/layoutPriority\(1\)/.test(knob), '「小/大」按钮 layoutPriority(1)（优先拿宽度）');
+  ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(knob),
+     '「小/大」用 ZStack + Circle.fill 直接画圆（保证完整正圆）');
 }
 ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 // ⚠️ SwiftUI 的 Slider 在 iOS 26 新样式下**滑轨会画到自己 frame 之外**。
