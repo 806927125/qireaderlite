@@ -62,6 +62,7 @@ const webRaw   = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.
 const web      = stripComments(webRaw);
 const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8');
 const sess     = fs.readFileSync(path.join(ROOT, 'Core/ReaderSession.swift'), 'utf8');
+const store    = stripComments(fs.readFileSync(path.join(ROOT, 'Core/Store.swift'), 'utf8'));
 const catalog  = stripComments(fs.readFileSync(path.join(ROOT, 'Features/BookDetail/BookDetailView.swift'), 'utf8'));
 
 ok(selfTestStripComments(), 'stripComments 自检通过（门禁工具自己出错的话下面全是随机结果）');
@@ -437,10 +438,20 @@ ok(/func jumpToLastChapter\(\)/.test(web) && /func refreshCatalog\(\)/.test(web)
    '阅读器实现了「跳到最后一章」和「刷新目录」');
 ok(/func replaceChapters\(_ newFlat: \[Chapter\]\) -> Bool/.test(sess),
    'session 能整表替换章节（刷新目录要用）');
+ok(!/if let i = firstIndex\(ofChapter:/.test(pager),
+   'firstIndex(ofChapter:) 返回非可选，别写 if let（编译报 conditional binding must have Optional type）');
 ok(/func adoptFreshChapterList\(_ newCount: Int\)/.test(pager),
    'pager 能按新章数重建 spine（且不清 texts，不弹走当前页）');
 ok(/toc\(source: src, tocUrl: bk\.tocUrl, bookUrl: bk\.bookUrl\)/.test(web),
    '刷新目录是真发一次 toc 请求');
+ok(/session\.onPageEdge\?\(/.test(web),
+   '提示走 session.onPageEdge（ReaderWebView 自己没有这个属性）');
+ok(!/[^.]\bonPageEdge\?\(/.test(web.replace(/session\.onPageEdge\?\(/g, '')),
+   '没有把 onPageEdge 当成 ReaderWebView 的成员用');
+ok(!/last\.isEmpty/.test(web),
+   '没对 Chapter 写 .isEmpty —— Chapter 是 struct 不是 String');
+ok(/var service: SourceService \{ \.shared \}/.test(store),
+   'SourceService 是单例，用 .shared（直接 SourceService() 编译报 private init）');
 ok(/if session\.replaceChapters\(fresh\)/.test(web),
    '目录没变化时不动它（replaceChapters 返回 false 直接回报「无变化」）');
 // 尺寸：栖阅那个胶囊比 42x38 矮

@@ -35,7 +35,9 @@ final class SourceStore: ObservableObject {
     /// 目录面板「刷新目录」要真发一次请求，所以这里挂一个 service。
     /// 放 store 上是图省事（调用方拿得到 EnvironmentObject 就行），
     /// 纯读路径（列源 / 搜索）不需要它。
-    let service = SourceService()
+    /// ⚠️ SourceService 是单例（`private init()`），不能直接 `SourceService()`，
+    ///    编译器报 'initializer is inaccessible due to private protection level'。
+    var service: SourceService { .shared }
 
     func source(id: String) -> BookSource? { sources.first { $0.bookSourceUrl == id } }
 

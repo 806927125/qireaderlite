@@ -107,7 +107,8 @@ struct ReaderWebView: View {
     /// 目录顶部那行副标题（栖阅显示的是「🍎大灰狼聚合 5.9.30(vip完全版)」）
     /// 目录胶囊第一个按钮：直接跳到全书最后一章第一页。
     private func jumpToLastChapter() {
-        guard let last = chapters.last(where: { !$0.isVolume }), !last.isEmpty else { return }
+        // ⚠️ 别写 `!last.isEmpty` —— Chapter 是 struct 不是 String，没有 isEmpty
+        guard let last = chapters.last(where: { !$0.isVolume }) else { return }
         guard let i = session.flat.firstIndex(where: { $0.url == last.url }) else { return }
         showCatalog = false
         session.jump(to: i)
@@ -125,7 +126,7 @@ struct ReaderWebView: View {
         guard !isRefreshingCatalog else { return }
         let bk = session.book
         guard let src = sources.source(id: bk.origin) else {
-            onPageEdge?("换源信息不全，刷新不了目录")
+            session.onPageEdge?("换源信息不全，刷新不了目录")
             return
         }
         isRefreshingCatalog = true
@@ -136,12 +137,12 @@ struct ReaderWebView: View {
                 if session.replaceChapters(fresh) {
                     chapters = fresh.filter { !$0.isVolume }
                     pageCtl.pager.adoptFreshChapterList(chapters.count)
-                    onPageEdge?("目录已刷新，共 \(chapters.count) 章")
+                    session.onPageEdge?("目录已刷新，共 \(chapters.count) 章")
                 } else {
-                    onPageEdge?("目录没有变化")
+                    session.onPageEdge?("目录没有变化")
                 }
             } catch {
-                onPageEdge?("刷新失败：\(error.localizedDescription)")
+                session.onPageEdge?("刷新失败：\(error.localizedDescription)")
             }
         }
     }

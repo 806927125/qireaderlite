@@ -110,9 +110,11 @@ final class PagedChapterPager: NSObject {
         chapterCount = newCount
         let keep = max(0, min(chapter, newCount - 1))
         rebuildSpine(around: keep)
-        if let i = firstIndex(ofChapter: keep), spine.indices.contains(i) {
-            show(cursor: i, animated: false)
-        }
+        // ⚠️ firstIndex(ofChapter:) 返回**非可选** Int（找不到时回落 cursor），
+        //    写 `if let` 编译报 "initializer for conditional binding must have
+        //    Optional type, not 'Int'"。
+        let i = firstIndex(ofChapter: keep)
+        if spine.indices.contains(i) { show(cursor: i, animated: false) }
     }
 
     func setPageSize(_ size: CGSize) {
