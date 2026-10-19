@@ -58,6 +58,8 @@ const ft = web.slice(web.indexOf('private func featureTileLabel'));
 const fontMenu = web.slice(web.indexOf('private var fontMenu'),
                               web.indexOf('private var paletteGrid'));   // paletteGrid 紧跟 fontMenu
 const slider = fs.readFileSync(path.join(ROOT, 'Features/Reader/Paging/QRSlider.swift'), 'utf8');
+const sizeRow = web.slice(web.indexOf('private var sizeRow'),
+                          web.indexOf('private func sizeKnob'));
 const pageTurn = web.slice(web.indexOf('private var pageTurnRow'),
                             web.indexOf('private var featureGrid'));
 const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
@@ -234,13 +236,15 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
 {
   const glassAt = panel.indexOf('glassEffect');
   const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 30)');
+  const innerTop = panel.indexOf('.padding(.top, 42)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
   const outerBot = panel.lastIndexOf('.padding(.bottom, 14)');
   // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 30 / bottom 16）');
-  ok(/\.padding\(\.top, 30\)/.test(panel), '内部顶部留白 30（内容不贴面板上沿）');
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 42 / bottom 16）');
+  // 顶部 12 → 30 → 42：用户连续要「里面整体往下挪」，
+  // 栖阅真机面板顶到「小」那行的距离约 42pt（截图量）。
+  ok(/\.padding\(\.top, 42\)/.test(panel), '内部顶部留白 42（对齐栖阅真机）');
   ok(innerPad >= 0 && innerPad < glassAt,
      '内部 padding 在 glassEffect **之前**（玻璃里面）');
   ok(innerBot < glassAt, '内部底 padding 在 glassEffect 之前');
@@ -285,6 +289,11 @@ ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 //    连续两次真机反馈「滑块被挡了一点」「上面被挡」：
 //    iOS 26 的系统 Slider frame 高度比 thumb 直径小（thumb 上下溢出自己
 //    frame 画的），跟相邻控件打架、还会被裁。
+// ⚠️ 「小」按钮和滑轨之间必须有间距 —— 我为了塞 thumb 把 spacing 收到 2，
+//    结果两者只差 2pt，视觉上就是「滑块被小按钮压住」（用户连续三次反馈）。
+//    自绘 QRSlider 之后 thumb 两端正位，**不需要收窄 spacing**。
+ok(/HStack\(spacing: 12\)/.test(sizeRow), '字号行 spacing 12（滑块不贴着小按钮）');
+ok(!/HStack\(spacing: 2\)/.test(sizeRow), '不用 spacing 2（会让滑块看着被小按钮压住）');
 ok(/QRSlider\(value: \$fontSize, range: 14\.\.\.28, step: 1\)/.test(web),
    '字号滑块用自绘 QRSlider（不用系统 Slider）');
 ok(!/(?<![A-Za-z])Slider\(value: \$fontSize/.test(web), '不用系统 Slider');

@@ -608,9 +608,9 @@ struct ReaderWebView: View {
             //
             // ② 内部 padding（玻璃**里面**）
             //
-            // 顶部 12 → **30**：用户要「里面整体往下挪」。
-            // 栖阅真机面板顶到「小」那行的距离约 40pt，这里原来只有 12pt。
-            .padding(.top, 30)
+            // 顶部 12 → 30 → **42**：用户连续要「里面整体往下挪」。
+            // 栖阅真机面板顶到「小」那行的距离约 **42pt**（截图量）。
+            .padding(.top, 42)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 
@@ -803,7 +803,11 @@ struct ReaderWebView: View {
         //
         //    修法：给 Slider 留出绘制外延的空间（padding），
         //    同时把 HStack spacing 收窄，总视觉间距不变。
-        HStack(spacing: 2) {
+        // ⚠️ spacing 必须是 12（ui.txt 的 gap:10 + 一点余量）。
+        //    我为了塞 thumb 把它收到 2 → 「小」按钮的圆底和滑轨**只差 2pt**，
+        //    视觉上就是「滑块被小按钮压住」（用户连续三次反馈「被挡」）。
+        //    自绘 QRSlider 之后 thumb 本来就两端正位，**根本不需要收窄 spacing**。
+        HStack(spacing: 12) {
             sizeKnob("小", pointSize: 14)
             // ⚠️ 用自绘的 QRSlider，**不用系统 Slider**。
             //    连续两次真机反馈「滑块被挡了一点」「上面被挡」——
