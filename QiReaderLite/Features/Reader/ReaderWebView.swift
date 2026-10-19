@@ -585,11 +585,11 @@ struct ReaderWebView: View {
                 let target = min(max(h + 4, 260), 840)
                 if abs(target - sheetHeight) > 1 { sheetHeight = target }
             }
-            .padding(.horizontal, 14)
-            // 栖阅面板顶部有**一块呼吸区**（grabber 下面留白），
-            // 内容不是顶格贴上去的。原来 6 顶得太死。
-            .padding(.top, 14)
-            .padding(.bottom, 12)
+            // 16 / 16 / 16 / **28** —— 底部 28 是给 home indicator 让的位置，
+            // 面板贴到屏边但最后一行磁贴不会压在指示条上。
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 28)
             // ⚠️ 整个导航栏藏掉：没有「阅读设置」大标题，也没有右上角「完成」。
             //    栖阅那个面板顶部直接就是「小 ▬ 大 [系统字体]」，标题栏压根不存在。
             //    NavigationStack 还得留着 —— 子页（显示/间距/更多）是 push 进去的。
@@ -726,7 +726,7 @@ struct ReaderWebView: View {
     }
 
     private func paletteRow(_ list: [ReaderTheme], icon: String) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 13)).foregroundStyle(Theme.sub)
                 .frame(width: 18)
             ForEach(list) { t in
@@ -735,7 +735,7 @@ struct ReaderWebView: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(t.ink)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 28)
+                        .frame(height: 38)
                         .background(t.bg, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -810,7 +810,8 @@ struct ReaderWebView: View {
     ]
 
     private var featureGrid: some View {
-        VStack(spacing: 8) {
+        // 行间距 10（参考实现 GridView.count 的 mainAxisSpacing: 10）
+        VStack(spacing: 10) {
             tileRow(0)
             tileRow(4)
         }
@@ -867,11 +868,13 @@ struct ReaderWebView: View {
             //    我之前 190px**（图标 19 + spacing 6 + 上下各 14 撑的）。
             //    `FitSheetHeight` 按内容高度设 detent → 磁贴高就把整个 sheet 顶高，
             //    面板能占到屏 70%（栖阅只有 46%）。这是「变大了」的真正来源。
-            VStack(spacing: 3) {
+            // 图标 20 / spacing 4 —— build77 那次「整体收小」我改成 15 / 3，
+            // 按参考实现（Icons 的 size: 20、SizedBox(height: 4)）是收过头了。
+            VStack(spacing: 4) {
                 // 栖阅「格式」那格是空的 —— 图标为空串时**不占位**，
                 // 文字整体往上提，跟截图对得上
                 if !icon.isEmpty {
-                    Image(systemName: icon).font(.system(size: 15))
+                    Image(systemName: icon).font(.system(size: 20))
                 }
                 Text(name).font(.footnote.weight(.semibold))
                 Text(subtitle ?? "").font(.caption2)
@@ -883,10 +886,10 @@ struct ReaderWebView: View {
             .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+            // 参考实现是 `Colors.grey @ 0.12` **一层**，圆角 14。
+            // 我原来叠了 qrFill + 一层白 = 两档底色，4 亮 4 暗，不像一套东西。
             .background(Self.qrFill,
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .background(Color.white.opacity(ready ? 0.34 : 0.16),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!ready)
@@ -1264,40 +1267,33 @@ private struct FitSheetHeight: ViewModifier {
     let contentHeight: CGFloat
 
     func body(content: Content) -> some View {
-        // ⚠️ 这里必须是 **partial detent（`.fraction`）**，不能换成 `.height()`。
+        // 面板是「**顶部圆角 + 底部贴屏边**」，不是 iOS 26 的 floating 卡片。
         //
-        // 真机并排对比出来的差异（user 指的「边缘圆角不一样 / 位置不对」）：
+        // 我 build83 误判过一次：查到「partial detent → floating 卡片」就
+        // 换成 `.fraction()`，结果面板被系统渲染成**左右内缩 + 底部收口**，
+        // 真机反馈「越弄越窄」—— 方向反了。
         //
-        //   栖阅：面板底边收在 home indicator **上方**，底下露出来的是**阅读器的
-        //         主题背景**（那几根枯枝/花瓣是 reader 自己的插画主题，
-        //         不是栖阅独有的东西，轻阅的主题背景同样会透出来）；
-        //         面板四角都有收口圆弧，整体像「浮在正文上的一块玻璃」。
-        //   轻阅：面板背景一路**铺到屏幕最底**，home indicator 压在面板上，
-        //         底部切平、没有圆角 —— 看着像「贴了块板子」。
+        // 栖阅那个面板的容器长这样（顶部 24 圆角，底部**方形贴边**，
+        // home indicator 落在面板内容里，而不是被面板托起来）：
+        //     borderRadius: BorderRadius.vertical(top: Radius.circular(24))
+        //     padding:      EdgeInsets.fromLTRB(16, 16, 16, 28)
+        //     color:        white @ 0.8  /  black @ 0.75
         //
-        // 不是 detent 高度算错了（内容 ~414pt，可用 ~922pt，根本没超限），
-        // 而是 **iOS 26 对 `.height()` 这种「精确高度」detent 的处理**：
-        // sheet 背景会一路画到屏幕最底，既不做底部安全区内缩，也没有底部圆角。
-        // `.fraction()` 才是 partial detent，系统才会给它全角收口。
-        //
-        // 目录那个 sheet 本来就是 `.fraction`，所以它没这个问题。
-        let screenH = max(UIScreen.main.bounds.height, 1)
-        let frac = min(max((contentHeight + 4) / screenH, 0.28), 0.92)
-        let detent: Set<PresentationDetent> = [.fraction(frac)]
+        // `.height()` 才是「精确贴合内容 + 贴边」的那个；
+        // `.fraction()` / `.medium` 是 floating 卡片，别用。
         if #available(iOS 26.0, *) {
             // partial detent → 系统液态玻璃；不设 presentationBackground
-            content.presentationDetents(detent)
-        } else if #available(iOS 18.0, *) {
-            content
-                .presentationDetents(detent)
-                .presentationBackground(.ultraThinMaterial)
+            content.presentationDetents([.height(contentHeight)])
         } else {
+            // iOS 17 / 18 没有系统玻璃，只能自己糊一层材质
             content
-                .presentationDetents(detent)
+                .presentationDetents([.height(contentHeight)])
                 .presentationBackground(.ultraThinMaterial)
         }
     }
 }
+
+
 
 
 /// 量内容高度用的 preference
