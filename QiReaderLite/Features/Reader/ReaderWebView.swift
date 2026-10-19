@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WebKit
 
 /// 正文阅读器：栖阅的阅读界面 + 我们自己的规则引擎。
@@ -1263,20 +1264,41 @@ private struct FitSheetHeight: ViewModifier {
     let contentHeight: CGFloat
 
     func body(content: Content) -> some View {
+        // ⚠️ 这里必须是 **partial detent（`.fraction`）**，不能换成 `.height()`。
+        //
+        // 真机并排对比出来的差异（user 指的「边缘圆角不一样 / 位置不对」）：
+        //
+        //   栖阅：面板底边收在 home indicator **上方**，底下露出来的是**阅读器的
+        //         主题背景**（那几根枯枝/花瓣是 reader 自己的插画主题，
+        //         不是栖阅独有的东西，轻阅的主题背景同样会透出来）；
+        //         面板四角都有收口圆弧，整体像「浮在正文上的一块玻璃」。
+        //   轻阅：面板背景一路**铺到屏幕最底**，home indicator 压在面板上，
+        //         底部切平、没有圆角 —— 看着像「贴了块板子」。
+        //
+        // 不是 detent 高度算错了（内容 ~414pt，可用 ~922pt，根本没超限），
+        // 而是 **iOS 26 对 `.height()` 这种「精确高度」detent 的处理**：
+        // sheet 背景会一路画到屏幕最底，既不做底部安全区内缩，也没有底部圆角。
+        // `.fraction()` 才是 partial detent，系统才会给它全角收口。
+        //
+        // 目录那个 sheet 本来就是 `.fraction`，所以它没这个问题。
+        let screenH = max(UIScreen.main.bounds.height, 1)
+        let frac = min(max((contentHeight + 4) / screenH, 0.28), 0.92)
+        let detent: Set<PresentationDetent> = [.fraction(frac)]
         if #available(iOS 26.0, *) {
             // partial detent → 系统液态玻璃；不设 presentationBackground
-            content.presentationDetents([.height(contentHeight)])
+            content.presentationDetents(detent)
         } else if #available(iOS 18.0, *) {
             content
-                .presentationDetents([.height(contentHeight)])
+                .presentationDetents(detent)
                 .presentationBackground(.ultraThinMaterial)
         } else {
             content
-                .presentationDetents([.height(contentHeight)])
+                .presentationDetents(detent)
                 .presentationBackground(.ultraThinMaterial)
         }
     }
 }
+
 
 /// 量内容高度用的 preference
 private struct SheetContentHeightKey: PreferenceKey {

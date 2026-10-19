@@ -113,10 +113,15 @@ ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), 
 //   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
 const fitBody = web.slice(web.indexOf('private struct FitSheetHeight'));
 const iOS26 = fitBody.slice(fitBody.indexOf('#available(iOS 26.0'), fitBody.indexOf('#available(iOS 18.0'));
-ok(/presentationDetents\(\[\.height\(/.test(iOS26), 'iOS 26 给了 partial detent（.height 是 partial）');
+ok(/presentationDetents\(detent\)/.test(iOS26), 'iOS 26 给了 partial detent（detent 来自 .fraction）');
+// `.height()` 这种「精确高度」detent 在 iOS 26 上会把 sheet 背景一路画到屏幕最底，
+// 底部没有安全区内缩也没有收口圆角 —— 真机对比栖阅时发现的。
+ok(!/presentationDetents\(\[\.height\(/.test(fitBody), 'FitSheetHeight 不用 .height() detent');
+ok(/Set<PresentationDetent> = \[\.fraction\(frac\)\]/.test(fitBody), 'detent 用 .fraction（partial detent 才有全角收口）');
+ok(/contentHeight \+ 4\) \/ screenH/.test(fitBody), '.fraction 仍按内容高度换算，不是写死的比例');
 ok(!/presentationSizing/.test(iOS26), 'iOS 26 分支不再单靠 presentationSizing(.fitted)');
 ok(!/presentationBackground/.test(iOS26), 'iOS 26 分支不覆盖系统玻璃背景');
-ok(/presentationDetents\(\[\.height\([^)]*\)\]\)/.test(fitBody), 'detent 高度可动态传入');
+ok(/\.presentationDetents\(detent\)/.test(fitBody), 'detent 可动态传入');
 ok(/private struct SheetContentHeightKey: PreferenceKey/.test(web), '有测高 preference');
 ok(/preference\(key: SheetContentHeightKey\.self, value: geo\.size\.height\)/.test(web), '背景 GeometryReader 量内容高度');
 ok(/fixedSize\(horizontal: false, vertical: true\)/.test(web), '内容固定成自然高度（否则量到的是 detent 高度，成死循环）');
