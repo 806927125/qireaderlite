@@ -198,12 +198,17 @@ ok(/ReaderLayoutConfig\(\)/.test(pager), '用 ReaderLayoutConfig() 初始化');
 ok(!/\.baselineScope\.rawValue/.test(web), 'ReaderBaselineScope 用 .raw 不是 .rawValue');
 ok(/scope != \.full/.test(pageVC),
    '底线范围用 == 比较（ReaderBaselineScope 是 struct，对它 switch 报 must be exhaustive）');
-ok(/lm\.usedRect\(for: pageContainer/.test(pageVC) && /textContainer\(forGlyphAt: g\.location/.test(pageVC),
-   '行底线高度取自 usedRect（不手动算基线偏移，字体 fallback 就不会错位）');
-ok(/numberOfLineFragments\(forGlyphRange: g\)/.test(pageVC), '行底线行数取自 layoutManager');
+ok(/p\.lineRects\(at: pageIndex\)/.test(pageVC), '行底线用 paginator 的行矩形（不手动算基线偏移）');
+ok(/func lineRects\(at index: Int\) -> \[CGRect\]/.test(paginator), 'paginator 有统一的行矩形方法');
+ok(!/lm\.numberOfLineFragments|lm\.numberOfLineFragments|\.numberOfLineFragments\(/.
+   test(paginator.replace(/\/\/[^\n]*/g, '')) && !/\.numberOfLineFragments\(/.test(pageVC.replace(/\/\/[^\n]*/g, '')),
+   '**没调用 numberOfLineFragments(forGlyphRange:)** —— iOS 的 NSLayoutManager 没这个方法（只有 macOS 有），编译器会直接报 has no member');
+ok(/lineFragmentRect\(forGlyphAt: glyphIdx, effectiveRange: &eff\)/.test(paginator),
+   '逐行靠 lineFragmentRect + effectiveRange 推进（iOS 上量行的唯一姿势）');
+ok(/if next <= glyphIdx \{ break \}/.test(paginator), '行推进有防死循环检查');
 ok(!/CTLineGetImageBounds|unsafeBitCast|CFArray/.test(pageVC),
    '页画布里没有 CoreText 调用');
-ok(/lineFragmentRect\(forGlyphAt:/.test(pageVC),
+ok(/lm.lineFragmentRect\(forGlyphAt: glyphIdx/.test(paginator),
    '行范围用 lineFragmentRect（CoreText 那套 CTLineGetImageBounds 换成了 UIKit API）');
 ok(!/CTLineGetImageBounds/.test(pageVC), '页画布里不再有 CTLine 调用');
 ok(/@State private var pageCtl/.test(web), 'UIViewController 用 @State 持有（不是 @StateObject，那个要 ObservableObject）');
@@ -350,7 +355,8 @@ ok(/lineFragmentRect/.test(paginator), '行范围用 lineFragmentRect');
 ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报 always succeed）');
 ok(!/unsafeBitCast/.test(paginator), '没有 unsafeBitCast 取 CoreFoundation 类型');
 // CFArray 没有 count
-ok(/lineCount\(at index: Int\)/.test(paginator), '有量行数的方法（垂直两端对齐要用）');
+ok(/func lineCount\(at index: Int\)/.test(paginator), '有量行数的方法（垂直两端对齐要用）');
+ok(/lineRects\(at: index\)\.count/.test(paginator), '行数由行矩形数量得出，不调不存在的 API');
 // NSMutableAttributedString 的标签
 ok(/NSMutableAttributedString\(attributedString:/.test(paginator), 'NSMutableAttributedString 用 attributedString: 标签');
 ok(!/NSMutableAttributedString\(attributed:/.test(paginator), '没有 attributed: 标签的写法');

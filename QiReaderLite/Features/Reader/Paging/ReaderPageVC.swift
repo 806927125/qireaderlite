@@ -261,36 +261,25 @@ final class ReaderPageCanvasView: UIView {
     /// 所以线一定贴在真正的行下面（CoreText 时代要手动算基线偏移，
     /// 字体 fallback 一换就错位）。
     private func drawBaselines(_ p: ReaderPaginator, _ ctx: CGContext) {
-        guard let lm = p.layoutManager else { return }
-        let g = p.glyphRange(at: pageIndex)
-        guard g.length > 0 else { return }
-        let n = lm.numberOfLineFragments(forGlyphRange: g)
-        guard n > 0 else { return }
-        // ⚠️ `textContainer(forGlyphAt:)` 返回**可选** NSTextContainer，
-        //    而 `usedRect(for:)` 要非可选 → 直接内传会编译报
-        //    "value of optional type 'NSTextContainer?' must be unwrapped"。
-        //    拿到的是页面**第一个** container，用它的 usedRect 量整页排版高度。
-        guard let pageContainer = lm.textContainer(forGlyphAt: g.location, effectiveRange: nil)
-        else { return }
-        let used = lm.usedRect(for: pageContainer)
-        guard used.height > 0 else { return }
-        let lineH = used.height / CGFloat(n)
+        // ⚠️ 不用 `lm.numberOfLineFragments(forGlyphRange:)` —— iOS 的
+        //    NSLayoutManager 没这个方法（只有 macOS 有），编译器会直接报
+        //    "has no member 'numberOfLineFragments'"。
+        //    行矩形统一由 paginator.lineRects(at:) 给（它靠 effectiveRange 逐行推进）。
+        let lines = p.lineRects(at: pageIndex)
+        guard !lines.isEmpty else { return }
         ctx.saveGState()
         ctx.setFillColor(baselineColor.cgColor)
-        for i in 0..<n {
-            let y = lineH * CGFloat(i + 1) - 1
+        let pageW = (pageSize.width > 1 ? pageSize.width : bounds.width)
+        for r in lines {
+            let y = r.maxY - 1
             var x0: CGFloat = 0
-            var x1: CGFloat = (pageSize.width > 1 ? pageSize.width : bounds.width)
+            var x1: CGFloat = pageW
             // ⚠️ ReaderBaselineScope 是 **struct** 不是 enum，
             //    对它 switch 要求穷尽 → 编译报 "switch must be exhaustive"。
             //    改用 == 比较（它本来就 Hashable/Equatable）。
             if scope != .full {          // 栖阅叫「按文字」，枚举里是 .word 不是 .text
-                var eff = NSRange()
-                let r = lm.lineFragmentRect(forGlyphAt: g.location + i, effectiveRange: &eff)
-                if r.width > 0 {
-                    x0 = r.minX
-                    x1 = r.maxX
-                }
+                x0 = r.minX
+                x1 = r.maxX
             }
             guard x1 > x0 else { continue }
             ctx.fill(CGRect(x: x0, y: y, width: x1 - x0, height: 1))

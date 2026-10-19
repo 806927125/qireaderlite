@@ -167,12 +167,38 @@ final class ReaderPaginator {
         return pages[index].glyphRange
     }
 
+    /// 一页里每一行的 fragment 矩形（行底线、量行数都用它）。
+    ///
+    /// ⚠️ **别写 `lm.numberOfLineFragments(forGlyphRange:)`** ——
+    ///    iOS 的 NSLayoutManager **没有**这个方法（只有 macOS 有）。
+    ///    编译器直接报 "value of type 'NSLayoutManager' has no member
+    ///    'numberOfLineFragments'" —— build64 就是这么挂的。
+    ///    iOS 上量行的唯一姿势：`lineFragmentRect(forGlyphAt:effectiveRange:)`
+    ///    从页首 glyph 开始，靠 `effectiveRange` **跳到下一行**，直到跳出本页。
+    func lineRects(at index: Int) -> [CGRect] {
+        guard let lm = layoutManager, pages.indices.contains(index) else { return [] }
+        let g = pages[index].glyphRange
+        guard g.length > 0 else { return [] }
+        let end = NSMaxRange(g)
+        var rects: [CGRect] = []
+        var glyphIdx = g.location
+        // ⚠️ 必须有推进检查：effectiveRange 只覆盖**一个** line fragment，
+        //    万一 layout manager 交回空范围就会死循环
+        var spins = 0
+        while glyphIdx < end && spins < 4096 {
+            spins += 1
+            var eff = NSRange()
+            rects.append(lm.lineFragmentRect(forGlyphAt: glyphIdx, effectiveRange: &eff))
+            let next = NSMaxRange(eff)
+            if next <= glyphIdx { break }
+            glyphIdx = next
+        }
+        return rects
+    }
+
     /// 某一页有几行（垂直两端对齐要用它量「满页有几行」）
     func lineCount(at index: Int) -> Int {
-        guard let lm = layoutManager, pages.indices.contains(index) else { return 0 }
-        let g = pages[index].glyphRange
-        guard g.length > 0 else { return 0 }
-        return lm.numberOfLineFragments(forGlyphRange: g)
+        lineRects(at: index).count
     }
 
     /// 把一页画到 UIKit 的图形上下文里。
@@ -258,35 +284,22 @@ struct ReaderPageCanvas: UIViewRepresentable {
         /// 行底线：在每一行的基线下面画一条横线。
         /// 「整行」= 拉满整页宽；「按文字」= 只画有字的那一段。
         private func drawBaselines(_ p: ReaderPaginator, _ ctx: CGContext) {
-            guard let lm = p.layoutManager else { return }
-            let g = p.glyphRange(at: pageIndex)
-            guard g.length > 0 else { return }
-            let n = lm.numberOfLineFragments(forGlyphRange: g)
-            guard n > 0 else { return }
+            let lines = p.lineRects(at: pageIndex)
+            guard !lines.isEmpty else { return }
             ctx.saveGState()
             ctx.setFillColor(baselineColor.cgColor)
-            let lineH = bounds.height > 0 ? max(1, bounds.height / CGFloat(max(1, n))) : 1
-            for i in 0..<n {
-                var eff = NSRange()
-                let r = lm.lineFragmentRect(forGlyphAt: g.location, effectiveRange: &eff)
-                _ = r
-                // 逐行推进：用下一行的起点字符来推它的 fragment
-                let y = lineH * CGFloat(i) + lineH - 2
-                var x0: CGFloat = 0
-                var x1: CGFloat = bounds.width
-                if baselineScope == .word {
-                    // 只要这一行**有字**的那段横向范围
-                    var eff2 = NSRange()
-                    let rr = lm.lineFragmentRect(forGlyphAt: g.location + i, effectiveRange: &eff2)
-                    if rr.width > 0 {
-                        x0 = rr.minX
-                        x1 = rr.maxX
-                    }
-                }
+            let pageW = bounds.width > 0 ? bounds.width : p.pageSize.width
+            for r in lines {
+                let y = r.maxY - 1
+                // ⚠️ ReaderBaselineScope 是 struct 不是 enum，
+                //    对它 switch 要求穷尽 → 编译报 must be exhaustive。用 ==。
+                let x0 = (baselineScope == .full) ? 0 : r.minX
+                let x1 = (baselineScope == .full) ? pageW : r.maxX
                 guard x1 > x0 else { continue }
                 ctx.fill(CGRect(x: x0, y: y, width: x1 - x0, height: 1))
             }
             ctx.restoreGState()
         }
-    }
+}
+
 }
