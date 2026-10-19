@@ -71,5 +71,17 @@ ok(java.toNumChapter('第 123 章 风云') === 123, 'toNumChapter 抽章节号')
 ok(java.hexDecodeToString('e4b8ad') === '中', 'hexDecodeToString 按 UTF-8 解 hex');
 ok(java.hexDecodeToString('') === '', 'hexDecodeToString 空输入不炸');
 
+// ⑦ 书源导入入口：用户 iOS 上文件导入找不到文件、粘贴又要手打 1MB，
+//    所以轻阅必须有「从链接导入」。少这个入口用户就装不进去书源。
+const src = fs.readFileSync(
+  path.join(__dirname, '..', 'QiReaderLite', 'Features', 'Sources', 'SourcesView.swift'), 'utf8');
+ok(/Label\("从链接导入"/.test(src), '书源管理里有「从链接导入」入口');
+ok(/struct URLImportView/.test(src), '有 URLImportView');
+ok(/URLSession\.shared\.data\(for:/.test(src), 'URL 导入走 URLSession');
+// GitHub 的 /blob/ 路径返回 HTML 页面，当成 JSON 解析会报一堆看不懂的错
+ok(/hasPrefix\("<"\)/.test(src) && /raw\.githubusercontent\.com/.test(src),
+   '拿到 HTML（GitHub /blob/ 页）会明确提示换 raw 域名');
+ok(/\.frame\(maxWidth: \.infinity\)|TextField/.test(src), 'URL 输入框存在');
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

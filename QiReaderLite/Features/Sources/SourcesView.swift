@@ -5,6 +5,7 @@ struct SourcesView: View {
     @EnvironmentObject private var store: SourceStore
     @State private var showFileImporter = false
     @State private var showPaste = false
+    @State private var showURLImport = false
     @State private var showDiag = false
     @State private var importError: String?
     @State private var netDiagText: String?
@@ -44,6 +45,9 @@ struct SourcesView: View {
                     Button { showFileImporter = true } label: {
                         Label("从文件导入", systemImage: "folder")
                     }
+                    Button { showURLImport = true } label: {
+                        Label("从链接导入", systemImage: "link")
+                    }
                     Divider()
                     Button { showDiag = true } label: {
                         Label("引擎自检", systemImage: "stethoscope")
@@ -73,6 +77,9 @@ struct SourcesView: View {
         }
         .sheet(isPresented: $showPaste) {
             PasteImportView { text in importJSON(text) }
+        }
+        .sheet(isPresented: $showURLImport) {
+            URLImportView { data in importData(data, from: "链接") }
         }
         .alert("引擎自检", isPresented: $showDiag) {
             Button("知道了", role: .cancel) {}
@@ -207,6 +214,17 @@ struct SourcesView: View {
         }
     }
 
+    /// 文件和链接共用这一条，失败提示带上来源好排查
+    private func importData(_ data: Data, from where: String) {
+        do {
+            let list = try BookSourceParser.parse(data)
+            let n = store.importSources(list)
+            Toast.show("从\(where)导入 \(n) 个书源")
+        } catch {
+            importError = error.localizedDescription
+        }
+    }
+
     private func importJSON(_ text: String) {
         do {
             let list = try BookSourceParser.parse(Data(text.utf8))
@@ -214,6 +232,81 @@ struct SourcesView: View {
             Toast.show("导入 \(n) 个书源")
         } catch {
             importError = error.localizedDescription
+        }
+    }
+}
+
+/// 从链接拉书源 JSON。
+/// 为什么加这个：iOS 的文件导入要在 Files App 里翻，沙盒/iSH 下载的文件经常找不到；
+/// 粘贴又得手打 1MB。给个 URL 最省事，也跟别的阅读 App 的习惯一致。
+struct URLImportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var urlText = ""
+    @State private var busy = false
+    @State private var err: String?
+    let onImport: (Data) -> Void
+
+    private var trimmed: String {
+        urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func go() async {
+        guard let u = URL(string: trimmed), u.scheme != nil else { err = "地址不对"; return }
+        busy = true; defer { busy = false }
+        var req = URLRequest(url: u)
+        req.timeoutInterval = 60
+        req.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                err = "HTTP \(http.statusCode)"; return
+            }
+            // GitHub 的 /blob/ 路径返回的是 HTML 页面，不是 JSON
+            if let text = String(data: data, encoding: .utf8),
+               text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") {
+                err = "拿到的是网页不是 JSON。GitHub 要用 raw.githubusercontent.com 域名"
+                return
+            }
+            onImport(data)
+            dismiss()
+        } catch {
+            err = error.localizedDescription
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                TextField("https://…/xxx.json", text: $urlText, axis: .vertical)
+                    .font(.system(size: 13, design: .monospaced))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .padding(11)
+                    .background(Theme.sub.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 10))
+                Text("贴书源 JSON 的直链，一次导入全部。GitHub 用 raw.githubusercontent.com 那条地址。")
+                    .font(.caption).foregroundStyle(Theme.sub)
+                Spacer(minLength: 0)
+            }
+            .padding()
+            .navigationTitle("链接导入书源")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(busy ? "拉取中…" : "导入") {
+                        Task { await go() }
+                    }
+                    .disabled(busy || trimmed.isEmpty)
+                }
+            }
+            .alert("导入失败", isPresented: Binding(
+                get: { err != nil }, set: { if !$0 { err = nil } })) {
+                Button("好", role: .cancel) {}
+            } message: { Text(err ?? "") }
         }
     }
 }
