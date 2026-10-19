@@ -336,6 +336,8 @@ struct CatalogSheet: View {
 
     @State private var filter = ""
     @State private var sortAscending = true
+    /// 当前停在哪个 detent（`.medium` 对应 0.62，`.large` 是拖满屏）
+    @State private var detent: PresentationDetent = .fraction(0.62)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -346,13 +348,18 @@ struct CatalogSheet: View {
         // partial sheet + 系统玻璃：不设 presentationBackground，
         // 让 iOS 26 的 glass 自己透出后面的正文。
         //
-        // ⚠️ **只给一个 detent**。原来写了 `[.fraction(0.62), .large]`，
-        //    结果用户往上拖目录会「啪」地弹成全屏 —— 栖阅那边目录是定高的，
-        //    没有这个全屏态。章节多就多滚动几屏，不要让它自己长。
-        .presentationDetents([.fraction(0.62)])
+        // ⚠️ detent 列表要**保留 .large** —— 栖阅那边按住顶部横线上滑是会变大的，
+        //    不是定死的。变的触发方式由 iOS 默认行为决定：
+        //    **只有按住 grabber 上滑**才在 detent 之间切，拖列表内容是滚列表。
+        //
+        // ⚠️ 但**绝对不能开** `.presentationBackgroundInteraction(
+        //        .enabled(upThrough: .fraction(0.62)))`。
+        //    那个修饰符的语义就是「sheet 的背景区域也接管手势」——
+        //    开了以后**随便在空白处一拖**整个 sheet 就跟着变形，
+        //    用户看到的正是「目录拉一下直接变大窗口」。
+        //    这就是前两轮改来改去没改对的那一个。
+        .presentationDetents([.fraction(0.62), .large], selection: $detent)
         .presentationDragIndicator(.visible)
-        // 背景透明才留得住系统玻璃；但**别开** presentationBackgroundInteraction
-        // —— 那会让透明区域接管手势，和底下的正文抢事件。
         .presentationBackground(.clear)
     }
 

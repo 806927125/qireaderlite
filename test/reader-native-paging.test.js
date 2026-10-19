@@ -359,12 +359,21 @@ ok(!/as\? CTLine/.test(paginator), '别对 CTLine 做条件转换（编译期报
 ok(/func preloadedChapters\(\) -> \[Int\]/.test(pager), 'pager 能报出内存已预载的章号');
 ok(!/ChapterCacheService|diskCache/.test(catalog),
    '目录没有假装有磁盘缓存（栖阅那个能力轻阅还没做）');
-ok(/presentationDetents\(\[\.fraction\(0\.62\)\]\)/.test(catalog),
-   '目录是定高 partial sheet —— **只有一个 detent**，往上拖不会弹成全屏');
-ok(!/presentationDetents\(\[[^\]]*\.large/.test(catalog),
-   'detent 列表里没有 .large（用户实测：原来带 .large，目录会自己变大窗口）');
+ok(/presentationDetents\(\[\.fraction\(0\.62\), \.large\], selection: \$detent\)/.test(catalog),
+   'detent 列表保留 .large（栖阅按住顶部横线上滑是会变大的，不是定死）');
+ok(/presentationDragIndicator\(\.visible\)/.test(catalog),
+   '有 grabber —— 用户就是靠按住它上滑变大');
 ok(!/presentationBackgroundInteraction/.test(catalog),
-   '没开 presentationBackgroundInteraction（透明区域接管手势会和底下正文抢事件）');
+   '**绝对没开** presentationBackgroundInteraction：那个修饰符的语义就是' +
+   '「sheet 背景区域也接管手势」，开了随便在空白处一拖 sheet 就变形 —— ' +
+   '正是用户报的「目录拉下来直接变大窗口」');
+{
+  const body = catalog.slice(catalog.indexOf('.presentationDetents'),
+                             catalog.indexOf('.presentationBackground(.clear)'));
+  ok(/\.large/.test(body), '.large 在 detent 列表里');
+  ok(!/presentationBackgroundInteraction/.test(body),
+     'detent / dragIndicator / background 这一段里没有 backgroundInteraction');
+}
 ok(/presentationBackground\(\.clear\)/.test(catalog),
    'sheet 背景是 .clear —— 自己设 presentationBackground 会盖掉系统玻璃');
 ok(/presentationDragIndicator\(\.visible\)/.test(catalog), '有 grabber');
