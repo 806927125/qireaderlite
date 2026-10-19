@@ -282,6 +282,12 @@ ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 //    所以 Slider 必须有水平 padding 给绘制外延留位置。
 ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,80}padding\(\.horizontal, 8\)/.test(web),
    'Slider 有水平 padding（给滑轨两端的绘制外延留位置，别被「小/大」圆底压住）');
+// ⚠️⚠️ 垂直方向也必须留！SwiftUI 的 Slider **frame 高度比 thumb 直径小**，
+//    thumb 是**上下都溢出**自己 frame 画的。
+//    内容区高度 = 内容自然高（sheetHeight - 4）时，thumb 溢出那几 pt
+//    直接被裁掉 → 真机「滑块上面被挡」（用户反馈）。
+ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,200}padding\(\.vertical, 6\)/.test(web),
+   'Slider 有垂直 padding（thumb 上下都溢出 frame，不留就会被裁）');
 ok(/padding\(\.horizontal, 13\)/.test(fontMenu), '字体下拉 水平内边距 13（ui.txt .font-select）');
 ok(/padding\(\.vertical, 7\)/.test(fontMenu), '字体下拉 垂直内边距 7');
 ok(/cornerRadius: CGFloat = 18/.test(chip) && /fontSize: CGFloat = 14/.test(chip),

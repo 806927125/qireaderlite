@@ -808,6 +808,16 @@ struct ReaderWebView: View {
             Slider(value: $fontSize, in: 14...28, step: 1)   // ui.txt 14...28
                 // 给滑轨两端的绘制外延留位置，别被「小 / 大」圆形底压住
                 .padding(.horizontal, 8)
+                // ⚠️⚠️ 垂直方向也必须留！
+                //    SwiftUI 的 Slider **frame 高度比 thumb 直径小**，
+                //    thumb 是**上下都溢出**自己 frame 画的。
+                //    我把内容区高度设成「正好等于内容自然高」，
+                //    thumb 溢出那几 pt 就被裁掉了 ——
+                //    真机表现：滑块**上半部分被切**（用户反馈「上面被挡」）。
+                //
+                //    这段 padding 算进 VStack 自然高里，所以内容区会自动跟着长高，
+                //    内容相对面板顶的位置不变。
+                .padding(.vertical, 6)
             sizeKnob("大", pointSize: 14)
             fontMenu
         }
