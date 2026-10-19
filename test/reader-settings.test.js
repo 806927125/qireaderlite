@@ -67,6 +67,16 @@ console.log('\n── 液态玻璃：用系统层级的，不是自己糊一层 
 //   · 自定义 presentationBackground 会**覆盖掉**系统的玻璃 → 要去掉
 const fit = web.slice(web.indexOf('private struct FitSheetHeight'));
 ok(/private struct FitSheetHeight: ViewModifier/.test(web), '有 FitSheetHeight 修饰符');
+// ⚭� 结构差异：栖阅那块面板是**一整块玻璃**，内部只有细分隔线，
+//    配色格 / 磁贴 / 翻页行都直接坐在玻璃上，**没有各自的半透明卡片底**。
+//    我原来给每张卡片都垫了 Color.white.opacity(0.34)，
+//    结果后面透不出插画，看着像「一堆卡片」而不是「一块面板」。
+ok((web.match(/Color\.white\.opacity\(0\.34\)/g) || []).length === 0,
+   '面板内部**没有任何独立的半透明白卡片底**（栖阅是一整块玻璃）');
+ok(/in: Circle\(\)/.test(web), '「小 / 大」是圆形灰底（栖阅那样，不是圆角方形）');
+ok(/fontSize: 12,[\s\S]{0,40}cornerRadius: 15,[\s\S]{0,40}fillsWidth: true/.test(web),
+   '翻页方式字号 12（13 时「上下滚动」被截成「上下...」）');
+ok(/padding\(\.horizontal, 7\)/.test(web), '胶囊左右留白 7（原来 9，挤不下 4 个字）');
 ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), web.indexOf('var displayCard'))),
    '主面板没有 Spacer（会把 sheet 撑满）');
 
@@ -118,8 +128,7 @@ ok(/fontMenu/.test(sizeRow), '字体下拉在字号行里（同一行）');
 ok(!/private var fontRow/.test(web), '没有单独的字体行');
 // 翻页方式卡片：灰底圆角 + 左侧图标
 // 圆角按栖阅 designer.css 的 token 阶梯：--r-sm 8 / --r-md 12 / --r-lg 16
-ok(/Color\.white\.opacity\(0\.34\)[\s\S]{0,80}?RoundedRectangle\(cornerRadius: 16/.test(web),
-   '翻页方式卡片是半透明白圆角，cornerRadius 16 = 栖阅 --r-lg');
+// （翻页方式**不再有卡片底**了 —— 栖阅那行是直接坐在面板玻璃上的）
 ok(/cornerRadius: 12/.test(web), '磁贴 cornerRadius 12 = 栖阅 --r-md');
 ok(/RoundedRectangle\(cornerRadius: 8, style: \.continuous\)/.test(web),
    '小方块/配色格 cornerRadius 8 = 栖阅 --r-sm');
@@ -188,7 +197,7 @@ ok(/VStack\(spacing: 3\)/.test(web), '磁贴内间距 3（原来 6）');
   ok(/VStack\(spacing: 3\)/.test(ft), '磁贴内间距 3（原来 6）');
 }
 ok(/frame\(height: 28\)/.test(web), '配色格高 28（原来 36）');
-ok(/frame\(width: 32, height: 28\)/.test(web), '小/大方块 32x28（原来 36x32）');
+ok(/frame\(width: 30, height: 30\)/.test(web), '小/大方块 30x30 圆形');
 // 栖阅那个面板**顶部就是内容**，没有标题栏也没有右上角按钮
 ok(!/navigationTitle\("阅读设置"\)/.test(web), '没有「阅读设置」大标题');
 ok(!/Button\("完成"\)/.test(web), '没有「完成」按钮');

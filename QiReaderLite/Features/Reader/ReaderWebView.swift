@@ -615,8 +615,9 @@ struct ReaderWebView: View {
             followSystemRow
         }
         .padding(.vertical, 4)
-        .background(Color.white.opacity(0.34),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // ⚠️ 这里原本有 `.background(Color.white.opacity(0.34), ...)` —— 删掉了。
+        //    栖阅那块面板是**一整块玻璃**，内部只有细分隔线，没有一层层独立卡片底。
+        //    sheet 本身就是系统玻璃，再垫半透明白只会把它弄浑，后面透不出插画。
         .padding(.bottom, 10)
     }
 
@@ -641,9 +642,9 @@ struct ReaderWebView: View {
         Text(text)
             .font(.system(size: pointSize, weight: .medium))
             .foregroundStyle(Theme.ink)
-            .frame(width: 32, height: 28)
-            .background(Self.qrFill,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .frame(width: 30, height: 30)
+            // ⚠️ 栖阅的「小 / 大」是**圆形**灰底，不是圆角方形
+            .background(Self.qrFill, in: Circle())
     }
 
     /// 字体下拉（胶囊）
@@ -710,12 +711,14 @@ struct ReaderWebView: View {
 
     private var pageTurnCard: some View {
         HStack(spacing: 8) {
-            Image(systemName: "doc.text").font(.system(size: 13)).foregroundStyle(Theme.sub)
-                .frame(width: 18)
+            Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(Theme.sub)
+                .frame(width: 16)
             ForEach(PageTurnMode.all) { m in
+                // ⚠️ 字号 13 + 左右各 9 时，5 个平分宽度装不下「上下滚动」四个字
+                //    （真机被截成「上下...」）。收到 12 + 左右各 7。
                 ChipButton(title: m.name,
                            selected: pageTurnMode == m.raw,
-                           fontSize: 13,
+                           fontSize: 12,
                            cornerRadius: 15,
                            fillsWidth: true) {
                     pageTurnMode = m.raw
@@ -725,8 +728,7 @@ struct ReaderWebView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.34),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // 同上：不垫独立卡片底（胶囊控件自己有底）
         .padding(.bottom, 10)
     }
 
@@ -1164,7 +1166,7 @@ private struct ChipButton: View {
             Text(title)
                 .font(.system(size: fontSize))
                 .foregroundStyle(selected ? Color.white : Theme.ink)
-                .padding(.horizontal, 9)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
