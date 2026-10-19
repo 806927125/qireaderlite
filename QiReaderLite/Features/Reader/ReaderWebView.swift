@@ -815,18 +815,22 @@ struct ReaderWebView: View {
             guard ready else { return }
             action()
         } label: {
-            VStack(spacing: 6) {
+            // ⚠️ 高度必须照栖阅：真机并排量，**栖阅磁贴 ≈120px，
+            //    我之前 190px**（图标 19 + spacing 6 + 上下各 14 撑的）。
+            //    `FitSheetHeight` 按内容高度设 detent → 磁贴高就把整个 sheet 顶高，
+            //    面板能占到屏 70%（栖阅只有 46%）。这是「变大了」的真正来源。
+            VStack(spacing: 3) {
                 // 栖阅「格式」那格是空的 —— 图标为空串时**不占位**，
                 // 文字整体往上提，跟截图对得上
                 if !icon.isEmpty {
-                    Image(systemName: icon).font(.system(size: 19))
+                    Image(systemName: icon).font(.system(size: 15))
                 }
-                Text(name).font(.subheadline.weight(.semibold))
+                Text(name).font(.footnote.weight(.semibold))
                 Text(subtitle ?? "").font(.caption2)
             }
             .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 8)
             .background(Color.white.opacity(ready ? 0.34 : 0.16),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
