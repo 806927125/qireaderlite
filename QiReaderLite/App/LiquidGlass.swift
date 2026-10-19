@@ -16,8 +16,11 @@ import SwiftUI
 /// 把下面 `USE_SYSTEM_GLASS` 改成 `false` 立刻回退到手搓版，不影响其它功能。
 /// 改完推一次，CI 会重编。
 ///
-/// ── 手搓版为什么保留 ──
-/// 部署目标还是 iOS 17，iOS 17~25 的机器只能走手搓版。
+/// ── 手搓版为什么还留着 ──
+/// 部署目标已经提到 **iOS 26**（2026-10-19 用户要求「给我走 26」），
+/// 所以手搓版在 iOS 上**永远走不到**。留着只是因为
+/// `#if compiler(>=6.2)` 之外的编译器（Xcode 16 及更早）还需要它兜底，
+/// 免得老 SDK 直接编不过。
 private let USE_SYSTEM_GLASS = true
 
 // MARK: - 玻璃填充 / 描边（手搓版专用）
@@ -156,7 +159,7 @@ extension View {
     /// 只设玻璃的**形状**，不碰别的修饰链。
     ///
     /// iOS 26 → `glassEffect(_:in:)`，形状可以是 `.capsule` / `.circle` /
-    /// `.rect(cornerRadius:)`。iOS 17~25 → 手搓版按同一形状画。
+    /// `.rect(cornerRadius:)`。手搓版按同一形状画。
     ///
     /// ⚠️ 别在 glassEffect 之后再叠 `.clipShape()` / `.background()` ——
     ///    系统玻璃自带高光和描边，叠上去会把折射盖掉，

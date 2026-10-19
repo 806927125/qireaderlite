@@ -594,17 +594,17 @@ struct ReaderWebView: View {
             .padding(.top, 12)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
-            // 面板背景 —— 液态玻璃分两档：
-            //   iOS 26+：`.glassEffect(.regular, in: shape)` 才是真液态玻璃
-            //            （iOS 26 新增 API，能折射背后的内容、有真实 depth）
-            //   iOS 17-25：`.ultraThinMaterial` 是普通毛玻璃（没 depth，但能模糊），
-            //            这是 iOS 17 设备能拿到的**最接近**的效果
-            // **都不照搬** ui.txt 的 white@.82 —— 那是普通磨砂，更没 depth。
+            // 面板背景 = **液态玻璃**（iOS 26+ 唯一解）。
             //
-            // ⚠️ 不能用 `if #available(...) { ... } else { ... }` 直接套
-            // `.glassEffect()` —— 直接调用就报「is only available in iOS 26.0」。
-            // 抽成一个 view modifier，编译时分派。
-            .modifier(PanelBackground(cornerRadius: 22))
+            // 部署目标已经是 iOS 26，所以 `.glassEffect(.regular, in: shape)`
+            // 可以**直接调用**，不用 ViewModifier + #available 分派。
+            // 那是 iOS 26 新增 API：能折射背后的内容、有真实 depth 和 ambient shadow。
+            //
+            // **不照搬** ui.txt 的 white@.82 —— 那是普通磨砂（塑料感），不是玻璃。
+            .background(
+                Color.clear
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            )
             .offset(y: showSettings ? 0 : sheetHeight + 48)
             .opacity(showSettings ? 1 : 0)
             .animation(.spring(response: 0.34, dampingFraction: 0.86),
@@ -621,21 +621,6 @@ struct ReaderWebView: View {
                     }
             )
             .accessibilityIdentifier("readerSettingsPanel")
-    }
-
-    /// 面板玻璃背景：iOS 26+ 走 .glassEffect，17-25 走 .ultraThinMaterial
-    struct PanelBackground: ViewModifier {
-        let cornerRadius: CGFloat
-        func body(content: Content) -> some View {
-            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            if #available(iOS 26.0, *) {
-                // iOS 26 真液态玻璃：折射 + ambient shadow + depth
-                content.background(Color.clear.glassEffect(.regular, in: shape))
-            } else {
-                // iOS 17-25 普通毛玻璃：能模糊背后的内容，没有折射
-                content.background(shape.fill(.ultraThinMaterial))
-            }
-        }
     }
 
     /// 面板浅米底（参考实现 `Color(0xE6EFE7D6)`）
@@ -1376,15 +1361,11 @@ private struct SheetContentHeightKey: PreferenceKey {
 
 /// 把 push 出来的页面背景清掉。
 ///
-/// ⚠️ `containerBackground(_:for: .navigation)` 里的 `.navigation` 是 **iOS 18+** 的，
-///    iOS 17 上写死会报 "'navigation' is only available in iOS 18.0 or newer"。
-///    iOS 17 退而求其次用 `.background(Color.clear)`。
+/// 部署目标已是 iOS 26，`containerBackground(_:for: .navigation)` 直接用。
+/// （iOS 18 才引入这个 API，之前的 iOS 17 目标需要 fallback —— 现在不需要了）
 private struct ClearNavigationBackground: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.containerBackground(.clear, for: .navigation)
-        } else {
-            content.background(Color.clear)
-        }
+        // 部署目标 iOS 26 → 直接用，不需要 #available 分派
+        content.containerBackground(.clear, for: .navigation)
     }
 }

@@ -317,7 +317,7 @@ struct BookDetailView: View {
 /// ```
 ///
 /// 视觉照栖阅截图：partial sheet + **系统玻璃**（iOS 26 的 `.glassEffect()`
-/// 由 `LiquidGlass` 统一处理，iOS 17~25 走手搓四层），顶部一行
+/// 由 `LiquidGlass` 统一处理），顶部一行
 /// 「胶囊按钮组 + 书名/副标题 + 关闭圆钮」，底部一个玻璃胶囊搜索框。
 ///
 /// ⚠️ sheet 背景**不能**自己设 `presentationBackground` —— 那会把系统玻璃盖掉，

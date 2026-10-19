@@ -100,7 +100,7 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
 
-                    Text("轻阅 Lite · iOS 17+")
+                    Text("轻阅 Lite · iOS 26+")
                         .font(.caption)
                         .foregroundStyle(Theme.sub)
                         .padding(.top, 6)

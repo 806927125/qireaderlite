@@ -78,7 +78,8 @@ struct GlassCard: ViewModifier {
         // ⚠️ 这里**必须**委托给 LiquidGlass，不要自己叠半透明白。
         //    LiquidGlass 内部已经处理好了两条路：
         //      · iOS 26+ → 系统 .glassEffect()（真折射 / 动态高光 / 自适应阴影）
-        //      · iOS 17~25 → 手搓四层（.ultraThinMaterial 真实模糊 + 镜面描边 + 双阴影）
+        //      · 手搓四层（.ultraThinMaterial 真实模糊 + 镜面描边 + 双阴影）——
+        //        部署目标已 iOS 26，这档只是老 SDK 兜底
         //    而且系统 glass 自带高光和描边，**再叠 background / overlay / shadow 会打架**，
         //    叠出来的效果是"半透明白卡片"，不是液态玻璃 —— 这坑我踩过一次。
         content.liquidGlass(

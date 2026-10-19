@@ -159,15 +159,16 @@ ok(!/presentationDetents/.test(panel),
 ok((web.match(/modifier\(ClearNavigationBackground\(\)\)/g) || []).length >= 3,
    '三个子页都用了 ClearNavigationBackground');
 ok(/private struct ClearNavigationBackground: ViewModifier/.test(web), '有 ClearNavigationBackground 修饰符');
-ok(/#available\(iOS 18\.0, \*\)[\s\S]{0,120}?containerBackground\(\.clear, for: \.navigation\)/.test(web),
-   '.navigation 那个 placement 是 iOS 18+，必须用 #available 包起来');
+// 部署目标已经是 iOS 26（用户要求「给我走 26」），
+// .navigation placement（iOS 18 引入）不需要 #available 分派了。
+ok(/containerBackground\(\.clear, for: \.navigation\)/.test(web),
+   '用 containerBackground(.clear, for: .navigation) 清导航背景');
+ok(!/private struct ClearNavigationBackground[\s\S]{0,200}#available\(iOS 18/.test(web),
+   'iOS 26 目标下不再需要 #available(iOS 18) 分派');
 // containerBackground(.clear, for: .navigation) 只能活在 #available(iOS 18) 分支里
 const navMod = web.slice(web.indexOf('private struct ClearNavigationBackground'));
-const avail = navMod.indexOf('#available(iOS 18.0, *)');
-const cb = navMod.indexOf('containerBackground(.clear, for: .navigation)');
-ok(avail >= 0 && cb > avail, 'containerBackground 在 #available(iOS 18) 之后');
-ok(cb < navMod.indexOf('else'),
-   'containerBackground 在 if 分支里，else 分支（iOS 17）走另一条路');
+ok(navMod.indexOf('containerBackground(.clear, for: .navigation)') >= 0,
+   'ClearNavigationBackground 里用了 containerBackground(.clear)');
 
 console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'),
