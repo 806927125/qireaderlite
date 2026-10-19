@@ -566,20 +566,27 @@ struct ReaderWebView: View {
             )
             .onPreferenceChange(SheetContentHeightKey.self) { h in
                 guard h > 0 else { return }
-                // +56 是导航栏（标题 + 完成按钮）
-                let target = min(max(h + 56, 320), 900)
+                // +46 = 导航栏本身（没有大标题，只有右上角 ✕）。
+                // 原来 +56 是给「标题 + 完成按钮」留的，标题去掉后 44 就够。
+                let target = min(max(h + 46, 300), 860)
                 if abs(target - sheetHeight) > 1 { sheetHeight = target }
             }
             .padding(.horizontal, 14)
             .padding(.top, 6)
             .padding(.bottom, 10)
-            .navigationTitle("阅读设置")
+            // ⚠️ 不设 navigationTitle —— 栖阅那个面板**没有大标题**，
+            //    只有右上角一个小 ✕。留个「阅读设置」标题既占高度，
+            //    又和磁贴里那格「大小 / 显示设置」重复。
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
+                    Button {
                         showSettings = false
                         session.host.setSettings(settingsPayload(coverDataURL: nil))
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(Theme.ink)
                     }
                 }
             }
@@ -628,7 +635,7 @@ struct ReaderWebView: View {
             sizeKnob("大", pointSize: 17)
             fontMenu
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 9)
     }
 
     /// 小 / 大：灰底圆角方块
@@ -636,7 +643,7 @@ struct ReaderWebView: View {
         Text(text)
             .font(.system(size: pointSize, weight: .medium))
             .foregroundStyle(Theme.ink)
-            .frame(width: 36, height: 32)
+            .frame(width: 32, height: 28)
             .background(Self.qrFill,
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -667,7 +674,7 @@ struct ReaderWebView: View {
             paletteRow(ReaderTheme.light, icon: "sun.max.fill")
             paletteRow(ReaderTheme.darkRow, icon: "moon.fill")
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
     }
 
     private func paletteRow(_ list: [ReaderTheme], icon: String) -> some View {
@@ -680,7 +687,7 @@ struct ReaderWebView: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(t.ink)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 36)
+                        .frame(height: 28)
                         .background(t.bg, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
