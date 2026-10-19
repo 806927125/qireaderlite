@@ -189,16 +189,17 @@ ok(/VStack\(spacing: 3\)/.test(web), '磁贴内间距 3（原来 6）');
 }
 ok(/frame\(height: 28\)/.test(web), '配色格高 28（原来 36）');
 ok(/frame\(width: 32, height: 28\)/.test(web), '小/大方块 32x28（原来 36x32）');
-// 栖阅那个面板**没有大标题**，只有右上角一个小 ✕
-ok(!/navigationTitle\("阅读设置"\)/.test(web), '没有「阅读设置」大标题（栖阅也没有）');
-{
-  const tb = web.slice(web.indexOf('.toolbar {'), web.indexOf('.navigationDestination'));
-  ok(/Image\(systemName: "xmark"\)/.test(tb), '右上角是 ✕ 图标，不是「完成」两个字');
-}
-ok(!/Button\("完成"\)/.test(web), '没有「完成」文字按钮');
-ok(/min\(max\(h \+ 46, 300\), 860\)/.test(web),
-   'detent 按内容高度算，+46 = 光导航栏（去掉标题后）；上限 860');
-
+// 栖阅那个面板**顶部就是内容**，没有标题栏也没有右上角按钮
+ok(!/navigationTitle\("阅读设置"\)/.test(web), '没有「阅读设置」大标题');
+ok(!/Button\("完成"\)/.test(web), '没有「完成」按钮');
+ok(/\.toolbar\(\.hidden, for: \.navigationBar\)/.test(web),
+   '根页整个导航栏藏掉（栖阅那个面板压根没有导航栏）');
+// ⚠️ 但子页**必须**显式恢复 —— .toolbar(.hidden) 对整个 NavigationStack 生效，
+//    不恢复的话 push 进去连返回按钮都没有，用户出不来。
+ok((web.match(/\.toolbar\(\.visible, for: \.navigationBar\)/g) || []).length === 3,
+   '三个子页（显示/间距/更多）都显式恢复导航栏 + 返回按钮');
+ok(/min\(max\(h \+ 4, 260\), 840\)/.test(web),
+   'detent 不再给导航栏留高度（原 +56 / +46 都去掉了）');
 console.log('\n── 没接的功能：摆位但不点 ──');
 const tiles = web.slice(web.indexOf('private static let tiles:'),
                         web.indexOf('private func tileRow'));

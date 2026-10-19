@@ -566,42 +566,40 @@ struct ReaderWebView: View {
             )
             .onPreferenceChange(SheetContentHeightKey.self) { h in
                 guard h > 0 else { return }
-                // +46 = 导航栏本身（没有大标题，只有右上角 ✕）。
-                // 原来 +56 是给「标题 + 完成按钮」留的，标题去掉后 44 就够。
-                let target = min(max(h + 46, 300), 860)
+                // 导航栏整个藏了，所以不用再给它留高度（原 +56 / +46 都不需要）。
+                let target = min(max(h + 4, 260), 840)
                 if abs(target - sheetHeight) > 1 { sheetHeight = target }
             }
             .padding(.horizontal, 14)
             .padding(.top, 6)
             .padding(.bottom, 10)
-            // ⚠️ 不设 navigationTitle —— 栖阅那个面板**没有大标题**，
-            //    只有右上角一个小 ✕。留个「阅读设置」标题既占高度，
-            //    又和磁贴里那格「大小 / 显示设置」重复。
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        showSettings = false
-                        session.host.setSettings(settingsPayload(coverDataURL: nil))
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.footnote.weight(.bold))
-                            .foregroundStyle(Theme.ink)
-                    }
-                }
-            }
+            // ⚠️ 整个导航栏藏掉：没有「阅读设置」大标题，也没有右上角「完成」。
+            //    栖阅那个面板顶部直接就是「小 ▬ 大 [系统字体]」，标题栏压根不存在。
+            //    NavigationStack 还得留着 —— 子页（显示/间距/更多）是 push 进去的。
+            .toolbar(.hidden, for: .navigationBar)
+            // ⚠️ 这里**没有 toolbar** —— 「完成」按钮整个去掉了。
+            //    栖阅那个面板就没有右上角任何按钮，靠下拉关闭。
+            //    留着它不仅占宽度，还和磁贴里那格「大小 / 显示设置」语义重复。
+            // ⚠️ 根页藏了导航栏，**子页必须显式恢复** ——
+            //    `.toolbar(.hidden, for: .navigationBar)` 是对整个
+            //    NavigationStack 生效的，不在子页写 `.visible` 的话，
+            //    push 进去导航栏也是隐的 → 连返回按钮都没有，用户出不来。
+            //    子页的标题（显示设置 / 间距设置 / 更多设置）也正是这时候才有用。
             .navigationDestination(isPresented: $showDisplaySettings) {
                 displaySettingsPage
+                    .toolbar(.visible, for: .navigationBar)
                     // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
                     .modifier(ClearNavigationBackground())
             }
             .navigationDestination(isPresented: $showLayoutSettings) {
                 layoutSettingsPage
+                    .toolbar(.visible, for: .navigationBar)
                     // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
                     .modifier(ClearNavigationBackground())
             }
             .navigationDestination(isPresented: $showMoreSettings) {
                 moreSettingsPage
+                    .toolbar(.visible, for: .navigationBar)
                     // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
                     .modifier(ClearNavigationBackground())
             }
