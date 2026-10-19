@@ -173,17 +173,13 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 // ★ iOS 26 的系统玻璃必须是 partial-height sheet。
 //   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
 //   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
-// ⚠️⚠️ 面板用**磨砂玻璃**（white .82 + .ultraThinMaterial），不用 .glassEffect。
-//    iOS 26 的折射玻璃会在**边缘把靠近的内容扭掉** —— 面板上沿附近的控件
-//    （字号行 / 色块）看着变形、被"挡"。用户从 build84 到 build101 连续反馈
-//    「被挡」，根因就是这个。
-//    栖阅那块（ui.txt 的 .panel）本来就是 rgba(255,255,255,.82) + blur(24px)。
-ok(/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel),
-   '面板底色 white@0.82（磨砂白，ui.txt .panel 原值）');
-ok(/\.background\(\s*\.ultraThinMaterial/.test(panel),
-   '面板用 .ultraThinMaterial 模糊（ui.txt backdrop-filter: blur(24px)）');
-ok(!/glassEffect\(/.test(panel),
-   '**不**用 .glassEffect（折射会扭掉边缘的控件，看着像被挡）');
+// 面板背景 = **液态玻璃**（用户明确要：栖阅风格液态玻璃）。
+// build102 我拿「折射会扭掉边缘控件」把它换成磨砂白，那是**误解**诉求 ——
+// 折射不是成因，成因是**内容区高度不够、控件被裁**。
+ok(/\.glassEffect\(\.regular, in: RoundedRectangle\(cornerRadius: 22/.test(panel),
+   '面板用 .glassEffect(.regular) 液态玻璃');
+ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel),
+   '不用磨砂白（用户要液态玻璃）');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
 // 目录 sheet 本来就该有 detent（.medium/.large）；
 // 只判定**设置面板**那一段没有 detent。
@@ -245,16 +241,16 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
   // 玻璃层 = 第一个 `.background(... in: RoundedRectangle(cornerRadius: 22)`
   const glassAt = panel.indexOf('in: RoundedRectangle(cornerRadius: 22');
   const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 50)');
+  const innerTop = panel.indexOf('.padding(.top, 56)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
   const outerBot = panel.lastIndexOf('.padding(.bottom, 14)');
   // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
   // 顶部 12 → 30 → 42 → 50：用户连续要「按钮整体下移一点」。
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 50 / bottom 16）');
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 56 / bottom 16）');
   // 顶部 12 → 30 → 42：用户连续要「里面整体往下挪」，
   // 栖阅真机面板顶到「小」那行的距离约 42pt（截图量）。
-  ok(/\.padding\(\.top, 50\)/.test(panel), '内部顶部留白 50（按钮整体下移）');
+  ok(/\.padding\(\.top, 56\)/.test(panel), '内部顶部留白 56（按钮整体下移）');
   ok(innerPad >= 0 && innerPad < glassAt,
      '内部 padding 在 玻璃**之前**（玻璃里面）');
   ok(innerBot < glassAt, '内部底 padding 在玻璃之前');
@@ -269,17 +265,18 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 ok(!/\.background\(Color\.white\.opacity\(0\.82\)/.test(panel),
    '**不**留 white@.82（那是普通毛玻璃，不是液态玻璃）');
-// ⚠️⚠️ 面板背景 = **磨砂玻璃**：white@0.82 + .ultraThinMaterial。
-//    不用 .glassEffect —— 折射玻璃会把边缘的控件扭掉，看着像被挡。
-ok(/\.background\(\s*Color\.white\.opacity\(0\.82\),\s*\n?\s*in: RoundedRectangle/.test(panel),
-   '面板是磨砂玻璃：white@0.82（ui.txt .panel 原值）');
-ok(!/glassEffect\(/.test(panel), '不用 .glassEffect（折射会扭掉边缘控件）');
+ok(/\.glassEffect\(\.regular, in: RoundedRectangle\(cornerRadius: 22/.test(panel),
+   '面板是液态玻璃 .glassEffect(.regular)');
 ok(!/\.background \{[\s\S]{0,200}RoundedRectangle\(cornerRadius: 22/.test(web),
    '不写 .background { RoundedRectangle(...) }（flexible Shape 会铺满）');
-// ⚠️ 内容区高度必须**等于内容自然高**，不能是「内容高 + 余量」：
-//    否则内部 padding(30+16) 吃不掉，内容被压 → 视觉上顶在上沿。
-ok(/\.frame\(height: max\(sheetHeight - 4, 200\)\)/.test(panel),
-   '内容区高 = 内容自然高（sheetHeight - 4），内容不被 padding 压扁');
+// ⚠️⚠️ **不许**用 `.frame(height:)` 固定内容区高度 —— 那个 frame 会把内容
+//    **裁到指定高度**，控件放不下就少一截，看着就是「被挡」。
+//    正确做法：`.fixedSize` 让内容按自然高度撑开，**一点不裁**
+//    （用户原话：「把缺的补全」）。
+ok(!/\.frame\(height: max\(sheetHeight/.test(panel),
+   '不用 .frame(height:) 固定内容区高（会裁切控件）');
+ok(/\.fixedSize\(horizontal: false, vertical: true\)/.test(panel),
+   '内容区用 fixedSize 自然撑开，缺多少补多少（不裁切）');
 ok(/\.frame\(height: sheetHeight\)/.test(panel) === false,
    '不直接用 sheetHeight 当内容区高（会压掉 24pt）');
 ok(/hardCap = screenH \* 0\.70/.test(web), '高度有屏幕 70% 硬上限');

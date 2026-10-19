@@ -583,16 +583,17 @@ struct ReaderWebView: View {
             // ⚠️ overlay 没有 detent 撑着，NavigationStack 会把面板吃成**全屏**，
             //    背景铺满整屏、内容居中（真机就是这样炸的）。
             //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
-            // ⚠️ 内容区高度 = 内容自然高（sheetHeight 是「量到的内容高 + 4」，
-            //    这里减掉那 4 的余量）。
+            // ⚠️⚠️ **不许**用 `.frame(height:)` 固定内容区高度！
             //
-            //    之前直接用 sheetHeight，而内部 padding 要 12 + 16 = 28pt，
-            //    内容区只比内容自然高 4pt —— **内容被压了 24pt**，
-            //    视觉上就是「内容顶在面板上沿、下面空一截」。
+            //    那个 frame 会把内容**裁到指定高度**—— 控件放不下就少一截，
+            //    看着就是「被挡」（用户连续多轮反馈）。
+            //    正确做法：`.fixedSize` 让内容按**自然高度**撑开，**一点不裁**，
+            //    缺多少补多少（用户原话：「把缺的补全」）。
             //
-            //    减掉 4 之后，内容区正好等于内容自然高，
-            //    上下留白完全由 padding 决定。
-            .frame(height: max(sheetHeight - 4, 200))
+            //    面板总高 = 内容自然高 + 内部 padding + 定位 padding，
+            //    贴底对齐，超屏的风险由内容本身控制（不像 background 里
+            //    那种 flexible Shape 会无脑撑满）。
+            .fixedSize(horizontal: false, vertical: true)
 
             // ── ui.txt 的 .panel 有**两个不同层级**的留白，别写成重复的 ──
             //
@@ -608,35 +609,24 @@ struct ReaderWebView: View {
             //
             // ② 内部 padding（玻璃**里面**）
             //
-            // 顶部 12 → 30 → 42 → **50**：用户连续要「按钮整体下移一点」。
+            // 顶部 12 → 30 → 42 → 50 → **56**：用户连续要「按钮整体下移一点」。
             // 栖阅真机面板顶到「小」那行的距离约 **42pt**（截图量）。
-            .padding(.top, 50)
+            .padding(.top, 56)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 
-            // 面板背景 = **磨砂玻璃**（半透明白 + 强模糊），**不用** .glassEffect。
+            // 面板背景 = **液态玻璃**（iOS 26 的 `.glassEffect`）。
             //
-            // ⚠️⚠️ 这条我绕了太久：
-            //   · build84~101 一直用 `.glassEffect(.regular)`（iOS 26 真液态玻璃），
-            //     用户从 build84 起就**连续**反馈「滑块/按钮被挡」——
-            //   · 原因：iOS 26 的**折射玻璃会在边缘把靠近的内容扭掉**，
-            //     面板上沿附近的控件（字号行、色块）看着就变形、被"挡"。
-            //   · 而栖阅那块（以及 ui.txt 的 .panel）其实是
-            //     `rgba(255,255,255,.82) + blur(24px)` —— **磨砂，不折射**。
-            //
-            // 用户要的「栖阅风格液态玻璃」= 半透明 + 模糊能透出后面内容，
-            // **不等于** iOS 26 的折射玻璃。要的是前者。
+            // 用户明确要的：栖阅风格**液态玻璃**。build102 我拿「折射会扭掉边缘控件」
+            // 把它换成磨砂白，那是**误解**了诉求 —— 折射不是问题的成因，
+            // 成因是**内容区高度不够、控件被裁**（见下面 fixedSize）。
             //
             // ⚠️ 必须用 `background(_:in:)` 重载，**不能**写 `.background { Shape }`：
             //    后者闭包里的 Shape 是 flexible view，ZStack 给多大 proposal
             //    它就撑多大 → 背景铺满整屏（build88 炸过）。
             .background(
-                Color.white.opacity(0.82),
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-            )
-            .background(
-                .ultraThinMaterial,
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+                Color.clear
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
 
             // ① 定位留白（玻璃**外面**）：面板离屏幕左右各 14、离底 14
