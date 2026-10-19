@@ -276,6 +276,12 @@ ok(/hardCap = screenH \* 0\.70/.test(web), '高度有屏幕 70% 硬上限');
 // 字号行
 ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
 ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
+// ⚠️ SwiftUI 的 Slider 在 iOS 26 新样式下**滑轨会画到自己 frame 之外**。
+//    HStack 的 spacing 只管视图框、管不住绘制外延 →
+//    「小」按钮的圆形底会盖住滑轨左端一小截（用户反馈「滑块被挡了一点」）。
+//    所以 Slider 必须有水平 padding 给绘制外延留位置。
+ok(/Slider\(value: \$fontSize, in: 14\.\.\.28[^)]*\)[\s\S]{0,80}padding\(\.horizontal, 8\)/.test(web),
+   'Slider 有水平 padding（给滑轨两端的绘制外延留位置，别被「小/大」圆底压住）');
 ok(/padding\(\.horizontal, 13\)/.test(fontMenu), '字体下拉 水平内边距 13（ui.txt .font-select）');
 ok(/padding\(\.vertical, 7\)/.test(fontMenu), '字体下拉 垂直内边距 7');
 ok(/cornerRadius: CGFloat = 18/.test(chip) && /fontSize: CGFloat = 14/.test(chip),

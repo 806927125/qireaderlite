@@ -795,9 +795,19 @@ struct ReaderWebView: View {
     private var sizeRow: some View {
         // ui.txt: .row-fontsize { padding: 0 2px 10px; gap: 10 }
         // 字号滑块 14...28（ui.txt 的 min=14 max=28，不是 14...34）
-        HStack(spacing: 10) {
+        // ui.txt: .row-fontsize { gap: 10 }，滑块是 `<input type=range>`（width:100%）
+        //
+        // ⚠️ 但 SwiftUI 的 `Slider` 在 iOS 26 新样式下，**滑轨会画到自己 frame 之外**
+        //    （两端有外延），HStack 的 spacing 只管**视图框**、管不住**绘制外延** →
+        //    「小」按钮的圆形底会**盖住滑轨左端一小截**（用户反馈「滑块被挡了一点」）。
+        //
+        //    修法：给 Slider 留出绘制外延的空间（padding），
+        //    同时把 HStack spacing 收窄，总视觉间距不变。
+        HStack(spacing: 2) {
             sizeKnob("小", pointSize: 14)
             Slider(value: $fontSize, in: 14...28, step: 1)   // ui.txt 14...28
+                // 给滑轨两端的绘制外延留位置，别被「小 / 大」圆形底压住
+                .padding(.horizontal, 8)
             sizeKnob("大", pointSize: 14)
             fontMenu
         }
