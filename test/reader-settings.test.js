@@ -138,8 +138,19 @@ ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
 ok(/ZStack\(alignment: \.bottom\)/.test(web), '根容器是 bottom 对齐的 ZStack');
 ok(/settingsSheet/.test(web.slice(web.indexOf('ZStack(alignment: .bottom)'))),
    '面板挂在 ZStack 里（等价于 Positioned(bottom:0)）');
-ok(/\.background\(\.ultraThinMaterial\)/.test(web),
-   '面板用 .ultraThinMaterial（overlay 里才真的能模糊到下面）');
+// ⚠️⚠️ 必须用 `background(_:in:)` 这个重载，**不能**写 `.background { Shape }`。
+//    build88 真机直接炸成全屏：`.background { RoundedRectangle().fill().background(...) }`
+//    里的 Shape 是 **flexible view** —— ZStack 给它多大 proposal 它就撑多大，
+//    背景铺满整屏，clipShape 把内容裁在里面，看着就是「整屏米色 + 内容居中」。
+//    两种写法肉眼几乎一样，行为完全相反。
+ok(/\.background\(\.ultraThinMaterial,\s*\n?\s*in: RoundedRectangle\(cornerRadius: 26/.test(web),
+   '玻璃用 background(_:in:) 重载（.background { Shape } 会撑成全屏）');
+ok(!/\.background \{\s*\n?\s*RoundedRectangle\(cornerRadius: 26[\s\S]{0,200}ultraThinMaterial[\s\S]{0,80}\n\s*\}/.test(web),
+   '不写 .background { RoundedRectangle()... } 这类 flexible Shape 背景');
+ok(/\.frame\(height: sheetHeight\)/.test(panel),
+   '面板显式给高度（overlay 没有 detent 撑，NavigationStack 会吃成全屏）');
+ok(/hardCap = screenH \* 0\.70/.test(web), '面板高度有屏幕 70% 硬上限（量飞了也不会铺满）');
+ok(/min\(max\(h \+ 4, 260\), 840, hardCap\)/.test(web), '实测高度再经硬上限夹一次');
 ok(/cornerRadius: 26/.test(web), '面板圆角 26');
 ok(/DragGesture\(minimumDistance: 8\)[\s\S]{0,400}showSettings = false/.test(web),
    '自己实现了下拉关闭（overlay 没有系统 sheet 手势可依赖）');
@@ -166,7 +177,7 @@ ok(!/Spacer\(minLength: 0\)/.test(web.slice(web.indexOf('var settingsContent'), 
 //   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
 //   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
 // 玻璃：overlay 里 .ultraThinMaterial 真的能模糊到下面的正文
-ok(/\.background\(\.ultraThinMaterial\)/.test(web), '面板用 .ultraThinMaterial');
+ok(/\.background\(\.ultraThinMaterial,/.test(web), '面板玻璃材质在位');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
 // 目录 sheet 本来就该有 detent（.medium/.large）；
 // 只判定**设置面板**那一段没有 detent。
@@ -297,8 +308,8 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)/.test(web),
 //    不恢复的话 push 进去连返回按钮都没有，用户出不来。
 ok((web.match(/\.toolbar\(\.visible, for: \.navigationBar\)/g) || []).length === 3,
    '三个子页（显示/间距/更多）都显式恢复导航栏 + 返回按钮');
-ok(/min\(max\(h \+ 4, 260\), 840\)/.test(web),
-   'detent 不再给导航栏留高度（原 +56 / +46 都去掉了）');
+ok(/min\(max\(h \+ 4, 260\), 840, hardCap\)/.test(web),
+   '面板高度 = 实测内容高度，且夹在硬上限内（导航栏已藏，不再 +56/+46）');
 console.log('\n── 没接的功能：摆位但不点 ──');
 const tiles = web.slice(web.indexOf('private static let tiles:'),
                         web.indexOf('private func tileRow'));

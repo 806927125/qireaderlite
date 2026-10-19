@@ -52,7 +52,7 @@ struct ReaderWebView: View {
     @State private var showLayoutSettings = false
     @State private var showMoreSettings = false
     /// 面板内容实测高度，用来给 partial detent
-    @State private var sheetHeight: CGFloat = 620
+    @State private var sheetHeight: CGFloat = 560   // 初值只是占位，首帧后被 PreferenceKey 实测值覆盖
     @State private var started = false
 
     /// ReaderSession 是 @MainActor 类，init 也得在主线程（Swift 5 模式强检查）
@@ -576,15 +576,24 @@ struct ReaderWebView: View {
     /// 代价是失去系统 sheet 自带的下滑关闭手势 —— 下面自己实现了一个。
     private var settingsSheet: some View {
         settingsContent
-            .frame(maxWidth: .infinity)
+            // ⚠️ overlay 没有 detent 撑着，NavigationStack 会把面板吃成**全屏**，
+            //    背景铺满整屏、内容居中（真机就是这样炸的）。
+            //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
+            .frame(height: sheetHeight)
             .padding(.horizontal, 12)
             .padding(.bottom, 12)
-            // 玻璃：材质真的能模糊到**下面的正文和主题插画**，这才是液态玻璃
-            .background {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(Self.qrPanel)              // 浅米底 0xE6EFE7D6
-                    .background(.ultraThinMaterial)  // ← overlay 里才有效
-            }
+            // ⚠️⚠️ 玻璃背景**必须**用 `background(_:in:)` 这个重载，**不能**写
+            //      `.background { RoundedRectangle()... }`。
+            //      区别不是风格，是**尺寸**：
+            //        · `.background { RoundedRectangle() }` —— 里面的 Shape 是
+            //          **flexible view**，ZStack 给它什么 proposal 它就撑多大
+            //          → 背景铺满整屏
+            //        · `.background(.ultraThinMaterial, in: RoundedRectangle())`
+            //          —— 材质尺寸**跟随视图**，不会溢出
+            .background(Self.qrPanel,
+                        in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .background(.ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .offset(y: showSettings ? 0 : sheetHeight + 48)
             .opacity(showSettings ? 1 : 0)
@@ -628,7 +637,12 @@ struct ReaderWebView: View {
             .onPreferenceChange(SheetContentHeightKey.self) { h in
                 guard h > 0 else { return }
                 // 导航栏整个藏了，所以不用再给它留高度（原 +56 / +46 都不需要）。
-                let target = min(max(h + 4, 260), 840)
+                // ⚠️ 硬上限 = 屏幕的 70%。overlay 没有 detent 兜底，
+                //    万一 PreferenceKey 量到离谱的值（比如某个子视图 flexible 撑开），
+                //    面板也不至于铺满全屏 —— build88 就是这么炸的。
+                let screenH = UIScreen.main.bounds.height
+                let hardCap = screenH * 0.70
+                let target = min(max(h + 4, 260), 840, hardCap)
                 if abs(target - sheetHeight) > 1 { sheetHeight = target }
             }
             // 16 / 16 / 16 / **28** —— 底部 28 是给 home indicator 让的位置，
