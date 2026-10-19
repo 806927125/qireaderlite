@@ -187,9 +187,11 @@ struct ReaderWebView: View {
         pagedTitle = session.chapterTitle
         pagedLayout = sig
         pager.chapterTextProvider = { (c: Int) -> PagedChapterPager.ChapterText? in
-            c == session.index
-                ? PagedChapterPager.ChapterText(title: session.chapterTitle, body: session.chapterText)
-                : nil
+            // 只有当前章的正文在 session 里；邻章由 prefetch 拉回来后
+            // 由 chapterTextArrived 显式回填
+            guard c == session.index else { return nil }
+            return PagedChapterPager.ChapterText(title: session.chapterTitle,
+                                                 body: session.chapterText)
         }
         pager.chapterCount = session.flat.count
         pager.loadChapter(session.index)

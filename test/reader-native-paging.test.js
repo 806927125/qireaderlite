@@ -122,8 +122,15 @@ console.log('\n── 绝不留白正文 ──');
 ok(/func pageCount\(of c: Int\)/.test(pager), '按章算页数（重建 spine 用）');
 ok(/guard let t = texts\[c\], !t\.body\.isEmpty else \{ return 1 \}/.test(pager),
    '文本没到位的章按 1 页占位，到齐了重建 spine');
-ok(/if texts\[c\] == nil \{ texts\[c\] = chapterTextProvider\?\(c\) \}/.test(pager),
-   '文本到齐会填进 texts');
+ok(/if let t = chapterTextProvider\?\(c\) \{ texts\[c\] = t \}/.test(pager),
+   '文本到齐会填进 texts（字典下标赋值不接受 Optional，必须 if let 摊平）');
+ok(!/texts\[c\] = chapterTextProvider\?\(c\)/.test(pager),
+   '没直接给字典下标赋 Optional —— 那样推不出类型');
+ok(/func setPageSize\(_ size: CGSize\)/.test(pager), '视口变化要能重算页数');
+ok(/guard size\.width > 1, size\.height > 1 else \{ return \}/.test(pager),
+   'setPageSize 同样不让 .zero 进来（那会算出 80×80 迷你页）');
+ok(/chapterTextProvider: \(\(Int\) -> ChapterText\?\)\?/.test(pager),
+   'provider 返回 ChapterText 不是 String');
 ok(/rebuildSpine\(around:/.test(pager), 'spine 会重建');
 
 console.log('\n── 接线：webview 只在上下滚动模式用 ──');

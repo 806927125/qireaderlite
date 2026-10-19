@@ -33,7 +33,7 @@ final class PagedChapterPager: NSObject {
     /// 当前章号变化（用来让上层同步 session.index 和预取）
     var onChapterChange: ((Int) -> Void)?
     /// 章内文本到齐（数据源据此排页）。返回 nil = 加载中/失败
-    var chapterTextProvider: ((Int) -> String?)?
+    var chapterTextProvider: ((Int) -> ChapterText?)?
 
     /// 章总数
     var chapterCount: Int = 0
@@ -75,12 +75,28 @@ final class PagedChapterPager: NSObject {
         return v
     }
 
+    /// 视口变了 → 页大小变 → spine 里每章的页数都得重算
+    func setPageSize(_ size: CGSize) {
+        guard size.width > 1, size.height > 1 else { return }
+        guard abs(size.width - pageSize.width) > 0.5
+                || abs(size.height - pageSize.height) > 0.5 else { return }
+        pageSize = size
+        guard chapterCount > 0 else { return }
+        let at = cursor
+        rebuildSpine(around: chapter)
+        // 尽量落回原来那一页
+        if spine.indices.contains(at) { show(cursor: at, animated: false) }
+    }
+
     // MARK: 灌数据
 
     /// 换章：重建 spine，落在该章第一页
     func loadChapter(_ c: Int) {
         chapter = c
-        if texts[c] == nil { texts[c] = chapterTextProvider?(c) }
+        // ⚠️ 字典下标赋值不接受 Optional：chapterTextProvider?() 出来是
+        //    ChapterText??，必须 if let 摊平，否则报
+        //    "type of expression is ambiguous without a type annotation"
+        if texts[c] == nil, let t = chapterTextProvider?(c) { texts[c] = t }
         failedChapters.remove(c)
         rebuildSpine(around: c)
         show(cursor: firstIndex(ofChapter: c), animated: false)
@@ -89,7 +105,7 @@ final class PagedChapterPager: NSObject {
 
     /// 章文本到齐（首次加载完 / 预取完）→ 重排该章在 spine 里的页
     func chapterTextArrived(_ c: Int) {
-        texts[c] = chapterTextProvider?(c)
+        if let t = chapterTextProvider?(c) { texts[c] = t }
         loadingChapters.remove(c)
         rebuildSpine(around: chapter)
     }
