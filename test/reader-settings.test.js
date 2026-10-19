@@ -223,9 +223,30 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
 }
 
 // 面板容器按 ui.txt 一比一：left/right/bottom 14、radius 22、padding 12/14/16
-ok(/\.padding\(\.horizontal, 14\)/.test(panel), '面板左右留白 14');
-ok(/\.padding\(\.bottom, 14\)/.test(panel), '面板底部留白 14');
-ok(/\.padding\(\.top, 12\)/.test(panel), '面板顶 padding 12');
+// ⚠️⚠️ ui.txt 的 .panel 有**两个层级**的留白：
+//     left/right/bottom 14  = ① 定位（玻璃**外面**）
+//     padding 12/14/16      = ② 内部（玻璃**里面**）
+// 写成重复的 .padding(.horizontal, 14) 会累加成左右各 28
+// → 玻璃撑宽 → 内容溢出屏幕被裁（真机：色块第8个、宫格「高亮」被切）。
+{
+  const glassAt = panel.indexOf('glassEffect');
+  const innerPad = panel.indexOf('.padding(.horizontal, 14)');
+  const innerTop = panel.indexOf('.padding(.top, 12)');
+  const innerBot = panel.indexOf('.padding(.bottom, 16)');
+  const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
+  const outerBot = panel.lastIndexOf('.padding(.bottom, 14)');
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding 12/16');
+  ok(innerPad >= 0 && innerPad < glassAt,
+     '内部 padding 在 glassEffect **之前**（玻璃里面）');
+  ok(innerBot < glassAt, '内部底 padding 在 glassEffect 之前');
+  ok(outerPad > glassAt && outerPad !== innerPad,
+     '定位 padding 在 glassEffect **之后**（玻璃外面），且不与内部那个重复');
+  ok(outerBot > glassAt, '定位底 padding 在 glassEffect 之后');
+  // 左右 padding 在玻璃前后各出现一次，且**不能**都在玻璃前
+  const hP = [...panel.matchAll(/\.padding\(\.horizontal, 14\)/g)].map(m => m.index);
+  ok(hP.length === 2 && hP[0] < glassAt && hP[1] > glassAt,
+     '左右 padding 恰好两次：一次在玻璃前、一次在玻璃后');
+}
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 ok(!/\.background\(Color\.white\.opacity\(0\.82\)/.test(panel),
    '**不**留 white@.82（那是普通毛玻璃，不是液态玻璃）');

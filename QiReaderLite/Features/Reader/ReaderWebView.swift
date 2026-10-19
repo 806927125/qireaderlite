@@ -584,31 +584,44 @@ struct ReaderWebView: View {
             //    背景铺满整屏、内容居中（真机就是这样炸的）。
             //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
             .frame(height: sheetHeight)
-                        .padding(.horizontal, 14)
-            .padding(.bottom, 14)
-            // ⚠️⚠️ 玻璃背景**必须**用 `background(_:in:)` 这个重载，**不能**写
-            //      `.background { RoundedRectangle()... }`。
-            //      区别不是风格，是**尺寸**：
-            //        · `.background { RoundedRectangle() }` —— 里面的 Shape 是
-            //          **flexible view**，ZStack 给它什么 proposal 它就撑多大
-            //          → 背景铺满整屏
-            //        · `.background(.ultraThinMaterial, in: RoundedRectangle())`
-            //          —— 材质尺寸**跟随视图**，不会溢出
-                        // .panel { padding: 12px 14px 16px; } —— ui.txt 原值
+
+            // ── ui.txt 的 .panel 有**两个不同层级**的留白，别写成重复的 ──
+            //
+            //   .panel { left:14px; right:14px; bottom:14px;   ← ① 定位：离屏幕边 14
+            //            padding: 12px 14px 16px }                ← ② 内部：面板里面再留 14
+            //
+            // 我之前把 ① 和 ② 都写成 `.padding(.horizontal, 14)`，
+            // **累加成左右各 28** → 玻璃背景跟着撑宽 → 内容溢出屏幕，
+            // 真机上色块第 8 个、宫格「高亮」右边都被切掉。
+            //
+            // 正确层次（从内到外）：
+            //   内容 → ②内部 padding → 玻璃 → ①定位留白
+            //
+            // ② 内部 padding（玻璃**里面**）
             .padding(.top, 12)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
+
             // 面板背景 = **液态玻璃**（iOS 26+ 唯一解）。
             //
             // 部署目标已经是 iOS 26，所以 `.glassEffect(.regular, in: shape)`
-            // 可以**直接调用**，不用 ViewModifier + #available 分派。
-            // 那是 iOS 26 新增 API：能折射背后的内容、有真实 depth 和 ambient shadow。
+            // 可以**直接调用**。那是 iOS 26 新增 API：折射背后的内容、
+            // 真实 depth、自带 ambient shadow。
             //
             // **不照搬** ui.txt 的 white@.82 —— 那是普通磨砂（塑料感），不是玻璃。
+            //
+            // ⚠️ 必须用 `background(_:in:)` 重载，**不能**写 `.background { Shape }`：
+            //    后者闭包里的 Shape 是 flexible view，ZStack 给多大 proposal
+            //    它就撑多大 → 背景铺满整屏（build88 炸过）。
             .background(
                 Color.clear
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
+
+            // ① 定位留白（玻璃**外面**）：面板离屏幕左右各 14、离底 14
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+
             .offset(y: showSettings ? 0 : sheetHeight + 48)
             .opacity(showSettings ? 1 : 0)
             .animation(.spring(response: 0.34, dampingFraction: 0.86),
