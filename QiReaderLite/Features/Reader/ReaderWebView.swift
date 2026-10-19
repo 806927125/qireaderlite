@@ -583,17 +583,17 @@ struct ReaderWebView: View {
             // ⚠️ overlay 没有 detent 撑着，NavigationStack 会把面板吃成**全屏**，
             //    背景铺满整屏、内容居中（真机就是这样炸的）。
             //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
-            // ⚠️⚠️ **不许**用 `.frame(height:)` 固定内容区高度！
+            // ⚠️ 内容区高度必须用 `.frame(height:)` 固定，**不能**用 `.fixedSize`。
             //
-            //    那个 frame 会把内容**裁到指定高度**—— 控件放不下就少一截，
-            //    看着就是「被挡」（用户连续多轮反馈）。
-            //    正确做法：`.fixedSize` 让内容按**自然高度**撑开，**一点不裁**，
-            //    缺多少补多少（用户原话：「把缺的补全」）。
+            //    build103 我把 fixedSize 放在 **NavigationStack 外面** ——
+            //    NavigationStack 的 ideal height 算出来接近 **0**，
+            //    面板只剩 padding 撑起来的 86pt（56+16+14），
+            //    真机表现：**面板卡在屏幕底，只露出薄薄一条**。
             //
-            //    面板总高 = 内容自然高 + 内部 padding + 定位 padding，
-            //    贴底对齐，超屏的风险由内容本身控制（不像 background 里
-            //    那种 flexible Shape 会无脑撑满）。
-            .fixedSize(horizontal: false, vertical: true)
+            //    正确高度 = 内容自然高 + 余量 = sheetHeight（内部量的是 VStack 高 + 4）。
+            //    内部 padding(42+16) 在 frame **外面**，所以内容不会被裁：
+            //    内容区 = 内容自然高 + 4，上下留白完全由 padding 决定。
+            .frame(height: max(sheetHeight, 260))
 
             // ── ui.txt 的 .panel 有**两个不同层级**的留白，别写成重复的 ──
             //
@@ -609,9 +609,11 @@ struct ReaderWebView: View {
             //
             // ② 内部 padding（玻璃**里面**）
             //
-            // 顶部 12 → 30 → 42 → 50 → **56**：用户连续要「按钮整体下移一点」。
+            // 顶部 12 → 30 → **42**（栖阅真机实测：面板顶到「小」那行约 42pt）。
+            // 「整体下移」是误读 —— 用户要下移的是**下面那 8 个宫格按钮**，
+            // 不是整个面板内容（见 featureGrid 的 padding(.top, ...)）。
             // 栖阅真机面板顶到「小」那行的距离约 **42pt**（截图量）。
-            .padding(.top, 56)
+            .padding(.top, 42)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 
@@ -984,6 +986,9 @@ struct ReaderWebView: View {
             tileRow(0)
             tileRow(4)
         }
+        // ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
+        //    给它们自己加一段上边距，跟上面的 chips 行拉开距离。
+        .padding(.top, 12)
     }
 
     /// 一行 4 格。⚠️ `Self.tiles` 是**元组数组**，元组不是 Identifiable，

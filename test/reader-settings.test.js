@@ -241,16 +241,16 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
   // 玻璃层 = 第一个 `.background(... in: RoundedRectangle(cornerRadius: 22)`
   const glassAt = panel.indexOf('in: RoundedRectangle(cornerRadius: 22');
   const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 56)');
+  const innerTop = panel.indexOf('.padding(.top, 42)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
   const outerBot = panel.lastIndexOf('.padding(.bottom, 14)');
   // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
   // 顶部 12 → 30 → 42 → 50：用户连续要「按钮整体下移一点」。
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 56 / bottom 16）');
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 42 / bottom 16）');
   // 顶部 12 → 30 → 42：用户连续要「里面整体往下挪」，
   // 栖阅真机面板顶到「小」那行的距离约 42pt（截图量）。
-  ok(/\.padding\(\.top, 56\)/.test(panel), '内部顶部留白 56（按钮整体下移）');
+  ok(/\.padding\(\.top, 42\)/.test(panel), '内部顶部留白 42（栖阅实测值）');
   ok(innerPad >= 0 && innerPad < glassAt,
      '内部 padding 在 玻璃**之前**（玻璃里面）');
   ok(innerBot < glassAt, '内部底 padding 在玻璃之前');
@@ -269,16 +269,14 @@ ok(/\.glassEffect\(\.regular, in: RoundedRectangle\(cornerRadius: 22/.test(panel
    '面板是液态玻璃 .glassEffect(.regular)');
 ok(!/\.background \{[\s\S]{0,200}RoundedRectangle\(cornerRadius: 22/.test(web),
    '不写 .background { RoundedRectangle(...) }（flexible Shape 会铺满）');
-// ⚠️⚠️ **不许**用 `.frame(height:)` 固定内容区高度 —— 那个 frame 会把内容
-//    **裁到指定高度**，控件放不下就少一截，看着就是「被挡」。
-//    正确做法：`.fixedSize` 让内容按自然高度撑开，**一点不裁**
-//    （用户原话：「把缺的补全」）。
-ok(!/\.frame\(height: max\(sheetHeight/.test(panel),
-   '不用 .frame(height:) 固定内容区高（会裁切控件）');
-ok(/\.fixedSize\(horizontal: false, vertical: true\)/.test(panel),
-   '内容区用 fixedSize 自然撑开，缺多少补多少（不裁切）');
-ok(/\.frame\(height: sheetHeight\)/.test(panel) === false,
-   '不直接用 sheetHeight 当内容区高（会压掉 24pt）');
+// ⚠️ 内容区高度必须用 `.frame(height:)` 固定，**不能**用 `.fixedSize`。
+//    build103 我把 fixedSize 放在 **NavigationStack 外面** ——
+//    NavigationStack 的 ideal height 算出来接近 **0**，面板只剩 padding 撑起来
+//    的 86pt，真机表现：**面板卡在屏幕底，只露薄薄一条**。
+ok(/\.frame\(height: max\(sheetHeight, 260\)\)/.test(panel),
+   '内容区用 .frame(height: max(sheetHeight, 260)) 固定（fixedSize 在 NavigationStack 外层会塌成 0）');
+ok(!/\.fixedSize\(horizontal: false, vertical: true\)[\s\S]{0,200}\.padding\(\.top/.test(panel),
+   '不用 fixedSize 撑 NavigationStack（ideal height ≈ 0，面板会卡在屏底）');
 ok(/hardCap = screenH \* 0\.70/.test(web), '高度有屏幕 70% 硬上限');
 
 // 字号行
@@ -346,6 +344,18 @@ ok(/padding\(\.vertical, 9\)[\s\S]{0,40}padding\(\.horizontal, 4\)/.test(ft),
    '宫格内边距 9/4（参考实现 .cell padding:9px 4px 8px）');
 ok(/cornerRadius: 12/.test(ft), '宫格圆角 12（参考实现 .cell）');
 ok(/VStack\(spacing: 8\) \{\s*tileRow\(0\)/.test(web), '宫格间距 8（参考实现 gap:8px）');
+// ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
+//    之前我理解成「整体下移」，把面板内部 top padding 一路加到 56 —— 方向错了。
+ok(/private var featureGrid[\s\S]{0,400}padding\(\.top, 12\)/.test(web),
+   '8 个宫格按钮自己往下挪（padding.top 12）');
+ok(/padding\(\.top, 42\)/.test(panel),
+   '面板内部顶留白回 42（整体下移的诉求已撤销）');
+// ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
+//    之前我理解成「整体下移」，把面板内部 top padding 一路加到 56 —— 方向错了。
+ok(/private var featureGrid[\s\S]{0,400}padding\(\.top, 12\)/.test(web),
+   '8 个宫格按钮自己往下挪（padding.top 12）');
+ok(/padding\(\.top, 42\)/.test(panel),
+   '面板内部顶留白回 42（整体下移的诉求已撤销）');
 
 // ⚠️ 参考实现建议「去掉置灰（enabled:false）」让它看着正常 —— **不采纳**。
 //    未实现的功能（朗读 / 高亮 / 气泡 / 格式 / 页眉页脚）置灰是用户明确要的：
