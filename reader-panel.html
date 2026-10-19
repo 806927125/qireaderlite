@@ -6,11 +6,11 @@
 <title>轻阅 · 阅读面板预览</title>
 <style>
 :root{
-  --panel-x:12; --panel-b:12; --panel-r:26;
-  --card-t:24; --card-l:12; --card-b:12; --card-r:12; --card-rd:22; --card-a:0.35;
-  --knob:36; --chip-h:38; --chip-r:19; --chip-fs:13; --chip-gap:6;
-  --sw:44; --sw-rd:12; --sw-gap:6;
-  --tile-h:76; --tile-rd:16; --tile-gap:10; --tile-ico:18; --tile-tfs:15; --tile-sfs:11;
+  --panel-x:14; --panel-b:14; --panel-r:22;
+  
+  --knob:34; --chip-r:18; --chip-fs:14; --chip-gap:8; --chip-vy:8px;
+  --sw:42px; --sw-rd:9px; --sw-gap:8px;
+  --tile-rd:12; --tile-gap:8; --tile-tfs:18; --tile-sfs:13;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;font:14px/1.5 -apple-system,"PingFang SC",sans-serif;background:#20242b;color:#e8e8ea}
@@ -31,15 +31,14 @@ body{margin:0;font:14px/1.5 -apple-system,"PingFang SC",sans-serif;background:#2
 .scrim{position:absolute;inset:0;background:#000;opacity:.20}
 
 /* ── 面板：等价 SwiftUI 的 overlay ── */
-.panel{position:absolute;left:0;right:0;bottom:0;padding:0 var(--panel-x) var(--panel-b);
+.panel{position:absolute;left:0;right:0;bottom:var(--panel-b);padding:0 var(--panel-x);
   max-height:70%;display:flex;align-items:flex-end}
-.pglass{position:relative;width:100%;border-radius:var(--panel-r);overflow:hidden;
-  background:rgba(239,231,214,.90);backdrop-filter:blur(20px) saturate(1.4);
-  -webkit-backdrop-filter:blur(20px) saturate(1.4);box-shadow:0 -1px 0 #fff6 inset}
+.pglass{position:relative;width:100%;border-radius:var(--panel-r);
+  background:rgba(255,255,255,.82);backdrop-filter:blur(24px) saturate(1.4);
+  -webkit-backdrop-filter:blur(24px) saturate(1.4);
+  box-shadow:0 4px 30px rgba(0,0,0,.12);padding:12px 14px 16px}
 
-/* ── 内层白卡 ── */
-.card{margin:0 0 0;padding:var(--card-t) var(--card-r) var(--card-b) var(--card-l);
-  background:rgba(255,255,255,var(--card-a));border-radius:var(--card-rd)}
+
 
 /* 字号行 */
 .row{display:flex;align-items:center}
@@ -68,20 +67,20 @@ hr{border:0;height:1px;background:#00000014;margin:12px 0}
 /* chips */
 .chips{display:flex;gap:var(--chip-gap);align-items:center}
 .chips .ic{font-size:18px;width:20px;flex:0 0 auto;color:#000000c0}
-.chip{flex:1;height:var(--chip-h);border-radius:var(--chip-r);background:#00000012;
-  display:flex;align-items:center;justify-content:center;font-size:var(--chip-fs);
-  color:#000000d8;white-space:nowrap;overflow:hidden}
+.pillbox{flex:1;display:flex;gap:var(--chip-gap);overflow-x:auto;scrollbar-width:none}
+.pillbox::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;padding:var(--chip-vy) 17px;border-radius:var(--chip-r);background:#0000000f;
+  font-size:var(--chip-fs);color:#000000d8;white-space:nowrap;line-height:1.2}
 .chip.on{background:#4C7DF0;color:#fff}
 
 /* 宫格 */
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--tile-gap)}
 .grid+.grid{margin-top:var(--tile-gap)}
-.tile{height:var(--tile-h);border-radius:var(--tile-rd);background:#0000000f;
+.tile{border-radius:var(--tile-rd);background:#0000000d;padding:9px 4px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
-.tile .i{font-size:var(--tile-ico);line-height:1}
-.tile .t{font-size:var(--tile-tfs);font-weight:700;color:#000000d8}
-.tile .s{font-size:var(--tile-sfs);color:#0000008c}
-.tile.off .i,.tile.off .t,.tile.off .s{opacity:.38}
+.tile .t{font-size:var(--tile-tfs);font-weight:600;color:#000000d8;white-space:nowrap}
+.tile .s{font-size:var(--tile-sfs);color:#00000099;white-space:nowrap}
+.tile.off .t,.tile.off .s{opacity:.34}
 
 /* ── 右侧调参 ── */
 .ctrl{flex:1;min-width:300px;background:#171a20;border-radius:16px;padding:16px 18px;max-height:844px;overflow:auto}
@@ -113,7 +112,7 @@ hr{border:0;height:1px;background:#00000014;margin:12px 0}
         <p>突然，两个小黑影从山谷旁的峭壁上流星般的急 速扑下，一只身上布满黄黑条纹、猫般大小的小花狗 和另一只黑得像墨一样的野猫。</p>
       </div>
       <div class="scrim"></div>
-      <div class="panel"><div class="pglass"><div class="card">
+      <div class="panel"><div class="pglass">
 
         <div class="row">
           <div class="knob">小</div>
@@ -122,7 +121,9 @@ hr{border:0;height:1px;background:#00000014;margin:12px 0}
           <div class="pill">楷体 <span style="font-size:11px">⌄</span></div>
         </div>
 
-        <div class="crow" style="margin-top:12px">
+        <hr style="margin:10px 2px">
+
+        <div class="crow">
           <div class="ic">☀</div>
           <div class="swaps">
             <div class="sw" style="background:#fff;color:#000000c0">文</div>
@@ -158,26 +159,24 @@ hr{border:0;height:1px;background:#00000014;margin:12px 0}
 
         <div class="chips">
           <div class="ic">▤</div>
-          <div class="chip">仿真</div>
-          <div class="chip on">滑动</div>
-          <div class="chip">平移</div>
-          <div class="chip">无动画</div>
-          <div class="chip">上下滚动</div>
+          <div class="pillbox">
+            <div class="chip">仿真</div><div class="chip on">滑动</div>
+            <div class="chip">平移</div><div class="chip">无动画</div>
+            <div class="chip">上下滚动</div>
+          </div>
         </div>
 
-      </div>
-
       <div class="grid" style="margin-top:12px">
-        <div class="tile"><div class="i">▤</div><div class="t">大小</div><div class="s">显示设置</div></div>
-        <div class="tile"><div class="i">≡</div><div class="t">间隔</div><div class="s">间隔设置</div></div>
-        <div class="tile off"><div class="i">◖</div><div class="t">朗读</div><div class="s">朗读设置</div></div>
-        <div class="tile off"><div class="i">✎</div><div class="t">高亮</div><div class="s">高亮设置</div></div>
+        <div class="tile"><div class="t">大小</div><div class="s">显示设置</div></div>
+        <div class="tile"><div class="t">间隔</div><div class="s">间隔设置</div></div>
+        <div class="tile off"><div class="t">朗读</div><div class="s">朗读设置</div></div>
+        <div class="tile off"><div class="t">高亮</div><div class="s">高亮设置</div></div>
       </div>
       <div class="grid">
-        <div class="tile off"><div class="i">☁</div><div class="t">气泡</div><div class="s">设置</div></div>
-        <div class="tile off"><div class="i"></div><div class="t">格式</div><div class="s">标题样式</div></div>
-        <div class="tile off"><div class="i">▤</div><div class="t">页眉</div><div class="s">页脚</div></div>
-        <div class="tile"><div class="i">⋯</div><div class="t">更多</div><div class="s">设置</div></div>
+        <div class="tile off"><div class="t">气泡</div><div class="s">设置</div></div>
+        <div class="tile off"><div class="t">格式</div><div class="s">标题样式</div></div>
+        <div class="tile off"><div class="t">页眉</div><div class="s">页脚</div></div>
+        <div class="tile"><div class="t">更多</div><div class="s">设置</div></div>
       </div>
 
       </div></div></div>
@@ -190,49 +189,39 @@ hr{border:0;height:1px;background:#00000014;margin:12px 0}
 
     <div class="grp">面板容器（overlay）</div>
     <div class="row2">
-      <div class="f"><label>左右留白</label><input type="range" id="panel-x" min="0" max="40" value="12"><b></b></div>
-      <div class="f"><label>底部留白</label><input type="range" id="panel-b" min="0" max="40" value="12"><b></b></div>
-      <div class="f"><label>面板圆角</label><input type="range" id="panel-r" min="0" max="40" value="26"><b></b></div>
-    </div>
-
-    <div class="grp">内层白卡</div>
-    <div class="row2">
-      <div class="f"><label>上</label><input type="range" id="card-t" min="0" max="48" value="24"><b></b></div>
-      <div class="f"><label>左</label><input type="range" id="card-l" min="0" max="32" value="12"><b></b></div>
-      <div class="f"><label>下</label><input type="range" id="card-b" min="0" max="32" value="12"><b></b></div>
-      <div class="f"><label>右</label><input type="range" id="card-r" min="0" max="32" value="12"><b></b></div>
-      <div class="f"><label>圆角</label><input type="range" id="card-rd" min="0" max="34" value="22"><b></b></div>
-      <div class="f"><label>底色透明</label><input type="range" id="card-a" min="0" max="80" value="35"><b></b></div>
+      <div class="f"><label>左右留白</label><input type="range" id="panel-x" min="0" max="40" value="14"><b></b></div>
+      <div class="f"><label>底部留白</label><input type="range" id="panel-b" min="0" max="40" value="14"><b></b></div>
+      <div class="f"><label>面板圆角</label><input type="range" id="panel-r" min="0" max="40" value="22"><b></b></div>
     </div>
 
     <div class="grp">字号行</div>
     <div class="row2">
-      <div class="f"><label>小/大 直径</label><input type="range" id="knob" min="24" max="48" value="36"><b></b></div>
+      <div class="f"><label>小/大 直径</label><input type="range" id="knob" min="24" max="48" value="34"><b></b></div>
     </div>
 
     <div class="grp">配色格</div>
     <div class="row2">
-      <div class="f"><label>高度</label><input type="range" id="sw" min="28" max="60" value="44"><b></b></div>
-      <div class="f"><label>圆角</label><input type="range" id="sw-rd" min="0" max="24" value="12"><b></b></div>
-      <div class="f"><label>间距</label><input type="range" id="sw-gap" min="0" max="16" value="6"><b></b></div>
+      <div class="f"><label>高度</label><input type="range" id="sww" min="28" max="60" value="42"><b></b></div>
+      <div class="f"><label>圆角</label><input type="range" id="sw-rd" min="0" max="24" value="9"><b></b></div>
+      <div class="f"><label>间距</label><input type="range" id="sw-gap" min="0" max="16" value="8"><b></b></div>
     </div>
 
     <div class="grp">翻页 chips</div>
     <div class="row2">
-      <div class="f"><label>高度</label><input type="range" id="chip-h" min="26" max="52" value="38"><b></b></div>
-      <div class="f"><label>圆角</label><input type="range" id="chip-r" min="0" max="26" value="19"><b></b></div>
-      <div class="f"><label>字号</label><input type="range" id="chip-fs" min="9" max="18" value="13"><b></b></div>
-      <div class="f"><label>间距</label><input type="range" id="chip-gap" min="0" max="14" value="6"><b></b></div>
+      <div class="f"><label>内边距</label><input type="range" id="chip-vy" min="4" max="16" value="8"><b></b></div>
+      <div class="f"><label>圆角</label><input type="range" id="chip-r" min="0" max="26" value="18"><b></b></div>
+      <div class="f"><label>字号</label><input type="range" id="chip-fs" min="9" max="18" value="14"><b></b></div>
+      <div class="f"><label>间距</label><input type="range" id="chip-gap" min="0" max="14" value="8"><b></b></div>
     </div>
 
     <div class="grp">功能宫格</div>
     <div class="row2">
-      <div class="f"><label>高度</label><input type="range" id="tile-h" min="56" max="104" value="76"><b></b></div>
-      <div class="f"><label>圆角</label><input type="range" id="tile-rd" min="0" max="26" value="16"><b></b></div>
-      <div class="f"><label>间距</label><input type="range" id="tile-gap" min="0" max="20" value="10"><b></b></div>
-      <div class="f"><label>图标</label><input type="range" id="tile-ico" min="12" max="28" value="18"><b></b></div>
-      <div class="f"><label>主标题</label><input type="range" id="tile-tfs" min="10" max="20" value="15"><b></b></div>
-      <div class="f"><label>副标题</label><input type="range" id="tile-sfs" min="8" max="16" value="11"><b></b></div>
+      <div class="f"><label>字号1</label><input type="range" id="tile-tfs" min="12" max="24" value="18"><b></b></div>
+      <div class="f"><label>圆角</label><input type="range" id="tile-rd" min="0" max="26" value="12"><b></b></div>
+      <div class="f"><label>间距</label><input type="range" id="tile-gap" min="0" max="20" value="8"><b></b></div>
+      <div class="f">><b></b></div>
+      <div class="f">><b></b></div>
+      <div class="f"><label>字号2</label><input type="range" id="tile-sfs" min="8" max="16" value="13"><b></b></div>
     </div>
 
     <button class="reset" onclick="reset()">恢复 build 89 的值</button>
@@ -253,16 +242,13 @@ function apply(){
 
   r.setProperty('--panel-x',v('panel-x')+'px'); r.setProperty('--panel-b',v('panel-b')+'px');
   r.setProperty('--panel-r',v('panel-r')+'px');
-  r.setProperty('--card-t',v('card-t')+'px'); r.setProperty('--card-l',v('card-l')+'px');
-  r.setProperty('--card-b',v('card-b')+'px'); r.setProperty('--card-r',v('card-r')+'px');
-  r.setProperty('--card-rd',v('card-rd')+'px'); r.setProperty('--card-a',(v('card-a')/100));
   r.setProperty('--knob',v('knob')+'px');
-  r.setProperty('--sw',v('sw')+'px'); r.setProperty('--sw-rd',v('sw-rd')+'px');
+  r.setProperty('--sw',v('sww')+'px'); r.setProperty('--sw-rd',v('sw-rd')+'px');
   r.setProperty('--sw-gap',v('sw-gap')+'px');
-  r.setProperty('--chip-h',v('chip-h')+'px'); r.setProperty('--chip-r',v('chip-r')+'px');
+  r.setProperty('--chip-r',v('chip-r')+'px'); r.setProperty('--chip-vy',v('chip-vy')+'px');
   r.setProperty('--chip-fs',v('chip-fs')+'px'); r.setProperty('--chip-gap',v('chip-gap')+'px');
-  r.setProperty('--tile-h',v('tile-h')+'px'); r.setProperty('--tile-rd',v('tile-rd')+'px');
-  r.setProperty('--tile-gap',v('tile-gap')+'px'); r.setProperty('--tile-ico',v('tile-ico')+'px');
+ r.setProperty('--tile-rd',v('tile-rd')+'px');
+  r.setProperty('--tile-gap',v('tile-gap')+'px');
   r.setProperty('--tile-tfs',v('tile-tfs')+'px'); r.setProperty('--tile-sfs',v('tile-sfs')+'px');
 
   // chips 溢出提示
@@ -275,10 +261,9 @@ function apply(){
   document.getElementById('pend').textContent =
 `FitSheetHeight 已删除；面板 = overlay
 panelX \${v('panel-x')}  panelB \${v('panel-b')}  panelR \${v('panel-r')}
-card  \${v('card-t')}/\${v('card-l')}/\${v('card-b')}/\${v('card-r')}  r\${v('card-rd')}  a\${v('card-a')/100}
-knob \${v('knob')}   swatch \${v('sw')} r\${v('sw-rd')} gap\${v('sw-gap')}
-chip \${v('chip-h')} r\${v('chip-r')} \${v('chip-fs')}pt gap\${v('chip-gap')}
-tile \${v('tile-h')} r\${v('tile-rd')} gap\${v('tile-gap')} ico\${v('tile-ico')} \${v('tile-tfs')}/\${v('tile-sfs')}`;
+knob \${v('knob')}   swatch \${v('sww')} r\${v('sw-rd')} gap\${v('sw-gap')}
+chip r\${v('chip-r')} v\${v('chip-vy')} \${v('chip-fs')}pt gap\${v('chip-gap')}
+tile r\${v('tile-rd')} gap\${v('tile-gap')}  \${v('tile-tfs')}/\${v('tile-sfs')}`;
 }
 ids.forEach(i=>i.addEventListener('input',apply));
 function reset(){ ids.forEach(i=>i.value=DEF[i.id]); apply(); }
