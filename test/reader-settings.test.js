@@ -55,6 +55,8 @@ const pc = web.slice(web.indexOf('private var panelContent'),
 const featureGrid = web.slice(web.indexOf('private var featureGrid'),
                                web.indexOf('private func featureTileLabel'));
 const ft = web.slice(web.indexOf('private func featureTileLabel'));
+const fontMenu = web.slice(web.indexOf('private var fontMenu'),
+                              web.indexOf('private var paletteGrid'));   // paletteGrid 紧跟 fontMenu
 const pageTurn = web.slice(web.indexOf('private var pageTurnRow'),
                             web.indexOf('private var featureGrid'));
 const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
@@ -145,8 +147,9 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 // ★ iOS 26 的系统玻璃必须是 partial-height sheet。
 //   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
 //   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
-// 玻璃：overlay 里 .ultraThinMaterial 真的能模糊到下面的正文
-ok(/\.background\(\.ultraThinMaterial,/.test(web), '面板玻璃材质在位');
+// 玻璃：iOS 26 用 .glassEffect(.regular, in: shape) 是真液态玻璃
+// 比 .ultraThinMaterial 层次更深（折射背后的内容，不是模糊）
+ok(/glassEffect\(\.regular/.test(web), '面板用 .glassEffect(.regular) 真液态玻璃');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
 // 目录 sheet 本来就该有 detent（.medium/.large）；
 // 只判定**设置面板**那一段没有 detent。
@@ -197,17 +200,22 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
      '顺序 = 字号/线/配色/跟随/线/翻页（两条分割线都在）');
 }
 
-// 面板容器：left/right/bottom 14、radius 22、white .82、blur 24、padding 12/14/16
+// 面板容器按 ui.txt 一比一：left/right/bottom 14、radius 22、padding 12/14/16
 ok(/\.padding\(\.horizontal, 14\)/.test(panel), '面板左右留白 14');
 ok(/\.padding\(\.bottom, 14\)/.test(panel), '面板底部留白 14');
 ok(/\.padding\(\.top, 12\)/.test(panel), '面板顶 padding 12');
-ok(/Color\.white\.opacity\(0\.82\)/.test(panel), '面板底色 white @ 0.82（不是米色）');
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
-ok(/\.shadow\(color: Color\.black\.opacity\(0\.12\), radius: 15, x: 0, y: 4\)/.test(panel),
-   '「那块阴影」= 面板 box-shadow（radius 15 / y 4 / 12%）');
-// 玻璃必须用 background(_:in:) 重载，否则会撑成全屏（build88 炸过）
-ok(/\.background\(\.ultraThinMaterial,\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '玻璃用 background(_:in:) 重载（.background { Shape } 会撑全屏）');
+ok(!/\.background\(Color\.white\.opacity\(0\.82\)/.test(panel),
+   '**不**留 white@.82（那是普通毛玻璃，不是液态玻璃）');
+// ⚠️⚠️ 面板背景**必须是液态玻璃**（.glassEffect(.regular, in:shape)），
+// 不是 ui.txt 的 white @ 0.82。用户一开始就要求栖阅风格液态玻璃，
+// ui.txt 那份不是栖阅源码，那 .82 是普通毛玻璃，迁就它会失去玻璃的深度。
+ok(/glassEffect\(\.regular, in: RoundedRectangle\(cornerRadius: 22/.test(panel),
+   '面板用 .glassEffect(.regular) 液态玻璃（不是 ui.txt 的 white@.82）');
+// ⚠️ 不照搬 ui.txt 的 box-shadow 0 4px 30px rgba(0,0,0,.12)：
+// glassEffect 在 iOS 26 自带 ambient shadow，再叠 .shadow() 会出双影。
+ok(!/\.shadow\(color: Color\.black\.opacity\(0\.12\), radius: 15/.test(panel),
+   '不叠 .shadow（glassEffect 自带 ambient shadow，再叠会双影）');
 ok(!/\.background \{[\s\S]{0,200}RoundedRectangle\(cornerRadius: 22/.test(web),
    '不写 .background { RoundedRectangle(...) }（flexible Shape 会铺满）');
 ok(/\.frame\(height: sheetHeight\)/.test(panel), '面板显式高度（overlay 没 detent 撑）');
@@ -215,9 +223,9 @@ ok(/hardCap = screenH \* 0\.70/.test(web), '高度有屏幕 70% 硬上限');
 
 // 字号行
 ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
-ok(/14\.\.\.34/.test(web) || /14\.\.\.28/.test(web), '字号滑块有区间');
-ok(/padding\(\.horizontal, 17\)[\s\S]{0,30}padding\(\.vertical, 8\)/.test(chip),
-   'chip 内边距 17/8（参考实现 .pill）');
+ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
+ok(/padding\(\.horizontal, 13\)/.test(fontMenu), '字体下拉 水平内边距 13（ui.txt .font-select）');
+ok(/padding\(\.vertical, 7\)/.test(fontMenu), '字体下拉 垂直内边距 7');
 ok(/cornerRadius: CGFloat = 18/.test(chip) && /fontSize: CGFloat = 14/.test(chip),
    'chip 圆角 18 / 字号 14（参考实现 .pill）');
 

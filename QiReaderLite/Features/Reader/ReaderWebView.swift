@@ -580,7 +580,7 @@ struct ReaderWebView: View {
             //    背景铺满整屏、内容居中（真机就是这样炸的）。
             //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
             .frame(height: sheetHeight)
-            .padding(.horizontal, 14)
+                        .padding(.horizontal, 14)
             .padding(.bottom, 14)
             // ⚠️⚠️ 玻璃背景**必须**用 `background(_:in:)` 这个重载，**不能**写
             //      `.background { RoundedRectangle()... }`。
@@ -590,18 +590,22 @@ struct ReaderWebView: View {
             //          → 背景铺满整屏
             //        · `.background(.ultraThinMaterial, in: RoundedRectangle())`
             //          —— 材质尺寸**跟随视图**，不会溢出
-            .padding(.top, 12)          // 参考实现 padding: 12px 14px 16px
+                        // .panel { padding: 12px 14px 16px; } —— ui.txt 原值
+            .padding(.top, 12)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
-            // ⚠️ 用 `background(_:in:)` 重载（不是 `.background { Shape }`，
-            //    那个闭包里的 Shape 是 flexible view，会撑成全屏 —— build88 炸过）
-            .background(Color.white.opacity(0.82),
-                        in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            // ⚠️⚠️ 面板背景**必须是液态玻璃**，不是 ui.txt 的 white @ 0.82。
+            //    用户一开始就要求「栖阅风格液态玻璃」—— ui.txt 那份不是栖阅源码，
+            //    那个 0.82 是普通毛玻璃（磨砂塑料感），不是真玻璃（折射背后的内容）。
+            //    留 .82 会失去液态玻璃的深度，迁就一份不知真假的「代码」。
+            //    用 iOS 26 的 `.glassEffect(.regular, in: shape)` 才是真液态玻璃。
+            .background(
+                Color.clear
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            // 「那块阴影」= 面板自己投的 shadow，不是内层白块
-            .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 4)
+            // ui.txt 写的 box-shadow: 0 4px 30px rgba(0,0,0,.12) **不照搬**：
+            // iOS 26 glassEffect 自带 ambient shadow，再叠 .shadow() 会出双影。
             .offset(y: showSettings ? 0 : sheetHeight + 48)
             .opacity(showSettings ? 1 : 0)
             .animation(.spring(response: 0.34, dampingFraction: 0.86),
@@ -740,20 +744,27 @@ struct ReaderWebView: View {
             pageTurnRow
         }
     }
+    /// ui.txt: .divider { height:1px; background:rgba(0,0,0,.07); margin:0 2px 10px }
     private var hairLine: some View {
-        Divider().overlay(Self.qrLine).padding(.vertical, 2)
+        Color.black.opacity(0.07)
+            .frame(height: 1)
+            .padding(.horizontal, 2)
+            .padding(.bottom, 10)
     }
 
     // MARK: - ① 字号行（小方块 + 滑块 + 大方块 + 字体下拉，全在一行）
 
     private var sizeRow: some View {
+        // ui.txt: .row-fontsize { padding: 0 2px 10px; gap: 10 }
+        // 字号滑块 14...28（ui.txt 的 min=14 max=28，不是 14...34）
         HStack(spacing: 10) {
-            sizeKnob("小", pointSize: 13)
-            Slider(value: $fontSize, in: 14...34, step: 1)   // 参考实现 min:14 max:34
-            sizeKnob("大", pointSize: 17)
+            sizeKnob("小", pointSize: 14)
+            Slider(value: $fontSize, in: 14...28, step: 1)   // ui.txt 14...28
+            sizeKnob("大", pointSize: 14)
             fontMenu
         }
-        .padding(.vertical, 9)
+        .padding(.horizontal, 2)
+        .padding(.bottom, 10)
     }
 
     /// 小 / 大：灰底圆角方块
@@ -761,12 +772,12 @@ struct ReaderWebView: View {
         Text(text)
             .font(.system(size: pointSize, weight: .medium))
             .foregroundStyle(Theme.ink)
-            .frame(width: 34, height: 34)
-            // ⚠️ 栖阅的「小 / 大」是**圆形**灰底，不是圆角方形
+            .frame(width: 34, height: 34)   // ui.txt: .fs-btn { width:34; height:34; border-radius:50% }
             .background(Self.qrFill, in: Circle())
     }
 
-    /// 字体下拉（胶囊）
+    /// ui.txt: .font-select { padding:7px 13px; border-radius:18px;
+    ///                     font-size:14px; color:#333; background:rgba(0,0,0,.06) }
     private var fontMenu: some View {
         Menu {
             ForEach(ReaderFont.all) { f in
@@ -775,14 +786,15 @@ struct ReaderWebView: View {
         } label: {
             HStack(spacing: 4) {
                 Text(ReaderFont.name(for: fontKey))
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color(white: 0x99 / 0xff))   // ui.txt ⌄ #999
             }
-            // 参考实现 _pillDropdown：black @ .08 底、圆角 20、字号 14
             .font(.system(size: 14))
-            .foregroundStyle(Theme.ink)
-            .padding(.horizontal, 12)
+            .foregroundStyle(Color(white: 0x33 / 0xff))            // ui.txt #333
+            .padding(.horizontal, 13)
             .padding(.vertical, 7)
-            .background(Self.qrFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(Color.black.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }
 
@@ -824,18 +836,31 @@ struct ReaderWebView: View {
 
     // MARK: - ④ 跟随系统深浅色
 
+    // ui.txt .row-follow { padding:4px 2px 10px }
+    //    .label font-size:15  .ic 18  .switch 50×29 radius:15 on时 #4a90d9
     private var followSystemRow: some View {
-        settingRow(title: "跟随系统深浅色", icon: "circle.lefthalf.filled") {
-            Toggle("", isOn: $followSystemAppearance).labelsHidden().tint(Theme.accent)
+        HStack {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(.system(size: 18)).foregroundStyle(Color(white: 0x77 / 0xff))
+            Text("跟随系统深浅色").font(.system(size: 15))
+                .foregroundStyle(Color(white: 0x33 / 0xff))
+            Spacer()
+            Toggle("", isOn: $followSystemAppearance).labelsHidden()
+                .tint(Color(red: 74/255, green: 144/255, blue: 217/255))
         }
+        .padding(.horizontal, 2)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
     }
 
     // MARK: - ⑥ 翻页方式那一行
 
     /// 自己的底**并进 upperPanelCard** 了，这里只留内容 + 上下留白。
     private var pageTurnRow: some View {
+        // ui.txt: .row-pageturn { padding:0 0 12px; gap:8 }
+        //        .pt-icon { width:28; font-size:17; color:#888 }
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "book.closed").font(.system(size: 17)).foregroundStyle(Theme.sub)
+            Image(systemName: "book").font(.system(size: 17)).foregroundStyle(Color(white: 0x88 / 0xff))
                 .frame(width: 28)
             // 参考实现：`.pill { flex-shrink:0; padding:8px 17px; radius:18; fs:14 }`
             // **不等分** —— 每个 pill 按内容宽度排，放不下就**横向滚动**。
@@ -951,9 +976,15 @@ struct ReaderWebView: View {
             //
             // 所以**不需要空图标占位那个 hack**（那是我为了对齐自造图标行才加的），
             // 也**不需要固定高度** —— 内容高度自然就一样。
+            // ui.txt .cell { gap:4 }  .ic 18px  .t1 13px  .t2 display:none
+            // 8 格都是「图标(文字) + 副标题」，没有第三行，所以**只画两行**：
+            //     第一行 .ic 实际是中文大字（"大小"/"间隔"/…）
+            //     第二行 .t1 是副标题（"显示设置"/"间隔设置"/…）
             VStack(spacing: 4) {
                 Text(name).font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color(white: 0x22 / 0xff))     // ui.txt #222
                 Text(subtitle ?? "").font(.system(size: 13))
+                    .foregroundStyle(Color(white: 0x99 / 0xff))     // ui.txt #999
             }
             .lineLimit(1)
             .minimumScaleFactor(0.7)
@@ -1300,10 +1331,15 @@ private struct ChipButton: View {
                 // 参考实现 .pill { padding: 8px 17px; border-radius: 18px }
                 .padding(.horizontal, 17)
                 .padding(.vertical, 8)
+                // ui.txt: .pill { background:rgba(0,0,0,.06); color:#333 }
+                //        .pill.active { background:#4a90d9; color:#fff }
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(selected ? Theme.accent : Color.black.opacity(0.06))
+                        .fill(selected
+                             ? Color(red: 74/255, green: 144/255, blue: 217/255)
+                             : Color.black.opacity(0.06))
                 )
+                .foregroundStyle(selected ? .white : Color(white: 0x33 / 0xff))
                 .fixedSize()
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
         }
