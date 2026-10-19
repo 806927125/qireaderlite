@@ -111,8 +111,8 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
 // 圆在 ZStack 里是 flexible view，会填满 34×34，保证完整正圆，
 // 不用跟背景裁剪 / 布局挤压较劲。
 ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(web), '「小/大」的圆是直接画出来的（ZStack + Circle.fill）');
-ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.06\)\)/.test(web),
-   '「小 / 大」是圆形底（纯黑 6%，在玻璃上任何角度都均匀可见）');
+ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.10\)\)/.test(web),
+   '「小 / 大」是圆形底（纯黑 10%，边界清楚）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -125,8 +125,8 @@ ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(w
 // 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
 ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
    '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
-ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.06\)\)/.test(web),
-   '「小 / 大」是圆形底（纯黑 6%，玻璃上任何角度都均匀可见）');
+ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.10\)\)/.test(web),
+   '「小 / 大」是圆形底（纯黑 10%，边界清楚）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -250,7 +250,7 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
   const innerTop = panel.indexOf('.padding(.top, 42)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
-  const outerBot = panel.lastIndexOf('.padding(.bottom, 14)');
+  const outerBot = panel.lastIndexOf('.padding(.bottom, Self.bottomSafeInset + 14)');
   // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
   // 顶部 12 → 30 → 42 → 50：用户连续要「按钮整体下移一点」。
   ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 42 / bottom 16）');
@@ -263,6 +263,11 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
   ok(outerPad > glassAt && outerPad !== innerPad,
      '定位 padding 在玻璃**之后**（玻璃外面），且不与内部那个重复');
   ok(outerBot > glassAt, '定位底 padding 在玻璃之后');
+  // ⚠️ 面板底部必须**让开 home indicator**（栖阅是收在指示条上方的）。
+  //    写死 14 会让面板压在指示条上、整体显得往上偏。
+  ok(/\.padding\(\.bottom, Self\.bottomSafeInset \+ 14\)/.test(panel),
+     '面板底部让开 home indicator（bottomSafeInset + 14）');
+  ok(/private static var bottomSafeInset/.test(web), '有底部安全区取值');
   // 左右 padding 在玻璃前后各出现一次，且**不能**都在玻璃前
   const hP = [...panel.matchAll(/\.padding\(\.horizontal, 14\)/g)].map(m => m.index);
   ok(hP.length === 2 && hP[0] < glassAt && hP[1] > glassAt,

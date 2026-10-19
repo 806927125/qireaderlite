@@ -631,9 +631,16 @@ struct ReaderWebView: View {
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
 
-            // ① 定位留白（玻璃**外面**）：面板离屏幕左右各 14、离底 14
+            // ① 定位留白（玻璃**外面**）：左右 14；底部要让开 home indicator。
+            //
+            // ⚠️ 之前写死 14 → 面板**压在 home indicator 上**（真机截图里能看到
+            //    home indicator 横条浮在面板上），整个面板因此显得往上偏、底下
+            //    露出一截正文。栖阅那边面板底边是**收在 home indicator 上方**的。
+            //
+            //    ui.txt 的 `bottom: 14px` 是相对**安全区**算的，
+            //    SwiftUI 的 padding 相对**屏幕底** —— 得自己加回安全区。
             .padding(.horizontal, 14)
-            .padding(.bottom, 14)
+            .padding(.bottom, Self.bottomSafeInset + 14)
 
             .offset(y: showSettings ? 0 : sheetHeight + 48)
             .opacity(showSettings ? 1 : 0)
@@ -651,6 +658,15 @@ struct ReaderWebView: View {
                     }
             )
             .accessibilityIdentifier("readerSettingsPanel")
+    }
+
+    /// 底部安全区（home indicator 那条）的高度
+    private static var bottomSafeInset: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+        let wins = scenes.flatMap(\.windows)
+        let win = wins.first { $0.isKeyWindow } ?? wins.first
+        return win?.safeAreaInsets.bottom ?? 34
     }
 
     /// 面板浅米底（参考实现 `Color(0xE6EFE7D6)`）
@@ -840,11 +856,11 @@ struct ReaderWebView: View {
     private func sizeKnob(_ text: String, pointSize: CGFloat) -> some View {
         // ui.txt: .fs-btn 是个 `<button>`，34×34 圆形、rgba(0,0,0,.05) 底、字号 14。
         //
-        // ⚠️ 用**纯黑 6%** 而不是 `--fill`（冷灰 12%）：
+        // ⚠️ 用**纯黑 10%** 而不是 `--fill`（冷灰 12%）：
         //    冷灰在米色**液态玻璃**上对比度太低，圆只有一部分能看出来 ——
         //    真机看着就像「缺了一块」。纯黑低透明度在任何底色上都均匀。
         ZStack {
-            Circle().fill(Color.black.opacity(0.06))
+            Circle().fill(Color.black.opacity(0.10))
             Text(text)
                 .font(.system(size: pointSize, weight: .medium))
                 .foregroundStyle(Color(white: 0x33 / 0xff))
