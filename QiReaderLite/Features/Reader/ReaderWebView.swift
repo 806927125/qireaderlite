@@ -62,6 +62,18 @@ struct ReaderWebView: View {
 
     @Environment(\.colorScheme) private var darkScheme
 
+    /// 分页容器。UIPageViewController 是 UIViewController，用 @StateObject 持有
+    /// （它不是 ObservableObject，但 @StateObject 能保住实例不被重建）。
+    @StateObject private var pageCtl = PagedReaderController()
+
+    /// 已经喂给 pager 的正文。用它判断「这一章要不要重排」——
+    /// 之前老实现靠 chapterKey 变没变来判断，但那是 chapterKey 立刻变、正文异步到，
+    ///    结果每次换章都先闪一下上一章第一页。
+    @State private var pagedText: String = ""
+    @State private var pagedTitle: String = ""
+    @State private var pagedChapter: Int = -1
+    @State private var pagedLayout: String = ""
+
     /// 用原生分页（CoreText 排版 + 翻页动画）还是 webview 上下滚动。
     /// 只有「上下滚动」这一种走 webview —— 栖阅也是这么分的：
     /// 它的 WebViewVerticalScrollViewController 管滚动，ReaderPaginator 管分页。
@@ -100,40 +112,44 @@ struct ReaderWebView: View {
 
     /// 换章加载中 / 换章失败 的提示层。
     /// 失败时给「重试」按钮 —— 只报错不给出口等于把用户堵死。
-    @ViewBuilder
-    private var chapterStatusOverlay: some View {
-        if session.loadingChapter {
-            ProgressView().controlSize(.large).scaleEffect(1.4)
-        } else if !session.errorText.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.orange)
-                Text("这一章加载失败")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.ink)
-                Text(session.errorText)
-                    .font(.caption)
-                    .foregroundStyle(Theme.sub)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 28)
-                    .lineLimit(6)
-                HStack(spacing: 10) {
-                    Button("重试") {
-                        Task { await session.load(index: session.index) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    if session.index > 0 {
-                        Button("回上一章") { session.step(-1) }
-                            .buttonStyle(.bordered)
-                    }
-                }
-                .padding(.top, 2)
+    /// 把 SwiftUI 侧的配置和正文推进 pager。
+    /// 幂等 —— 只有「章变了 / 正文变了 / 排版参数变了」才真的重排。
+    private func syncPager(size: CGSize) {
+        let c = layoutConfig
+        let sig = "\(c.fontSize)|\(c.lineSpacing)|\(c.paragraphSpacing)|\(c.horizontalMargin)|\(c.topMargin)|\(c.verticalJustify)|\(c.baselineScope.rawValue)|\(themeKey)|\(darkScheme == .dark)"
+        let pager = pageCtl.pager
+        pager.config = c
+        pager.background = UIColor(theme.bg)
+        pager.setTurnMode(pageTurnMode)
+        pager.setPageSize(c.pageSize(in: size))
+
+        pager.onStep = { dir in
+            if dir == 0 {
+                Task { await session.reloadCurrent() }
+            } else {
+                session.step(dir)
             }
-            .padding(.vertical, 22)
-            .padding(.horizontal, 18)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .padding(.horizontal, 28)
+        }
+        pager.onPageChange = { p, total in
+            pageInfo = (p, total)
+            saveProgress(ratio: total > 1 ? Double(p - 1) / Double(total) : 0)
+        }
+
+        guard !session.chapterText.isEmpty else { return }
+        if session.index == pagedChapter && session.chapterText == pagedText && sig == pagedLayout {
+            return
+        }
+        pagedChapter = session.index
+        pagedText = session.chapterText
+        pagedTitle = session.chapterTitle
+        pagedLayout = sig
+        pager.reload(text: session.chapterText, title: session.chapterTitle, keepSlot: 0)
+    }
+
+    /// 正文或章节号变了 → 重排；换章失败 → 把占位页换成失败页
+    private func syncPagerFailures() {
+        if !session.errorText.isEmpty {
+            pageCtl.pager.reportFailure(session.errorText)
         }
     }
 
@@ -159,28 +175,18 @@ struct ReaderWebView: View {
             ZStack {
                 theme.bg.ignoresSafeArea()
                 GlassBackdrop()
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { syncPager(size: geo.size) }
+                        .onChange(of: geo.size) { _, s in syncPager(size: s) }
+                }
+                .onChange(of: session.errorText) { _, _ in syncPagerFailures() }
+                .onChange(of: session.chapterText) { _, _ in syncPager(size: .zero) }
                 if useNativePaging {
-                    // 原生分页（栖阅那套 CoreText 排版 + 翻页动画）
-                    PagedReaderView(
-                        text: session.chapterText,
-                        title: session.chapterTitle,
-                        chapterKey: session.index,
-                        config: layoutConfig,
-                        mode: pageTurnMode,
-                        onPageChange: { p, total in
-                            pageInfo = (p, total)
-                            saveProgress(ratio: total > 1 ? Double(p - 1) / Double(total) : 0)
-                        },
-                        onEdge: { dir in session.step(dir) },
-                        onMenu: { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } },
-                        tapAnywhereTurnsPage: tapAnywhereTurnsPage
-                    )
-                    .ignoresSafeArea(edges: .bottom)
-                    .overlay {
-                        // ⚠️ 这层以前完全没有 → 换章失败时正文静默停在上一章第一页，
-                        //    看着就像「翻页坏了」。加载中/失败必须让人看见。
-                        chapterStatusOverlay
-                    }
+                    // 原生分页：容器交给 UIPageViewController（系统管手势/边界/动画），
+                    // CoreText 只负责把一章文本切成若干页。
+                    PagedReaderUI(controller: pageCtl)
+                        .ignoresSafeArea(edges: .bottom)
                 } else {
                     ReaderWebContainer(
                         host: session.host,
@@ -218,7 +224,7 @@ struct ReaderWebView: View {
             session.onTap = { withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() } }
             // 翻页模式：左边上一章 / 中间出菜单 / 右边下一章
             session.onTapZone = { x in
-                // 原生分页模式下正文不在 webview 里，翻页由 PagedReaderView 管
+                // 原生分页模式下正文不在 webview 里，翻页由 PagedReaderUI（UIPageViewController）管
                 if useNativePaging { return }
                 guard pageTurn else { showChrome = true; return }
                 if x < 0.32 {

@@ -32,7 +32,9 @@ const ok = (c, l, e) => { if (c) { pass++; console.log(`  ✓ ${l}`); } else { f
 const P = path.join(ROOT, 'Features/Reader/Paging');
 const paginator = stripComments(fs.readFileSync(path.join(P, 'ReaderPaginator.swift'), 'utf8'));
 const layout   = stripComments(fs.readFileSync(path.join(P, 'ReaderLayoutConfig.swift'), 'utf8'));
-const paged    = stripComments(fs.readFileSync(path.join(P, 'PagedReaderView.swift'), 'utf8'));
+const pager    = stripComments(fs.readFileSync(path.join(P, 'PagedChapterPager.swift'), 'utf8'));
+const pageVC   = stripComments(fs.readFileSync(path.join(P, 'ReaderPageVC.swift'), 'utf8'));
+const readerUI = stripComments(fs.readFileSync(path.join(P, 'PagedReaderUI.swift'), 'utf8'));
 const webRaw   = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
 const web      = stripComments(webRaw);
 const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8');
@@ -40,7 +42,12 @@ const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8
 console.log('\n── 栖阅那套的骨架要在 ──');
 ok(fs.existsSync(path.join(P, 'ReaderPaginator.swift')), 'ReaderPaginator.swift（分页器）');
 ok(fs.existsSync(path.join(P, 'ReaderLayoutConfig.swift')), 'ReaderLayoutConfig.swift（排版配置）');
-ok(fs.existsSync(path.join(P, 'PagedReaderView.swift')), 'PagedReaderView.swift（分页阅读器）');
+ok(fs.existsSync(path.join(P, 'PagedChapterPager.swift')), 'PagedChapterPager.swift（分页数据源）');
+ok(fs.existsSync(path.join(P, 'ReaderPageVC.swift')), 'ReaderPageVC.swift（一页一个 VC）');
+ok(fs.existsSync(path.join(P, 'PagedReaderUI.swift')), 'PagedReaderUI.swift（SwiftUI 壳）');
+// 老实现必须真的删掉，别留着当「备用方案」—— 留着就还会有人改错的那个
+ok(!fs.existsSync(path.join(P, 'PagedReaderView.swift')), '老的手写翻页实现已删掉');
+ok(!/rotation3DEffect/.test(pager + pageVC + readerUI), '不再用 rotation3DEffect 硬凑卷曲');
 
 console.log('\n── 分页器：CoreText，页边界要精确 ──');
 ok(/import CoreText/.test(paginator), '用了 CoreText');
@@ -56,29 +63,47 @@ console.log('\n── 翻页方式：5 种齐全，且都真的实现 ──');
 for (const [raw, name] of [['flip','仿真'],['slide','滑动'],['flat','平移'],['none','无动画'],['scroll','上下滚动']]) {
   ok(new RegExp(`raw: "${raw}",[\\s,]+name: "${name}"`).test(web), `${name}（${raw}）在设置里`);
 }
-ok(/mode == "flip"/.test(paged), '仿真有独立渲染分支');
-ok(/flipStack/.test(paged) && /rotation3DEffect/.test(paged), '仿真用 3D 翻页（对应栖阅「卷曲翻转」）');
-ok(/slideStack/.test(paged), '滑动/平移用平移栈');
-ok(/mode == "none"/.test(paged), '无动画直接切页');
+ok(/transitionStyle = \.pageCurl/.test(pager), '仿真用系统 pageCurl 真卷曲（不是硬凑的 3D）');
+ok(/transitionStyle = \.scroll/.test(pager), '滑动/平移走系统 scroll 容器');
+ok(/animated && turnMode != "none"/.test(pager), '无动画 = 关掉容器动画');
+ok(/turnMode != "none"/.test(pager), '无动画直接切页（关掉容器动画）');
 ok(/pageTurnMode != "scroll"/.test(web), '上下滚动走 webview（不用原生分页）');
-ok(!/mode == "scroll"/.test(paged), '原生分页器不处理上下滚动（那是 webview 的活）');
+ok(!/turnMode == "scroll"/.test(pager), '原生分页器不处理上下滚动（那是 webview 的活）');
 
 console.log('\n── 翻页逻辑：章内翻完才换章 ──');
-ok(/onEdge\(-1\)/.test(paged) && /onEdge\(1\)/.test(paged), '到章首/章尾会回调换章');
-ok(/pages\.count/.test(paged), '页数参与边界判断');
-ok(/incoming == nil/.test(paged), '拖到没有邻页时才算到边');
-ok(/goPage\(-1\)|goPage\(1\)/.test(paged), '点左/右也能翻页');
+// ★ 跨章：章界**不返回 nil**，而是排一个 loading 占位页。
+//   老实现在章界直接 onEdge(1) 然后什么也不管 → 换章失败时正文静默停在
+//   上一章第一页，看着就是「翻页卡住 / 翻回去」（用户实机报的 bug）。
+ok(/requestStep\(1\)/.test(pager) && /requestStep\(-1\)/.test(pager), '章首/章尾都会触发换章');
+ok(/pages\.indices\.contains\(next\)/.test(pager), '页数参与边界判断');
+ok(/makeStatus\(\.loading\)/.test(pager), '章界排 loading 占位页');
+// ⚠️ 分号写成 `return nil;?` 是必须的 —— Swift 里 `return nil` **不带分号**，
+//    早先写成 `return nil;` 这条断言就从来没生效过（去掉分号就不匹配 → 永远绿）。
+const afterAt = pager.indexOf('viewControllerAfter');
+const afterBody = afterAt >= 0 ? pager.slice(afterAt, pager.indexOf('didFinishAnimating')) : '';
+// 只查 `if next >= pages.count { … }` 那个章界分支 ——
+// 函数末尾那个兜底 `return nil` 是合法的（章首占位页 / 防御），别一起否掉
+const edge = afterBody.slice(afterBody.indexOf('if next >= pages.count'));
+const edgeBlock = edge.slice(0, (edge.indexOf('\n        }') + 10) || edge.length);
+ok(/return nil/.test(edgeBlock) === false,
+   '章界分支不返回 nil（返回 loading 占位页，卡住时用户看得见）');
+ok(/requestStep\(1\)/.test(afterBody), 'viewControllerAfter 自己在章界触发换章，不靠别处兜');
+ok(/makeStatus\(\.loading\)/.test(afterBody), '章界返回的是 loading 占位页');
 
 console.log('\n── 绝不留白正文 ──');
-ok(/layoutLooksBroken/.test(paged), '有分页异常检测');
-ok(/pages\.count <= 1 && text\.count > 400/.test(paged), '长文本只排一页 = 排版坏了');
-ok(/ScrollView \{[\s\S]{0,300}?Text\(text\)/.test(paged), '坏掉时退回连续滚动，不是空白页');
-ok(/本章没有内容/.test(paged), '空正文有兜底文案');
+ok(/r\.count > 1 \|\| text\.count <= 400/.test(pager), '长文本只排一页 = 排版坏了（判定还在）');
+ok(/fail\("这一章排版异常/.test(pager), '排版异常有出路，不是空白页');
+ok(/fail\("这一章解析出来的正文是空的/.test(pager), '空正文有兜底文案');
 
 console.log('\n── 接线：webview 只在上下滚动模式用 ──');
 ok(/useNativePaging/.test(web), '有 useNativePaging 判断');
 ok(/pageTurnMode != "scroll"/.test(web), '只有「上下滚动」才用 webview');
-ok(/PagedReaderView\(/.test(web), '原生分页器接进阅读页');
+ok(/PagedReaderUI\(controller: pageCtl\)/.test(web), '新分页器接进阅读页');
+ok(/UIPageViewController\(transitionStyle/.test(readerUI), '容器是 UIPageViewController');
+ok(/vc\.dataSource = self/.test(pager), '数据源接上了');
+ok(/vc\.delegate = self/.test(pager), '代理接上了（翻完要记页码）');
+ok(/UIPageViewControllerDataSource, UIPageViewControllerDelegate/.test(pager),
+   'pager 真的是 UIPageViewController 的数据源+代理');
 ok(/session\.chapterText/.test(web), '正文来源是 session.chapterText');
 
 console.log('\n── CSS 多列那套要彻底没了 ──');
@@ -88,16 +113,17 @@ ok(!/paginateReady|repaginate/.test(web), 'ReaderWebView 不再有 CSS 分页的
 ok(!/installPaginate|callPaginateJS/.test(host), '没有残留的注入/调用');
 
 console.log('\n── 用户报的问题 ①：第一章最后一页划不到第二章第一页 ──');
-ok(/let chapterKey: Int/.test(paged), 'PagedReaderView 有 chapterKey');
-ok(/\.onChange\(of: chapterKey\)/.test(paged), '监听章节变化');
-ok(/current = 0[\s\S]{0,200}?layout\(in: geo\.size\)/.test(paged),
-   '换章时页码归零（不归零就会落在新章最后一页 = 划不过去）');
-ok(!/if current >= result\.count \{ current = max\(0, result\.count - 1\) \}/.test(paged)
-   || /onChange\(of: chapterKey\)/.test(paged), '换章归零优先于 clamp');
+ok(/func show\(at index: Int/.test(pager), '能切到指定页');
+ok(/didFinishAnimating/.test(pager), '翻完动画后回写当前页');
+// 换章判定不再靠「chapterKey 立刻变、正文异步到」，而是正文真变了才重排
+// —— 老做法每次换章都先闪一下上一章第一页，看着就像翻页坏了
+ok(/session\.index == pagedChapter && session\.chapterText == pagedText/.test(web),
+   '换章重排靠正文比对，不是靠 chapterKey 立刻变');
+ok(!/chapterKey/.test(pager + pageVC), '新架构里已经没有 chapterKey 这个概念了');
 
 console.log('\n── 用户报的问题 ③：每章开始的标题 ──');
-ok(/let title: String/.test(paged), '有 title');
-ok(/config\.attributed\(title: title, body: text\)/.test(paged), '标题进排版内容');
+ok(/func reload\(text: String, title: String/.test(pager), '重排入口带 title');
+ok(/config\.attributed\(title: title, body: text\)/.test(pager), '标题进排版内容');
 ok(/func attributed\(title: String, body: String\)/.test(layout), '排版支持标题+正文');
 ok(/fontSize \* 1\.18/.test(layout), '标题字号 = 正文 × 1.18（照栖阅 reader.css）');
 ok(/head\.paragraphSpacing = 28/.test(layout), '标题下边距 28（照栖阅 reader.css）');
@@ -133,11 +159,12 @@ for (const [raw, hint] of [
 }
 
 console.log('\n── 这些项要真接上，不能只是摆位 ──');
-ok(/paginateJustified/.test(paged), '垂直两端对齐真接进分页器');
-ok(/showBaseline/.test(paged) && /drawBaselines/.test(paginator), '行底线真画了');
+ok(/paginateJustified/.test(pager), '垂直两端对齐真接进分页器');
+ok(/showBaseline/.test(pager + pageVC) && /drawBaselines/.test(pageVC + paginator), '行底线真画了');
 ok(/CTLineGetImageBounds/.test(paginator), '「按文字」范围用了行内字形边界');
 ok(/paraAlign\.textAlignment/.test(layout), '段落对齐真进排版');
-ok(/tapAnywhereTurnsPage/.test(paged), '点击任意位置翻页真接了');
+// 点击翻页交给系统容器，不再手写 tap —— 避免和系统手势互相打架
+ok(!/tapAnywhereTurnsPage/.test(pager), '不再手写 tap 翻页');
 ok(/paragraphSpacing: CGFloat\(paraSpacing\)/.test(web), '段落间空行真进排版');
 
 console.log('\n── 踩过的坑不能再踩 ──');
@@ -189,15 +216,10 @@ ok(!/\n\s*let frame: CTFrame\?/.test(paginator), 'ReaderPageCanvas 别有 frame 
 ok(!/\n\s*let size: CGSize/.test(paginator), '别有 size 属性（会遮住 .size()）');
 ok(!/\n\s*let background: UIColor/.test(paginator), '别有 background 属性（会遮住 .background()）');
 ok(/import SwiftUI/.test(paginator), 'ReaderPaginator.swift 要 import SwiftUI（用了 UIViewRepresentable）');
-ok(/Color\(uiColor: config\.backgroundColor\)/.test(paged),
-   'UIColor 不能直接 .ignoresSafeArea()，要先包成 Color');
-ok(!/config\.backgroundColor\.ignoresSafeArea/.test(paged), '没有 UIColor 直接当 View 用的残留');
-// UIColor 不是 ShapeStyle，foregroundStyle 要 Color
-ok(!/foregroundStyle\(config\.textColor\)/.test(paged), 'foregroundStyle 不能直接吃 UIColor');
-ok(/foregroundStyle\(Color\(uiColor: config\.textColor\)\)/.test(paged), '文字颜色先包成 Color');
-// .font() 要 SwiftUI Font，不是 UIFont
-ok(!/\.font\(config\.resolvedFont\)/.test(paged), '.font() 不能直接吃 UIFont');
-ok(/\.font\(Font\(config\.resolvedFont\)\)/.test(paged), 'UIFont 要包成 Font 再给 .font()');
+// 重构后页面是 UIViewController，不再有「UIColor/UIFont 直接喂 SwiftUI」那类坑
+ok(!/Color\(uiColor: config\.backgroundColor\)/.test(web + pager + pageVC),
+   '页面已是 UIViewController，不需要把 UIColor 包成 Color');
+ok(!/\.font\(config\.resolvedFont\)/.test(web + pager + pageVC), '.font() 不再直接吃 UIFont');
 ok(!/window\.QiReader\.enable/.test(host), '别再把分页方法打到 window.QiReader 上');
 ok(/CTFramesetterCreateFrame/.test(paginator), '页框用 framesetter 生成');
 ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
@@ -227,11 +249,11 @@ ok(/ctx\.translateBy\(x: 0, y: bounds\.height\)/.test(paginator),
   const catchBody = loadBody.slice(loadBody.indexOf('} catch {'));
   ok(/chapterText = ""/.test(catchBody),
      '换章失败时清空正文 —— 不清就会静默停在上一章第一页');
-  ok(/chapterStatusOverlay/.test(web), '分页视图上有状态提示层');
-  ok(/session\.errorText/.test(web), '提示层真的读了 errorText');
-  ok(/Button\("重试"\)/.test(web), '失败时给重试按钮（只报错不给出口等于堵死用户）');
-  ok(/Button\("回上一章"\)/.test(web), '并给回上一章的退路');
-  ok(/session\.loadingChapter/.test(web), '加载中也显示出来');
+  ok(/reportFailure/.test(pager), '换章失败时把占位页换成失败页');
+  ok(/func retry\(/.test(pager), '有重试入口');
+  ok(/onRetry/.test(pager) && /onStepBack/.test(pager), '失败页给出重试 + 回上一章两个出口');
+  ok(/reloadCurrent/.test(sess) && /onStep\?\(0\)/.test(pager), '重试会真的重新拉当前章');
+  ok(/case \.loading/.test(pageVC) && /case \.failed/.test(pageVC), '页有加载态和失败态两种');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);

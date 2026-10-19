@@ -136,6 +136,14 @@ final class ReaderSession: ObservableObject {
         Task { await load(index: i) }
     }
 
+    /// 重试当前章（「重试」按钮走这条）
+    func reloadCurrent() async {
+        let i = index
+        errorText = ""
+        chapterText = ""
+        await load(index: i)
+    }
+
     /// 拉第 i 章正文。
     ///
     /// ⚠️ 竞态：快速连划时 load(2) / load(3) 会同时在飞，网络返回顺序不保证。
