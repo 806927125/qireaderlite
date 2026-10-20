@@ -486,3 +486,22 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(!/private actor InvokeSerializer/.test(sb),
      '不声明独立 actor（会被 @MainActor 继承 → 编译错）');
 }
+
+// ── 换阅读背景要**立刻**生效 ──
+// 真机症状：「换背景只有状态栏生效，要重进正文才变过来」。
+// 根因：layoutConfig 是 computed（主题色在里面），但只有 syncPager 重新求值
+// 才会赋给 pager.config —— 而 syncPager 之前**只在尺寸变化时**被调用；
+// WebView 滚动模式的 settingsPayload 也只在 session.start() 时发一次。
+{
+  const fs3 = require('fs');
+  const rv = fs3.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  ok(/onChange\(of: themeKey\)[\s\S]{0,80}applyThemeChange\(\)/.test(rv),
+     'themeKey 变化 → applyThemeChange（换背景要立刻生效）');
+  ok(/onChange\(of: followSystemAppearance\)/.test(rv) &&
+     /onChange\(of: darkScheme\)/.test(rv),
+     '跟随系统 / 系统深浅色变化 → 同样要重新下发');
+  ok(/private func applyThemeChange\(\)[\s\S]{0,600}syncPager\(size: pagerViewport\)/.test(rv),
+     'applyThemeChange 走 syncPager（原生分页：config 重新求值 + 重排）');
+  ok(/applyThemeChange\(\)[\s\S]{0,900}host\.setSettings\(settingsPayload/.test(rv),
+     'applyThemeChange 重新下发 settings（WebView 滚动模式）');
+}

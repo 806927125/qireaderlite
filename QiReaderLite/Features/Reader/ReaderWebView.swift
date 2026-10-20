@@ -217,6 +217,29 @@ struct ReaderWebView: View {
         }
     }
 
+    /// ⚠️ 换阅读背景（配色 / 跟随系统）后，**两条渲染路径都要重新下发**：
+    ///
+    ///   ① **原生分页**：`layoutConfig` 是 computed property，主题色在里面
+    ///      （`textColor: UIColor(theme.ink)` / `backgroundColor: UIColor(theme.bg)`），
+    ///      但它只有被 `syncPager` 重新求值并赋给 `pager.config` 才生效。
+    ///      而 `syncPager` 之前**只在尺寸变化时**被调用 → 换主题不动。
+    ///      状态栏（SwiftUI 层）立刻变了，正文（pager 自己画）却没变。
+    ///
+    ///   ② **WebView 滚动模式**：`settingsPayload` 只在 `session.start()` 时发一次，
+    ///      换主题不重发 → reader.html 的配色也不变。
+    ///
+    /// 症状：用户说「换背景只有状态栏生效，要重进正文才变过来」。
+    private func applyThemeChange() {
+        // ① 原生分页：重新求值 layoutConfig → pager.config → 重排（sig 含 themeKey，不会被幂等挡掉）
+        syncPager(size: pagerViewport)
+        // ② WebView 滚动模式：重新下发 settings（applySettings 是幂等可重入的）
+        Task { [weak self] in
+            guard let self else { return }
+            let bg = await session.coverDataURL(book.coverUrl)
+            session.host.setSettings(settingsPayload(coverDataURL: bg))
+        }
+    }
+
     /// 把 SwiftUI 侧的配置和正文推进 pager。
     /// 幂等 —— 只有「章变了 / 正文变了 / 排版参数变了」才真的重排。
     private func syncPager(size: CGSize) {
@@ -340,6 +363,11 @@ struct ReaderWebView: View {
                 }
                 .onChange(of: session.errorText) { _, _ in syncPagerFailures() }
                 .onChange(of: session.chapterText) { _, _ in syncPager(size: pagerViewport) }
+            // ⚠️ 换背景（配色 / 跟随系统深浅色）必须**立刻**生效，
+            //    不能要退出重进正文才变（真机反馈）。
+            .onChange(of: themeKey) { _, _ in applyThemeChange() }
+            .onChange(of: followSystemAppearance) { _, _ in applyThemeChange() }
+            .onChange(of: darkScheme) { _, _ in applyThemeChange() }
                 if useNativePaging {
                     // 原生分页：容器交给 UIPageViewController（系统管手势/边界/动画），
                     // CoreText 只负责把一章文本切成若干页。
