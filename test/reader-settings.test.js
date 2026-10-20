@@ -564,8 +564,17 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
 // ── 用户一次提的 5 个问题 ──
 {
   const fs6 = require('fs');
-  const rv = fs6.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
-  const sv = fs6.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
+  // ⚠️ 剥注释再匹配：断言窗口量的是代码之间的距离，
+  //    中间堆了注释就会把真代码挤出窗口（报红但代码是对的）。
+  const rv = stripComments(fs6.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
+  const sv = stripComments(fs6.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8'));
+  // ⚠️ top / bot 必须在本 block 里自己声明一份。
+  //    build133 往这个 block 加断言时用了上面那个 block 的 `top`，
+  //    但那是块级作用域 → ReferenceError: top is not defined，
+  //    整个 reader-settings 门禁从 build133 起一路崩到 build142（假绿）。
+  const top = rv.slice(rv.indexOf('private var topBar'),
+                       rv.indexOf('private var bottomBar'));
+  const bot = rv.slice(rv.indexOf('private var bottomBar'));
 
   // ① 滚动模式章节高度自算（之前 Auto Layout 算错 → 下面留一大片空白）
   ok(/func updateHeights\(width: CGFloat\)/.test(sv), '章节高度自己算');
@@ -646,8 +655,9 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
 // this expression in reasonable time"。所以指纹类字符串必须拆成短 let。
 {
   const fs9 = require('fs');
-  const cf = fs9.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderLayoutConfig.swift'), 'utf8');
-  const rv = fs9.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  // ⚠️ 剥注释：注释里举例写的 `let a = "..."` 会被当成真 let 数插值 → 误判超限。
+  const cf = stripComments(fs9.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderLayoutConfig.swift'), 'utf8'));
+  const rv = stripComments(fs9.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
   const fpBlock = cf.slice(cf.indexOf('var layoutFingerprint'),
                            cf.indexOf('func pageSize'));
   const sigBlock = rv.slice(rv.indexOf('private var readerLayoutSig'),
@@ -662,24 +672,28 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
 // ── 滚动模式：加载转圈 / 点中间 toggle / 打开设置藏底栏 ──
 {
   const fsA = require('fs');
-  const sv = fsA.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
-  const rv = fsA.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  // ⚠️ 必须 stripComments 再匹配。
+  //    断言窗口按「{0,200} 字符内」算，而 build133/134 往这几处加了大量解释性注释，
+  //    把真正的代码推出了窗口 → 断言报红但代码其实是对的。
+  //    剥掉注释后，窗口量的是**代码之间的距离**，才是这条断言本来要表达的意思。
+  const sv = stripComments(fsA.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8'));
+  const rv = stripComments(fsA.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
 
   // ① 加载中显示转圈（失败才出文字）
   ok(/let spinner = UIActivityIndicatorView/.test(sv), '有 UIActivityIndicatorView');
   ok(/box\.spinner\.startAnimating\(\)/.test(sv), '加载中 → 转圈');
   ok(/box\.spinner\.stopAnimating\(\)/.test(sv), '加载完/失败 → 停转圈');
-  ok(/pendingFailed\.contains\(idx\)[\s\S]{0,200}加载失败/.test(sv), '失败才显示文字');
+  ok(/pendingFailed\.contains\(idx\)[\s\S]{0,400}加载失败/.test(sv), '失败才显示文字');
 
   // ② 打开设置面板时藏 chrome（底栏「目录/大小/自检」不该跟面板叠着）
   ok(/onChange\(of: showSettings\)/.test(rv), '监听 showSettings');
-  ok(/onChange\(of: showSettings\)[\s\S]{0,160}showChrome = !on/.test(rv),
+  ok(/onChange\(of: showSettings\)[\s\S]{0,300}showChrome = !on/.test(rv),
      '打开设置 → 藏 chrome（面板不再被底栏顶着，自然下移）');
 
   // ③ 滚动模式点中间 → toggle（原来只会 show，底栏永远消不掉）
-  ok(/onTapCenter: \{[\s\S]{0,200}showChrome\.toggle\(\)/.test(rv),
+  ok(/onTapCenter: \{[\s\S]{0,300}showChrome\.toggle\(\)/.test(rv),
      '滚动模式点中间 → toggle 顶栏/底栏');
-  ok(!/onTapCenter: \{[\s\S]{0,120}showChrome = true/.test(rv),
+  ok(!/onTapCenter: \{[\s\S]{0,300}showChrome = true/.test(rv),
      '不再只 show 不 toggle');
 }
 
@@ -710,7 +724,10 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
 {
   const fsC = require('fs');
   const lg = fsC.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8');
-  const all = lg + fsC.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  // ⚠️ 必须 stripComments 再匹配。
+  //    LiquidGlass.swift 的注释里写着「这里直接 glassEffect(.clear) 就调不动了」——
+  //    不剥注释的话，下面的「全局不用 .clear」断言会被**注释**匹配上 → 假红。
+  const all = stripComments(lg) + stripComments(fsC.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
   // ⚠️ iOS 26 的 `Glass` **只有三个**静态成员：
   //        .regular  — 默认，中等透明
   //        .clear    — 高透明

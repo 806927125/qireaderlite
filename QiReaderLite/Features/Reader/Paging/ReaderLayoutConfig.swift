@@ -93,12 +93,17 @@ struct ReaderLayoutConfig {
         // ⚠️ 必须拆成几个短 let —— 一次拼太长 Swift 编译器会
         //    "unable to type-check this expression in reasonable time"（CI 报过）。
         let a = "\(fontSize)|\(lineSpacing)|\(paragraphSpacing)|\(horizontalMargin)"
-        let b = "\(topMargin)|\(bottomMargin)|\(firstLineIndent)|\(fontFamily)|\(isBold)"
+        // ⚠️ 每段最多 4 个插值 —— 5 个就会 type-check 超时
+        //    （"unable to type-check this expression in reasonable time"，CI 报过）。
+        //    原来 b 是 5 个（topMargin/bottomMargin/firstLineIndent/fontFamily/isBold），
+        //    被门禁 reader-settings 的「每个 let 最多 4 个插值」抓出来 → 拆成 b1/b2。
+        let b1 = "\(topMargin)|\(bottomMargin)|\(firstLineIndent)|"
+        let b2 = "\(fontFamily)|\(isBold)"
         // ⚠️ ReaderParaAlign / ReaderBaselineScope 是 **struct 不是 enum**，
         //    没有 rawValue（编译报 "has no member 'rawValue'"）→ 用 String(describing:)。
         let c = "\(textColor)|\(backgroundColor)|\(String(describing: paraAlign))|\(verticalJustify)"
         let d = "\(showBaseline)|\(baselineColor)|\(String(describing: baselineScope))"
-        return a + b + c + d
+        return a + b1 + b2 + c + d
     }
 
     /// 一页的内容区尺寸（视口扣掉四周边距）
