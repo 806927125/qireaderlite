@@ -569,6 +569,8 @@
     },
     getCookie: function (url) { return nativeCall('getCookie', { url: resolveUrl(url) }).then(function (r) { return r.value; }); },
     setCookie: function (url, cookie) { return nativeCall('setCookie', { url: resolveUrl(url), cookie: String(cookie) }); },
+    // ⚠️ 站方的「退出登录」靠它清 cookie —— 以前原生侧没实现 → 退出是空操作
+    removeCookie: function (url) { return nativeCall('removeCookie', { url: resolveUrl(url) }); },
     cacheFile: function (path, content) { return nativeCall('cacheFile', { path: String(path), text: String(content == null ? '' : content) }).then(function (r) { return r.value === '1'; }); },
     cacheText: function (path) { return nativeCall('readCache', { path: String(path) }).then(function (r) { return r.value; }); },
     readFile: function (path) { return nativeCall('readFile', { path: String(path) }).then(function (r) { return r.value; }); },

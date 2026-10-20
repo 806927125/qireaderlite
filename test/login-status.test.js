@@ -22,6 +22,7 @@ const ENGINE = path.join(ROOT, 'QiReaderLite', 'Resources', 'engine');
 const read = (p) => fs.readFileSync(p, 'utf8');
 
 let pass = 0, fail = 0;
+const compatPath = path.join(ROOT, 'QiReaderLite', 'Core', 'LegadoCompat.swift');
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
 
 /** 断言前先剥注释 —— 不然会匹配到注释里的代码（假红） */
@@ -113,7 +114,7 @@ ok(fs.existsSync(lsPath), 'Core/LoginStatus.swift 存在');
 if (fs.existsSync(lsPath)) {
   const ls = readCode(lsPath);
   ok(/\/user_api/.test(ls), '独立验证打的是 /user_api（站方 checkStatus 用的同一个接口）');
-  ok(/obj\["id"\]\s*!=\s*nil/.test(ls),
+  ok(/obj\["id"\]\s*!=\s*nil/.test(readCode(compatPath)),
      '判据是返回里有 id（服务器认这个 cookie 才算登录了）');
   ok(/header\["User-Agent"\]/.test(ls) && /forHTTPHeaderField:\s*"User-Agent"/.test(ls),
      '带 User-Agent，而且用的是**书源自己的** UA（不带的话边缘直接 503，看着像服务器挂了）');
@@ -167,7 +168,6 @@ ok(!/recentLogs\.count\s*>\s*60\b/.test(sb), '没有残留的 60 条上限');
 
 // ───────── ⑧ 引擎能力用 Swift 写（JS 只转发）─────────
 console.log('\n=== 8. 引擎能力用 Swift 写 ===');
-const compatPath = path.join(ROOT, 'QiReaderLite', 'Core', 'LegadoCompat.swift');
 ok(fs.existsSync(compatPath), 'Core/LegadoCompat.swift 存在（能力在 Swift 侧）');
 if (fs.existsSync(compatPath)) {
   const lc = readCode(compatPath);
@@ -214,6 +214,34 @@ ok(fs.existsSync(path.join(ROOT, 'test', 'live-login-card.test.js')),
 const cardTest = readCode(path.join(ROOT, 'test', 'live-login-card.test.js'));
 ok(/padEnd is not a function/.test(cardTest) && /会员状态/.test(cardTest),
    '卡片测试断言了「不再报 padEnd 错」+「卡片内容要出来」');
+
+// ───────── ⑨ 登录态不许被失败的登录弄坏（真机踩到）─────────
+console.log('\n=== 9. 失败的登录不许破坏已有登录态 ===');
+// 站方 login(true) 第一步无条件 putLoginInfo(表单值) → **把「密钥」抹掉**；
+// 而密钥是「登录成功」的标志（只有成功那步才写回去）→
+// 登录_api 失败（服务器 502）时，密钥就永远回不来了（用户真机就是这样丢的）。
+ok(/beforeLogin/.test(engine) && /restoreLoginIfLost/.test(engine),
+   'login op 会给登录信息拍快照');
+ok(/b\['密钥'\]\s*&&\s*!n\['密钥'\]/.test(engine),
+   '跑完检查「密钥」没了但原来有 → 恢复回去');
+ok(/isLoginAction\s*=\s*\/login/.test(engine) && /!\/logout\/i\.test\(action\)/.test(engine),
+   '只对 login 动作生效（logout 要能真的清掉登录态）');
+// cookie.removeCookie：以前原生侧没实现 → 站方的「退出登录」是空操作
+ok(/case "removeCookie"/.test(sb2), '原生侧有 removeCookie op');
+ok(/static func remove\(for url: String\)/.test(sb2), 'CookieJar 有 remove');
+ok(/removeCookie:\s*function/.test(javai), 'java-api 有 removeCookie');
+ok(/QR\.java\.removeCookie\(url\)/.test(readCode(path.join(ENGINE, 'source-api.js'))),
+   'cookie.removeCookie 会通知原生（以前只删了本地快照 → 真 cookie 还在）');
+// 检测结论：5xx/HTML 不能报成「未登录」
+ok(/static func classify\(code: Int, data: Data\)/.test(readCode(compatPath)),
+   '响应分类是纯函数（沙盒能真跑）');
+ok(/serverError/.test(readCode(compatPath)) && /code >= 500/.test(readCode(compatPath)),
+   '5xx 判为「服务器异常」而不是「未登录」');
+ok(/stationSaysLoggedIn/.test(readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'LoginStatus.swift'))),
+   '结论按站方**原文**判断（站方说「检测登录失败」就别报「站方说已登录」）');
+// 回归测试
+ok(fs.existsSync(path.join(ROOT, 'test', 'live-login-flow.test.js')),
+   '有登录流程的端到端联调（含「失败不许弄坏登录态」用例）');
 
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);

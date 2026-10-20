@@ -104,6 +104,7 @@ enum LoginStatus {
 
         // ── ③ 独立硬验证（直连服务器，不经过站方 JS） ─────────────
         var loggedIn = false
+        var serverBroken = false
         if base.isEmpty {
             lines.append("独立验证：跳过（拿不到服务器地址）")
         } else {
@@ -118,18 +119,41 @@ enum LoginStatus {
                              + (mail.isEmpty ? "" : " 邮箱=\(mask(mail))") + "）")
             case .notLoggedIn(let msg):
                 lines.append("独立验证：❌ 未登录（服务器说：\(msg)）")
-            case .failed(let msg):
-                lines.append("独立验证：失败（\(msg)）")
+            case .serverError(let msg):
+                // ⚠️ 服务器 5xx / 返回 HTML 错误页 → **不是用户的锅**，
+                //    别报成「未登录」（会让人以为白登了）。
+                serverBroken = true
+                lines.append("独立验证：⚠️ 服务器异常（\(msg)）——不是你的问题，过几分钟再检一次")
             }
         }
 
-        // 结论：独立验证说了算；验证不了才退回站方自检
+        // 站方到底说啥？**不能只看「JS 有没有抛错」** ——
+        // 站方 checkStatus 自己 catch 住错误并 toast「检测登录失败」，
+        // 那样 JS 根本不抛 → 会被误判成「站方说已登录」（用户真机就遇到这个）。
+        let stationText = station.joined(separator: "\n")
+        let stationSaysLoggedIn = stationText.contains("会员状态")
+            || stationText.contains("在线设备")
+            || stationText.contains("注册时间")
+        let stationSaysFailed = stationText.contains("检测登录失败")
+            || stationText.contains("登录失败")
+            || stationText.contains("未找到密钥")
+        if stationSaysLoggedIn {
+            lines.append("站方自检：说已登录（会员卡片出来了）")
+        } else if stationSaysFailed {
+            lines.append("站方自检：**说没登录**（别被这句误导，以服务器为准）")
+        } else if stationOK {
+            lines.append("站方自检：跑了但没给出结论")
+        }
+
+        // 结论：独立验证说了算
         let verdict: String
         if loggedIn {
             verdict = "已登录"
+        } else if serverBroken {
+            verdict = "服务器异常，这次测不出来（不是你的问题，过几分钟再试）"
         } else if base.isEmpty {
             verdict = "不确定（拿不到服务器地址，没法独立验证）"
-        } else if stationOK {
+        } else if stationSaysLoggedIn {
             verdict = "站方说已登录，但独立验证没通过（以服务器为准 = 未登录）"
         } else {
             verdict = "未登录"
@@ -144,11 +168,7 @@ enum LoginStatus {
 
     // MARK: - 直连服务器
 
-    enum ProbeResult {
-        case loggedIn([String: Any])
-        case notLoggedIn(String)
-        case failed(String)
-    }
+    typealias ProbeResult = LegadoCompat.ProbeResult
 
     /// POST `{base}/user_api` 带 cookie —— 站方 checkStatus 用的同一个接口。
     ///
@@ -188,18 +208,12 @@ enum LoginStatus {
         do {
             let (data, resp) = try await session.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            let text = String(data: data, encoding: .utf8) ?? ""
-            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                if obj["id"] != nil { return .loggedIn(obj) }
-                let msg = (obj["msg"] as? String) ?? ("HTTP \(code)")
-                return .notLoggedIn(msg)
-            }
-            if code == 200, !text.isEmpty { return .notLoggedIn(text.prefix(120).description) }
-            return .failed("HTTP \(code) \(text.prefix(120).description)")
+            return LegadoCompat.classify(code: code, data: data)
         } catch {
-            return .failed(error.localizedDescription)
+            return .serverError(error.localizedDescription)
         }
     }
+
 
     // MARK: - 小工具
 

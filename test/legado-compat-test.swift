@@ -108,4 +108,49 @@ let r3 = LegadoCompat.handle(fn: "没这能力", args: [:])
 eq(r3["ok"] as? Bool, false, "未知能力 → ok=false（不是崩）")
 
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
+
+print("\n=== 6. 登录检测的响应分类（三档必须分清）===")
+// ⚠️ 真机踩过：服务器 502 + <!DOCTYPE html> → 以前被报成「未登录」
+//    → 用户以为白登了。5xx / 非 JSON 一律算「服务器异常」。
+
+// ① 有 id → 已登录
+let okBody = Data(#"{"id":6044,"nickname":"流云","email":"a@b.com"}"#.utf8)
+if case .loggedIn(let info) = LegadoCompat.classify(code: 200, data: okBody) {
+    ok((info["id"] as? Int) == 6044, "有 id → 判为已登录")
+} else {
+    ok(false, "有 id → 判为已登录")
+}
+
+// ② 服务器明确回 JSON 说没密钥 → 未登录
+let noKey = Data(#"{"code":-1,"msg":"请求参数中未找到密钥"}"#.utf8)
+if case .notLoggedIn(let msg) = LegadoCompat.classify(code: 400, data: noKey) {
+    ok(msg.contains("未找到密钥"), "JSON 说没密钥 → 判为未登录")
+} else {
+    ok(false, "JSON 说没密钥 → 判为未登录")
+}
+
+// ③ 密钥无效（数据库查询失败）→ 也是未登录
+let badKey = Data(#"{"code":-1,"msg":"数据库查询失败"}"#.utf8)
+if case .notLoggedIn = LegadoCompat.classify(code: 400, data: badKey) {
+    ok(true, "密钥无效 → 判为未登录")
+} else {
+    ok(false, "密钥无效 → 判为未登录")
+}
+
+// ④ 502 → 服务器异常（**不是**未登录！）
+let html = Data("<!DOCTYPE html><html>...</html>".utf8)
+if case .serverError(let msg) = LegadoCompat.classify(code: 502, data: html) {
+    ok(msg.contains("502"), "502 → 判为服务器异常")
+} else {
+    ok(false, "502 → 判为服务器异常")
+}
+
+// ⑤ 200 但返回 HTML → 服务器异常
+if case .serverError = LegadoCompat.classify(code: 200, data: html) {
+    ok(true, "200 但不是 JSON → 判为服务器异常")
+} else {
+    ok(false, "200 但不是 JSON → 判为服务器异常")
+}
+
+print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

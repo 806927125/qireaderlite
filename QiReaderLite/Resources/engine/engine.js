@@ -693,21 +693,53 @@
         // jsLib 里的函数用 `this.source` 拿 source（this = 全局对象）→ op 期间挂上
         var prevSource = g.source;
         g.source = QR.wrapSource ? QR.wrapSource(src) : src;
-        // ⚠️ 站方**只**用 toast 报登录结果（"✅️登录成功" / "💔登录失败"），
+        // ⚠️ 站方 **只**用 toast 报登录结果（"✅️登录成功" / "💔登录失败"），
         //    toast 弹一下就没了 → 用户根本不知道成没成。
         //    这里装个 sink 把原文收回来，原生侧显示给用户。
         var msgs = [];
         var prevSink = QR.__qrMsgSink;
         QR.__qrMsgSink = msgs;
+
+        // ── 登录信息快照 ──
+        //
+        // 站方 `login(true)` 的**第一步**就是无条件 `putLoginInfo(表单值)`：
+        //     putLoginInfo(JSON.stringify(result))   // result = {邮箱, 密码}
+        // 而「密钥」是**登录成功**的标志（只有登录_api 返回 code==0 那步才写回去）。
+        //
+        // ⇒ 于是有两种情况会把密钥**抹掉且回不来**：
+        //   ① 登录_api 失败（服务器 502 / 密码错）→ ④ 那步没跑到
+        //   ② cookie 里已有 qttoken → 站方直接走
+        //      「当前✅️已登录，请🚫退出登录后重新登录」分支 → **根本不重新登录**
+        //
+        // 两种情况的后果一样：**一次没成功的登录，把已有的登录态弄坏了**。
+        // 所以跑完检查一下：密钥没了但原来有 → **恢复回去**。
+        // ⚠️ 只对 login 动作生效（logout 要能真的清掉登录态）。
+        var beforeLogin = (src.__loginInfo && typeof src.__loginInfo === 'object')
+          ? JSON.stringify(src.__loginInfo) : '';
+        var isLoginAction = /login\s*\(/i.test(action) && !/logout/i.test(action);
+
+        function restoreLoginIfLost() {
+          if (!isLoginAction || !beforeLogin) return;
+          try {
+            var b = JSON.parse(beforeLogin);
+            var n = QR.__qrDirtyLogin ? JSON.parse(QR.__qrDirtyLogin) : {};
+            if (b['密钥'] && !n['密钥']) {
+              QR.__qrDirtyLogin = beforeLogin;   // ← 恢复旧的（登录态没被弄坏）
+            }
+          } catch (e) { /* 忽略 */ }
+        }
+
         return rule.runJs(action, scope)
           .then(function (r) {
             g.source = prevSource;
             QR.__qrMsgSink = prevSink;
+            restoreLoginIfLost();
             return { ok: true, result: (r == null ? '' : String(r)), messages: msgs };
           })
           .catch(function (e) {
             g.source = prevSource;
             QR.__qrMsgSink = prevSink;
+            restoreLoginIfLost();
             return { ok: false, error: String(e && e.message || e), messages: msgs };
           });
       });

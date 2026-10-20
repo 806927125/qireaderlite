@@ -525,6 +525,14 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             CookieJar.set(c, for: url)
             return ok()
 
+        case "removeCookie":
+            // ⚠️ 站方的「退出登录」靠它清 cookie —— 以前原生侧没这个 op
+            //    → 站方 logout() 里的 cookie.removeCookie 全是空操作
+            //    → 退出后 cookie 还在 → 用户看着像没退出。
+            let url = args["url"] as? String ?? ""
+            CookieJar.remove(for: url)
+            return ok()
+
         case "cacheText":
             guard let p = args["path"] as? String, let t = args["text"] as? String else { return err("cacheText 缺参") }
             return ok(["value": CacheFiles.write(p, t) ? "1" : "0"])
@@ -890,6 +898,26 @@ enum CookieJar {
         // 新 SDK 的 setCookies 多了第三个参数 mainDocumentURL，不给编译不过
         HTTPCookieStorage.shared.setCookies(cookies(from: cookie, host: u.host ?? ""),
                                             for: u, mainDocumentURL: nil)
+    }
+
+    /// 删某个站点下的 cookie（站方的「退出登录」用）
+    ///
+    /// ⚠️ `HTTPCookieStorage.shared.setCookies([])` **不一定**会清掉已有的
+    ///    （实测不可靠）→ 这里显式遍历 deleteCookie。
+    ///    域匹配：cookie.domain 是 "v5.langge.uk" 或 ".langge.uk"，
+    ///    要把 **父域** 的 cookie 也删掉（站方 logout 会逐个清 host + langge.uk）。
+    static func remove(for url: String) {
+        guard let u = URL(string: url) else { return }
+        let host = (u.host ?? "").lowercased()
+        guard !host.isEmpty else { return }
+        for c in HTTPCookieStorage.shared.cookies ?? [] {
+            var d = c.domain.lowercased()
+            if d.hasPrefix(".") { d.removeFirst() }
+            if d.isEmpty { continue }
+            if d == host || host.hasSuffix("." + d) || d.hasSuffix("." + host) {
+                HTTPCookieStorage.shared.deleteCookie(c)
+            }
+        }
     }
     static func cookies(from header: String, host: String) -> [HTTPCookie] {
         var out: [HTTPCookie] = []

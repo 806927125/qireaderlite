@@ -121,6 +121,37 @@ enum LegadoCompat {
         }
     }
 
+    // MARK: - 登录检测：服务器响应的分类
+
+    /// 登录探测的结果 —— **三档必须分清**
+    enum ProbeResult {
+        /// 服务器认这个 cookie（返回里有 id）
+        case loggedIn([String: Any])
+        /// 服务器**明确**说没登录（没带密钥 / 密钥无效）
+        case notLoggedIn(String)
+        /// 服务器异常（5xx / 返回 HTML 错误页）—— **不是用户的锅**
+        case serverError(String)
+    }
+
+    /// 把服务器的响应分类 —— **纯函数**（沙盒里能真跑）
+    ///
+    /// ⚠️ 以前把「不是 JSON」也归成 notLoggedIn → 服务器 502 会被报成「未登录」
+    ///    → 用户以为白登了。真机踩过（HTTP 502 + `<!DOCTYPE html>`，
+    ///    站方那边同一个响应直接 `JSON.parse` 炸成 "Unrecognized token '<'"）。
+    static func classify(code: Int, data: Data) -> ProbeResult {
+        if code >= 500 {
+            return .serverError("HTTP \(code)（服务器临时抽风，过几分钟再试）")
+        }
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if obj["id"] != nil { return .loggedIn(obj) }
+            return .notLoggedIn((obj["msg"] as? String) ?? ("HTTP \(code)"))
+        }
+        let text = String(data: data, encoding: .utf8) ?? ""
+        let head = text.prefix(60).description
+            .replacingOccurrences(of: "\n", with: " ")
+        return .serverError("HTTP \(code) 返回的不是 JSON（服务器异常）：\(head)")
+    }
+
     // MARK: - 同步通道分发
 
     /// 同步通道的**唯一**入口：JS 通过 `window.prompt` 把 {fn, args} 送过来，

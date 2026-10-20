@@ -77,13 +77,17 @@
         try { if (QR.java && QR.java.setCookie) QR.java.setCookie(url, cookie); } catch (e) {}
         return '';
       },
-      /** 删 cookie：本地先删（同步可见） */
+      /** 删 cookie：本地先删（同步可见），**真罐也要删**（原生侧） */
       removeCookie: function (url) {
         var host = hostOf(url);
         if (Object.prototype.hasOwnProperty.call(cookieSnapshot, host)) {
           delete cookieSnapshot[host];
         }
         QR.__qrDirtyCookie = true;
+        // ⚠️ 以前只删了本地快照，**真 cookie 罐（原生 HTTPCookieStorage）没动**
+        //    → 站方的「退出登录」是空操作 → 退出后 cookie 又在 → 看起来没退出。
+        //    现在同步通知原生删掉。
+        try { if (QR.java && QR.java.removeCookie) QR.java.removeCookie(url); } catch (e) {}
         return '';
       },
       /** 取某个域下某个 cookie 的值 */
