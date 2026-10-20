@@ -193,14 +193,14 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 // 面板背景 = **液态玻璃**（用户明确要：栖阅风格液态玻璃）。
 // build102 我拿「折射会扭掉边缘控件」把它换成磨砂白，那是**误解**诉求 ——
 // 折射不是成因，成因是**内容区高度不够、控件被裁**。
-// 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
-// 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
-// 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
-ok(/\.background\(\s*Color\.white\.opacity\(0\.82\),\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '面板底色 white@0.82（规格表：rgba(255,255,255,.82) + 模糊 24）');
-ok(/\.background\(\s*\.ultraThinMaterial,\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '面板模糊 .ultraThinMaterial（规格表：模糊 24）');
-ok(!/glassEffect\(/.test(panel), '不用 .glassEffect（通透玻璃上白块看不出层次）');
+// 面板背景 = **液态玻璃** .glassEffect(.regular) + 白 tint。
+//
+// ⚠️ 之前在「结构还没对」时来回换过这个背景（.82 磨砂白 ↔ .glassEffect），
+//    两边都不对 —— 那是**结构问题**不是材质问题。结构对了（build120）才比得了材质。
+ok(/\.glassEffect\(\.regular\.tint\(Color\.white\.opacity\(0\.35\)\)/.test(panel),
+   '面板是**液态玻璃** .glassEffect(.regular) + 白 tint（保白度，白块要能分层）');
+ok(/\.background\(\s*Color\.clear\s*\n?\s*\.glassEffect/.test(panel),
+   '面板玻璃用 background(_:in:) 重载（.background { Shape } 会撑成全屏）');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
 // 目录 sheet 本来就该有 detent（.medium/.large）；
 // 只判定**设置面板**那一段没有 detent。
@@ -237,7 +237,7 @@ console.log('\n── 第 5 版面板结构 ──');
 //    不是容器里再套一层白色块。
 //    我 build82~89 一直加着那层白卡（white@.35 / radius 22）—— 从一开始就错了。
 ok(!/upperPanelCard/.test(web), '不再有内层白卡（那层是我误加的）');
-ok(!/Color\.white\.opacity\(0\.35\)/.test(web), '没有那层 white@0.35 内嵌白块');
+ok(/upperPanelCard/.test(web) === false, '没有额外的内层白卡（top-card 那层是规格要的）');
 ok(/panelContent/.test(web), '内容装在 panelContent 里');
 ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
    '分割线有**两条**：字号下面 + 跟随系统下面（我之前错删成一条）');
@@ -295,11 +295,10 @@ ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 // 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
 // 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
 // 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
-ok(/\.background\(\s*Color\.white\.opacity\(0\.82\),\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '面板底色 white@0.82（规格表：rgba(255,255,255,.82) + 模糊 24）');
-ok(/\.background\(\s*\.ultraThinMaterial,\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '面板模糊 .ultraThinMaterial（规格表：模糊 24）');
-ok(!/glassEffect\(/.test(panel), '不用 .glassEffect（通透玻璃上白块看不出层次）');
+ok(/\.glassEffect\(\.regular/.test(panel), '面板是液态玻璃');
+ok(/\.glassEffect\(\.regular\.tint\(/.test(panel), '液态玻璃带白 tint（内层白块要能分层）');
+ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
+ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 //    build103 我把 fixedSize 放在 **NavigationStack 外面** ——
 //    NavigationStack 的 ideal height 算出来接近 **0**，面板只剩 padding 撑起来
