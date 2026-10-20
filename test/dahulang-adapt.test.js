@@ -153,6 +153,13 @@ ok(/HTTPCookieStorage\.shared\.setCookie/.test(bsw), '关掉时把 cookie 同步
 const rbs = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');
 ok(/case "openBrowser"/.test(rbs) && /func openBrowser/.test(rbs), '原生桥有 openBrowser（弹浏览器等关闭）');
 
+// 浏览器登录后 cookie 必须合并回快照（否则「未获取到登录凭据」）
+ok(/__qrMergeCookie/.test(analyzer) && /__qrMergeCookie\(host, ck\)/.test(analyzer),
+   '浏览器关掉后 cookie 合并回快照');
+ok(/QR\.__qrCookieSnapshot/.test(javai) || /__qrCookieSnapshot/.test(javai) ||
+   /__qrCookieSnapshot/.test(fs.readFileSync(path.join(ENGINE, 'source-api.js'), 'utf8')),
+   'cookie 罐从可更新的快照读（中途能补新 cookie）');
+
 // ───────── ③ 脚本清单三处一致 ─────────
 console.log('\n=== 3. 引擎脚本清单三处一致 ===');
 const swift = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');

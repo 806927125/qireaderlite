@@ -46,16 +46,20 @@
   function cookiesFor(url) {
     var host = hostOf(url);
     if (!host) return '';
-    if (Object.prototype.hasOwnProperty.call(cookieSnapshot, host)) {
-      return cookieSnapshot[host] || '';
+    // ⚠️ 从 QR.__qrCookieSnapshot 读（不是模块内的闭包变量）——
+    //    浏览器里刚登录出来的 cookie 是**中途**产生的，
+    //    op 开头拍的那份快照里没有 → 站方 getKey 拿不到 → 「未获取到登录凭据」。
+    var snap = QR.__qrCookieSnapshot || cookieSnapshot;
+    if (Object.prototype.hasOwnProperty.call(snap, host)) {
+      return snap[host] || '';
     }
     // 后缀匹配：v5.langge.uk → langge.uk
-    var keys = Object.keys(cookieSnapshot);
+    var keys = Object.keys(snap);
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
       if (!k) continue;
       if (host.length > k.length && host.slice(-(k.length + 1)) === '.' + k) {
-        return cookieSnapshot[k] || '';
+        return snap[k] || '';
       }
     }
     return '';
@@ -211,11 +215,19 @@
   /** 原生侧在每次 op 前调用：装 cookie 快照 */
   QR.__qrInstallCookieSnapshot = function (snap) {
     cookieSnapshot = {};
+    QR.__qrCookieSnapshot = cookieSnapshot;
     if (snap && typeof snap === 'object') {
       for (var k in snap) {
         if (Object.prototype.hasOwnProperty.call(snap, k)) cookieSnapshot[k] = String(snap[k] || '');
       }
     }
+  };
+
+  /** 把浏览器里新产生的 cookie 合并进快照（登录后立刻要用） */
+  QR.__qrMergeCookie = function (host, cookie) {
+    if (!host || !cookie) return;
+    var snap = QR.__qrCookieSnapshot || (QR.__qrCookieSnapshot = {});
+    snap[host] = String(cookie);
   };
 
   /** op 开始前清脏标记 */

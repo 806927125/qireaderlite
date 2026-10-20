@@ -114,6 +114,9 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     /// 引擎启动过程中的每一步状态，界面上直接显示。
     /// 不然「搜不出东西」和「引擎根本没起来」在用户眼里长得一模一样。
     @Published private(set) var bootLog: [String] = []
+    /// 最近 60 条引擎日志 —— 站方 JS 的报错以前只进 NSLog，用户**根本看不见**，
+    /// 排查只能靠猜（「浏览器弹不出来」就是这么瞎查的）。自检面板里能看到。
+    @Published private(set) var recentLogs: [String] = []
 
     private var webView: WKWebView!
     private var bootWaiters: [CheckedContinuation<Void, Never>] = []
@@ -142,6 +145,10 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         var lines: [String] = []
         lines.append("引擎版本：\(Self.engineVersion)")
         lines.append("App 版本：\(AppPaths.appVersion)")
+        if !recentLogs.isEmpty {
+            lines.append("—— 最近引擎日志 ——")
+            lines.append(contentsOf: recentLogs.suffix(12))
+        }
         // ATS 有没有放开：装旧包的话这里是 false，
         // 症状就是「分类能出来、一点书就报 App Transport Security」
         let ats = (Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]) ?? [:]
@@ -455,6 +462,8 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         case "log":
             let m = args["msg"] as? String ?? ""
             NSLog("[engine] %@", m)
+            recentLogs.append(m)
+            if recentLogs.count > 60 { recentLogs.removeFirst(recentLogs.count - 60) }
             return ok()
 
         case "toast":
@@ -543,8 +552,16 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             return ["ok": false, "error": "URL 非法: \(args["url"] as? String ?? "nil")"]
         }
         let title = args["title"] as? String ?? ""
+        NSLog("[browser] 打开 %@", raw)
+        recentLogs.append("[browser] 打开 " + raw)
+        if recentLogs.count > 60 { recentLogs.removeFirst(recentLogs.count - 60) }
+        await MainActor.run { Toast.show("正在打开浏览器…（登录完把浏览器关掉）") }
         guard let host = Self.topViewController() else {
-            return ["ok": false, "error": "找不到可显示的界面"]
+            // 兜底：弹不出来至少用系统浏览器打开（登录态拿不回来，但页面能看）
+            if let u = URL(string: raw) {
+                await MainActor.run { UIApplication.shared.open(u) }
+            }
+            return ["ok": false, "error": "找不到可显示的界面（已改用系统浏览器打开）"]
         }
         return await withCheckedContinuation { (cont: CheckedContinuation<[String: Any], Never>) in
             var done = false
@@ -566,7 +583,12 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         let scenes = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
         let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-        let win = scene?.windows.first(where: { $0.isKeyWindow }) ?? scene?.windows.first
+        // ⚠️ 排除隐藏窗口 —— 引擎自己的 WKWebView 之类的别被选中，
+        //    present 到看不见的窗口上 =「浏览器弹不出来」
+        let visible = (scene?.windows ?? []).filter { !$0.isHidden && $0.alpha > 0.01 }
+        let win = visible.first(where: { $0.isKeyWindow })
+            ?? visible.first { $0.rootViewController != nil }
+            ?? scene?.windows.first
         var vc = win?.rootViewController
         while let next = vc?.presentedViewController { vc = next }
         return vc

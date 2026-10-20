@@ -217,7 +217,12 @@
     startBrowserDp: function (url, title) { return java.startBrowser(url, title); },
     openBrowser: function (url, title) {
       return nativeCall('openBrowser', { url: resolveUrl(url), title: String(title || '') })
-        .then(function (r) { return mkBrowserLike((r && r.value) || {}); });
+        .then(function (r) {
+          // ⚠️ 失败要**抛**，别默默返回一个空页面 ——
+          //    静默失败会变成「点了没反应」，根本查不出原因。
+          if (r && r.ok === false) throw new Error(String(r.error || '打不开浏览器'));
+          return mkBrowserLike((r && r.value) || {});
+        });
     },
     openUrl: function (url) { return java.open(url); },
     open: function (url) { return java.open(url); },

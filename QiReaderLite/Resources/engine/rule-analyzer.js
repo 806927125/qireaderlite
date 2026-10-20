@@ -335,7 +335,21 @@
       // 浏览器类：弹内嵌浏览器等用户关掉 → 拿页面 HTML
       if (rec.kind === 'browser') {
         return QR.java.openBrowser(u, rec.title)
-          .then(function (page) { out[u] = page; })
+          .then(function (page) {
+            out[u] = page;
+            // ⚠️ 浏览器里刚登录出来的 cookie **必须合并回快照** ——
+            //    快照是 op 开头拍的，里面没有新 cookie →
+            //    站方 cookie.getKey() 拿不到 sessionid →
+            //    「未获取到登录凭据，登录失败」。
+            try {
+              var ck = page && page.cookie;
+              if (ck && QR.__qrMergeCookie) {
+                var host = '';
+                try { host = new URL(u).host; } catch (e) { host = String(u); }
+                QR.__qrMergeCookie(host, ck);
+              }
+            } catch (e) { /* 忽略 */ }
+          })
           .catch(function () { out[u] = ''; });
       }
       var t = null;
