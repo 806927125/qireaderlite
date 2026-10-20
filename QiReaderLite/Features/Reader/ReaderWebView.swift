@@ -730,9 +730,12 @@ struct ReaderWebView: View {
     }
 
     /// .divider { height:1px; background:rgba(0,0,0,.07); margin:0 2px 10px }
+    ///
+    /// ⚠️ **发丝线**：@3x 下 1pt = 3 个物理像素，太粗。
+    ///    系统分隔线是 1 个物理像素 = `1 / UIScreen.main.scale` pt。
     private var hairLine: some View {
         Color.black.opacity(0.07)
-            .frame(height: 1)
+            .frame(height: 1.0 / UIScreen.main.scale)
             .padding(.horizontal, 2)
             .padding(.bottom, 10)
     }

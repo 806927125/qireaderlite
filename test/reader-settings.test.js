@@ -450,3 +450,8 @@ ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假
   ok((pc3.match(/^\s*featureGrid\s*$/gm) || []).length === 1,
      'featureGrid 在 panelContent 里只出现一次');
 }
+
+// ── 发丝线 ──
+// @3x 下 1pt = 3 物理像素，系统分隔线是 1 物理像素 = 1/scale pt。
+ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
+   '分隔线是发丝线 1/scale pt（@3x 下 1 物理像素）');
