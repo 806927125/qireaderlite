@@ -13,6 +13,8 @@ struct SourcesView: View {
     @State private var filter = ""
     /// 要登录的书源（点书源行右侧的钥匙图标）
     @State private var loginTarget: BookSource?
+    /// 要检测登录状态的书源（长按书源行）
+    @State private var probeTarget: BookSource?
 
     var shown: [BookSource] {
         filter.isEmpty ? store.sources : store.sources.filter {
@@ -41,6 +43,10 @@ struct SourcesView: View {
         // 书源登录：点行右侧的钥匙图标
         .sheet(item: $loginTarget) { src in
             SourceLoginSheet(source: src)
+        }
+        // 登录状态检测：长按书源行
+        .sheet(item: $probeTarget) { src in
+            LoginStatusSheet(source: src)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -87,10 +93,9 @@ struct SourcesView: View {
         .sheet(isPresented: $showURLImport) {
             URLImportView { data in importData(data, from: "链接") }
         }
-        .alert("引擎自检", isPresented: $showDiag) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text(RuleSandbox.shared.diagnose())
+        // 引擎自检：改成 sheet（alert 装不下日志，也没有复制按钮）
+        .sheet(isPresented: $showDiag) {
+            EngineLogSheet()
         }
         .alert("网络自检", isPresented: Binding(
             get: { netDiagText != nil },
@@ -211,6 +216,26 @@ struct SourcesView: View {
             Button(role: .destructive) {
                 store.remove(ids: [s.bookSourceUrl])
             } label: { Label("删除", systemImage: "trash") }
+        }
+        // 长按 → 登录 / 检测登录状态
+        //
+        // ⚠️ 「登录到底成没成功」以前只能靠猜：站方只用 toast 报结果，弹一下就没了。
+        //    这里给一个**能出结论**的入口（服务器说了算），不用去点钥匙再猜。
+        .contextMenu {
+            if let lu = s.loginUrl, !lu.isEmpty {
+                Button {
+                    loginTarget = s
+                } label: { Label("登录…", systemImage: "key.horizontal") }
+                Button {
+                    probeTarget = s
+                } label: { Label("检测登录状态", systemImage: "checkmark.shield") }
+            }
+            Button {
+                store.setEnabled(!s.enabled, for: s.bookSourceUrl)
+            } label: {
+                Label(s.enabled ? "停用" : "启用",
+                      systemImage: s.enabled ? "pause.circle" : "play.circle")
+            }
         }
     }
 

@@ -26,9 +26,13 @@ final class SourceService {
     ///   - action: loginUi 里按钮的 action（如 `login(true)`）
     ///   - formValues: 表单值（字段名 → 值）。引擎把它挂在 `result` 上，
     ///     站方 login() 里读的就是 `result['邮箱']` / `result['密码']`。
-    /// - Returns: 是否成功 + 失败原因（成功时 message 为空）
+    /// - Returns: 是否成功 + 失败原因 + **站方自己吐出来的原文**
+    ///
+    /// ⚠️ `messages` 才是**真话**：`ok == true` 只说明「JS 跑完了没抛异常」，
+    ///    站方报的是「✅️登录成功」还是「💔登录失败」全在 messages 里。
+    ///    以前这些只弹 toast 就没了 → 用户永远不知道登录成没成。
     func login(source: BookSource, action: String,
-               formValues: [String: String]) async throws -> (ok: Bool, message: String) {
+               formValues: [String: String]) async throws -> (ok: Bool, message: String, messages: [String]) {
         var p: [String: Any] = ["action": action, "formValues": formValues]
         let srcData = try AppEncoder.encode(source)
         var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
@@ -49,7 +53,33 @@ final class SourceService {
         let dict = raw as? [String: Any] ?? [:]
         let ok = dict["ok"] as? Bool ?? false
         let err = dict["error"] as? String ?? ""
-        return (ok, err)
+        // 站方原文（toast / log）。这是判断「登录成没成」的唯一依据。
+        let msgs = (dict["messages"] as? [String]) ?? []
+        return (ok, err, msgs)
+    }
+
+    /// 登录状态检测（引擎侧）
+    ///
+    /// 跑站方自己的 `checkStatus()`，并把服务器地址解析出来。
+    /// 返回的 `messages` 是站方的原文（会员卡片 / 失败原因）。
+    func probeLogin(source: BookSource) async throws
+        -> (baseUrl: String, messages: [String], stationCheck: Bool) {
+        let srcData = try AppEncoder.encode(source)
+        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        var p: [String: Any] = ["source": srcDict]
+        p["cookieSnapshot"] = CookieJar.snapshot()
+        let raw = try await RuleSandbox.shared.invoke("loginProbe", p, source: source)
+        let dict = raw as? [String: Any] ?? [:]
+        if let e = dict["error"] as? String, !e.isEmpty {
+            throw ServiceError.engineFailed(e)
+        }
+        return (
+            baseUrl: (dict["baseUrl"] as? String) ?? "",
+            messages: (dict["messages"] as? [String]) ?? [],
+            stationCheck: (dict["stationCheck"] as? Bool) ?? false
+        )
     }
 
     // MARK: 桥接

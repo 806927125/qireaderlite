@@ -114,8 +114,11 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     /// 引擎启动过程中的每一步状态，界面上直接显示。
     /// 不然「搜不出东西」和「引擎根本没起来」在用户眼里长得一模一样。
     @Published private(set) var bootLog: [String] = []
-    /// 最近 60 条引擎日志 —— 站方 JS 的报错以前只进 NSLog，用户**根本看不见**，
+    /// 最近 300 条引擎日志 —— 站方 JS 的报错以前只进 NSLog，用户**根本看不见**，
     /// 排查只能靠猜（「浏览器弹不出来」就是这么瞎查的）。自检面板里能看到。
+    ///
+    /// ⚠️ 之前是 60 条，自检面板只显示后 12 条 → 站方登录时打的那张会员卡片
+    ///    会被后来的日志直接挤掉，用户什么都看不到。300 条够用。
     @Published private(set) var recentLogs: [String] = []
 
     private var webView: WKWebView!
@@ -148,8 +151,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))
-        }
-        // ATS 有没有放开：装旧包的话这里是 false，
+        }        // ATS 有没有放开：装旧包的话这里是 false，
         // 症状就是「分类能出来、一点书就报 App Transport Security」
         let ats = (Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]) ?? [:]
         let rawTrue = (ats["NSAllowsArbitraryLoads"] as? Bool) ?? false
@@ -176,6 +178,34 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             lines.append("engine.html：**没找到**")
         }
         lines.append(contentsOf: bootLog.suffix(6).map { "· " + $0 })
+        return lines.joined(separator: "\n")
+    }
+
+    /// **完整日志全文** —— 给「复制日志」按钮用。
+    ///
+    /// ⚠️ `diagnose()` 只带 12 条日志，那个窗口根本不够用：
+    ///    站方登录时会打一张会员卡片（`java.log`），再跑几轮就把它挤出窗口了。
+    ///    复制给别人的必须是**全量**，不然对方看到的日志跟现场对不上。
+    func fullLogText() -> String {
+        var lines: [String] = []
+        lines.append("======== 轻阅 引擎日志 ========")
+        lines.append("时间：\(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium))")
+        lines.append("App 版本：\(AppPaths.appVersion)　引擎版本：\(Self.engineVersion)")
+        lines.append("引擎状态：\(ready ? "已就绪" : "未就绪")")
+        if let e = lastError { lines.append("错误：\(e)") }
+        lines.append("")
+        lines.append("======== 引擎日志（\(recentLogs.count) 条）========")
+        if recentLogs.isEmpty {
+            lines.append("（一条都没有）")
+        } else {
+            for (i, l) in recentLogs.enumerated() {
+                lines.append(String(format: "%3d. %@", i + 1, l))
+            }
+        }
+        lines.append("")
+        lines.append("======== 启动过程 ========")
+        if bootLog.isEmpty { lines.append("（空）") }
+        else { lines.append(contentsOf: bootLog) }
         return lines.joined(separator: "\n")
     }
 
@@ -463,7 +493,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             let m = args["msg"] as? String ?? ""
             NSLog("[engine] %@", m)
             recentLogs.append(m)
-            if recentLogs.count > 60 { recentLogs.removeFirst(recentLogs.count - 60) }
+            if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
             return ok()
 
         case "toast":
@@ -554,7 +584,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         let title = args["title"] as? String ?? ""
         NSLog("[browser] 打开 %@", raw)
         recentLogs.append("[browser] 打开 " + raw)
-        if recentLogs.count > 60 { recentLogs.removeFirst(recentLogs.count - 60) }
+        if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
         await MainActor.run { Toast.show("正在打开浏览器…（登录完把浏览器关掉）") }
         guard let host = Self.topViewController() else {
             // 兜底：弹不出来至少用系统浏览器打开（登录态拿不回来，但页面能看）

@@ -693,15 +693,88 @@
         // jsLib 里的函数用 `this.source` 拿 source（this = 全局对象）→ op 期间挂上
         var prevSource = g.source;
         g.source = QR.wrapSource ? QR.wrapSource(src) : src;
+        // ⚠️ 站方**只**用 toast 报登录结果（"✅️登录成功" / "💔登录失败"），
+        //    toast 弹一下就没了 → 用户根本不知道成没成。
+        //    这里装个 sink 把原文收回来，原生侧显示给用户。
+        var msgs = [];
+        var prevSink = QR.__qrMsgSink;
+        QR.__qrMsgSink = msgs;
         return rule.runJs(action, scope)
           .then(function (r) {
             g.source = prevSource;
-            return { ok: true, result: (r == null ? '' : String(r)) };
+            QR.__qrMsgSink = prevSink;
+            return { ok: true, result: (r == null ? '' : String(r)), messages: msgs };
           })
           .catch(function (e) {
             g.source = prevSource;
-            return { ok: false, error: String(e && e.message || e) };
+            QR.__qrMsgSink = prevSink;
+            return { ok: false, error: String(e && e.message || e), messages: msgs };
           });
+      });
+    },
+
+    /**
+     * 登录状态检测（轻阅自己加的，不是站方的）。
+     *
+     * 站方自己有个 `checkStatus()`，但它**只**把结果丢进 toast/log，
+     * 用户看不到。所以这里做两件事：
+     *   ① 把服务器地址解析出来（站方的 `getArgument('server')`，回退 jsLib 的 `host[0]`）
+     *      —— 原生侧拿它**独立**打一次 /user_api，不经过站方 JS
+     *   ② 跑一次站方的 checkStatus()，把它的原文（会员卡片）收回来
+     */
+    loginProbe: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        return ensureLoginLib(src);
+      }).then(function () {
+        var msgs = [];
+        var prevSink = QR.__qrMsgSink;
+        QR.__qrMsgSink = msgs;
+        var prevSource = g.source;
+        g.source = QR.wrapSource ? QR.wrapSource(src) : src;
+        var base = '';
+        // ① 站方自己的服务器设置（登录后会 setArgument('server', ...) 存进书籍变量）
+        try {
+          if (typeof getArgument === 'function') base = String(getArgument('server') || '');
+        } catch (e) { /* 没有这个函数就算了 */ }
+        // ② 回退：jsLib 里的 `var host = [...]`（间接 eval → 全局变量）
+        if (!base) {
+          try {
+            if (typeof host !== 'undefined' && host && host.length) base = String(host[0]);
+          } catch (e) {}
+        }
+        // ③ 站方自己的检测（会员卡片走 java.log + java.longToast）
+        //
+        // ⚠️⚠️ **必须走 rule.runJs**，不能直接 checkStatus()：
+        //    站方的 java.ajax 是**同步**的（`JSON.parse(java.ajax(url))`），
+        //    直接调 → 拿到的是 Promise → JSON.parse(Promise) 炸 → 永远测不出登录态。
+        //    runJs 里有「两遍跑」机制：第一遍录 URL、第二遍命中缓存同步返回真值。
+        var scope = rule.makeScope({
+          source: src,
+          baseUrl: base || baseUrlOf(src),
+          key: p.key || ''
+        });
+        var hasCheck = false;
+        try { hasCheck = (typeof checkStatus === 'function'); } catch (e) {}
+        var chain = hasCheck
+          ? rule.runJs('checkStatus()', scope).then(function () { return null; },
+                                                     function (e) { return String(e && e.message || e); })
+          : Promise.resolve('这个书源没有 checkStatus()');
+        return chain.then(function (errText) {
+          g.source = prevSource;
+          QR.__qrMsgSink = prevSink;
+          if (errText) msgs.push('站方 checkStatus 失败：' + errText);
+          var ck = '';
+          try { ck = String(cookie.getCookie(base)); } catch (e) { ck = ''; }
+          return {
+            ok: true,
+            baseUrl: base,
+            messages: msgs,
+            stationCheck: hasCheck && !errText,
+            cookie: ck
+          };
+        });
       });
     },
 

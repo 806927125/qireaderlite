@@ -31,6 +31,31 @@
     f(value);
   };
 
+  /* ---------------- 消息捕获：把站方吐出来的话留住 ---------------- */
+
+  /**
+   * 站方书源**只**用 java.toast / java.log 报结果，尤其是登录：
+   *     java.toast("\n\n✅️登录成功")     ← 成功
+   *     java.toast("\n\n💔登录失败，请重试！") ← 失败
+   *     java.log(tips)                   ← 一整张会员卡片
+   *
+   * 以前这些只弹个 toast 就没了 → 用户只知道「执行完成」，
+   * **完全不知道登录到底成没成功**（登录面板那句还是我们自己编的）。
+   *
+   * 所以 op 期间装一个 sink，把原文攒起来回传给原生侧。
+   * ⚠️ 必须放在 `__qrSuppressToast` 判断**之后**：
+   *    两遍跑的第一遍 ajax 是假的，站方会报「登录失败 / JSON Parse error」，
+   *    那是**假报错**，收进来就等于告诉用户「登录失败了」。
+   */
+  QR.__qrMsgSink = null;
+
+  function pushMsg(m) {
+    var sink = QR.__qrMsgSink;
+    if (!sink) return;
+    try { sink.push(String(m == null ? '' : m)); } catch (e) {}
+  }
+  QR.__qrPushMsg = pushMsg;
+
   /* ---------------- base64：三级兜底 ---------------- */
 
   function b64decode(s) {
@@ -404,16 +429,19 @@
       var msg = Array.prototype.map.call(arguments, function (a) {
         try { return typeof a === 'string' ? a : JSON.stringify(a); } catch (e) { return String(a); }
       }).join(' ');
+      pushMsg(msg);
       return nativeCall('log', { msg: msg });
     },
     // ⚠️ 两遍跑的第一遍要**静音**：那一遍的 ajax 是假的，
     //    站方解析失败会弹「登录失败 / JSON Parse error」→ 用户看到假报错。
     longToast: function (s) {
       if (QR.__qrSuppressToast) return Promise.resolve('');
+      pushMsg(s);
       return nativeCall('toast', { msg: String(s) });
     },
     toast: function (s) {
       if (QR.__qrSuppressToast) return Promise.resolve('');
+      pushMsg(s);
       return nativeCall('toast', { msg: String(s) });
     },
     getCookie: function (url) { return nativeCall('getCookie', { url: resolveUrl(url) }).then(function (r) { return r.value; }); },

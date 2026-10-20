@@ -851,3 +851,10 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok((backd.match(/blob\(w \* /g) || []).length >= 6,
      '页底多补了一块中间光斑（卡片落在页面中部才有颜色透出来）');
 }
+
+// ⚠️ 汇总行 —— 以前这个文件**不打印汇总**，后果是：
+//    CI/脚本只 grep「通过 N / 失败 M」→ 这个文件空输出 → 被当成「没问题」，
+//    实际上它崩了 10 个 build（build133~142）都没人发现。
+//    凡是「崩了就没输出」的门禁，必须有汇总行，且读汇总前先判崩溃。
+console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
+process.exit(fail ? 1 : 0);
