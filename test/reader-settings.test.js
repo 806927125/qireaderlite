@@ -479,6 +479,10 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(/JSON 序列化失败/.test(sb) && /typeof s !== 'string'/.test(sb),
      '脚本无论如何都返回字符串');
   // 并发：同一个 WKWebView 上并发 callAsyncJavaScript 会让结果类型不受支持。
-  ok(/serializer\.run/.test(sb), 'invoke 走串行器（并发会触发 code 5）');
-  ok(/private actor InvokeSerializer/.test(sb), '有 InvokeSerializer 串行器');
+  ok(/invokeTail/.test(sb) && /let prev = invokeTail/.test(sb),
+     'invoke 走串行链（并发会触发 code 5）');
+  // ⚠️ 这个类整体是 @MainActor —— 同文件里再声明独立 actor 会被继承全局 actor，
+  //    编译报 "actor ... cannot have a global actor"。所以串行用 Task 链实现。
+  ok(!/private actor InvokeSerializer/.test(sb),
+     '不声明独立 actor（会被 @MainActor 继承 → 编译错）');
 }

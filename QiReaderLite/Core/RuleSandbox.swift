@@ -103,28 +103,6 @@ enum ResourceLocator {
 /// 注意 `WKScriptMessageHandler` 必须显式列在 conformance 里 —— 只写方法不写 conformance
 /// 的话，编译器只在调用点报一句「does not conform」，很容易看漏。
 @MainActor
-/// 把 `callAsyncJavaScript` **串行化**。
-///
-/// ⚠️ 为什么要串行：同一个 WKWebView 上**并发**跑多个
-///    `callAsyncJavaScript` 时，只要有一个在执行期间页面被导航/重载，
-///    其余的结果就会变成不支持的类型 → `WKError.javaScriptResultTypeIsUnsupported`
-///    （code 5，「执行 JavaScript 返回结果的类型不受支持」）。
-///
-///    真机症状：发现页**退出重进**才报错 —— `.task` 重跑时上一轮的
-///    `exploreKinds` 还没结束，两个调用叠在一起。
-private actor InvokeSerializer {
-    private var tail: Task<Void, Never>?
-
-    func run<T>(_ body: @Sendable @escaping () async throws -> T) async throws -> T {
-        let prev = tail
-        let current = Task<T, Error> {
-            if let prev { await prev.value }
-            return try await body()
-        }
-        tail = Task { _ = try? await current.value }
-        return try await current.value
-    }
-}
 
 final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     static let shared = RuleSandbox()
@@ -329,15 +307,30 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     }
 
     /// 调一次引擎操作。`op` 对应 `engine.js` 里的 `OPS`。
-    func invoke(_ op: String, _ payload: [String: Any] = [:], source: BookSource? = nil) async throws -> Any {
-        // ⚠️ 串行执行：并发 callAsyncJavaScript 会让 WKError code 5
-        //    （「返回结果的类型不受支持」）。发现页退出重进时 .task 重跑会叠两个。
-        try await serializer.run { [self] in
-            try await invokeLocked(op, payload, source: source)
-        }
-    }
+    /// 串行链的尾巴：上一个 invoke 没跑完，下一个先等它。
+    ///
+    /// ⚠️ 为什么要串行：同一个 WKWebView 上**并发**跑多个
+    ///    `callAsyncJavaScript` 时，只要有一个在执行期间页面被导航/重载，
+    ///    其余的结果就会变成不支持的类型 → `WKError.javaScriptResultTypeIsUnsupported`
+    ///    （code 5，「执行 JavaScript 返回结果的类型不受支持」）。
+    ///    真机症状：发现页**退出重进**才报错 —— `.task` 重跑时上一轮的
+    ///    `exploreKinds` 还没结束，两个调用叠在一起。
+    ///
+    /// ⚠️ 没用独立 actor：这个类整体是 `@MainActor`，同文件里声明的 actor
+    ///    会被继承全局 actor → 编译报
+    ///    "actor 'InvokeSerializer' cannot have a global actor"。
+    ///    在 @MainActor 里用 Task 链串行就够。
+    private var invokeTail: Task<Void, Never>?
 
-    private let serializer = InvokeSerializer()
+    func invoke(_ op: String, _ payload: [String: Any] = [:], source: BookSource? = nil) async throws -> Any {
+        let prev = invokeTail
+        let current = Task<Any, Error> {
+            if let prev { await prev.value }
+            return try await self.invokeLocked(op, payload, source: source)
+        }
+        invokeTail = Task { _ = try? await current.value }
+        return try await current.value
+    }
 
     private func invokeLocked(_ op: String, _ payload: [String: Any],
                               source: BookSource?) async throws -> Any {
