@@ -125,7 +125,23 @@
    *
    * 实现在 Swift（`Core/LegadoCompat.swift`），JS 这边只转发。
    */
+  /**
+   * ⚠️⚠️ **默认关闭！**
+   *
+   * window.prompt 是 WKWebView 里唯一能同步拿到原生返回值的口子，
+   * 但它**有把 JS 线程永久卡死的风险**：万一原生那边没回调（WebKit 的行为、
+   * 或 delegate 没被问到），`window.prompt` 就永远不返回 →
+   * 站方 JS 线程死在那里 → 引擎彻底死掉 → 后面所有 op 排队 →
+   * **App 点什么都没反应**（真机踩过：toast 闪一下，之后全卡）。
+   *
+   * ⇒ 默认走**纯 JS 兜底**（语义跟 Swift 侧一字不差，已被 Swift 单测验证），
+   *    想要「原生 Swift 实现」可以在自检面板里打开开关试。
+   *    ⚠️ 开关打开后如果又卡了 → 「重置引擎」按钮能救回来。
+   */
+  QR.__qrSyncEnabled = false;
+
   QR.__qrSync = function (fn, args) {
+    if (!QR.__qrSyncEnabled) return null;
     try {
       if (typeof g.prompt !== 'function') return null;
       var raw = g.prompt('__qrSync__' + JSON.stringify({ fn: fn, args: args || {} }));
@@ -136,10 +152,18 @@
     }
   };
 
-  /** Legado 的 cache（KV）—— 存储在 Swift 侧（UserDefaults） */
+  /**
+   * Legado 的 cache（KV）—— 存储在 Swift 侧（UserDefaults）
+   *
+   * ⚠️ 这里**不用同步通道**（window.prompt）：cache 站方是当语句用的，
+   *    返回值没人要 → 异步 nativeCall 就够 ✅
+   *    而同步通道是**可能把 JS 线程卡死**的（prompt 不回调就永远挂着）
+   *    → 少一个调用点少一个风险点。
+   */
   g.cache = {
     put: function (k, v) {
-      var r = QR.__qrSync('cachePut', { key: String(k), value: String(v == null ? '' : v) });
+      // 异步丢给原生（能力实现在 Swift：Core/LegadoCompat.swift 的 Cache）
+      try { nativeCall('cachePut', { key: String(k), value: String(v == null ? '' : v) }); } catch (e) {}
       // ⚠️ 站方（🍅大灰狼）的 putLoginInfo 会把**加密后**的登录信息存进 cache，
       //    而它自己从来不读回（没有 cache.get）；轻阅的登录信息必须留在
       //    `source.putLoginInfo`（书源登录信息表），否则下次启动
@@ -148,13 +172,13 @@
       throw new Error('轻阅的登录信息请走 source.putLoginInfo（cache 仅作通用 KV）');
     },
     get: function (k, d) {
-      var r = QR.__qrSync('cacheGet', { key: String(k) });
-      if (r && r.ok && r.value != null && r.value !== '') return r.value;
+      // 同步读不到（异步桥）→ 返回默认值（站方读 cache 的场景极少）
+      try { if (QR.__qrCacheSync && typeof QR.__qrCacheSync.get === 'function') { return QR.__qrCacheSync.get(k, d); } } catch (e) {}
       return d == null ? '' : d;
     },
     remove: function (k) {
-      var r = QR.__qrSync('cacheRemove', { key: String(k) });
-      return !!(r && r.ok);
+      try { nativeCall('cacheRemove', { key: String(k) }); } catch (e) {}
+      return true;
     }
   };
 

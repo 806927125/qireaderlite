@@ -283,6 +283,31 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         wv.loadHTMLString(page.html, baseURL: page.dir)
     }
 
+    /// **重置引擎** —— 引擎卡死时的救命按钮
+    ///
+    /// ⚠️ 为什么需要：站方 JS 一旦卡住（比如同步通道的 window.prompt 没人回调），
+    ///    那个 WKWebView 的 **JS 线程就永远卡在那** → 引擎彻底死掉 →
+    ///    后面所有 op 排队 → **App 点什么都没反应**。
+    ///    换掉 WKWebView = 换掉那条卡死的 JS 线程 ✅
+    ///    （不用重装 App）
+    func resetEngine() {
+        NSLog("[engine] 重置引擎")
+        recentLogs.append("[engine] 手动重置引擎")
+        if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+        ready = false
+        lastError = nil
+        bootLog.removeAll()
+        // 旧的那个还挂着 message handler → 先摘掉，免得回调打到新的
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "qr")
+        webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
+        webView?.stopLoading()
+        webView = nil
+        // 队列里排队的 op 全部作废（它们等的是那个死掉的引擎）
+        invokeTail = nil
+        boot()
+    }
+
     /// 按依赖顺序逐个注入引擎脚本，缺哪个直接报出来
     private func injectEngine() async {
         let missing = ResourceLocator.missingScripts()
@@ -324,8 +349,25 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             bootLog.append("失败：__qrInvoke 不可用")
             return
         }
+        // 同步通道（window.prompt）的开关 —— **默认关**
+        // ⚠️ 它有把 JS 线程永久卡死的风险（原生那边不回调 → prompt 永不返回
+        //    → 引擎死掉 → 后面所有 op 排队 → App 点什么都没反应）。
+        //    默认走纯 JS 兜底（语义跟 Swift 一致），要用原生实现就在自检面板里开。
+        let wantSync = UserDefaults.standard.bool(forKey: EngineSyncChannel.key)
+        _ = try? await webView.evaluateJavaScript(
+            "window.QR && (window.QR.__qrSyncEnabled = \(wantSync ? "true" : "false"));\n;void 0;")
+        bootLog.append(wantSync
+            ? "同步通道（window.prompt）已开启 —— 卡了就用「重置引擎」"
+            : "同步通道默认关闭（用纯 JS 兜底，避免 JS 线程卡死）")
         bootLog.append("注入完成，__qrInvoke 可用")
         markReady()
+    }
+
+    /// 切换同步通道（不用重启引擎）
+    func applySyncChannel(_ on: Bool) async throws {
+        guard let wv = webView else { return }
+        _ = try? await wv.evaluateJavaScript(
+            "window.QR && (window.QR.__qrSyncEnabled = \(on ? "true" : "false"));\n;void 0;")
     }
 
     private func markReady() {
@@ -363,6 +405,15 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///    在 @MainActor 里用 Task 链串行就够。
     private var invokeTail: Task<Void, Never>?
 
+    /// 单个 op 的最长等待（秒）
+    ///
+    /// ⚠️ 这条是**保命**的：op 队列是**串行**的 → 一个 op 永不返回，
+    ///    后面所有 op 全排队 → **整个 App 点什么都没反应**（真机踩过：
+    ///    内嵌浏览器 present 失败 → continuation 没人 resume → 引擎彻底卡死）。
+    ///    有了这个超时，最坏情况是「这次操作失败」，不是「App 死了」。
+    ///    （浏览器那个 op 自己有 5 分钟看门狗，这里给 6 分钟留余量）
+    static let opTimeoutSeconds: Double = 360
+
     func invoke(_ op: String, _ payload: [String: Any] = [:], source: BookSource? = nil) async throws -> Any {
         let prev = invokeTail
         let current = Task<Any, Error> {
@@ -370,7 +421,19 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             return try await self.invokeLocked(op, payload, source: source)
         }
         invokeTail = Task { _ = try? await current.value }
-        return try await current.value
+        // ⚠️ 超时保护：current 永不返回时，**别把整个队列拖死**
+        return try await withThrowingTaskGroup(of: Any.self) { group in
+            group.addTask { try await current.value }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(Self.opTimeoutSeconds * 1_000_000_000))
+                throw SandboxError(message: "操作「\(op)」超时（\(Int(Self.opTimeoutSeconds)) 秒），引擎可能卡住了")
+            }
+            guard let first = try await group.next() else {
+                throw SandboxError(message: "操作「\(op)」没有结果")
+            }
+            group.cancelAll()
+            return first
+        }
     }
 
     private func invokeLocked(_ op: String, _ payload: [String: Any],
@@ -533,6 +596,22 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             CookieJar.remove(for: url)
             return ok()
 
+        case "cachePut":
+            // 能力在 Swift（Core/LegadoCompat.swift 的 Cache）→ 这里只转发
+            let k = args["key"] as? String ?? ""
+            let v = args["value"] as? String ?? ""
+            LegadoCompat.Cache.put(k, v)
+            return ok(["value": "1"])
+
+        case "cacheGet":
+            let k = args["key"] as? String ?? ""
+            return ok(["value": LegadoCompat.Cache.get(k)])
+
+        case "cacheRemove":
+            let k = args["key"] as? String ?? ""
+            LegadoCompat.Cache.remove(k)
+            return ok(["value": "1"])
+
         case "cacheText":
             guard let p = args["path"] as? String, let t = args["text"] as? String else { return err("cacheText 缺参") }
             return ok(["value": CacheFiles.write(p, t) ? "1" : "0"])
@@ -610,16 +689,54 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         }
         return await withCheckedContinuation { (cont: CheckedContinuation<[String: Any], Never>) in
             var done = false
-            let sheet = BrowserSheet(url: raw, title: title) { html, url, cookie in
+            var watchdog: Timer?
+            func finish(_ value: [String: Any]) {
                 guard !done else { return }
                 done = true
-                cont.resume(returning: ["ok": true, "value": [
+                watchdog?.invalidate()
+                watchdog = nil
+                cont.resume(returning: value)
+            }
+            let sheet = BrowserSheet(url: raw, title: title) { html, url, cookie in
+                finish(["ok": true, "value": [
                     "html": html, "url": url, "cookie": cookie
                 ]])
             }
             let vc = UIHostingController(rootView: sheet)
             vc.modalPresentationStyle = .fullScreen
             host.present(vc, animated: true)
+
+            // ⚠️⚠️⚠️ **present 可能失败，而失败时没人 resume 这个 continuation**
+            //   → 这个 op 永远不返回 → 引擎的 op 队列是**串行**的
+            //   → 后面所有 op 全排队 → **整个 App 点什么都没反应**
+            //   （症状：toast「正在打开浏览器…」闪一下，浏览器不出现，之后全卡）
+            //
+            // 常见原因：从 SwiftUI 的 .sheet 里面再 present 一个 UIKit 模态
+            //   → 「whose view is not in the window hierarchy」/「already presenting」
+            //
+            // 所以：**① 验一下有没有真的弹出来  ② 加看门狗兜底**
+
+            // ① 下一个 runloop 还没进窗口 → present 失败了 → 立刻报错，别挂着
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                Task { @MainActor in
+                    guard !done else { return }
+                    if vc.view.window == nil {
+                        recentLogs.append("[browser] 弹不出来（present 失败）：\(raw)")
+                        if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+                        finish(["ok": false, "error": "浏览器弹不出来（界面没接上），请把日志发出来"])
+                    }
+                }
+            }
+            // ② 看门狗：用户一直没关 → 自动收场（5 分钟）
+            watchdog = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { _ in
+                Task { @MainActor in
+                    guard !done else { return }
+                    recentLogs.append("[browser] 超时自动关闭：\(raw)")
+                    if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+                    finish(["ok": false, "error": "浏览器超时（5 分钟没关），已自动关闭"])
+                    vc.dismiss(animated: true)
+                }
+            }
         }
     }
 
@@ -970,6 +1087,14 @@ enum SandboxFS {
 }
 
 @MainActor
+/// 同步通道（window.prompt）开关的 UserDefaults key
+///
+/// ⚠️ 放**顶层**、不放 @MainActor 类里 —— @AppStorage 的初始化不在 MainActor 上，
+///    放类里会出 actor 隔离告警。
+enum EngineSyncChannel {
+    static let key = "engine.syncChannelEnabled"
+}
+
 enum Toast {
     static func show(_ text: String) {
         let lbl = UILabel()

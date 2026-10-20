@@ -12,6 +12,9 @@ import UIKit
 struct EngineLogSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
+    @State private var resetNote = ""
+    /// 同步通道（window.prompt）—— **默认关**：它有把 JS 线程卡死的风险
+    @AppStorage(EngineSyncChannel.key) private var syncChannel = false
 
     private var summary: String { RuleSandbox.shared.diagnose() }
     private var logs: [String] { RuleSandbox.shared.recentLogs }
@@ -20,6 +23,51 @@ struct EngineLogSheet: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
+                    // ── 急救区：引擎卡死时先点这个 ──
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("引擎急救")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.ink)
+                        Text("点什么都没反应 = 引擎的 op 队列被一个卡死的 op 堵住了。点「重置引擎」换掉那个卡死的 JS 线程（不用重装 App）。")
+                            .font(.caption)
+                            .foregroundStyle(Theme.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 10) {
+                            Button {
+                                RuleSandbox.shared.resetEngine()
+                                resetNote = "引擎已重置，正在重新注入脚本…"
+                            } label: {
+                                Label("重置引擎", systemImage: "arrow.clockwise")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Theme.accent)
+                            if !resetNote.isEmpty {
+                                Text(resetNote)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.sub)
+                            }
+                        }
+                        Toggle(isOn: $syncChannel) {
+                            Text("用 Swift 同步通道（实验）")
+                                .font(.system(size: 13))
+                        }
+                        .onChange(of: syncChannel) { _, on in
+                            // 立刻生效：不用重启引擎
+                            Task { @MainActor in
+                                _ = try? await RuleSandbox.shared.applySyncChannel(on)
+                            }
+                        }
+                        Text(syncChannel
+                             ? "已开：java.timeFormat 走 Swift 原生实现。若又卡了，先关掉它再「重置引擎」。"
+                             : "默认关：走纯 JS 兜底（语义跟 Swift 一致）。开着有把 JS 线程卡死的风险。")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+
                     section("自检摘要", summary)
 
                     HStack {

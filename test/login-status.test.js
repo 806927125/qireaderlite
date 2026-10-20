@@ -32,6 +32,7 @@ function stripComments(src) {
     .replace(/\/\/[^\n]*/g, '');
 }
 const readCode = (p) => stripComments(read(p));
+const sb2 = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'RuleSandbox.swift'));
 
 // ───────── ① 引擎：站方消息捕获 ─────────
 console.log('=== 1. 引擎捕获站方原文 ===');
@@ -181,8 +182,10 @@ if (fs.existsSync(compatPath)) {
 ok(/QR\.__qrSync = function/.test(javai), 'JS 侧有同步通道的转发函数');
 ok(/QR\.__qrSync\('timeFormat'/.test(javai),
    'java.timeFormat 转发给 Swift（不再在 JS 里实现）');
-ok(/QR\.__qrSync\('cachePut'/.test(javai) && /QR\.__qrSync\('cacheGet'/.test(javai),
-   'cache 转发给 Swift');
+ok(/nativeCall\('cachePut'/.test(javai) && /nativeCall\('cacheRemove'/.test(javai),
+   'cache 转发给 Swift（异步 nativeCall，不用可能卡死的同步通道）');
+ok(/case "cachePut"/.test(sb2) && /case "cacheGet"/.test(sb2) && /case "cacheRemove"/.test(sb2),
+   '原生侧有 cache 的三个 op（能力实现在 Swift 的 LegadoCompat.Cache）');
 // ⚠️ JS 里**不该**有主实现：timeFormat 必须**先**走同步通道（Swift），
 //    纯 JS 只剩「通道不可用时」的兜底（真机上万一 prompt 通道不通，
 //    没有兜底 → 章节时间戳全空 → 一堆源直接回归）。
@@ -193,7 +196,7 @@ ok(/javaTimeFormatFallback/.test(javai),
    '留了纯 JS 兜底（同步通道万一在真机上不通，章节时间戳不能全空）');
 
 // 同步通道：RuleSandbox 必须实现 WKUIDelegate 的 prompt 回调
-const sb2 = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'RuleSandbox.swift'));
+
 ok(/extension RuleSandbox: WKUIDelegate/.test(sb2), 'RuleSandbox 实现了 WKUIDelegate');
 ok(/runJavaScriptTextInputPanelWithPrompt/.test(sb2),
    '实现了 prompt 回调（同步通道唯一可用的口子）');
@@ -306,6 +309,35 @@ ok(fs.existsSync(path.join(ROOT, 'test', 'live-fq-login.test.js')),
   const fq = readCode(path.join(ROOT, 'test', 'live-fq-login.test.js'));
   ok(/浏览器弹了/.test(fq) && /sessionid/.test(fq),
      '番茄登录测试断言了「浏览器弹了」+「请求带上了 sessionid」');
+}
+
+// ───────── ⑫ 卡死防护（用户真机：「点什么没反应」）─────────
+console.log('\n=== 12. 卡死防护 ===');
+// 症状：toast「正在打开浏览器…」闪一下，浏览器不出现，之后**点什么都没反应**。
+// 机理：引擎的 op 队列是**串行**的 → 一个 op 永不返回 → 后面全排队。
+{
+  // ① 内嵌浏览器：present 失败时没人 resume continuation → op 永远挂着
+  ok(/vc\.view\.window == nil/.test(sb2),
+     '浏览器 present 失败会被检测到（0.8 秒内没进窗口就报错，不挂死）');
+  ok(/Timer\.scheduledTimer\(withTimeInterval: 300/.test(sb2),
+     '浏览器有 5 分钟看门狗（用户一直不关也会自动收场）');
+  // ② op 队列：任何 op 卡死都不能永久堵死引擎
+  ok(/opTimeoutSeconds/.test(sb2) && /withThrowingTaskGroup/.test(sb2),
+     'op 有超时保护（一个 op 卡死不会把整个引擎拖死）');
+  ok(/static let opTimeoutSeconds: Double = 360/.test(sb2),
+     'op 超时是 6 分钟（比浏览器看门狗长 1 分钟）');
+  // ③ 同步通道（window.prompt）有把 JS 线程卡死的风险 → **默认关**
+  ok(/QR\.__qrSyncEnabled = false;/.test(javai),
+     '同步通道默认关闭（prompt 不回调 → JS 线程永久卡死 → 引擎死掉）');
+  ok(/if \(!QR\.__qrSyncEnabled\) return null;/.test(javai),
+     '同步通道没开时直接走兜底，不碰 prompt');
+  // ④ 引擎重置按钮（卡死了不用重装 App）
+  ok(/func resetEngine\(\)/.test(sb2), '有 resetEngine（换掉卡死的 JS 线程）');
+  ok(/重置引擎/.test(readCode(path.join(ROOT, 'QiReaderLite', 'Features', 'Sources', 'EngineLogSheet.swift'))),
+     '自检面板有「重置引擎」按钮');
+  // ⑤ cache 不走同步通道（少一个可能卡住的调用点）
+  ok(/nativeCall\('cachePut'/.test(javai), 'cache 走异步 nativeCall（不用同步通道）');
+  ok(/case "cachePut"/.test(sb2), '原生侧有 cachePut op（能力仍在 Swift）');
 }
 
 // ───────── 汇总 ─────────
