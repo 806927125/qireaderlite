@@ -233,8 +233,11 @@ struct ReaderWebView: View {
         // ① 原生分页：重新求值 layoutConfig → pager.config → 重排（sig 含 themeKey，不会被幂等挡掉）
         syncPager(size: pagerViewport)
         // ② WebView 滚动模式：重新下发 settings（applySettings 是幂等可重入的）
-        Task { [weak self] in
-            guard let self else { return }
+        //
+        // ⚠️ 不能写 `[weak self]` —— ReaderWebView 是 **struct**（SwiftUI View），
+        //    不是 class，编译报 "'weak' may only be applied to class and
+        //    class-bound protocol types, not 'ReaderWebView'"。
+        Task {
             let bg = await session.coverDataURL(book.coverUrl)
             session.host.setSettings(settingsPayload(coverDataURL: bg))
         }
