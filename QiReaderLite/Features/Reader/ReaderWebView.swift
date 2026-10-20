@@ -765,13 +765,13 @@ struct ReaderWebView: View {
             //    正确做法（Apple 给 .clear 的官方药方）：**一层 dimming layer**。
             //    白纱垫在玻璃**下面**，alpha 是我们自己说了算 → 滑块才真的有用。
             //
-            // 面板是**盖在正文上面**的 → 白纱要有下限 0.35，
+            // 面板是**盖在正文上面**的 → 白纱要有下限 0.12，
             // 否则滑到 0 时后面的章节字会透出来跟面板里的字打架。
             .background(
                 Color.clear
                     .glassEffect(Glass.regular,
                                  in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .background(Color.white.opacity(max(glassTint, 0.35)),
+                    .background(Color.white.opacity(max(glassTint, 0.12)),
                                 in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))

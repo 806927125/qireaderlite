@@ -201,8 +201,8 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 //    不用 Glass.tint() —— tint 是色彩映射，系统会自己反向调节 → 滑块等于没接。
 ok(/\.glassEffect\(Glass\.regular,/.test(panel),
    '面板是**液态玻璃** .glassEffect(.regular)');
-ok(/Color\.white\.opacity\(max\(glassTint, 0\.35\)\)/.test(panel),
-   '面板的白纱层可调（有下限 0.35，盖在正文上不能透到字打架）');
+ok(/Color\.white\.opacity\(max\(glassTint, 0\.12\)\)/.test(panel),
+   '面板的白纱层可调（有下限 0.12，盖在正文上不能透到字打架）');
 // ⚠️ 白 tint 别调回 0.35 —— 玻璃会白得一点都不通透，后面的正文看不见
 //    （用户：「液态玻璃透明度调整一下，一点都不透明」）。
 ok(!/glassEffect\(\.clear/.test(panel),
@@ -304,7 +304,7 @@ ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 // 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
 // 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
 ok(/\.glassEffect\(Glass\.regular,/.test(panel), '面板是液态玻璃 .regular');
-ok(/\.background\(Color\.white\.opacity\(max\(glassTint, 0\.35\)\)/.test(panel),
+ok(/\.background\(Color\.white\.opacity\(max\(glassTint, 0\.12\)\)/.test(panel),
    '面板有自绘白纱层（内层白块要能分层）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
@@ -834,6 +834,20 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
      'glassCard 入口默认 .clear');
   ok(/minVeil: 0/.test(comp),
      '大卡片白纱下限 0（滑块能一路透到底）');
-  ok(/glassEffect\(Glass\.regular,[\s\S]{0,200}Color\.white\.opacity\(max\(glassTint, 0\.35\)\)/.test(rvw),
-     '阅读器面板是 .regular + 白纱下限 0.35（盖在正文上，不能透到字打架）');
+  ok(/glassEffect\(Glass\.regular,[\s\S]{0,200}Color\.white\.opacity\(max\(glassTint, 0\.12\)\)/.test(rvw),
+     '阅读器面板是 .regular + 白纱下限 0.12（盖在正文上，不能透到字打架）');
+
+  // 「最透明那档」要真的透：下限压到底
+  ok(/minVeil: Double = 0\.10/.test(lg),
+     '控件类白纱下限 0.10（最透明那档几乎全透）');
+  ok((lg.match(/minVeil: 0\.10/g) || []).length >= 5,
+     '胶囊/圆键/形状都走 0.10 下限');
+
+  // 卡片在 0 档本来就是纯玻璃（一点白都没有）→ 要让「透」被看见，
+  // 底下得有颜色可折射，否则就是一片浅蓝白
+  const backd = stripComments(fsE.readFileSync(path.join(ROOT, 'App/Components.swift'), 'utf8'));
+  ok(/\.fill\(c\.opacity\(0\.52\)\)/.test(backd),
+     '页底光斑加强到 0.52（玻璃得有东西可折射）');
+  ok((backd.match(/blob\(w \* /g) || []).length >= 6,
+     '页底多补了一块中间光斑（卡片落在页面中部才有颜色透出来）');
 }

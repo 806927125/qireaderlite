@@ -191,14 +191,14 @@ extension View {
                      tint: [Color] = [.white.opacity(0.22), .white.opacity(0.08)],
                      strength: Double = 1.0,
                      variant: GlassVariant = .regular,
-                     minVeil: Double = 0.25) -> some View {
+                     minVeil: Double = 0.10) -> some View {
         modifier(LiquidGlass(cornerRadius: cornerRadius, tint: tint,
                              strength: strength, variant: variant, minVeil: minVeil))
     }
 
     /// 玻璃圆按钮（顶栏那个返回键）
     func glassCircle(tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
-        modifier(LiquidGlass(cornerRadius: 999, tint: tint, isCircle: true, minVeil: 0.25))
+        modifier(LiquidGlass(cornerRadius: 999, tint: tint, isCircle: true, minVeil: 0.10))
     }
 
     /// 玻璃胶囊（栖阅顶栏那种图标组、目录底部的搜索框）
@@ -214,7 +214,7 @@ extension View {
         // ⚠️ iOS 26 上必须走 LiquidGlass 修饰器（它内部有 @Environment 能拿到
         //    用户可调的玻璃浓度）；这里直接 glassEffect(.clear) 就**调不动了**。
         return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint,
-                                           strength: strength, minVeil: 0.25)))
+                                           strength: strength, minVeil: 0.10)))
     }
 
     /// 只设玻璃的**形状**，不碰别的修饰链。
@@ -230,11 +230,11 @@ extension View {
         // 同 glassCapsule：走 LiquidGlass 修饰器，才能吃到用户可调的玻璃浓度。
         switch shape {
         case .capsule:
-            modifier(LiquidGlass(cornerRadius: 999, minVeil: 0.25))
+            modifier(LiquidGlass(cornerRadius: 999, minVeil: 0.10))
         case .circle:
-            modifier(LiquidGlass(cornerRadius: 999, isCircle: true, minVeil: 0.25))
+            modifier(LiquidGlass(cornerRadius: 999, isCircle: true, minVeil: 0.10))
         case .rounded(let r):
-            modifier(LiquidGlass(cornerRadius: r, minVeil: 0.25))
+            modifier(LiquidGlass(cornerRadius: r, minVeil: 0.10))
         }
     }
 }

@@ -49,6 +49,9 @@ struct PageBackdrop: View {
                     blob(w * 0.10, h * 0.52, 170, Color(red: 0.76, green: 0.88, blue: 1.0))
                     blob(w * 0.82, h * 0.68, 230, Color(red: 0.88, green: 0.82, blue: 1.0))
                     blob(w * 0.42, h * 0.92, 200, Color(red: 0.70, green: 0.90, blue: 0.94))
+                    // ⚠️ 中间再补一块 —— 卡片大多落在页面中部，
+                    //    底下没颜色的话，玻璃就算全透也看不出"透"（就一片浅蓝白）。
+                    blob(w * 0.56, h * 0.34, 250, Color(red: 0.96, green: 0.74, blue: 0.86))
                 }
             }
             .ignoresSafeArea()
@@ -61,7 +64,7 @@ struct PageBackdrop: View {
 
     private func blob(_ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ c: Color) -> some View {
         Circle()
-            .fill(c.opacity(0.42))
+            .fill(c.opacity(0.52))
             .frame(width: size, height: size)
             .blur(radius: 42)
             .position(x: x, y: y)
