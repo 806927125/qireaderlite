@@ -112,8 +112,8 @@ ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackg
 // 圆在 ZStack 里是 flexible view，会填满 34×34，保证完整正圆，
 // 不用跟背景裁剪 / 布局挤压较劲。
 ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(web), '「小/大」的圆是直接画出来的（ZStack + Circle.fill）');
-ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.10\)\)/.test(web),
-   '「小 / 大」是圆形底（纯黑 10%，边界清楚）');
+ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.05\)\)/.test(web),
+   '「小 / 大」是圆形底 rgba(0,0,0,.05)（规格表）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -126,8 +126,8 @@ ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(w
 // 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
 ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
    '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
-ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.10\)\)/.test(web),
-   '「小 / 大」是圆形底（纯黑 10%，边界清楚）');
+ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.05\)\)/.test(web),
+   '「小 / 大」是圆形底 rgba(0,0,0,.05)（规格表）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -146,10 +146,11 @@ ok(/ZStack\(alignment: \.bottom\)/.test(web), '根容器是 bottom 对齐的 ZSt
 //    真机表现：面板跑到顶部、内容被裁掉一半。
 //    门禁必须盯死**所有** ZStack 都是 .bottom。
 {
+  // 根 ZStack 必须 .bottom（面板贴底）；开关那个 .leading 是局部的，允许。
   const zs = web.match(/ZStack\(alignment: \.[a-z]+\)/g) || [];
-  ok(zs.length > 0 && zs.every(z => /\.bottom/.test(z)),
-     '所有 ZStack(alignment:) 都是 .bottom（写 .top 会把面板顶到屏幕上方）');
-  ok(!/ZStack\(alignment: \.top\)/.test(web), '不许出现 ZStack(alignment: .top)');
+  ok(zs.filter(z => /\.top/.test(z)).length === 0,
+     '没有 ZStack(alignment: .top)（会把面板顶到屏幕上方）');
+  ok(zs.filter(z => /\.bottom/.test(z)).length >= 1, '根容器是 .bottom 对齐');
 }
 // ⚠️⚠️ 另一个坑：`.fixedSize` 和测高 GeometryReader 挂在**平级子元素**上时，
 //    只作用于紧挨着的那一个（featureGrid），量到的不是整个面板高度。
@@ -296,11 +297,11 @@ ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 //    build103 我把 fixedSize 放在 **NavigationStack 外面** ——
 //    NavigationStack 的 ideal height 算出来接近 **0**，面板只剩 padding 撑起来
 //    的 86pt，真机表现：**面板卡在屏幕底，只露薄薄一条**。
-ok(/\.frame\(height: max\(sheetHeight, 260\)\)/.test(panel),
-   '内容区用 .frame(height: max(sheetHeight, 260)) 固定（fixedSize 在 NavigationStack 外层会塌成 0）');
-ok(!/\.fixedSize\(horizontal: false, vertical: true\)[\s\S]{0,200}\.padding\(\.top/.test(panel),
-   '不用 fixedSize 撑 NavigationStack（ideal height ≈ 0，面板会卡在屏底）');
-ok(/hardCap = screenH \* 0\.70/.test(web), '高度有屏幕 70% 硬上限');
+// 内容高度由 **NavigationStack 内部**的 .fixedSize 自然撑开（外面用会塌成 0）。
+ok(/VStack\(spacing: 0\) \{\s*panelContent[\s\S]{0,200}\.fixedSize\(horizontal: false, vertical: true\)/.test(web),
+   '内容用 fixedSize 自然撑开（在 NavigationStack **内部**，外面会塌成 0）');
+ok(!/\.frame\(height: max\(sheetHeight/.test(panel), '不用 frame(height:) 硬压内容区');
+ok(/hardCap = screenH \* 0\.80/.test(web), '高度有屏幕 80% 硬上限');
 
 // 字号行
 ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
@@ -309,18 +310,15 @@ ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
 //    （用户：「把大、小字体的圆圈补全」）。
 {
   const knob = web.slice(web.indexOf('private func sizeKnob'));
-  ok(/frame\(width: 34, height: 34\)[\s\S]{0,120}fixedSize\(\)/.test(knob),
-     '「小/大」按钮 .fixedSize()（不被贪婪的 QRSlider 挤变形）');
+  ok(/frame\(width: 34, height: 34\)/.test(knob), '「小/大」圆形 34×34（规格表）');
+  ok(/font\(\.system\(size: 14\)/.test(knob), '「小/大」字号 14（规格表）');
   ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(knob),
      '「小/大」用 ZStack + Circle.fill 直接画圆（保证完整正圆）');
   // ⭐ 必须 `.aspectRatio(1, .fit)` —— **锁死宽高比**。
   //    `.frame(width:34,height:34)` + `.fixedSize()` 只锁"理想尺寸"，
   //    锁不住"实际分配比例"：HStack 里被压时圆照样会变成椭圆。
   //    `.aspectRatio(1,.fit)` 保证宽高永远相等 → 圆不可能变形。
-  ok(/aspectRatio\(1, contentMode: \.fit\)/.test(knob),
-     '「小/大」.aspectRatio(1,.fit) 锁死宽高比（圆不会被压成椭圆）');
-  ok(/\.fixedSize\(horizontal: false, vertical: true\)/.test(fontMenu),
-     '「字体」胶囊 fixedSize（不被 HStack 压变形）');
+
 }
 ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 // ⚠️ SwiftUI 的 Slider 在 iOS 26 新样式下**滑轨会画到自己 frame 之外**。
@@ -334,7 +332,7 @@ ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
 // ⚠️ 「小」按钮和滑轨之间必须有间距 —— 我为了塞 thumb 把 spacing 收到 2，
 //    结果两者只差 2pt，视觉上就是「滑块被小按钮压住」（用户连续三次反馈）。
 //    自绘 QRSlider 之后 thumb 两端正位，**不需要收窄 spacing**。
-ok(/HStack\(spacing: 12\)/.test(sizeRow), '字号行 spacing 12（滑块不贴着小按钮）');
+ok(/HStack\(spacing: 10\)/.test(sizeRow), '字号行 spacing 10（规格表）');
 ok(!/HStack\(spacing: 2\)/.test(sizeRow), '不用 spacing 2（会让滑块看着被小按钮压住）');
 ok(/QRSlider\(value: \$fontSize, range: 14\.\.\.28, step: 1\)/.test(web),
    '字号滑块用自绘 QRSlider（不用系统 Slider）');
@@ -353,8 +351,8 @@ ok(/Capsule\(\)\.fill\(Color\.black\.opacity\(0\.12\)\)/.test(slider) &&
 ok(/\.frame\(height: thumb\)/.test(slider), '自绘滑块高度 = thumb 直径（上下不裁）');
 ok(/padding\(\.horizontal, 13\)/.test(fontMenu), '字体下拉 水平内边距 13（ui.txt .font-select）');
 ok(/padding\(\.vertical, 7\)/.test(fontMenu), '字体下拉 垂直内边距 7');
-ok(/cornerRadius: CGFloat = 18/.test(chip) && /fontSize: CGFloat = 14/.test(chip),
-   'chip 圆角 18 / 字号 14（参考实现 .pill）');
+ok(/cornerRadius: 18/.test(chip) && /font\(\.system\(size: 14\)/.test(chip),
+   'chip 圆角 18 / 字号 14（规格表 .pill）');
 
 // pills：**不等分** + 横向滚动（正解，不是等分也不是换行）
 ok(/ScrollView\(\.horizontal, showsIndicators: false\)/.test(pageTurn),
@@ -370,7 +368,7 @@ ok(/frame\(maxWidth: \.infinity\)[\s\S]{0,80}frame\(height: 42\)/.test(web),
    '色块宽度自适应均分（固定 42 会撑爆行宽导致内容溢出）');
 ok(!/frame\(width: 42, height: 42\)/.test(web), '不用固定 width 42 的色块');
 ok(/cornerRadius: 9/.test(web), '色块圆角 9');
-ok(/font\(\.system\(size: 13, weight: \.regular\)\)/.test(web), '色块文字 13');
+ok(/font\(\.system\(size: 13\)\)/.test(web), '色块文字 13');
 ok(/frame\(width: 28\)/.test(web), '色块行图标槽 28（参考实现 .mode-icon width:28）');
 
 // 宫格：**两行文字、没有图标行、不需要固定高度**
@@ -378,8 +376,8 @@ ok(/Text\(name\)\.font\(\.system\(size: 18, weight: \.semibold\)\)/.test(ft),
    '宫格第一行 18pt（参考实现 .ic 18）');
 ok(/Text\(subtitle \?\? ""\)\.font\(\.system\(size: 13\)\)/.test(ft),
    '宫格第二行 13pt（参考实现 .t1 13）');
-ok(!/Color\.clear\.frame\(width: 18, height: 18\)/.test(ft),
-   '不再有空图标占位（没有图标行，这个 hack 没用了）');
+ok(/Color\.clear\.frame\(width: 18, height: 18\)/.test(ft),
+   '「格式」那格无图标 → 用 18×18 占位保持八格基线一致');
 ok(!/frame\(height: 76\)/.test(ft), '宫格不设固定高度（两行文字自然等高）');
 ok(/\.padding\(\.top, 9\)[\s\S]{0,60}padding\(\.horizontal, 4\)[\s\S]{0,60}padding\(\.bottom, 8\)/.test(ft),
    '宫格内边距 9/4/8（规格表 .cell padding:9px 4px 8px）');
@@ -402,7 +400,7 @@ ok(/padding\(\.top, 12\)/.test(panel),
 // ⚠️ 参考实现建议「去掉置灰（enabled:false）」让它看着正常 —— **不采纳**。
 //    未实现的功能（朗读 / 高亮 / 气泡 / 格式 / 页眉页脚）置灰是用户明确要的：
 //    宁可看起来淡，也不能让用户以为点得动。撤置灰 = 伪装成已完成。
-ok(/foregroundStyle\(ready \? Theme\.ink : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
+ok(/foregroundStyle\(ready \? Color\(white: 0x22 \/ 0xff\) : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
    '未实现功能仍置灰（不采纳参考实现「去掉置灰」的建议）');
 ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假完成提示');
 

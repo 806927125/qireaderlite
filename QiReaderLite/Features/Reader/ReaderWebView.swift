@@ -578,61 +578,45 @@ struct ReaderWebView: View {
     ///       Positioned(left: 0, right: 0, bottom: 0, child: ReaderPanel()),
     ///     ])
     /// 代价是失去系统 sheet 自带的下滑关闭手势 —— 下面自己实现了一个。
+    // ══════════════════════════════════════════════════════════════
+    //  阅读设置面板 —— **严格按 ui.txt / 尺寸.txt 重做，一处不加不减**
+    //
+    //  面板容器（ui.txt 的 .panel）：
+    //    left:14; right:14; bottom:14;
+    //    background: rgba(255,255,255,.82) + blur(24);
+    //    border-radius: 22px;
+    //    box-shadow: 0 4px 30px rgba(0,0,0,.12);
+    //    padding: 12px 14px 16px;
+    //
+    //  内部：
+    //    .top-card { background: rgba(255,255,255,.55);
+    //                 border-radius: 16px;
+    //                 padding: 14px 12px 2px;
+    //                 margin-bottom: 12px;
+    //                 box-shadow: 0 1px 6px rgba(0,0,0,.04); }
+    //      · .row-fontsize（字号 + 字体）
+    //      · .divider
+    //      · .theme-row × 2
+    //      · .row-follow
+    //      · .divider
+    //      · .row-pageturn
+    //    .grid（8 个宫格，独立在白块外）
+    //
+    //  ⚠️ CSS→SwiftUI 的层级对应（这次踩过三次，别再错）：
+    //    CSS 的 `padding` 在 `background` **之内**（背景盖住 padding 区）
+    //    → SwiftUI 必须 `.padding(...)` **在** `.background(...)` **之前**
+    //    CSS 的 `margin` 在盒子**之外**
+    //    → SwiftUI 放在 `.background(...)` **之后**
+    // ══════════════════════════════════════════════════════════════
+
     private var settingsSheet: some View {
         settingsContent
-            // ⚠️ overlay 没有 detent 撑着，NavigationStack 会把面板吃成**全屏**，
-            //    背景铺满整屏、内容居中（真机就是这样炸的）。
-            //    显式给死高度 —— sheetHeight 是用 PreferenceKey 量出来的内容真实高度。
-            // ⚠️ 内容区高度必须用 `.frame(height:)` 固定，**不能**用 `.fixedSize`。
-            //
-            //    build103 我把 fixedSize 放在 **NavigationStack 外面** ——
-            //    NavigationStack 的 ideal height 算出来接近 **0**，
-            //    面板只剩 padding 撑起来的 86pt（56+16+14），
-            //    真机表现：**面板卡在屏幕底，只露出薄薄一条**。
-            //
-            //    正确高度 = 内容自然高 + 余量 = sheetHeight（内部量的是 VStack 高 + 4）。
-            //    内部 padding(42+16) 在 frame **外面**，所以内容不会被裁：
-            //    内容区 = 内容自然高 + 4，上下留白完全由 padding 决定。
-            .frame(height: max(sheetHeight, 260))
-
-            // ── ui.txt 的 .panel 有**两个不同层级**的留白，别写成重复的 ──
-            //
-            //   .panel { left:14px; right:14px; bottom:14px;   ← ① 定位：离屏幕边 14
-            //            padding: 12px 14px 16px }                ← ② 内部：面板里面再留 14
-            //
-            // 我之前把 ① 和 ② 都写成 `.padding(.horizontal, 14)`，
-            // **累加成左右各 28** → 玻璃背景跟着撑宽 → 内容溢出屏幕，
-            // 真机上色块第 8 个、宫格「高亮」右边都被切掉。
-            //
-            // 正确层次（从内到外）：
-            //   内容 → ②内部 padding → 玻璃 → ①定位留白
-            //
-            // ② 内部 padding（玻璃**里面**）
-            //
-            // 规格表：面板内边距 上 12 / 左右 14 / 下 16
-            // （加上 top-card 自己的 14，第一行离面板顶 26pt）
-            // 「整体下移」是误读 —— 用户要下移的是**下面那 8 个宫格按钮**，
-            // 不是整个面板内容（见 featureGrid 的 padding(.top, ...)）。
-            // 栖阅真机面板顶到「小」那行的距离约 **42pt**（截图量）。
+            // ② 内部 padding（玻璃**里面**）：上 12 / 左右 14 / 下 16
             .padding(.top, 12)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 
-            // 面板背景 = **液态玻璃**（iOS 26 的 `.glassEffect`）。
-            //
-            // 用户明确要的：栖阅风格**液态玻璃**。build102 我拿「折射会扭掉边缘控件」
-            // 把它换成磨砂白，那是**误解**了诉求 —— 折射不是问题的成因，
-            // 成因是**内容区高度不够、控件被裁**（见下面 fixedSize）。
-            //
-            // ⚠️ 必须用 `background(_:in:)` 重载，**不能**写 `.background { Shape }`：
-            //    后者闭包里的 Shape 是 flexible view，ZStack 给多大 proposal
-            //    它就撑多大 → 背景铺满整屏（build88 炸过）。
-            // 规格表：面板背景 rgba(255,255,255,.82) + 模糊 24
-            //
-            // ⚠️ 之前用 `.glassEffect(.regular)`（iOS 26 折射玻璃）——
-            //    面板太通透，**内层白块 white@.55 叠在上面几乎看不出层次**，
-            //    参考实现里那块白卡是**明显**比面板亮的。
-            //    磨砂白（.82 + blur 24）才是规格表 / 参考实现的效果。
+            // 面板背景 rgba(255,255,255,.82) + blur(24)
             .background(
                 Color.white.opacity(0.82),
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -642,17 +626,11 @@ struct ReaderWebView: View {
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            // 规格表：面板阴影 0 4 30 rgba(0,0,0,.12)
+
+            // 面板阴影 0 4px 30px rgba(0,0,0,.12)
             .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 4)
 
-            // ① 定位留白（玻璃**外面**）：左右 14；底部要让开 home indicator。
-            //
-            // ⚠️ 之前写死 14 → 面板**压在 home indicator 上**（真机截图里能看到
-            //    home indicator 横条浮在面板上），整个面板因此显得往上偏、底下
-            //    露出一截正文。栖阅那边面板底边是**收在 home indicator 上方**的。
-            //
-            //    ui.txt 的 `bottom: 14px` 是相对**安全区**算的，
-            //    SwiftUI 的 padding 相对**屏幕底** —— 得自己加回安全区。
+            // ① 定位留白（玻璃**外面**）：左右 14；底部让开 home indicator
             .padding(.horizontal, 14)
             .padding(.bottom, Self.bottomSafeInset + 14)
 
@@ -661,7 +639,7 @@ struct ReaderWebView: View {
             .animation(.spring(response: 0.34, dampingFraction: 0.86),
                        value: showSettings)
             .allowsHitTesting(showSettings)
-            // 下拉关闭：grabber 那条区域往下拖
+            // 下拉关闭
             .gesture(
                 DragGesture(minimumDistance: 8)
                     .onEnded { v in
@@ -683,31 +661,15 @@ struct ReaderWebView: View {
         return win?.safeAreaInsets.bottom ?? 34
     }
 
-    /// 面板浅米底（参考实现 `Color(0xE6EFE7D6)`）
-    private static var qrPanel: Color {
-        Color(red: 239.0/255.0, green: 231.0/255.0, blue: 214.0/255.0)
-            .opacity(0.90)
-    }
-
-    /// 面板内容
+    /// 面板内容（NavigationStack 包着，子页要 push）
     private var settingsContent: some View {
-        // 内容宽度锁死在可用宽内 —— 任何一行撑爆都会把整个面板顶出屏幕
         NavigationStack {
-            // ⚠️⚠️ 必须用 VStack 把 panelContent + featureGrid **包起来**，
-            //    再把 `.fixedSize` 和测高 GeometryReader 挂在 **VStack** 上。
-            //
-            //    之前是平级两个子元素，修饰符只作用于**紧挨着的那一个**
-            //    （featureGrid）—— 量到的只是宫格高度（≈160pt），
-            //    不是整个面板高度（≈500pt）。面板被压扁、内容溢出，就炸了。
-            // ⚠️⚠️ 这里**只能**放 panelContent —— 它内部已经包含 featureGrid 了！
-            //    build113 我把 featureGrid 挪进 panelContent（加 top-card 白块），
-            //    外层这个忘了删 → 真机**8 个宫格变成 16 个**（重复两遍）。
             VStack(spacing: 0) {
                 panelContent
             }
             .frame(maxWidth: .infinity)
-            // 固定成内容本来的高度 —— 这样量出来的才是真实高度，
-            // 不会被 detent 限制（限住就成了循环依赖）
+            // 内容按**自然高度**撑开（`fixedSize` 必须在这里，不能在 NavigationStack 外面 ——
+            // 外面的话 NavigationStack 的 ideal height ≈ 0，面板会塌成一条）
             .fixedSize(horizontal: false, vertical: true)
             .background(
                 GeometryReader { geo in
@@ -716,114 +678,35 @@ struct ReaderWebView: View {
             )
             .onPreferenceChange(SheetContentHeightKey.self) { h in
                 guard h > 0 else { return }
-                // 导航栏整个藏了，所以不用再给它留高度（原 +56 / +46 都不需要）。
-                // ⚠️ 硬上限 = 屏幕的 70%。overlay 没有 detent 兜底，
-                //    万一 PreferenceKey 量到离谱的值（比如某个子视图 flexible 撑开），
-                //    面板也不至于铺满全屏 —— build88 就是这么炸的。
                 let screenH = UIScreen.main.bounds.height
-                let hardCap = screenH * 0.70
-                let target = min(max(h + 4, 260), 840, hardCap)
+                let hardCap = screenH * 0.80
+                let target = min(max(h, 200), 900, hardCap)
                 if abs(target - sheetHeight) > 1 { sheetHeight = target }
             }
-            // 16 / 16 / 16 / **28** —— 底部 28 是给 home indicator 让的位置，
-            // 面板贴到屏边但最后一行磁贴不会压在指示条上。
-            // 参考实现 padding: fromLTRB(12, 14, 12, 14)
-            .padding(.horizontal, 12)
-            // 顶部不再留呼吸区 —— overlay 贴底之后内容整体往下坐
-            .padding(.top, 0)
-            .padding(.bottom, 12)
-            // ⚠️ 整个导航栏藏掉：没有「阅读设置」大标题，也没有右上角「完成」。
-            //    栖阅那个面板顶部直接就是「小 ▬ 大 [系统字体]」，标题栏压根不存在。
-            //    NavigationStack 还得留着 —— 子页（显示/间距/更多）是 push 进去的。
             .toolbar(.hidden, for: .navigationBar)
-            // ⚠️⚠️ **这才是「面板看着是米黄色实心」的真正元凶**。
-            //
-            //    NavigationStack 内部的 `containerBackground` 默认是**不透明**的
-            //    `systemBackground`。我只给三个**子页**写了 ClearNavigationBackground，
-            //    **根页漏了** → 系统玻璃被这一层不透明底整个遮死，
-            //    后面插画透不出来，面板看着像一块米黄色的板子。
-            //
-            //    栖阅那块能透出后面的枯枝和小熊，就是因为它没有这层底。
-            //    （对照：目录面板我重写时去掉了 NavigationStack，所以它是透明的 —— 对得上）
             .modifier(ClearNavigationBackground())
-            // ⚠️ 这里**没有 toolbar** —— 「完成」按钮整个去掉了。
-            //    栖阅那个面板就没有右上角任何按钮，靠下拉关闭。
-            //    留着它不仅占宽度，还和磁贴里那格「大小 / 显示设置」语义重复。
-            // ⚠️ 根页藏了导航栏，**子页必须显式恢复** ——
-            //    `.toolbar(.hidden, for: .navigationBar)` 是对整个
-            //    NavigationStack 生效的，不在子页写 `.visible` 的话，
-            //    push 进去导航栏也是隐的 → 连返回按钮都没有，用户出不来。
-            //    子页的标题（显示设置 / 间距设置 / 更多设置）也正是这时候才有用。
             .navigationDestination(isPresented: $showDisplaySettings) {
                 displaySettingsPage
                     .toolbar(.visible, for: .navigationBar)
-                    // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
                     .modifier(ClearNavigationBackground())
             }
             .navigationDestination(isPresented: $showLayoutSettings) {
                 layoutSettingsPage
                     .toolbar(.visible, for: .navigationBar)
-                    // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
                     .modifier(ClearNavigationBackground())
             }
             .navigationDestination(isPresented: $showMoreSettings) {
                 moreSettingsPage
                     .toolbar(.visible, for: .navigationBar)
-                    // 推入的页面默认带一层不透明背景，会把 sheet 的玻璃盖掉
                     .modifier(ClearNavigationBackground())
             }
         }
     }
 
-    /// 面板**上半**那块「被光打亮」的区域 —— 字号行 / 配色 / 跟随系统 /
-    /// 翻页方式，全都坐在**这一块**里面。
-    ///
-    /// 栖阅截图的确切结构（用户圈出来的那块）：
-    ///
-    ///   ┌───────────────────────────────┐  ← 这块整体更亮，边缘带柔和阴影
-    ///   │  小  ▬▬▬▬▬▬  大  [系统字体 ∨] │
-    ///   │  ☀ 文A 文B 文C …               │
-    ///   │  ◐ 跟随系统深浅色      [开关]   │
-    ///   │  📄 仿真 滑动 平移 无动画 上下 │
-    ///   └───────────────────────────────┘
-    ///   [大小][间隔][朗读][高亮]   ← 这块是**裸的面板玻璃**，磁贴没有底
-    ///   [气泡][格式][页眉][更多]       （能透出后面的插画）
-    ///
-    /// 走过两个弯路：
-    ///   build76 — 每块各垫一层 → 太碎，8 个磁贴多出一排小卡片
-    ///   build79 — 索性全删 → 删过头，上半不够「亮」，和下半糊成一片
-    /// 正确的是**上半一整块亮底 + 轻阴影，下半不垫**。
-    /// 面板内容 —— **没有内层白卡**。
-    ///
-    /// ⚠️ 我从 build82 起就以为用户说的「中间有一块阴影」= 一层白色块，
-    ///    于是加了个 `white @ 0.35 / radius 22` 的内嵌卡。第 5 版参考实现说清楚了：
-    ///
-    ///        .panel { background: rgba(255,255,255,.82);
-    ///                 backdrop-filter: blur(24px);
-    ///                 box-shadow: 0 4px 30px rgba(0,0,0,.12); }
-    ///
-    ///    「阴影」= **这个玻璃容器自己投的 box-shadow**，
-    ///    控件坐在**容器**里，不是在「容器里的白块」里。
-    ///    从 build82 到 build89 一直多加了一层不该有的东西。
-    /// 面板内容 = **上半白块**（字号/色块/跟随/翻页）+ 下面 8 个宫格。
-    ///
-    /// 上半白块照 ui.txt 的 `.top-card`：
-    ///     .top-card { background: rgba(255,255,255,.55);
-    ///                 border-radius: 16px;
-    ///                 padding: 14px 12px 2px;
-    ///                 margin-bottom: 12px;
-    ///                 box-shadow: 0 1px 6px rgba(0,0,0,.04); }
-    ///
-    /// ⚠️ SwiftUI 的 padding 顺序要跟 CSS 对齐：
-    ///   CSS 的 `padding` 在 `background` **之内**（背景盖住 padding 区）
-    ///   → SwiftUI 必须 `.padding(...)` **在** `.background(...)` **之前**
-    ///   （padding 在 background 之后 = 外部 padding，会把背景推远）
-    ///
-    /// ⚠️ `margin-bottom: 12px` 是白块到宫格的**外部**间距
-    ///   → SwiftUI 放在白块 `.background()` 之后。
+    /// 面板内容 = **上半白块**（top-card）+ 下面 8 个宫格
     private var panelContent: some View {
         VStack(spacing: 0) {
-            // ── 上半白块 ──
+            // ── .top-card ──
             VStack(spacing: 0) {
                 sizeRow
                 hairLine
@@ -838,14 +721,15 @@ struct ReaderWebView: View {
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 1)
-            // margin-bottom: 12 —— 白块和下面 8 个宫格的距离
+            // margin-bottom: 12 —— 白块到宫格的**外部**距离
             .padding(.bottom, 12)
 
-            // 8 个宫格（独立在白块外）
+            // .grid（独立在白块外）
             featureGrid
         }
     }
-    /// ui.txt: .divider { height:1px; background:rgba(0,0,0,.07); margin:0 2px 10px }
+
+    /// .divider { height:1px; background:rgba(0,0,0,.07); margin:0 2px 10px }
     private var hairLine: some View {
         Color.black.opacity(0.07)
             .frame(height: 1)
@@ -853,139 +737,87 @@ struct ReaderWebView: View {
             .padding(.bottom, 10)
     }
 
-    // MARK: - ① 字号行（小方块 + 滑块 + 大方块 + 字体下拉，全在一行）
+    // MARK: - ① 字号行
 
+    /// .row-fontsize { display:flex; align-items:center; gap:10px; padding:0 2px 10px }
     private var sizeRow: some View {
-        // ui.txt: .row-fontsize { padding: 0 2px 10px; gap: 10 }
-        // 字号滑块 14...28（ui.txt 的 min=14 max=28，不是 14...34）
-        // ui.txt: .row-fontsize { gap: 10 }，滑块是 `<input type=range>`（width:100%）
-        //
-        // ⚠️ 但 SwiftUI 的 `Slider` 在 iOS 26 新样式下，**滑轨会画到自己 frame 之外**
-        //    （两端有外延），HStack 的 spacing 只管**视图框**、管不住**绘制外延** →
-        //    「小」按钮的圆形底会**盖住滑轨左端一小截**（用户反馈「滑块被挡了一点」）。
-        //
-        //    修法：给 Slider 留出绘制外延的空间（padding），
-        //    同时把 HStack spacing 收窄，总视觉间距不变。
-        // ⚠️ spacing 必须是 12（ui.txt 的 gap:10 + 一点余量）。
-        //    我为了塞 thumb 把它收到 2 → 「小」按钮的圆底和滑轨**只差 2pt**，
-        //    视觉上就是「滑块被小按钮压住」（用户连续三次反馈「被挡」）。
-        //    自绘 QRSlider 之后 thumb 本来就两端正位，**根本不需要收窄 spacing**。
-        HStack(spacing: 12) {
-            sizeKnob("小", pointSize: 14)
-            // ⚠️ 用自绘的 QRSlider，**不用系统 Slider**。
-            //    连续两次真机反馈「滑块被挡了一点」「上面被挡」——
-            //    iOS 26 的系统 Slider frame 高度比 thumb 直径小（thumb 上下溢出
-            //    自己 frame 画的），跟相邻控件打架、还会被裁。
-            //    QRSlider 照 ui.txt 的 `<input type=range>` 逐项自绘：
-            //    轨道 6、thumb 26 白圆带阴影、已填充段 #4a90d9。
+        HStack(spacing: 10) {
+            sizeKnob("小")
             QRSlider(value: $fontSize, range: 14...28, step: 1)
-            sizeKnob("大", pointSize: 14)
+            sizeKnob("大")
             fontMenu
         }
         .padding(.horizontal, 2)
         .padding(.bottom, 10)
-        // ⚠️ 字号行原本还要自己 .padding(.top, 8) 躲开玻璃边缘的折射区，
-        //    现在 **top-card 白块**隔在它和玻璃之间了 —— 白块上沿离面板顶 28pt，
-        //    折射区吃不到控件，那 8 就不需要了。
     }
 
-    /// 小 / 大：灰底圆角方块
-    /// ui.txt: .fs-btn { width:34; height:34; border-radius:50%;
-    ///                  background:rgba(0,0,0,.05); font-size:14; color:#555 }
-    ///
-    /// ⚠️ 必须 `.fixedSize()`：旁边 QRSlider 内部是 GeometryReader（**贪婪**），
-    ///    在 HStack 里会抢走可分配宽度，把这两个按钮挤变形 ——
-    ///    真机表现：圆圈被压成缺角的椭圆（用户：「把大、小字体的圆圈补全」）。
-    ///    `.fixedSize()` 让按钮按自己的 34×34 走，谁也挤不动它。
-    /// ui.txt: .fs-btn { width:34; height:34; border-radius:50%; background:rgba(0,0,0,.05) }
-    ///
-    /// 用 `ZStack` + `Circle().fill()` 直接把圆**画出来** ——
-    /// 圆在 ZStack 里是 flexible view，会填满 34×34，**保证是完整正圆**，
-    /// 不用再跟背景裁剪 / 布局挤压较劲。
-    private func sizeKnob(_ text: String, pointSize: CGFloat) -> some View {
-        // ui.txt: .fs-btn 是个 `<button>`，34×34 圆形、rgba(0,0,0,.05) 底、字号 14。
-        //
-        // ⚠️ 用**纯黑 10%** 而不是 `--fill`（冷灰 12%）：
-        //    冷灰在米色**液态玻璃**上对比度太低，圆只有一部分能看出来 ——
-        //    真机看着就像「缺了一块」。纯黑低透明度在任何底色上都均匀。
+    /// .fs-btn { width:34; height:34; border-radius:50%; background:rgba(0,0,0,.05);
+    ///           font-size:14; color:#555 }
+    private func sizeKnob(_ text: String) -> some View {
         ZStack {
-            Circle().fill(Color.black.opacity(0.10))
-            Text(text)
-                .font(.system(size: pointSize, weight: .medium))
-                .foregroundStyle(Color(white: 0x33 / 0xff))
+            Circle().fill(Color.black.opacity(0.05))
+            Text(text).font(.system(size: 14))
+                .foregroundStyle(Color(white: 0x55 / 0xff))
         }
         .frame(width: 34, height: 34)
-        // ⭐ `.aspectRatio(1, .fit)` = **锁死宽高比**：
-        //    无论父容器（HStack / GeometryReader 贪婪）怎么压，
-        //    宽高永远相等 → 圆**不可能**变形。
-        //    之前只用 .frame(width:height:) + .fixedSize() 还是被挤过，
-        //    because fixedSize 只锁"理想尺寸"，锁不住"实际分配比例"。
-        .aspectRatio(1, contentMode: .fit)
-        .fixedSize()
     }
 
-    /// ui.txt: .font-select { padding:7px 13px; border-radius:18px;
-    ///                     font-size:14px; color:#333; background:rgba(0,0,0,.06) }
+    /// .font-select { padding:7px 13px; border-radius:18px; font-size:14;
+    ///                color:#333; background:rgba(0,0,0,.06) }
     private var fontMenu: some View {
         Menu {
             ForEach(ReaderFont.all) { f in
                 Button(f.name) { fontKey = f.raw }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Text(ReaderFont.name(for: fontKey))
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(white: 0x99 / 0xff))   // ui.txt ⌄ #999
+                Image(systemName: "chevron.down").font(.system(size: 11))
+                    .foregroundStyle(Color(white: 0x99 / 0xff))
             }
             .font(.system(size: 14))
-            .foregroundStyle(Color(white: 0x33 / 0xff))            // ui.txt #333
+            .foregroundStyle(Color(white: 0x33 / 0xff))
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
             .background(Color.black.opacity(0.06),
                         in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            // 同样：别让 HStack 把它压变形（用户圈了这三个）
-            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    // MARK: - ③ 配色格子
+    // MARK: - ③ 主题色块
 
+    /// .theme-row { display:flex; align-items:center; gap:8px; margin-bottom:8px }
     private var paletteGrid: some View {
         VStack(spacing: 8) {
-            paletteRow(ReaderTheme.light, icon: "sun.max.fill")
-            paletteRow(ReaderTheme.darkRow, icon: "moon.fill")
+            paletteRow(ReaderTheme.light, icon: "sun.max")
+            paletteRow(ReaderTheme.darkRow, icon: "moon")
         }
-        .padding(.vertical, 8)
     }
 
+    /// .mode-icon { width:28; font-size:17; color:#888 }
+    /// .swatch { width:42; height:42; border-radius:9; border:2px solid transparent }
+    /// .swatch.active { border-color:#4a90d9; box-shadow:0 0 0 1px #4a90d9 }
     private func paletteRow(_ list: [ReaderTheme], icon: String) -> some View {
-        // 参考实现 .swatch { width/height 42; border-radius 9 } gap 8
         HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 17)).foregroundStyle(Theme.sub)
+            Image(systemName: icon).font(.system(size: 17))
+                .foregroundStyle(Color(white: 0x88 / 0xff))
                 .frame(width: 28)
             ForEach(list) { t in
                 Button { themeKey = t.key } label: {
                     Text("文")
-                        // 参考实现：width 42、cornerRadius 12、字号 15、
-                        // 边框 = 选中 blue 2px / 否则 black @ .08 1px
-                        .font(.system(size: 13, weight: .regular))
+                        .font(.system(size: 13))
                         .foregroundStyle(t.ink)
-                        // ⚠️⚠️ 不能用固定 `width: 42`！
-                        //    8 个 × 42 + 7 个间距 × 8 + 图标槽 28 = **428pt**，
-                        //    而可用宽只有 440 − 14×2(定位) − 14×2(内部) = **412pt**
-                        //    → 超 16pt，整个内容被撑宽、居中后**两边都溢出被裁**
-                        //    （真机：左边「小」被切、右边色块第8个/开关/「高亮」被切）
-                        //
-                        // 栖阅真机是 **8 个均分贴边**的，所以这里用 maxWidth:.infinity
-                        // 均分，高度仍固定 42（保持方块比例）。
+                        // 宽度用 maxWidth 均分（8 个要排得下），高度按规格 42
                         .frame(maxWidth: .infinity)
                         .frame(height: 42)
-                        .background(t.bg, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .background(t.bg,
+                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .strokeBorder(themeKey == t.key ? Theme.accent
-                                              : Color.black.opacity(0.08),
-                                              lineWidth: themeKey == t.key ? 2 : 1)
+                                .strokeBorder(themeKey == t.key
+                                    ? Color(red: 74/255, green: 144/255, blue: 217/255)
+                                    : .clear,
+                                              lineWidth: 2)
                         )
                 }
                 .buttonStyle(.plain)
@@ -995,8 +827,10 @@ struct ReaderWebView: View {
 
     // MARK: - ④ 跟随系统深浅色
 
-    // ui.txt .row-follow { padding:4px 2px 10px }
-    //    .label font-size:15  .ic 18  .switch 50×29 radius:15 on时 #4a90d9
+    /// .row-follow { padding:4px 2px 10px }  文字 15  .ic 18
+    /// .switch { width:50; height:29; border-radius:15; background:#d8d8d8 }
+    /// .switch::after { width:24; height:24; border-radius:50%; 边距 3 }
+    /// .switch.on { background:#4a90d9 }  .switch.on::after { translateX(21px) }
     private var followSystemRow: some View {
         HStack {
             Image(systemName: "circle.lefthalf.filled")
@@ -1004,31 +838,37 @@ struct ReaderWebView: View {
             Text("跟随系统深浅色").font(.system(size: 15))
                 .foregroundStyle(Color(white: 0x33 / 0xff))
             Spacer()
-            Toggle("", isOn: $followSystemAppearance).labelsHidden()
-                .tint(Color(red: 74/255, green: 144/255, blue: 217/255))
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(followSystemAppearance
+                          ? Color(red: 74/255, green: 144/255, blue: 217/255)
+                          : Color(white: 0xd8 / 0xff))
+                    .frame(width: 50, height: 29)
+                Circle().fill(.white)
+                    .frame(width: 24, height: 24)
+                    .shadow(color: Color.black.opacity(0.25), radius: 4, y: 1)
+                    .offset(x: followSystemAppearance ? 23 : 3)   // 位移 20 ≈ 规格 21
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { followSystemAppearance.toggle() }
         }
         .padding(.horizontal, 2)
         .padding(.top, 4)
         .padding(.bottom, 10)
     }
 
-    // MARK: - ⑥ 翻页方式那一行
+    // MARK: - ⑥ 翻页方式
 
-    /// 自己的底**并进 upperPanelCard** 了，这里只留内容 + 上下留白。
+    /// .row-pageturn { display:flex; align-items:center; gap:8px; padding:0 0 12px }
+    /// .pt-icon { width:28; font-size:17; color:#888 }
+    /// .pill { flex-shrink:0; padding:8px 17px; border-radius:18px; font-size:14;
+    ///          background:rgba(0,0,0,.06) }
+    /// .pill.active { background:#4a90d9; color:#fff }
     private var pageTurnRow: some View {
-        // ui.txt: .row-pageturn { padding:0 0 12px; gap:8 }
-        //        .pt-icon { width:28; font-size:17; color:#888 }
-        HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "book").font(.system(size: 17)).foregroundStyle(Color(white: 0x88 / 0xff))
+        HStack(spacing: 8) {
+            Image(systemName: "book").font(.system(size: 17))
+                .foregroundStyle(Color(white: 0x88 / 0xff))
                 .frame(width: 28)
-            // 参考实现：`.pill { flex-shrink:0; padding:8px 17px; radius:18; fs:14 }`
-            // **不等分** —— 每个 pill 按内容宽度排，放不下就**横向滚动**。
-            //
-            // 我在 build86 死磕了三轮等分（fillsWidth）：
-            //   ① 平分装不下「上下滚动」→ 缩字号 13→12 去补   ← 治错了
-            //   ② 改 Wrap/LazyVGrid 换行 → 真机断成「无动\n画」 ← 又错
-            //   ③ 现在才知道正解是**不等分 + 横向滚动**，
-            //      「上下滚动」字号 14 也完整，因为没人跟它抢宽度。
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(PageTurnMode.all) { m in
@@ -1039,29 +879,26 @@ struct ReaderWebView: View {
                     }
                 }
             }
-            .scrollDisabled(false)
         }
         .padding(.bottom, 12)
     }
 
-    // MARK: - ⑦ 功能磁贴（4 + 4，照栖阅截图）
+    // MARK: - ⑦ 功能宫格（4 + 4）
 
-    /// **照栖阅截图逐格抄的文案**，不是我自己起的名：
+    /// **照栖阅截图逐格抄的文案**：
     ///
     /// | 格 | 大字 | 小字     | 图标 |
     /// |---|---|---|---|
     /// | 1 | 大小 | 显示设置 | doc.text |
-    /// | 2 | 间隔 | 间隔设置 | ≡ 横线 |
-    /// | 3 | 朗读 | 朗读设置 | speaker |
+    /// | 2 | 间隔 | 间隔设置 | line.3.horizontal.decrease |
+    /// | 3 | 朗读 | 朗读设置 | speaker.wave.2 |
     /// | 4 | 高亮 | 高亮设置 | highlighter |
-    /// | 5 | 气泡 | 设置     | bubble |
+    /// | 5 | 气泡 | 设置     | bubble.left.and.bubble.right |
     /// | 6 | 格式 | 标题样式 | **无** |
     /// | 7 | 页眉 | 页脚     | doc.text |
     /// | 8 | 更多 | 设置     | ellipsis.circle |
     ///
-    /// ⚠️ 必须是 **4 + 4 = 8 格**。我之前是 4 + 5（把「格式」和「标题样式」
-    ///    拆成了两格），第二行比第一行长一截 —— 这就是「怪」的来源之一。
-    ///    栖阅那个「格式」是大字、「标题样式」是它的小字，本来就是**一格**。
+    /// 未实现的**只摆位不点**：灰掉、点不动（用户明确要求）。
     private static let tiles: [(name: String, subtitle: String, icon: String, ready: Bool)] = [
         ("大小", "显示设置", "doc.text", true),
         ("间隔", "间隔设置", "line.3.horizontal.decrease", true),
@@ -1073,20 +910,14 @@ struct ReaderWebView: View {
         ("更多", "设置", "ellipsis.circle", true),
     ]
 
+    /// .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px 8px }
     private var featureGrid: some View {
-        // 参考实现 .grid { gap: 8px 8px }
         VStack(spacing: 8) {
             tileRow(0)
             tileRow(4)
         }
-        // 「8 个宫格下移」的间距现在由**上面 top-card 的 margin-bottom 12** 提供
-        //（白块和宫格之间天然有一段），这里不用再叠一次。
     }
 
-    /// 一行 4 格。⚠️ `Self.tiles` 是**元组数组**，元组不是 Identifiable，
-    ///    所以这里必须显式给 `id: \.name`（内容稳定、唯一）。
-    ///    之前有一条门禁要求「所有 ForEach 都不用 id: 重载」——
-    ///    那条只对 `Identifiable` 元素成立，套到元组上是错的。
     private func tileRow(_ from: Int) -> some View {
         HStack(spacing: 8) {
             ForEach(Array(Self.tiles[from..<min(from + 4, Self.tiles.count)]), id: \.name) { t in
@@ -1100,69 +931,40 @@ struct ReaderWebView: View {
         }
     }
 
-    // MARK: - 栖阅设计 token
-    //
-    // ⭐ 抄自栖阅 `designer.css` 的 `:root`，不是凭感觉定的：
-    //     --r-sm: 8px;  --r-md: 12px;  --r-lg: 16px;  --r-pill: 999px;
-    //     --tap: 44px;
-    //     --panel:      rgba(255,255,255,0.86);
-    //     --fill:       rgba(120,120,128,0.12);
-    //     --fill-strong:rgba(120,120,128,0.20);
-    //     --line:       rgba(60,60,67,0.12);
-    //     --accent:     #0a84ff;
-    //
-    // ⚠️ 最容易错的是 **--fill 带蓝调**（120,120,128 是个偏冷的灰）。
-    //    我之前用 `Color.gray.opacity(0.18)` —— 那是**纯灰 18%**，
-    //    叠在暖色纸背景上会显脏。这就是面板看着"怪"的原因之一。
-
-    /// --fill：控件底色（按钮、滑杆、胶囊）
-    private static let qrFill = Color(red: 120/255, green: 120/255, blue: 128/255).opacity(0.12)
-    /// --line：细分隔线
-    private static let qrLine = Color(red: 60/255, green: 60/255, blue: 67/255).opacity(0.12)
-
-    /// 一个磁贴（图标 + 粗体大字 + 小字副标题）。
-    ///
-    /// 没接的**只摆位不点**：灰掉、点不动。给用户一个点下去只会挨骂的
-    /// 按钮，比没有更糟（用户明确要求过）。
+    /// .cell { background:rgba(0,0,0,.05); border-radius:12px; padding:9px 4px 8px;
+    ///          display:flex; flex-direction:column; align-items:center; gap:4px }
+    /// .cell .ic { font-size:18; color:#333; line-height:1 }
+    /// .cell .t1 { font-size:13; color:#222 }
     private func featureTileLabel(name: String, subtitle: String?, icon: String,
                                   ready: Bool, action: @escaping () -> Void = {}) -> some View {
         Button {
             guard ready else { return }
             action()
         } label: {
-            // 参考实现是**两行文字**、没有图标行：
-            //     <span class="ic">大小</span><span class="t1">显示设置</span>
-            //     .cell { padding: 9px 4px 8px; border-radius: 12px; gap: 4px }
-            //     .ic 18px  /  .t1 13px  /  .t2 display:none
-            //
-            // 所以**不需要空图标占位那个 hack**（那是我为了对齐自造图标行才加的），
-            // 也**不需要固定高度** —— 内容高度自然就一样。
-            // ui.txt .cell { gap:4 }  .ic 18px  .t1 13px  .t2 display:none
-            // 8 格都是「图标(文字) + 副标题」，没有第三行，所以**只画两行**：
-            //     第一行 .ic 实际是中文大字（"大小"/"间隔"/…）
-            //     第二行 .t1 是副标题（"显示设置"/"间隔设置"/…）
             VStack(spacing: 4) {
+                if !icon.isEmpty {
+                    Image(systemName: icon).font(.system(size: 18))
+                } else {
+                    // 「格式」那格栖阅**没有图标** —— 用同尺寸占位保持八格内容基线一致
+                    Color.clear.frame(width: 18, height: 18)
+                }
                 Text(name).font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color(white: 0x22 / 0xff))     // ui.txt #222
                 Text(subtitle ?? "").font(.system(size: 13))
-                    .foregroundStyle(Color(white: 0x99 / 0xff))     // ui.txt #999
             }
+            .foregroundStyle(ready ? Color(white: 0x22 / 0xff) : Theme.sub.opacity(0.45))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-            // 区分「已实现 / 没实现」靠**文字深浅**，不是有没有底
-            .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
             .frame(maxWidth: .infinity)
-            // 规格：按钮内边距 上 9 / 左右 4 / 下 8
             .padding(.top, 9)
             .padding(.horizontal, 4)
             .padding(.bottom, 8)
-            // 规格：按钮背景 rgba(0,0,0,.05)（不是 --fill 的冷灰 12%）
             .background(Color.black.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!ready)
     }
+
 
     // MARK: - 子页：显示设置
 
@@ -1479,33 +1281,28 @@ struct ReaderWebContainer: UIViewRepresentable {
 /// 整坨塞进 HStack 里，Swift 的类型检查器会**超时**
 /// （"unable to type-check this expression in reasonable time"）。
 /// 抽成独立 View 之后每个表达式都简单了，编译就过了。
+/// .pill { flex-shrink:0; padding:8px 17px; border-radius:18px; font-size:14;
+///          background:rgba(0,0,0,.06); color:#333 }
+/// .pill.active { background:#4a90d9; color:#fff }
 private struct ChipButton: View {
     let title: String
     let selected: Bool
-    var fontSize: CGFloat = 14
-    var cornerRadius: CGFloat = 18
-    var fillsWidth: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: fontSize))
-                .foregroundStyle(selected ? Color.white : Theme.ink)
-                // 参考实现 .pill { padding: 8px 17px; border-radius: 18px }
+                .font(.system(size: 14))
+                .foregroundStyle(selected ? Color.white : Color(white: 0x33 / 0xff))
                 .padding(.horizontal, 17)
                 .padding(.vertical, 8)
-                // ui.txt: .pill { background:rgba(0,0,0,.06); color:#333 }
-                //        .pill.active { background:#4a90d9; color:#fff }
                 .background(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(selected
                              ? Color(red: 74/255, green: 144/255, blue: 217/255)
                              : Color.black.opacity(0.06))
                 )
-                .foregroundStyle(selected ? .white : Color(white: 0x33 / 0xff))
                 .fixedSize()
-                .frame(maxWidth: fillsWidth ? .infinity : nil)
         }
         .buttonStyle(.plain)
     }
