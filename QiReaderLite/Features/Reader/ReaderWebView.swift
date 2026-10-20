@@ -686,9 +686,11 @@ struct ReaderWebView: View {
             //    之前是平级两个子元素，修饰符只作用于**紧挨着的那一个**
             //    （featureGrid）—— 量到的只是宫格高度（≈160pt），
             //    不是整个面板高度（≈500pt）。面板被压扁、内容溢出，就炸了。
+            // ⚠️⚠️ 这里**只能**放 panelContent —— 它内部已经包含 featureGrid 了！
+            //    build113 我把 featureGrid 挪进 panelContent（加 top-card 白块），
+            //    外层这个忘了删 → 真机**8 个宫格变成 16 个**（重复两遍）。
             VStack(spacing: 0) {
                 panelContent
-                featureGrid
             }
             .frame(maxWidth: .infinity)
             // 固定成内容本来的高度 —— 这样量出来的才是真实高度，

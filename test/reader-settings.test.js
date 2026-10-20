@@ -158,9 +158,11 @@ ok(/ZStack\(alignment: \.bottom\)/.test(web), '根容器是 bottom 对齐的 ZSt
                         web.indexOf('private var panelContent'));
   // ⚠️ VStack 和 .fixedSize 之间可能隔着 .frame(maxWidth:)，
   //    所以这里只要求 VStack 之后**不远处**出现 fixedSize。
-  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,60}featureGrid[\s\S]{0,200}\.fixedSize/.test(sc),
+  // settingsContent 里现在是「VStack { panelContent }」——
+  // featureGrid 已经在 panelContent 内部了（build113 加 top-card 时挪进去的）。
+  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,200}\.fixedSize/.test(sc),
      'fixedSize 挂在**包住全部内容**的 VStack 上（不是只挂 featureGrid）');
-  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,60}featureGrid[\s\S]{0,600}SheetContentHeightKey/.test(sc),
+  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,700}SheetContentHeightKey/.test(sc),
      '测高 GeometryReader 同样挂在包住全部内容的 VStack 上');
 }
 ok(/settingsSheet/.test(web.slice(web.indexOf('ZStack(alignment: .bottom)'))),
@@ -210,8 +212,7 @@ console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'),
                             web.indexOf('private var hairLine'));
 ok(/VStack/.test(mainSheet), '主面板用 VStack（内容行数固定，高度确定）');
-ok(/panelContent[\s\S]{0,40}featureGrid/.test(mainSheet),
-   '主面板 = panelContent + featureGrid（没有内层白卡了）');
+ok(/panelContent/.test(mainSheet), '主面板用 panelContent（内含 top-card 白块 + 8 个宫格）');
 ok(!/private var (displayCard|pageTurnCard|upperPanelCard)/.test(web),
    '旧卡片视图名全部退役（displayCard / pageTurnCard / upperPanelCard）');
 ok(!/\.background\(\s*Color\.white/.test(featureGrid),
@@ -429,4 +430,18 @@ ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假
   ok(/\.padding\(\.bottom, 12\)/.test(pc2), 'top-card margin-bottom 12');
   ok(/sizeRow[\s\S]{0,200}hairLine[\s\S]{0,200}paletteGrid[\s\S]{0,200}followSystemRow[\s\S]{0,200}hairLine[\s\S]{0,200}pageTurnRow/.test(pc2),
      '白块里含：字号/线/色块/跟随/线/翻页（不含 8 个宫格）');
+}
+
+// ── featureGrid 只能出现一次 ──
+// build113 我把 featureGrid 挪进 panelContent（加 top-card 白块），
+// 外层那个忘了删 → 真机 **8 个宫格渲染成 16 个**（重复两遍）。
+{
+  const sc2 = web.slice(web.indexOf('private var settingsContent: some View {'),
+                         web.indexOf('private var panelContent: some View {'));
+  const calls = (sc2.match(/^\s*featureGrid\s*$/gm) || []).length;
+  ok(calls === 0, 'settingsContent 里不再单独挂 featureGrid（它已在 panelContent 内）');
+  const pc3 = web.slice(web.indexOf('private var panelContent: some View {'),
+                         web.indexOf('private var hairLine'));
+  ok((pc3.match(/^\s*featureGrid\s*$/gm) || []).length === 1,
+     'featureGrid 在 panelContent 里只出现一次');
 }
