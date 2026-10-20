@@ -574,6 +574,11 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             // 聚合源的「番茄登录 / 注册 / 用户后台 / 教程」全靠它。
             return await self.openBrowser(args)
 
+        case "showBrowser":
+            // 别名：有些书源直接调 java.showBrowser（引擎侧已经改成走两遍跑，
+            // 但保底留一个）→ 当成 openBrowser 处理。
+            return await self.openBrowser(args)
+
         default:
             return err("原生侧没有实现 fn=\(fn)")
         }

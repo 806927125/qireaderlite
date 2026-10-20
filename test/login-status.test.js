@@ -66,13 +66,13 @@ ok(/function pushMsg\(/.test(javai) && /QR\.__qrPushMsg\s*=\s*pushMsg/.test(java
 // 暂存机制：跑完第一遍才知道有没有 ajax → 决定这遍消息真假
 ok(/QR\.__qrHoldBegin\s*=\s*function/.test(javai), '有暂存区开/关接口');
 ok(/QR\.__qrHoldEnd\s*=\s*function/.test(javai), '有暂存区收尾接口');
-ok(/if \(keep && h\.length\)/.test(javai), '暂存消息按 keep 决定要不要交出去');
+ok(/if \(keep && h\.list\.length\)/.test(javai), '暂存消息按 keep 决定要不要交出去');
 const analyzer = readCode(path.join(ENGINE, 'rule-analyzer.js'));
 ok(/QR\.__qrHoldBegin/.test(analyzer) && /QR\.__qrHoldEnd\(real\)/.test(analyzer),
    'runJs 第一遍用暂存区，跑完按「有没有录到 ajax」定夺真假');
 ok(/var real = \(recorded\.length === 0\)/.test(analyzer),
    '「没录到 ajax = 这一遍是真的」这条判据在');
-ok(/depth === 0 && QR\.__qrMsgSink && QR\.__qrHoldBegin/.test(analyzer),
+ok(/holdingAll = !!\(QR\.__qrMsgSink && QR\.__qrHoldBegin\)/.test(analyzer),
    '只有装了 sink 的 op 才暂存（别的 op 行为完全不变）');
 
 // ───────── ② 引擎：login op 回传原文 ─────────
@@ -266,6 +266,46 @@ console.log('\n=== 10. 枚举改名同步检查 ===');
     ok(!usedUnique.includes('failed'),
        '没有残留的旧 case 名 .failed（改名忘了同步 → CI 才炸）');
   }
+}
+
+// ───────── ⑪ 浏览器类按钮（🍅番茄登录等）─────────
+console.log('\n=== 11. 浏览器类按钮（番茄登录/注册/后台/打赏）===');
+// ⚠️⚠️ **同一个对象里定义了两遍 startBrowserAwait，后面的覆盖前面的**
+//    → 覆盖成的那份直连 nativeCall('showBrowser')，**绕过了两遍跑**
+//    → 原生侧又没有 showBrowser 这个 op → 异步 rejection 被站方接不到 → 静默失败
+//    → **浏览器根本不弹**（站方 15 处用 startBrowserAwait，全废）
+{
+  const defs = (javai.match(/startBrowserAwait\s*:\s*function/g) || []).length;
+  ok(defs === 1,
+     `java 对象里 startBrowserAwait 只定义一次（现在 ${defs} 次 —— 定义两遍后者覆盖前者）`);
+  const sbDefs = (javai.match(/startBrowserAwait\s*:\s*function/g) || []).length;
+  const awBody = javai.match(/startBrowserAwait\s*:\s*function[\s\S]{0,700}?\n    \},/);
+  ok(!!awBody && /__qrAjaxRecord\(u,\s*'browser'/.test(awBody[0]),
+     'startBrowserAwait 走两遍跑录制器（kind=browser）');
+  ok(!/nativeCall\('showBrowser'/.test(awBody ? awBody[0] : ''),
+     'startBrowserAwait 不直连 nativeCall（那会绕过两遍跑）');
+  ok(/showBrowser\s*:\s*function[\s\S]{0,400}?java\.startBrowser\(/.test(javai),
+     'showBrowser 路由到 startBrowser（走两遍跑）');
+  ok(/case "showBrowser"/.test(sb2), '原生侧也有 showBrowser（兜底）');
+}
+// removeCookie 不能把「刚从浏览器拿回来的」登录 cookie 删掉
+ok(/mergedHosts/.test(readCode(path.join(ENGINE, 'source-api.js'))),
+   '引擎记着本次 op 合并回来的域（mergedHosts）');
+ok(/mergedHosts\[host\]/.test(readCode(path.join(ENGINE, 'source-api.js'))),
+   'removeCookie 会跳过这些域（两遍跑下站方会重复执行「清旧 cookie」）');
+// 只有最后一遍的消息才交出去（中间遍的假报错不能先弹）
+const ra2 = readCode(path.join(ENGINE, 'rule-analyzer.js'));
+ok(/holdingAll/.test(ra2), '装了 sink 的 op 每一遍都暂存消息');
+ok(/QR\.__qrSuppressToast = holdingAll \? true : \(depth === 0\)/.test(ra2),
+   '装了 sink 的 op 每一遍都静音 toast（中间遍的假报错不能弹）');
+ok(/__qrHoldEnd\(real\)/.test(ra2), '按「这一遍有没有录到 ajax」定夺真假');
+// 回归测试
+ok(fs.existsSync(path.join(ROOT, 'test', 'live-fq-login.test.js')),
+   '有番茄登录的端到端联调测试');
+{
+  const fq = readCode(path.join(ROOT, 'test', 'live-fq-login.test.js'));
+  ok(/浏览器弹了/.test(fq) && /sessionid/.test(fq),
+     '番茄登录测试断言了「浏览器弹了」+「请求带上了 sessionid」');
 }
 
 // ───────── 汇总 ─────────

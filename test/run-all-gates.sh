@@ -25,6 +25,7 @@ cd "$(dirname "$0")/.."
 declare -a GATES=(
   "login-status:test/login-status.test.js"
   "login-card:test/live-login-card.test.js"
+  "fq-login:test/live-fq-login.test.js"
   "reader-settings:test/reader-settings.test.js"
   "reader-native-paging:test/reader-native-paging.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"

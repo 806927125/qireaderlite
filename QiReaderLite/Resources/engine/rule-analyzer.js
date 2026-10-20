@@ -329,10 +329,18 @@
         return '';
       };
       QR.__qrAjaxCache = cache;
-      // 只有第一遍静音：那一遍的 ajax 是假的，报错是假的
-      QR.__qrSuppressToast = (depth === 0);
-      // ⚠️⚠️ 第一遍的消息**先暂存**，跑完这一遍再决定要不要交出去：
-      //   · 这一遍录到了 ajax → 这一遍是假的 → 消息丢掉（否则用户看到假报错）
+      // ⚠️⚠️ **每一遍都静音** toast/log（装了 sink 的 op）：
+      //    每一遍的 ajax 结果在**这一遍结束时**都还是假的（还没抓回来）→
+      //    站方据此报的错也是假的 → 「未获取到登录凭据，登录失败」这种**假报错**就是这么来的。
+      //    真实例子（🍅番茄登录 fq_login）：
+      //        第 1 遍 弹浏览器 → 用户登录 → sessionid 合并回快照
+      //        第 2 遍 ajax 的 URL 变了（带上了真 cookie）→ 又是假的 → 站方报「登录失败」❌
+      //        第 3 遍 ajax 命中缓存 → 真结果 → 「欢迎 XXX 登录成功」✅
+      //    现在统一**最后一遍才交消息**（原生 toast/log + sink）→ 用户只看到真结果。
+      // ⚠️ 以前只静音第一遍 → 中间遍的假报错会**先弹出来**误导用户。
+      //
+      // ⚠️ 消息**每一遍都先暂存**，跑完这一遍再决定要不要交出去：
+      //   · 这一遍录到了 ajax → 这一遍是假的 → 消息丢掉
       //   · 这一遍没录到 ajax → 这一遍是真的 → 消息交出去
       //
       //   以前是「第一遍一律静音」→ 副作用是**没用到 ajax 的真结果也被吃掉**：
@@ -340,11 +348,11 @@
       //   → 那一遍没有 ajax → 不会有第二遍 → 那句话永远不出现。
       //   （实测踩到：login op 什么原文都收不到，站方报啥用户都看不到）
       //
-      // ⚠️ 只在**装了 sink** 时才暂存：没装 sink 的 op 行为完全不变。
+      // ⚠️ 没装 sink 的 op 行为完全不变（还是只静音第一遍）。
       var holding = null;
-      if (depth === 0 && QR.__qrMsgSink && QR.__qrHoldBegin) {
-        holding = QR.__qrHoldBegin();
-      }
+      var holdingAll = !!(QR.__qrMsgSink && QR.__qrHoldBegin);
+      QR.__qrSuppressToast = holdingAll ? true : (depth === 0);
+      if (holdingAll) { holding = QR.__qrHoldBegin(); }
       depth++;
       return once().then(function (r) {
         var real = (recorded.length === 0);

@@ -64,26 +64,52 @@
    */
   var MSG_HOLD = null;
 
-  function pushMsg(m) {
+  function pushMsg(m, kind) {
     var s = String(m == null ? '' : m);
-    if (MSG_HOLD) { try { MSG_HOLD.push(s); } catch (e) {} return; }
+    if (MSG_HOLD) {
+      try { MSG_HOLD.list.push(s); MSG_HOLD.kinds.push(kind || 'log'); } catch (e) {}
+      return;
+    }
     var sink = QR.__qrMsgSink;
     if (!sink) return;
     try { sink.push(s); } catch (e) {}
   }
   QR.__qrPushMsg = pushMsg;
 
-  /** 开始暂存（runJs 的第一遍调用） */
-  QR.__qrHoldBegin = function () { MSG_HOLD = []; return MSG_HOLD; };
-  /** 结束暂存：keep=true 才把消息交给 sink */
+  /** 开始暂存（runJs 每一遍调用） */
+  QR.__qrHoldBegin = function () {
+    MSG_HOLD = { list: [], kinds: [] };
+    return MSG_HOLD;
+  };
+
+  /**
+   * 结束暂存：keep=true 才把消息交出去（而且是**这一遍结束之后**才交）。
+   *
+   * ⚠️⚠️ 为什么「结束之后」才交：
+   *    两遍跑里，中间遍的 ajax 结果是**假的**（还没抓回来）→ 站方据此报的错也是假的。
+   *    真实例子（🍅番茄登录）：
+   *        第 1 遍：弹浏览器 → 用户登录 → sessionid 合并回快照
+   *        第 2 遍：ajax 的 URL 变了（带上了真 cookie）→ 又是假的 → 站方报
+   *                 「未获取到登录凭据，登录失败」❌ **假报错**
+   *        第 3 遍：ajax 命中缓存 → 真结果 → 「欢迎 XXX 登录成功」✅
+   *    以前假报错**先弹出来**，用户会以为登录失败了。
+   *    现在：只有**最后一遍**的消息会交出去（原生 toast/log + sink）✅
+   */
   QR.__qrHoldEnd = function (keep) {
-    var h = MSG_HOLD || [];
+    var h = MSG_HOLD || { list: [], kinds: [] };
     MSG_HOLD = null;
-    if (keep && h.length) {
+    if (keep && h.list.length) {
       var sink = QR.__qrMsgSink;
-      if (sink) { try { Array.prototype.push.apply(sink, h); } catch (e) {} }
+      if (sink) { try { Array.prototype.push.apply(sink, h.list); } catch (e) {} }
+      // 原生侧也在这时候才显示（之前是每遍都显示 → 中间遍的假报错会误导用户）
+      for (var i = 0; i < h.list.length; i++) {
+        try {
+          if (h.kinds[i] === 'toast') nativeCall('toast', { msg: h.list[i] });
+          else nativeCall('log', { msg: h.list[i] });
+        } catch (e) {}
+      }
     }
-    return h;
+    return h.list;
   };
 
   /* ---------------- 同步原生通道（window.prompt） ---------------- */
@@ -329,24 +355,27 @@
      *    → 我们的原生桥是异步的 → 同样走「两遍跑」：
      *      第一遍只记 URL（并静音 toast），原生侧弹浏览器等用户关掉，
      *      第二遍命中缓存 → 同步返回那个对象。
+     *
+     * ⚠️⚠️ **startBrowserAwait 在这个对象里只许定义一次！**
+     *    以前定义了两遍（下面这份 + 后面那份），**后者覆盖前者**，
+     *    而覆盖成的那份直连 nativeCall('showBrowser') → **绕过了两遍跑**
+     *    → 原生侧没有 showBrowser → 异步 rejection 被静默吞掉
+     *    → **浏览器根本不弹**（🍅番茄登录 / 注册 / 用户后台 / 打赏 / 设置中心 全废）。
+     *    → 门禁 login-status.test.js 断言「只定义一次」✅
      */
     startBrowser: function (url, title) {
       var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
       if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return ''; }
       return java.openBrowser(u, title);
     },
-    startBrowserAwait: function (url, title) {
-      var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
-      // 同样：**缓存优先**（否则浏览器会被一遍遍重复弹）
-      if (QR.__qrAjaxCache && Object.prototype.hasOwnProperty.call(QR.__qrAjaxCache, u)) {
-        return QR.__qrAjaxCache[u];
-      }
-      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return mkBrowserLike({}); }
-      return java.openBrowser(u, title).then(function (r) {
-        return mkBrowserLike((r && r.value) || {});
-      });
+    showBrowser: function (url, content, title) {
+      // ⚠️ 站方调用形式：`java.showBrowser(pageUrl, htmlContent, title)`（3 个参数）
+      //    第三个才是标题。轻阅的浏览器只吃 URL，所以这里只传 URL。
+      //    ⚠️ **必须走 startBrowser（两遍跑）**，不能直连原生 ——
+      //    原生侧没有 showBrowser 这个 op，直连会被 default 分支拒掉，
+      //    而且异步 rejection 站方接不到 → 浏览器静默不弹。
+      return java.startBrowser(url, title || content || '');
     },
-    showBrowser: function (url, title) { return java.startBrowser(url, title); },
     showReadingBrowser: function (url, title) { return java.startBrowser(url, title); },
     startBrowserDp: function (url, title) { return java.startBrowser(url, title); },
     openBrowser: function (url, title) {
@@ -500,8 +529,26 @@
     refreshExplore: function () { return nativeCall('refreshExplore', {}); },
     refreshTocUrl: function () { return nativeCall('refreshTocUrl', {}); },
     showBrowser: function (url) { return nativeCall('showBrowser', { url: resolveUrl(url) }); },
-    startBrowserAwait: function (url) {
-      return nativeCall('showBrowser', { url: resolveUrl(url) }).then(function (r) { return r && r.value; });
+    startBrowserAwait: function (url, title) {
+      // ⚠️⚠️⚠️ **这个对象里 startBrowserAwait 只许定义这一处**
+      //    （以前定义了两遍，**后者覆盖前者** → 覆盖成的那份直连 nativeCall('showBrowser')，
+      //      **绕过了两遍跑**）：
+      //      · 原生侧根本没有 showBrowser 这个 op → default 分支拒掉
+      //      · 而且是**异步 rejection**，站方的 try/catch 接不到 → 静默失败
+      //    ⇒ **浏览器根本不弹** → 番茄登录 / 注册 / 用户后台 / 打赏 / 设置中心 /
+      //      人机验证 全废（站方一共 15 处用 startBrowserAwait）。
+      //
+      //    正确做法：**缓存优先 → 再录制**，
+      //    由两遍跑去弹浏览器，并把浏览器里登出来的 cookie 合并回快照
+      //    （否则站方 `cookie.getKey('fanqienovel.com','sessionid')` 拿不到）。
+      var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
+      if (QR.__qrAjaxCache && Object.prototype.hasOwnProperty.call(QR.__qrAjaxCache, u)) {
+        return QR.__qrAjaxCache[u];
+      }
+      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return mkBrowserLike({}); }
+      return java.openBrowser(u, title).then(function (r) {
+        return mkBrowserLike((r && r.value) || {});
+      });
     },
     reLoginView: function (a) { return nativeCall('reLoginView', { msg: String(a == null ? '' : a) }); },
     searchBook: function (key) { return nativeCall('searchBook', { key: String(key == null ? '' : key) }); },
@@ -549,7 +596,7 @@
       // ⚠️ 先收集（进暂存区），再决定要不要显示：
       //    站方 checkStatus() 那张**会员卡片**走的就是 java.log，
       //    它在第一遍是真结果（没 ajax）→ 不能被静音吃掉。
-      pushMsg(msg);
+      pushMsg(msg, 'log');
       if (QR.__qrSuppressToast) return Promise.resolve('');
       return nativeCall('log', { msg: msg });
     },
@@ -558,12 +605,12 @@
     // ⚠️ 但 pushMsg 在静音判断**之前** —— 消息先进暂存区，
     //    跑完这一遍再定夺（没 ajax 的真结果不能被吃掉）。
     longToast: function (s) {
-      pushMsg(s);
+      pushMsg(s, 'toast');
       if (QR.__qrSuppressToast) return Promise.resolve('');
       return nativeCall('toast', { msg: String(s) });
     },
     toast: function (s) {
-      pushMsg(s);
+      pushMsg(s, 'toast');
       if (QR.__qrSuppressToast) return Promise.resolve('');
       return nativeCall('toast', { msg: String(s) });
     },

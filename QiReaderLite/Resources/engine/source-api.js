@@ -77,11 +77,37 @@
         try { if (QR.java && QR.java.setCookie) QR.java.setCookie(url, cookie); } catch (e) {}
         return '';
       },
-      /** 删 cookie：本地先删（同步可见），**真罐也要删**（原生侧） */
+      /**
+       * 删 cookie：本地先删（同步可见），**真罐也要删**（原生侧）
+       *
+       * ⚠️⚠️ **但刚从浏览器拿回来的域不能删！**
+       *
+       * 站方 🍅番茄登录（fq_login）的第一步就是：
+       *     cookie.removeCookie("snssdk.com");
+       *     cookie.removeCookie("fanqienovel.com")     // ← 清掉旧会话
+       *     java.startBrowserAwait("https://fanqienovel.com/", "登录")
+       *     ... cookie.getKey("fanqienovel.com", "sessionid")
+       *
+       * 在**两遍跑**下这段站方代码会跑两遍：
+       *   第一遍：清旧 cookie → 录下浏览器 → （fetchRecorded 里）真的弹浏览器、
+       *           用户登录完，**sessionid 合并回快照**
+       *   第二遍：又执行一遍「清旧 cookie」→ **把刚合并进来的 sessionid 删了** ❌
+       *            → 站方 getKey 拿不到 → 「未获取到登录凭据，登录失败」
+       *
+       * 所以：**本次 op 里从浏览器合并回来的域，removeCookie 一律跳过**。
+       * （退出登录那种没有浏览器的 op 不受影响 —— 照样真删 ✅）
+       */
       removeCookie: function (url) {
         var host = hostOf(url);
+        if (mergedHosts[host]) {
+          // 刚从浏览器拿到的登录凭据 → 不动它
+          return '';
+        }
         if (Object.prototype.hasOwnProperty.call(cookieSnapshot, host)) {
           delete cookieSnapshot[host];
+        }
+        if (QR.__qrCookieSnapshot && Object.prototype.hasOwnProperty.call(QR.__qrCookieSnapshot, host)) {
+          delete QR.__qrCookieSnapshot[host];
         }
         QR.__qrDirtyCookie = true;
         // ⚠️ 以前只删了本地快照，**真 cookie 罐（原生 HTTPCookieStorage）没动**
@@ -220,6 +246,8 @@
   QR.__qrInstallCookieSnapshot = function (snap) {
     cookieSnapshot = {};
     QR.__qrCookieSnapshot = cookieSnapshot;
+    // 本次 op 里**从浏览器合并回来的**域 —— 见下面 removeCookie 的注释
+    mergedHosts = {};
     if (snap && typeof snap === 'object') {
       for (var k in snap) {
         if (Object.prototype.hasOwnProperty.call(snap, k)) cookieSnapshot[k] = String(snap[k] || '');
@@ -227,11 +255,17 @@
     }
   };
 
-  /** 把浏览器里新产生的 cookie 合并进快照（登录后立刻要用） */
+  /**
+   * 把浏览器里新产生的 cookie 合并进快照（登录后立刻要用）
+   *
+   * ⚠️ 同时记进 `mergedHosts`：这次 op 里**从这个浏览器拿到的**域。
+   *    removeCookie 要靠它避免把「刚拿到的登录 cookie」又删掉（见下）。
+   */
   QR.__qrMergeCookie = function (host, cookie) {
     if (!host || !cookie) return;
     var snap = QR.__qrCookieSnapshot || (QR.__qrCookieSnapshot = {});
     snap[host] = String(cookie);
+    mergedHosts[host] = true;
   };
 
   /** op 开始前清脏标记 */
