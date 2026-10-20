@@ -751,7 +751,12 @@
         //    直接调 → 拿到的是 Promise → JSON.parse(Promise) 炸 → 永远测不出登录态。
         //    runJs 里有「两遍跑」机制：第一遍录 URL、第二遍命中缓存同步返回真值。
         var scope = rule.makeScope({
+          // ⚠️ `result` 必须给：站方 checkStatus 里会写 `result['邮箱'] = res.email`
+          //    → 站方函数在**全局作用域**（间接 eval 定义的）→ 读的是全局的 result
+          //    → 不给就是 "result is not defined"，卡片直接拼不出来。
+          result: {},
           source: src,
+          book: p.book,
           baseUrl: base || baseUrlOf(src),
           key: p.key || ''
         });

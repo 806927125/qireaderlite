@@ -165,6 +165,56 @@ ok(/func fullLogText\(\)/.test(sb), 'RuleSandbox 有 fullLogText（全量日志�
 ok(/recentLogs\.count\s*>\s*300/.test(sb), '日志留 300 条（60 条不够，会把会员卡片挤掉）');
 ok(!/recentLogs\.count\s*>\s*60\b/.test(sb), '没有残留的 60 条上限');
 
+// ───────── ⑧ 引擎能力用 Swift 写（JS 只转发）─────────
+console.log('\n=== 8. 引擎能力用 Swift 写 ===');
+const compatPath = path.join(ROOT, 'QiReaderLite', 'Core', 'LegadoCompat.swift');
+ok(fs.existsSync(compatPath), 'Core/LegadoCompat.swift 存在（能力在 Swift 侧）');
+if (fs.existsSync(compatPath)) {
+  const lc = readCode(compatPath);
+  ok(/enum TimeFormat/.test(lc) && /static func format\(ms: Int64\)/.test(lc),
+     'Swift 侧有 java.timeFormat 的实现');
+  ok(/enum Cache/.test(lc) && /static func put\(_ key: String, _ value: String\)/.test(lc),
+     'Swift 侧有 cache 的实现');
+  ok(/static func handle\(fn: String, args: \[String: Any\]\)/.test(lc),
+     'Swift 侧有同步通道的分发入口');
+}
+ok(/QR\.__qrSync = function/.test(javai), 'JS 侧有同步通道的转发函数');
+ok(/QR\.__qrSync\('timeFormat'/.test(javai),
+   'java.timeFormat 转发给 Swift（不再在 JS 里实现）');
+ok(/QR\.__qrSync\('cachePut'/.test(javai) && /QR\.__qrSync\('cacheGet'/.test(javai),
+   'cache 转发给 Swift');
+// ⚠️ JS 里**不该**有主实现：timeFormat 必须**先**走同步通道（Swift），
+//    纯 JS 只剩「通道不可用时」的兜底（真机上万一 prompt 通道不通，
+//    没有兜底 → 章节时间戳全空 → 一堆源直接回归）。
+const tfBody = javai.match(/timeFormat: function[\s\S]{0,1200}?\n    \},/);
+ok(!!tfBody && tfBody[0].indexOf('__qrSync') < tfBody[0].indexOf('javaTimeFormatFallback'),
+   'timeFormat **主路径**走 Swift（同步通道），JS 兜底只排在后面');
+ok(/javaTimeFormatFallback/.test(javai),
+   '留了纯 JS 兜底（同步通道万一在真机上不通，章节时间戳不能全空）');
+
+// 同步通道：RuleSandbox 必须实现 WKUIDelegate 的 prompt 回调
+const sb2 = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'RuleSandbox.swift'));
+ok(/extension RuleSandbox: WKUIDelegate/.test(sb2), 'RuleSandbox 实现了 WKUIDelegate');
+ok(/runJavaScriptTextInputPanelWithPrompt/.test(sb2),
+   '实现了 prompt 回调（同步通道唯一可用的口子）');
+ok(/wv\.uiDelegate = self/.test(sb2), '引擎 WebView 挂了 uiDelegate');
+ok(/static let syncPrefix = "__qrSync__"/.test(sb2), '同步通道前缀跟 JS 侧一致');
+ok(/LegadoCompat\.handle\(fn: fn, args: args\)/.test(sb2),
+   '原生侧把请求交给 LegadoCompat（能力都在 Swift）');
+
+// Swift 原生层的真跑测试要在仓库里
+ok(fs.existsSync(path.join(ROOT, 'test', 'legado-compat-test.swift')),
+   '有 Swift 原生层的真跑测试（swiftc 真编真跑）');
+ok(fs.existsSync(path.join(ROOT, 'test', 'run-swift-tests.sh')),
+   '有跑 Swift 原生层测试的脚本');
+
+// 会员卡片回归（用户真机上报的 bug 的精确复现）
+ok(fs.existsSync(path.join(ROOT, 'test', 'live-login-card.test.js')),
+   '有会员卡片的回归测试（mock 已登录响应）');
+const cardTest = readCode(path.join(ROOT, 'test', 'live-login-card.test.js'));
+ok(/padEnd is not a function/.test(cardTest) && /会员状态/.test(cardTest),
+   '卡片测试断言了「不再报 padEnd 错」+「卡片内容要出来」');
+
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

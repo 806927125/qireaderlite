@@ -24,6 +24,7 @@ cd "$(dirname "$0")/.."
 # 有些门禁依赖本机文件（书源 JSON），没有就自己跳过 —— 那是「跳过」不是「通过」
 declare -a GATES=(
   "login-status:test/login-status.test.js"
+  "login-card:test/live-login-card.test.js"
   "reader-settings:test/reader-settings.test.js"
   "reader-native-paging:test/reader-native-paging.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
@@ -116,7 +117,28 @@ for entry in "${GATES[@]}"; do
 done
 
 printf "%s\n" "────────────────────────────────────────────────────"
+
+# ── Swift 原生层：swiftc 真编真跑（Core/ 是纯 Foundation → 沙盒里能跑）──
+# ⚠️ 这一步是「引擎能力用 Swift 写」能落地的**前提**：
+#    能力写在 Swift 里，就得能在沙盒里验（3 秒出结果，不用等 CI）。
+if [ -x "/tmp/swift/usr/bin/swiftc" ] || command -v swiftc >/dev/null 2>&1; then
+  if bash test/run-swift-tests.sh > /tmp/swift-tests.out 2>&1; then
+    printf "%-24s %-22s %s\n" "swift 原生层" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/swift-tests.out | tail -1)"
+    SWIFT_PASS="$(grep -oE '通过 [0-9]+' /tmp/swift-tests.out | tail -1 | grep -oE '[0-9]+')"
+    TOTAL_PASS=$((TOTAL_PASS + ${SWIFT_PASS:-0}))
+  else
+    printf "%-24s %-22s %s\n" "swift 原生层" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/swift-tests.out | tail -1)"
+    grep -E "✗|error:" /tmp/swift-tests.out | head -5
+    TOTAL_FAIL=$((TOTAL_FAIL+1))
+    FAILED+=("swift-原生层")
+  fi
+else
+  printf "%-24s %-22s %s\n" "swift 原生层" "⚠️ 跳过" "没装 swiftc"
+fi
+
+printf "%s\n" "────────────────────────────────────────────────────"
 printf "合计通过 %d 项 / 失败 %d 个门禁\n" "$TOTAL_PASS" "$TOTAL_FAIL"
+
 
 if [ ${#CRASHED[@]} -gt 0 ]; then
   printf "💥 崩了：%s\n" "${CRASHED[*]}"

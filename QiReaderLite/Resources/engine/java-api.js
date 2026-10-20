@@ -86,7 +86,82 @@
     return h;
   };
 
+  /* ---------------- 同步原生通道（window.prompt） ---------------- */
+
+  /**
+   * **同步**调原生能力。
+   *
+   * 为什么需要：Legado 的部分 `java.*` 是**同步**语义，站方在同一个表达式里就用了：
+   *     java.timeFormat(res.register_time*1000).padEnd(20, "\t")
+   * `.padEnd` 必须当场拿到那个字符串 → postMessage（异步）做不到。
+   * WKWebView 里唯一能同步拿到原生返回值的口子就是 `window.prompt`
+   * （原生侧在 `RuleSandbox` 的 WKUIDelegate 里**同步**回 completionHandler）。
+   *
+   * 实现在 Swift（`Core/LegadoCompat.swift`），JS 这边只转发。
+   */
+  QR.__qrSync = function (fn, args) {
+    try {
+      if (typeof g.prompt !== 'function') return null;
+      var raw = g.prompt('__qrSync__' + JSON.stringify({ fn: fn, args: args || {} }));
+      if (raw == null) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  /** Legado 的 cache（KV）—— 存储在 Swift 侧（UserDefaults） */
+  g.cache = {
+    put: function (k, v) {
+      var r = QR.__qrSync('cachePut', { key: String(k), value: String(v == null ? '' : v) });
+      // ⚠️ 站方（🍅大灰狼）的 putLoginInfo 会把**加密后**的登录信息存进 cache，
+      //    而它自己从来不读回（没有 cache.get）；轻阅的登录信息必须留在
+      //    `source.putLoginInfo`（书源登录信息表），否则下次启动
+      //    `login()` 读 `source.getLoginInfo()` 会拿到空 → **登录态丢失**。
+      //    所以这里存完仍要抛错，好让站方走那条 fallback（行为零变化）。
+      throw new Error('轻阅的登录信息请走 source.putLoginInfo（cache 仅作通用 KV）');
+    },
+    get: function (k, d) {
+      var r = QR.__qrSync('cacheGet', { key: String(k) });
+      if (r && r.ok && r.value != null && r.value !== '') return r.value;
+      return d == null ? '' : d;
+    },
+    remove: function (k) {
+      var r = QR.__qrSync('cacheRemove', { key: String(k) });
+      return !!(r && r.ok);
+    }
+  };
+
   /* ---------------- base64：三级兜底 ---------------- */
+
+  /**
+   * `java.timeFormat` 的**纯 JS 兜底**（同步通道不可用时用）。
+   * 语义必须跟 Swift 侧（`Core/LegadoCompat.swift`）一致：
+   * 数字 → "yyyy-MM-dd HH:mm:ss"；其它字符串 → epoch 毫秒。
+   */
+  function javaTimeFormatFallback(input) {
+    var s = String(input == null ? '' : input).trim();
+    if (!s) return 0;
+    if (/^\d+$/.test(s)) {
+      var n = parseInt(s, 10);
+      var ms = (s.length <= 10 ? n * 1000 : n);
+      return fmtDateTime(ms);
+    }
+    var m = s.match(/(\d{4})[-\/年](\d{1,2})[-\/月](\d{1,2})日?(?:[T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (m) {
+      return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    }
+    var d = new Date(s);
+    var t = d.getTime();
+    return isNaN(t) ? 0 : t;
+  }
+
+  function fmtDateTime(ms) {
+    var d = new Date(ms);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
 
   function b64decode(s) {
     s = String(s == null ? '' : s).replace(/\s/g, '');
@@ -312,23 +387,30 @@
     },
     getStringWrapper: function (s) { return String(s == null ? '' : s); },
     /**
-     * Legado 的 java.timeFormat：把日期字符串转成 epoch 毫秒。
-     * 书源常写 `updateTime: "{{java.timeFormat(java.getString('$.updateDate'))}}"`
-     * 来给章节标时间。站方给的多是 "2017-04-24 14:16:34" / "2017/04/24" /
-     * "2017-04-24T14:16:34.000Z"，这里做纯 JS 解析，不碰原生。
-     * 解析不了就返回 0（跟 Legado 一样，不抛）。
+     * Legado 的 `java.timeFormat` —— **Long(epoch 毫秒) → "yyyy-MM-dd HH:mm:ss"**。
+     *
+     * ⚠️ **两种语义要分清**（站方拼会员卡片炸掉就是这个）：
+     *   · 数字（epoch 毫秒）→ **格式化字符串**（Legado 语义）
+     *     站方：`java.timeFormat(res.register_time*1000).padEnd(20,"\t")`
+     *            `java.timeFormat(new Date()).slice(0,10) == java.timeFormat(res.last_read_time*1000).slice(0,10)`
+     *     → 返回数字的话 `.padEnd` / `.slice` 都不存在 → 「检测登录失败」假报错
+     *   · 其它字符串（"2026-10-20 14:16:34"）→ **epoch 毫秒**
+     *     语料：`{{java.timeFormat(java.getString('$.updateDate'))}}` 当章节时间戳
+     *
+     * 实现在 Swift（`Core/LegadoCompat.swift`），这里只转发；
+     * 同步通道不可用时退回纯 JS 兜底（语义保持一致）。
      */
     timeFormat: function (t) {
-      var s = String(t == null ? '' : t).trim();
-      if (!s) return 0;
-      if (/^\d+$/.test(s)) { var n0 = parseInt(s, 10); return s.length <= 10 ? n0 * 1000 : n0; }
-      var m = s.match(/(\d{4})[-\/年](\d{1,2})[-\/月](\d{1,2})日?(?:[T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
-      if (m) {
-        return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
-      }
-      var d = new Date(s);
-      var ms = d.getTime();
-      return isNaN(ms) ? 0 : ms;
+      var input;
+      try {
+        // Date 对象先取毫秒（JSON 过不去 Date）
+        if (t && typeof t.getTime === 'function') input = String(t.getTime());
+        else input = String(t == null ? '' : t).trim();
+      } catch (e) { input = ''; }
+      if (!input) return 0;
+      var r = QR.__qrSync('timeFormat', { input: input });
+      if (r && r.ok && r.value !== undefined && r.value !== null) return r.value;
+      return javaTimeFormatFallback(input);
     },
 
     // 本地变量：跨规则传递中间结果。语料里 java.put/java.get 有 800+ 条

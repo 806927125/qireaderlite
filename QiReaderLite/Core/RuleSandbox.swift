@@ -276,6 +276,8 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         wv.isHidden = true
         wv.isUserInteractionEnabled = false
         wv.navigationDelegate = self
+        // 同步通道要用 window.prompt → 必须挂 uiDelegate（见下面的 WKUIDelegate 实现）
+        wv.uiDelegate = self
         webView = wv
 
         wv.loadHTMLString(page.html, baseURL: page.dir)
@@ -776,6 +778,56 @@ extension RuleSandbox: WKNavigationDelegate {
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         self.lastError = "引擎文件读取失败: \(error.localizedDescription)"
+    }
+}
+
+// MARK: - 同步原生通道（window.prompt）
+
+/// **同步**通道：JS → 原生 → JS，一个来回当场返回。
+///
+/// 为什么要它：Legado 的部分 `java.*` 是**同步**语义，站方在同一个表达式里就用了：
+///     java.timeFormat(res.register_time*1000).padEnd(20, "\t")
+/// `.padEnd` 必须立刻拿到那个**字符串** → 原生桥的 postMessage（异步）做不到
+///（postMessage 回来时表达式早算完了）。
+///
+/// WKWebView 里能同步拿到原生返回值的口子只有一个：**`window.prompt`**。
+/// `WKUIDelegate` 的 prompt 回调里**同步**调 completionHandler，
+/// JS 侧的 `window.prompt(...)` 就会当场拿到返回值。
+///
+/// ⚠️ 只有**引擎那个** WebView 挂了本 delegate（内嵌浏览器那个没有），
+///    所以不会影响站方网页自己的 prompt。
+extension RuleSandbox: WKUIDelegate {
+    /// 同步通道的报文前缀（JS 侧必须一模一样）
+    static let syncPrefix = "__qrSync__"
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+        guard prompt.hasPrefix(Self.syncPrefix) else {
+            // 真实网页的 prompt：轻阅不弹窗，回默认值
+            completionHandler(defaultText)
+            return
+        }
+        let payload = String(prompt.dropFirst(Self.syncPrefix.count))
+        completionHandler(Self.handleSync(payload))
+    }
+
+    /// 处理同步请求：{fn, args} → {ok, value|error}
+    static func handleSync(_ payload: String) -> String {
+        guard let data = payload.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let fn = obj["fn"] as? String else {
+            return "{\"ok\":false,\"error\":\"同步请求解析失败\"}"
+        }
+        let args = obj["args"] as? [String: Any] ?? [:]
+        let result = LegadoCompat.handle(fn: fn, args: args)
+        guard let out = try? JSONSerialization.data(withJSONObject: result),
+              let s = String(data: out, encoding: .utf8) else {
+            return "{\"ok\":false,\"error\":\"同步结果序列化失败\"}"
+        }
+        return s
     }
 }
 
