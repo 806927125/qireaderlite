@@ -179,7 +179,7 @@ enum LoginStatus {
         let urlString = base.hasSuffix("/")
             ? String(base.dropLast()) + "/user_api"
             : base + "/user_api"
-        guard let url = URL(string: urlString) else { return .failed("URL 非法") }
+        guard let url = URL(string: urlString) else { return .serverError("URL 非法") }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"

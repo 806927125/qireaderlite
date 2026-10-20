@@ -243,6 +243,31 @@ ok(/stationSaysLoggedIn/.test(readCode(path.join(ROOT, 'QiReaderLite', 'Core', '
 ok(fs.existsSync(path.join(ROOT, 'test', 'live-login-flow.test.js')),
    '有登录流程的端到端联调（含「失败不许弄坏登录态」用例）');
 
+// ───────── ⑩ 枚举改名要同步（CI 才会发现，沙盒编不了 LoginStatus）─────────
+console.log('\n=== 10. 枚举改名同步检查 ===');
+// ⚠️ `Core/LoginStatus.swift` 依赖 WebKit（RuleSandbox）→ **沙盒里 swiftc 编不了**
+//    → 改了 ProbeResult 的 case 名（failed → serverError）后，CI 才报
+//    "has no member 'failed'"。这里在沙盒里提前查一遍。
+{
+  const lsPath = path.join(ROOT, 'QiReaderLite', 'Core', 'LoginStatus.swift');
+  const comp = readCode(compatPath);
+  const enumBody = comp.match(/enum ProbeResult\s*\{([\s\S]*?)\n    \}/);
+  ok(!!enumBody, 'LegadoCompat 里能抠出 ProbeResult 的定义');
+  if (enumBody) {
+    const cases = (enumBody[1].match(/case\s+([a-zA-Z]+)/g) || [])
+      .map(s => s.replace(/case\s+/, ''));
+    const ls = readCode(lsPath);
+    const used = [...ls.matchAll(/\.(loggedIn|notLoggedIn|serverError|failed)\b/g)]
+      .map(m => m[1]);
+    const usedUnique = [...new Set(used)];
+    const missing = usedUnique.filter(c => !cases.includes(c));
+    ok(missing.length === 0,
+       `LoginStatus 用到的 case 都存在（缺: ${missing.join(',') || '无'}）`);
+    ok(!usedUnique.includes('failed'),
+       '没有残留的旧 case 名 .failed（改名忘了同步 → CI 才炸）');
+  }
+}
+
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);
