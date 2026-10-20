@@ -197,8 +197,12 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 //
 // ⚠️ 之前在「结构还没对」时来回换过这个背景（.82 磨砂白 ↔ .glassEffect），
 //    两边都不对 —— 那是**结构问题**不是材质问题。结构对了（build120）才比得了材质。
-ok(/\.glassEffect\(\.regular\.tint\(Color\.white\.opacity\(0\.35\)\)/.test(panel),
-   '面板是**液态玻璃** .glassEffect(.regular) + 白 tint（保白度，白块要能分层）');
+ok(/\.glassEffect\(\.regular\.tint\(Color\.white\.opacity\(0\.12\)\)/.test(panel),
+   '面板是**液态玻璃** .glassEffect(.regular) + 白 tint 0.12（通透但白块还能分层）');
+// ⚠️ 白 tint 别调回 0.35 —— 玻璃会白得一点都不通透，后面的正文看不见
+//    （用户：「液态玻璃透明度调整一下，一点都不透明」）。
+ok(!/glassEffect\(\.regular\.tint\(Color\.white\.opacity\(0\.(3[0-9]|[4-9][0-9])/.test(panel),
+   '玻璃白 tint 不超过 0.12（别调回 0.35，会一点都不透明）');
 ok(/\.background\(\s*Color\.clear\s*\n?\s*\.glassEffect/.test(panel),
    '面板玻璃用 background(_:in:) 重载（.background { Shape } 会撑成全屏）');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）

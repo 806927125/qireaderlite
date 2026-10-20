@@ -755,13 +755,14 @@ struct ReaderWebView: View {
             //    .glassEffect），两边都不对 —— 其实是**结构问题**不是材质问题。
             //    现在结构对了（build120），才轮得到比材质。
             //
-            // 用 `.tint(.white.opacity(0.35))` 保留白度：纯 `.glassEffect(.regular)`
-            //    是全通透的，内层白块 white@.55 叠上去分不出层次；
-            //    加白 tint 相当于 ui.txt 的 rgba(255,255,255,.82) 那一层，
-            //    但**有折射、有 depth**，是真液态玻璃。
+            // tint 决定玻璃有多「白」、有多不通透。
+            //    之前用 .white.opacity(0.35) —— 白得太多，玻璃**一点都不通透**，
+            //    后面正文和主题插画基本看不见（用户：「液态玻璃透明度调整一下」）。
+            //    降到 **0.12**：留一点白度（不然内层白块 white@.55 分不出层次），
+            //    但玻璃真的能透出后面的内容。
             .background(
                 Color.clear
-                    .glassEffect(.regular.tint(Color.white.opacity(0.35)),
+                    .glassEffect(.regular.tint(Color.white.opacity(0.12)),
                                  in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
