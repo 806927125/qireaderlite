@@ -99,36 +99,43 @@ func runCase(_ c: [String: Any]) -> Any {
 }
 
 // MARK: - main
+//
+// ⚠️ Swift **不允许顶层 statement**（只有 main.swift 里的顶层代码才行），
+//    所以整个流程要包在 `@main` struct 里。
+@main
+struct ScrollCoreParity {
+    static func main() {
+        let repoRoot = CommandLine.arguments.count > 1
+            ? CommandLine.arguments[1]
+            : FileManager.default.currentDirectoryPath
+        let fixture = URL(fileURLWithPath: repoRoot)
+            .appendingPathComponent("test/fixtures/scroll-core-cases.json")
 
-let repoRoot = CommandLine.arguments.count > 1
-    ? CommandLine.arguments[1]
-    : FileManager.default.currentDirectoryPath
-let fixture = URL(fileURLWithPath: repoRoot)
-    .appendingPathComponent("test/fixtures/scroll-core-cases.json")
+        guard let data = try? Data(contentsOf: fixture),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            FileHandle.standardError.write("❌ 读不到用例文件: \(fixture.path)\n".data(using: .utf8)!)
+            exit(2)
+        }
 
-guard let data = try? Data(contentsOf: fixture),
-      let root = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-    FileHandle.standardError.write("❌ 读不到用例文件: \(fixture.path)\n".data(using: .utf8)!)
-    exit(2)
-}
+        var bad = 0
+        for c in root {
+            let name = jStr(c["name"]) ?? "?"
+            guard let expected = c["expected"] else { continue }
+            let got = runCase(c)
+            let gotText = jsonText(got)
+            let wantText = jsonText(expected)
+            if gotText != wantText {
+                bad += 1
+                print("✗ \(name)\n   got  = \(gotText)\n   want = \(wantText)")
+            }
+        }
 
-var bad = 0
-for c in root {
-    let name = jStr(c["name"]) ?? "?"
-    guard let expected = c["expected"] else { continue }
-    let got = runCase(c)
-    let gotText = jsonText(got)
-    let wantText = jsonText(expected)
-    if gotText != wantText {
-        bad += 1
-        print("✗ \(name)\n   got  = \(gotText)\n   want = \(wantText)")
+        if bad == 0 {
+            print("✅ Swift 与 JS 原版行为一致：\(root.count) 条用例全过")
+            exit(0)
+        } else {
+            print("❌ \(bad)/\(root.count) 条不一致")
+            exit(1)
+        }
     }
-}
-
-if bad == 0 {
-    print("✅ Swift 与 JS 原版行为一致：\(root.count) 条用例全过")
-    exit(0)
-} else {
-    print("❌ \(bad)/\(root.count) 条不一致")
-    exit(1)
 }
