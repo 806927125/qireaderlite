@@ -274,7 +274,20 @@
     // UTC 版 timeFormat：轻阅统一按本地时区，这里保持签名不报错
     timeFormatUTC: function (t, f) { return java.timeFormat(t, f); },
     hexDecodeToString: function (hex) {
-      var h = String(hex == null ? '' : hex).replace(/[^0-9a-fA-F]/g, '');
+      var s = String(hex == null ? '' : hex).trim();
+      // ⚠️ 有些聚合源**拿 base64 的串去调 hexDecodeToString** ——
+      //    🍅大灰狼就是：bookUrl 规则用 base64Encode 写进去，
+      //    init 规则用 hexDecodeToString 读出来。严格按 hex 解会得到一堆乱码
+      //    （"ÍàÊÎîQ…"），整条详情规则静默失效。
+      //    所以：**不是合法 hex 就按 base64 再试一次**。
+      var isHex = /^[0-9a-fA-F]*$/.test(s) && s.length % 2 === 0;
+      if (!isHex) {
+        try {
+          var b64 = b64decode(s);
+          if (b64) return b64;
+        } catch (e) { /* 落回 hex */ }
+      }
+      var h = s.replace(/[^0-9a-fA-F]/g, '');
       var out = '';
       for (var i = 0; i + 1 < h.length; i += 2) out += String.fromCharCode(parseInt(h.substr(i, 2), 16));
       try { return decodeURIComponent(escape(out)); } catch (e) { return out; }

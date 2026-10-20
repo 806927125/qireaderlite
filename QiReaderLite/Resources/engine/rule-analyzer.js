@@ -194,6 +194,11 @@
       btoa: g.btoa, atob: g.atob, console: { log: function () { QR.java.log.apply(null, arguments); } }
     };
     for (var k in (extra || {})) scope[k] = extra[k];
+    // ⚠️ source 必须**包一层**（补上 Legado 的 source.getVariable / setVariable 等 API）。
+    //    裸对象上没这些方法 → 站方 JS 一调就 TypeError；
+    //    而 URL 里的 JS 异常会被 analyzeJsInUrl 吞掉 → URL 变成空串
+    //    → 0 请求 0 结果，界面上一点报错都看不到（聚合源最常见的"静默失效"）。
+    if (scope.source && QR.wrapSource) scope.source = QR.wrapSource(scope.source);
     return scope;
   }
 
@@ -366,7 +371,12 @@
       p = Promise.resolve([body]);
     } else switch (kind) {
       case T.JS: {
-        p = runJs(stripJsWrapper(body), makeScope(jsScope(base, base, ctx, body)));
+        var jt = splitJsWithTail(body);
+        p = runJs(jt.code, makeScope(jsScope(base, base, ctx, body)))
+          .then(function (r) {
+            // 复合规则 `<js>代码</js>选择器`：JS 算出个值，再从里面取字段
+            return jt.sel ? selectFromJsResult(r, jt.sel, ctx, base) : r;
+          });
         break;
       }
       case T.REGEX: {
@@ -480,8 +490,11 @@
       // 得把它指向当前规则的基准文档，而不是引擎自己的空页面
       document: ownerDocOf(base),
       baseUrl: ctx.baseUrl || '',
-      source: ctx.source,
-      book: ctx.book,
+      // ⚠️ 必须包一层：站方 JS 直接调 source.getVariable()，
+      //    裸对象上没这方法 → TypeError → 整条规则静默失效。
+      source: QR.wrapSource ? QR.wrapSource(ctx.source) : ctx.source,
+      // ⚠️ book 也要包一层：站方会调 book.getVariable('custom')
+      book: (ctx.book && QR.wrapBook) ? QR.wrapBook(ctx.book) : ctx.book,
       chapter: ctx.chapter,
       page: ctx.page,
       base: base,
@@ -502,6 +515,48 @@
     if (t.startsWith('<js>') && t.endsWith('</js>')) return t.slice(4, -5);
     if (t.startsWith('<JS>') && t.endsWith('</JS>')) return t.slice(4, -5);
     return t;
+  }
+
+  /**
+   * 复合规则：`<js>代码</js>尾部选择器`
+   *
+   * Legado 允许 JS 块后面再跟一个选择器，意思是「JS 算出个值，再从里面取字段」。
+   * 聚合源（🍅大灰狼）大量用这个形态：
+   *     ruleToc.chapterList = "<js>…JSON.parse(…)…</js>$.data"
+   *     ruleContent.content  = "<js>…content…</js>$.content"
+   *
+   * ⚠️ 以前只认「整条规则**就是** <js>…</js>」这一种形态，
+   *    复合形态会把 `<js>` 原样丢进 eval → "Unexpected token '<'"
+   *    → 这条规则**静默失效**（界面上一点报错都看不到）。
+   *
+   * `@js:` 是**贪婪到末尾**的（没有尾部），所以只对 `<js>…</js>` 做拆分。
+   */
+  function splitJsWithTail(s) {
+    var t = String(s == null ? '' : s).trim();
+    var m = /^<[jJ][sS]>([\s\S]*?)<\/[jJ][sS]>([\s\S]*)$/.exec(t);
+    if (m) return { code: m[1], sel: String(m[2] || '').trim() };
+    return { code: stripJsWrapper(t), sel: '' };
+  }
+
+  /** 把 JS 的结果当成「JSON / 页面」，再用选择器取字段 */
+  function selectFromJsResult(res, sel, ctx, base) {
+    var s = String(sel || '').trim();
+    if (!s) return res;
+    var baseUrl = ctx.baseUrl || '';
+    // JSONPath（$.xxx / $[0]）—— 聚合源最常见的尾部形态
+    if (s.charAt(0) === '$') {
+      var jp = evalJsonPath(res, s);
+      return jp && jp.length ? jp : [];
+    }
+    // 其余按 CSS/XPath：把结果当 HTML 解析
+    try {
+      var node = (res && res.nodeType) ? res : dom.parseHTML(String(res == null ? '' : res), baseUrl);
+      var r = dom.resolve(node, s);
+      return r.nodes.map(function (n) { return dom.valueOf(n, r.suffix, baseUrl); })
+                    .filter(function (x) { return x !== ''; });
+    } catch (e) {
+      return [];
+    }
   }
 
   function findJsTail(s) {
@@ -726,6 +781,34 @@
     return op === 'getint' ? String(parseInt(v, 10) || 0) : String(v);
   }
 
+  /**
+   * 这条规则是不是**一个不可分割的块**（不能按 `\n` 切）。
+   *
+   * ⚠️ 踩过的坑（🍅大灰狼聚合源）：
+   *    ruleToc.chapterList = "<js>\n  …一堆代码…\n</js>$.data"
+   *    —— `<js>` 块里**有换行**，而引擎原来按 `\n` 把规则切成多行兜底链，
+   *    第一行就剩 "<js>" → eval("<js>") → "Unexpected token '<'"
+   *    → 这条规则**静默失效**（界面上一点报错都看不到，只表现为"目录是空的"）。
+   *
+   * 跟「含 `{{` 的规则不按行切」是同一个道理：
+   *    块里的 \n 是**代码/输出里的换行**，不是规则分隔符。
+   */
+  function isBlockRule(raw) {
+    var t = String(raw == null ? '' : raw).trim();
+    if (!t) return false;
+    if (t.indexOf('{{') >= 0) return true;
+    if (/^@js:/i.test(t)) return true;
+    if (/^<[jJ][sS]>/.test(t)) {
+      var close = t.toLowerCase().indexOf('</js>');
+      if (close < 0) return true;                 // 没闭合的（被截断的）也别切
+      var after = t.slice(close + 5);
+      if (!after.trim()) return true;             // 整块就是这条规则
+      if (after.indexOf('\n') < 0) return true;   // 同一行的尾巴 → 复合规则 <js>…</js>$.data
+      return false;                               // 后面还有别的规则行
+    }
+    return false;
+  }
+
   function getElements(rule, base, ctx) {
     // ⚠️ 含 `{{` 的规则**不按行切**：它是「一个模板产出一个值」，
     //    里面的 \n 是**输出里的换行**，不是规则分隔符。
@@ -734,12 +817,17 @@
     //    `<br>\n🏅 评分：…\n🎗 标签：…` 这种简介模板甚至因为第一行
     //    是 `<br>`（被当 CSS 标签名）直接查空。
     //    不含 `{{` 的规则才按 `\n` 当兜底链逐行试（老行为）。
-    var lines = String(rule == null ? '' : rule).indexOf('{{') >= 0
-      ? [String(rule)]
-      : toLines(rule);
+    //    ⚠️ 同理 `<js>…</js>` 块也不能按行切（见 isBlockRule）。
+    var rawText = String(rule == null ? '' : rule);
+    var lines = isBlockRule(rawText) ? [rawText] : toLines(rule);
     if (!lines.length) return Promise.resolve({ values: [], rule: '' });
 
     function tryOr(line) {
+      // ⚠️ `<js>…</js>` 整块**不能按 || / && 拆**：
+      //    站方代码里本来就有 `result.tab || '小说'` 这种 **JS 运算符**，
+      //    拆开等于把代码腰斩 → 碎片被当成规则 → eval("<js>…") →
+      //    "Unexpected token '<'" → 这条规则静默失效。
+      if (isBlockRule(line)) return tryAnd(line);
       // || 分支：任一有结果就用它
       var orParts = splitTop(line, ['||']);
       if (orParts.length === 1) return tryAnd(line);
@@ -756,6 +844,11 @@
 
     // && 分支：依次尝试，前一个有结果就停
     function tryAnd(line) {
+      if (isBlockRule(line)) {
+        return evalOne(line, base, ctx).then(function (values) {
+          return { values: values, rule: line };
+        });
+      }
       var andParts = splitTop(line, ['&&']);
       if (andParts.length === 1) return evalOne(line, base, ctx).then(function (values) {
         return { values: values, rule: line };

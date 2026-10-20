@@ -30,6 +30,7 @@ const SCRIPTS = [
   'java-api.js',
   'packages-native.js',
   'packages_stub.js',
+  'source-api.js',
   'rule-analyzer.js',
   'engine.js',
 ];

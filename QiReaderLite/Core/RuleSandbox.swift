@@ -20,6 +20,7 @@ enum ResourceLocator {
         "java-api.js",       // java.*
         "packages-native.js", // Packages.* 的原生函数实现（必须排在 packages_stub.js 前）
         "packages_stub.js",   // Packages / JavaImporter / importPackage 兼容层
+        "source-api.js",      // Legado 的 source.* / cookie.* 兼容层（必须在 rule-analyzer 之前）
         "rule-analyzer.js",  // 规则解释器
         "engine.js",         // 调度层
     ]
@@ -714,6 +715,27 @@ enum CookieJar {
         guard let u = URL(string: url) else { return "" }
         let cookies = HTTPCookieStorage.shared.cookies(for: u) ?? []
         return cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+    }
+
+    /// 全量 cookie 快照：**host → "k=v; k2=v2"**
+    ///
+    /// ⚠️ 为什么需要快照：Legado 的 `cookie.getCookie(url)` 是**同步** API，
+    ///    而原生桥只能 postMessage（异步）→ JS 里没法 await 一次同步调用。
+    ///    所以原生侧先把 cookie 罐拍成快照塞进 payload，引擎侧同步读。
+    static func snapshot() -> [String: String] {
+        var out: [String: String] = [:]
+        for c in HTTPCookieStorage.shared.cookies ?? [] {
+            var host = c.domain
+            if host.hasPrefix(".") { host.removeFirst() }
+            guard !host.isEmpty else { continue }
+            let pair = "\(c.name)=\(c.value)"
+            if let prev = out[host], !prev.isEmpty {
+                out[host] = prev + "; " + pair
+            } else {
+                out[host] = pair
+            }
+        }
+        return out
     }
     static func set(_ cookie: String, for url: String) {
         guard let u = URL(string: url) else { return }

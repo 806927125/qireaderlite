@@ -49,7 +49,10 @@
       if (typeof g.cache === 'undefined') { g.cache = {}; addedCache = true; }
       if (typeof g.cookie === 'undefined') { g.cookie = {}; addedCookie = true; }
       var prevSource = g.source, prevBook = g.book, prevChapter = g.chapter;
-      g.source = source; g.book = undefined; g.chapter = undefined;
+      // jsLib 里的 checkEnv() 会摸 this.source（要判是安卓还是改版），
+      // 所以这里也得给**包过 API 的**那份。
+      g.source = QR.wrapSource ? QR.wrapSource(source) : source;
+      g.book = undefined; g.chapter = undefined;
       try {
         fn(code);
       } finally {
@@ -113,7 +116,15 @@
       var code = (m[1] !== undefined) ? m[1] : m[2];
       var scope = urlJsScope(ctx, acc);
       var v;
-      try { v = rule.evalExpr(code, scope); } catch (e) { v = ''; }
+      try {
+        v = rule.evalExpr(code, scope);
+      } catch (e) {
+        // ⚠️ 别再**默默吞掉**了：吞掉的话站方 JS 一报错，
+        //    URL 就变成空串 → 0 请求 0 结果，界面上毫无线索（聚合源最常见的"静默失效"）。
+        //    至少要留一条日志，真机自检面板里能看见。
+        try { QR.java.log('[URL 里的 JS 出错] ' + String(e && e.message || e)); } catch (e2) {}
+        v = '';
+      }
       if (v === null || v === undefined) v = '';
       acc = String(v);
       out += acc;
@@ -297,7 +308,46 @@
     }, Promise.resolve([]));
   }
 
+  /**
+   * `data:` 伪 URL 的内容。
+   *
+   * 形如 `data:;base64,<载荷>,{"type":"qingtian"}`：
+   *   · `;base64` 是元数据（RFC 2397）
+   *   · `<载荷>` 是真正的内容
+   *   · 逗号后面的 JSON 是 Legado 的 URL 选项（已由 analyzeUrl 拆走）
+   *
+   * ⚠️ 返回**原始载荷**不解码 —— 站方的 init 规则自己会解
+   *    （`JSON.parse(java.hexDecodeToString(result))`）。
+   */
+  function dataUrlContent(u) {
+    var s = String(u == null ? '' : u);
+    var i = s.indexOf(',');
+    if (i < 0) return '';
+    var data = s.slice(i + 1);
+    // ⚠️ 还要去掉 Legado 的 URL 选项后缀 `,{"type":"…"}` ——
+    //    bookInfo/toc 这条链**没有**先过 analyzeUrl，逗号后缀还粘在载荷后面，
+    //    解出来就是 `{"a":1}{"type":"x"}` → JSON.parse 报
+    //    "Unexpected non-whitespace character after JSON"。
+    var m = /,\s*(?=\{)/.exec(data);
+    if (m) data = data.slice(0, m.index);
+    return data;
+  }
+
   function fetchPage(target, ctx) {
+    var u = String((target && target.url) || '');
+    // ⚠️ `data:` 伪 URL **不能真去 fetch**（原生会失败）：
+    //    聚合源用它把参数塞进「URL」里（data:;base64,<载荷>,{选项}）。
+    //    载荷直接当**页面内容**交给后面的规则（init 规则会自己解）。
+    if (u.indexOf('data:') === 0) {
+      var content = dataUrlContent(u);
+      runtime.baseUrl = u;
+      return Promise.resolve({
+        resp: { ok: true, code: 200, url: u, _body: content },
+        doc: dom.parseHTML(content, u),
+        text: content,
+        url: u
+      });
+    }
     return QR.java.rawRequest(target.url, target.method || 'GET',
                               target.headers || {}, target.body || '',
                               target.timeout || 20000)
@@ -1096,10 +1146,38 @@
   g.__qrInvoke = function (op, payload) {
     var fn = OPS[op];
     if (!fn) return Promise.reject(new Error('未知操作: ' + op));
+    var p = payload || {};
+    // ① cookie 快照：原生侧在调用前塞进来（Legado 的 cookie.getCookie 是同步的，
+    //    我们的原生桥是异步的，只能靠快照同步读）。
+    if (QR.__qrInstallCookieSnapshot) QR.__qrInstallCookieSnapshot(p.cookieSnapshot);
+    if (QR.__qrResetDirty) QR.__qrResetDirty();
+    // ⚠️ jsLib 里的函数是用**间接 eval**定义的 → 活在**全局作用域**。
+    //    所以 jsLib 函数体里写的 `source.getVariable()` 里的 `source`
+    //    解析到的是**全局的 g.source**，不是规则 scope 里的那个。
+    //    → 不在 op 期间把 g.source 挂上，jsLib 的函数一调就是
+    //      "Cannot read properties of undefined (reading 'getVariable')"。
+    var wrappedSrc = QR.wrapSource ? QR.wrapSource(p.source) : p.source;
+    var prevSource = g.source, prevBook = g.book, prevChapter = g.chapter;
+    g.source = wrappedSrc;
+    g.book = p.book;
+    g.chapter = p.chapter;
     return Promise.resolve()
-      .then(function () { return fn(payload || {}); })
+      .then(function () { return fn(p); })
+      .then(function (r) {
+        // ② 站方 JS 改过的书籍变量/登录信息 → 回传给原生侧落盘
+        if (QR.__qrTakeDirty && r && typeof r === 'object' && !Array.isArray(r)) {
+          var dirty = QR.__qrTakeDirty();
+          if (dirty.vars !== undefined) r.__sourceVars = dirty.vars;
+          if (dirty.login !== undefined) r.__loginInfo = dirty.login;
+        }
+        return r;
+      })
       .catch(function (e) {
         return { error: String(e && e.message || e) };
+      })
+      .then(function (r) {
+        g.source = prevSource; g.book = prevBook; g.chapter = prevChapter;
+        return r;
       });
   };
   g.__qrOps = Object.keys(OPS);

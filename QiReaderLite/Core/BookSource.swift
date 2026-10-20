@@ -241,6 +241,10 @@ struct BookSource: Codable, Identifiable, Hashable {
     var header: String? = nil
     var jsLib: String? = nil
     var loginUrl: String? = nil
+    /// 登录界面（Legado 的 loginUi，JSON 串）。
+    /// ⚠️ 以前**没这个字段** → 导入时被整个丢掉 →
+    ///    站方 JS 里 `source.loginUi` 拿不到（checkEnv 靠它判环境）。
+    var loginUi: String? = nil
     var bookUrlPattern: String? = nil
     var lastUpdateTime: Double = 0
     /// ⚠️ Legado 里 searchUrl / exploreUrl 是**顶层字段**，
@@ -277,6 +281,7 @@ struct BookSource: Codable, Identifiable, Hashable {
         header = (try? c.decodeIfPresent(String.self, forKey: .header)) ?? nil
         jsLib = (try? c.decodeIfPresent(String.self, forKey: .jsLib)) ?? nil
         loginUrl = (try? c.decodeIfPresent(String.self, forKey: .loginUrl)) ?? nil
+        loginUi = (try? c.decodeIfPresent(String.self, forKey: .loginUi)) ?? nil
         bookUrlPattern = (try? c.decodeIfPresent(String.self, forKey: .bookUrlPattern)) ?? nil
         lastUpdateTime = g(.lastUpdateTime, 0)
         searchUrl  = (try? c.decodeIfPresent(String.self, forKey: .searchUrl)) ?? nil
@@ -292,7 +297,7 @@ struct BookSource: Codable, Identifiable, Hashable {
     private enum K: String, CodingKey {
         case bookSourceUrl, bookSourceName, bookSourceGroup, bookSourceComment
         case bookSourceType, enabled, enabledExplore, enabledCookieJar
-        case header, jsLib, loginUrl, bookUrlPattern, lastUpdateTime
+        case header, jsLib, loginUrl, loginUi, bookUrlPattern, lastUpdateTime
         case ruleSearch, ruleExplore, ruleBookInfo, ruleToc, ruleContent
         // searchUrl / exploreUrl 是顶层字段（实测都在顶层，不在 ruleSearch 里）
         case searchUrl, exploreUrl

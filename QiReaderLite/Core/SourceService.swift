@@ -28,8 +28,25 @@ final class SourceService {
         // 必须是**嵌套对象**。塞 JSON 字符串的话，引擎里 src.ruleSearch 全是 undefined，
         // 表现是「所有字段都空」这种很难查的问题。
         let srcData = try AppEncoder.encode(source)
-        p["source"] = try JSONSerialization.jsonObject(with: srcData) as? [String: Any] ?? [:]
+        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        // 书籍变量 / 登录信息：Legado 的 source.getVariable() 是**同步** API，
+        // 我们的原生桥是异步的（只能 postMessage）→ 只能原生侧读出来塞进去，
+        // 引擎侧同步读。改完由引擎回传（见下面 __sourceVars）。
+        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        p["source"] = srcDict
+        // cookie 快照：同理，Legado 的 cookie.getCookie(url) 也是同步的。
+        p["cookieSnapshot"] = CookieJar.snapshot()
         let raw = try await RuleSandbox.shared.invoke(op, p, source: source)
+        // 站方 JS 改过的书籍变量 / 登录信息 → 落盘（下次调用直接生效）
+        if let obj = raw as? [String: Any] {
+            if let v = obj["__sourceVars"] as? String {
+                SourceVariables.setVars(v, for: source.bookSourceUrl)
+            }
+            if let l = obj["__loginInfo"] as? String {
+                SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
+            }
+        }
         return try decode(T.self, from: raw)
     }
 

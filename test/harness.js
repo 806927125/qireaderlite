@@ -14,6 +14,7 @@ const FILES = [
   'java-api.js',
   'packages-native.js',   // Packages.* 的原生函数实现（必须在 packages_stub.js 前）
   'packages_stub.js',     // Packages / JavaImporter / importPackage 兼容层
+  'source-api.js',        // Legado 的 source.* / cookie.* 兼容层
   'rule-analyzer.js',
   'engine.js',
 ];
