@@ -94,8 +94,10 @@ struct ReaderLayoutConfig {
         //    "unable to type-check this expression in reasonable time"（CI 报过）。
         let a = "\(fontSize)|\(lineSpacing)|\(paragraphSpacing)|\(horizontalMargin)"
         let b = "\(topMargin)|\(bottomMargin)|\(firstLineIndent)|\(fontFamily)|\(isBold)"
-        let c = "\(textColor)|\(backgroundColor)|\(paraAlign.rawValue)|\(verticalJustify)"
-        let d = "\(showBaseline)|\(baselineColor)|\(baselineScope.rawValue)"
+        // ⚠️ ReaderParaAlign / ReaderBaselineScope 是 **struct 不是 enum**，
+        //    没有 rawValue（编译报 "has no member 'rawValue'"）→ 用 String(describing:)。
+        let c = "\(textColor)|\(backgroundColor)|\(String(describing: paraAlign))|\(verticalJustify)"
+        let d = "\(showBaseline)|\(baselineColor)|\(String(describing: baselineScope))"
         return a + b + c + d
     }
 
