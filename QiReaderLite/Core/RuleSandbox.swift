@@ -428,11 +428,24 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
                 try await Task.sleep(nanoseconds: UInt64(Self.opTimeoutSeconds * 1_000_000_000))
                 throw SandboxError(message: "操作「\(op)」超时（\(Int(Self.opTimeoutSeconds)) 秒），引擎可能卡住了")
             }
-            guard let first = try await group.next() else {
-                throw SandboxError(message: "操作「\(op)」没有结果")
+            do {
+                guard let first = try await group.next() else {
+                    throw SandboxError(message: "操作「\(op)」没有结果")
+                }
+                group.cancelAll()
+                return first
+            } catch {
+                group.cancelAll()
+                // ⚠️⚠️ **超时就直接换掉引擎**：
+                //    队列是串行的 → 卡死的 op 不死，后面全排队 → App 点什么都没反应。
+                //    换掉 WKWebView = 换掉那条卡死的 JS 线程 → 队列立刻疏通 ✅
+                //    （不清也行，但用户得多等 6 分钟 —— 这期间面板全是废的）
+                if (error as? SandboxError) != nil {
+                    NSLog("[engine] op「%@」超时 → 重置引擎", op)
+                    self.resetEngine()
+                }
+                throw error
             }
-            group.cancelAll()
-            return first
         }
     }
 

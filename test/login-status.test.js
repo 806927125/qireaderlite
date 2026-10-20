@@ -340,6 +340,26 @@ console.log('\n=== 12. 卡死防护 ===');
   ok(/case "cachePut"/.test(sb2), '原生侧有 cachePut op（能力仍在 Swift）');
 }
 
+// ───────── ⑬ 登录面板的按钮不能被「永久禁用」─────────
+console.log('\n=== 13. 登录面板按钮不被永久禁用 ===');
+// 用户真机原话：「我说的是登录都点不了了」
+// 机理：点一次 → op 卡死 → `busy` 永远 true → `.disabled(busy)` 把**全面板**按钮禁了
+{
+  const sls = readCode(path.join(ROOT, 'QiReaderLite', 'Features', 'Sources', 'SourceLoginSheet.swift'));
+  ok(/defer\s*\{/.test(sls) && /busy = false/.test(sls),
+     'busy 用 defer 放开（op 卡死时也一定会放开）');
+  ok(!/\.disabled\(busy\)/.test(sls),
+     '按钮不是被 busy 全禁（只禁正在跑的那一个）');
+  ok(/runningAction/.test(sls) && /\.disabled\(runningAction != nil\)/.test(sls),
+     '只禁用正在跑的那个动作的按钮');
+  ok(/withTimeout\(seconds: Self\.actionTimeout\)/.test(sls),
+     '登录动作有 UI 级超时（超时会放开按钮并给出提示）');
+  ok(/重置引擎/.test(sls), '登录面板里有「重置引擎」按钮（卡死了不用重装 App）');
+  // 引擎侧：op 超时要自动重置引擎（队列才能疏通）
+  ok(/self\.resetEngine\(\)/.test(sb2),
+     'op 超时 → 自动重置引擎（串行队列里的卡死 op 不死，队列就一直堵）');
+}
+
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

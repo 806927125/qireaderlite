@@ -25,6 +25,8 @@ struct SourceLoginSheet: View {
     @State private var fields: [Field] = []
     @State private var values: [String: String] = [:]
     @State private var busy = false
+    /// 正在跑的动作（只有它在转圈，**其它按钮不禁用** —— 以前全禁 → 「登录都点不了了」）
+    @State private var runningAction: String?
     @State private var message = ""
     @State private var failed = false
     /// 站方吐出来的原文（判断登录成没成的真话）
@@ -53,14 +55,22 @@ struct SourceLoginSheet: View {
                             Button {
                                 run(f.action)
                             } label: {
-                                Text(f.name)
-                                    .font(.system(size: 15, weight: .medium))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
+                                HStack(spacing: 6) {
+                                    if runningAction == f.action {
+                                        ProgressView().controlSize(.small)
+                                    }
+                                    Text(f.name)
+                                        .font(.system(size: 15, weight: .medium))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(Theme.accent)
-                            .disabled(busy)
+                            // ⚠️ 只禁用**正在跑的那个**按钮。
+                            //    以前是 `.disabled(busy)` → 全面板禁用 →
+                            //    一旦某个 op 卡住，busy 永远 true → **登录都点不了了**
+                            .disabled(runningAction != nil)
                         default:
                             TextField(f.name, text: binding(f.name))
                                 .textFieldStyle(.roundedBorder)
@@ -84,6 +94,23 @@ struct SourceLoginSheet: View {
                             .foregroundStyle(failed ? Color.red : Theme.sub)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+
+                    // ── 引擎急救（卡死时点这个，不用重装 App）──────────
+                    HStack(spacing: 10) {
+                        Button {
+                            resetEngine()
+                        } label: {
+                            Label("重置引擎", systemImage: "arrow.clockwise")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Theme.accent)
+                        Text("点不动/没反应 = 引擎卡住了 → 点这个换掉它")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.sub)
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
 
                     // ── 登录状态检测 ──────────────────────────
                     detectBox
@@ -184,16 +211,29 @@ struct SourceLoginSheet: View {
         }
     }
 
+    /// 跑一个 loginUi 按钮的动作
+    ///
+    /// ⚠️⚠️ **`busy` 一定要用 defer 放开**：
+    ///    以前 `busy = false` 写在 do/catch 里 → **op 永不返回时两个分支都不走**
+    ///    → `busy` 永远 true → 面板里**所有按钮全被禁用** → 「登录都点不了了」。
+    ///    这是用户真机报的原话。
     private func run(_ action: String) {
         guard !action.isEmpty else { return }
         busy = true
+        runningAction = action
         message = ""
         stationMessages = []
         Task { @MainActor in
-            do {
-                let r = try await SourceService.shared.login(
-                    source: source, action: action, formValues: values)
+            // ⚠️ 一定会放开（哪怕 op 卡死/抛错/超时）
+            defer {
                 busy = false
+                runningAction = nil
+            }
+            do {
+                let r = try await withTimeout(seconds: Self.actionTimeout) {
+                    try await SourceService.shared.login(
+                        source: source, action: action, formValues: values)
+                }
                 stationMessages = r.messages
                 if r.ok {
                     // ⚠️ 「执行完成」不代表登录成功 —— 站方说啥才算啥
@@ -206,10 +246,35 @@ struct SourceLoginSheet: View {
                     failed = true
                 }
             } catch {
-                busy = false
                 message = error.localizedDescription
                 failed = true
             }
+        }
+    }
+
+    /// 一个登录动作最多等多久（秒）
+    /// ⚠️ 不能太短：🍅番茄登录要等用户在浏览器里登录完（可能几分钟）
+    static let actionTimeout: Double = 330
+
+    /// 给 SwiftUI 的超时包装（`Task.sleep` + 竞速）
+    private func withTimeout<T>(seconds: Double,
+                                _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await work() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw NSError(domain: "qrlite", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "操作超时（\(Int(seconds)) 秒）—— 引擎可能卡住了，点「重置引擎」再试"
+                ])
+            }
+            guard let first = try await group.next() else {
+                throw NSError(domain: "qrlite", code: -2, userInfo: [
+                    NSLocalizedDescriptionKey: "操作没有结果"
+                ])
+            }
+            group.cancelAll()
+            return first
         }
     }
 
@@ -222,5 +287,12 @@ struct SourceLoginSheet: View {
             report = r
             probing = false
         }
+    }
+
+    /// 引擎卡死时的急救：换掉那个卡死的 WKWebView
+    private func resetEngine() {
+        RuleSandbox.shared.resetEngine()
+        message = "引擎已重置，可以再试一次了"
+        failed = false
     }
 }
