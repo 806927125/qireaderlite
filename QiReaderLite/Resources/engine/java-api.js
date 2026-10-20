@@ -165,10 +165,13 @@
      */
     ajax: function (url) {
       var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
-      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'ajax', ''); return ''; }
+      // ⚠️⚠️ 顺序：**先查缓存，再进录制**。
+      //    反过来的话每一遍都会重新录 → 缓存永远命中不了 →
+      //    同一个请求被反复发（浏览器还会被反复弹）→ 循环里拿到的永远是空值。
       if (QR.__qrAjaxCache && Object.prototype.hasOwnProperty.call(QR.__qrAjaxCache, u)) {
         return QR.__qrAjaxCache[u];
       }
+      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'ajax', ''); return ''; }
       return applyUrlArg(url, function (x) { return java.get(x); });
     },
     get: function (url, headers) { return rawRequest(resolveUrl(url), 'GET', headers || {}, null, 20000).then(mkJsoupish); },
@@ -204,10 +207,11 @@
     },
     startBrowserAwait: function (url, title) {
       var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
-      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return mkBrowserLike({}); }
+      // 同样：**缓存优先**（否则浏览器会被一遍遍重复弹）
       if (QR.__qrAjaxCache && Object.prototype.hasOwnProperty.call(QR.__qrAjaxCache, u)) {
         return QR.__qrAjaxCache[u];
       }
+      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return mkBrowserLike({}); }
       return java.openBrowser(u, title).then(function (r) {
         return mkBrowserLike((r && r.value) || {});
       });
@@ -393,6 +397,10 @@
 
     // --- 杂项 ---
     log: function () {
+      // ⚠️ 第一遍的 ajax 是假的 → 站方报的错也是假的（「用户后台登录交接失败:
+      //    JSON Parse error」就是这么来的）→ 第一遍的日志也静音，
+      //    否则自检面板里全是假报错，真错反而看不见。
+      if (QR.__qrSuppressToast) return Promise.resolve('');
       var msg = Array.prototype.map.call(arguments, function (a) {
         try { return typeof a === 'string' ? a : JSON.stringify(a); } catch (e) { return String(a); }
       }).join(' ');

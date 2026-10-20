@@ -289,16 +289,10 @@
     //   ③ 第二遍：java.ajax 命中缓存 → 同步返回正文 → 站方的 JSON.parse 就正常了
     //
     // 没用到 ajax 的规则只跑一遍，行为不变。
-    var recorded = [];
     var prevRecord = QR.__qrAjaxRecord;
     var prevCache = QR.__qrAjaxCache;
     var prevToast = QR.__qrSuppressToast;
-    QR.__qrAjaxRecord = function (u, kind, title) {
-      recorded.push({ url: String(u), kind: kind || 'ajax', title: String(title || '') });
-      return '';
-    };
-    QR.__qrAjaxCache = {};
-    QR.__qrSuppressToast = true;
+    var cache = {};
 
     function restore() {
       QR.__qrAjaxRecord = prevRecord;
@@ -306,18 +300,44 @@
       QR.__qrSuppressToast = prevToast;
     }
 
-    return once().then(function (r) {
-      QR.__qrAjaxRecord = prevRecord;
-      QR.__qrSuppressToast = prevToast;
-      if (!recorded.length) { QR.__qrAjaxCache = prevCache; return r; }
-      return fetchRecorded(recorded).then(function (cache) {
-        QR.__qrAjaxCache = cache;
-        return once().then(function (r2) {
-          QR.__qrAjaxCache = prevCache;
-          return r2;
-        });
+    // ⚠️⚠️ 必须是**循环**，不能只跑两遍。
+    //
+    // 站方的登录流程是「开浏览器 → 用户登 → 拿页面里的 token → 带着 token 交接给服务器」：
+    //     let page = java.startBrowserAwait(url, '用户后台');
+    //     let token = 从 page.body() 里抠;
+    //     let res = java.ajax(`${base}/user_api,…token…`);   // ← 交接
+    //     JSON.parse(res)
+    //
+    // 如果只跑两遍、或者把 ajax **并行**发出去：
+    //   · 交接请求会在**用户还没登完**时就发出去 → 服务端返回空
+    //     → "JSON Parse error: Unexpected EOF"
+    //   · 而且交接 URL 里的 token 是从**空页面**算出来的 → URL 本身就是错的
+    //
+    // 所以要循环到「不再有新调用」为止，每一遍：
+    //   ① 跑 JS（已缓存的调用同步返回真值，新调用被录下来）
+    //   ② **按代码顺序**把录下来的调用依次抓回来（浏览器在前 → 等用户登完 → 再发交接）
+    //   ③ 还有新调用 → 再跑一遍
+    // ⚠️ 必须有**轮数上限** —— 有些请求 URL 每次都不一样（带随机码/时间戳），
+    //    缓存永远命中不了 → 无限循环 → App 卡死。
+    //    5 轮足够覆盖「开浏览器 → 拿 token → 交接 → 再开浏览器」这种链。
+    var MAX_PASS = 5;
+    var depth = 0;
+    function loop() {
+      var recorded = [];
+      QR.__qrAjaxRecord = function (u, kind, title) {
+        recorded.push({ url: String(u), kind: kind || 'ajax', title: String(title || '') });
+        return '';
+      };
+      QR.__qrAjaxCache = cache;
+      // 只有第一遍静音：那一遍的 ajax 是假的，报错是假的
+      QR.__qrSuppressToast = (depth === 0);
+      depth++;
+      return once().then(function (r) {
+        if (!recorded.length || depth >= MAX_PASS) { restore(); return r; }
+        return fetchRecorded(recorded, cache).then(function () { return loop(); });
       });
-    }).catch(function (e) {
+    }
+    return loop().catch(function (e) {
       restore();
       throw e;
     });
@@ -328,41 +348,57 @@
    * ⚠️ 必须用 analyzeUrl 拆 `,{json}` 后缀 ——
    *    否则 POST 的 method/headers/body 全丢，URL 里还粘着后缀 → 服务端返回空。
    */
-  function fetchRecorded(list) {
-    var out = {};
-    var jobs = list.map(function (rec) {
+  /**
+   * 把录下来的调用**按代码顺序**依次抓回来。
+   *
+   * ⚠️ 必须**顺序**、不能并行：
+   *    浏览器那一步要等用户登完，后面的「交接」请求才有意义。
+   *    并行发 → 交接先到 → 服务端看到未登录 → 返回空 → "Unexpected EOF"。
+   */
+  function fetchRecorded(list, cache) {
+    var out = cache || {};
+    var chain = Promise.resolve();
+    list.forEach(function (rec) {
       var u = rec.url;
-      // 浏览器类：弹内嵌浏览器等用户关掉 → 拿页面 HTML
-      if (rec.kind === 'browser') {
-        return QR.java.openBrowser(u, rec.title)
-          .then(function (page) {
-            out[u] = page;
-            // ⚠️ 浏览器里刚登录出来的 cookie **必须合并回快照** ——
-            //    快照是 op 开头拍的，里面没有新 cookie →
-            //    站方 cookie.getKey() 拿不到 sessionid →
-            //    「未获取到登录凭据，登录失败」。
-            try {
-              var ck = page && page.cookie;
-              if (ck && QR.__qrMergeCookie) {
-                var host = '';
-                try { host = new URL(u).host; } catch (e) { host = String(u); }
-                QR.__qrMergeCookie(host, ck);
-              }
-            } catch (e) { /* 忽略 */ }
+      chain = chain.then(function () {
+        // 浏览器类：弹内嵌浏览器等用户关掉 → 拿页面 HTML
+        if (rec.kind === 'browser') {
+          return QR.java.openBrowser(u, rec.title)
+            .then(function (page) {
+              out[u] = page;
+              // ⚠️ 浏览器里刚登录出来的 cookie **必须合并回快照** ——
+              //    快照是 op 开头拍的，里面没有新 cookie →
+              //    站方 cookie.getKey() 拿不到 sessionid。
+              try {
+                var ck = page && page.cookie;
+                if (ck && QR.__qrMergeCookie) {
+                  var host = '';
+                  try { host = new URL(u).host; } catch (e) { host = String(u); }
+                  QR.__qrMergeCookie(host, ck);
+                }
+              } catch (e) { /* 忽略 */ }
+            })
+            .catch(function () { out[u] = ''; });
+        }
+        var t = null;
+        try { t = (QR.analyzeUrl) ? QR.analyzeUrl(u, { baseUrl: '' }) : null; } catch (e) { t = null; }
+        var url = (t && t.url) ? t.url : u;
+        var method = (t && t.method) || 'GET';
+        var headers = (t && t.headers) || {};
+        var body = (t && t.body) || '';
+        return QR.java.rawRequest(url, method, headers, body)
+          .then(function (resp) {
+            out[u] = (resp && resp._body) || '';
+            // 缓存别无限长（URL 带随机码的请求会一直加新键）
+            var keys = Object.keys(out);
+            if (keys.length > 40) {
+              keys.slice(0, keys.length - 40).forEach(function (k) { delete out[k]; });
+            }
           })
           .catch(function () { out[u] = ''; });
-      }
-      var t = null;
-      try { t = (QR.analyzeUrl) ? QR.analyzeUrl(u, { baseUrl: '' }) : null; } catch (e) { t = null; }
-      var url = (t && t.url) ? t.url : u;
-      var method = (t && t.method) || 'GET';
-      var headers = (t && t.headers) || {};
-      var body = (t && t.body) || '';
-      return QR.java.rawRequest(url, method, headers, body)
-        .then(function (resp) { out[u] = (resp && resp._body) || ''; })
-        .catch(function () { out[u] = ''; });
+      });
     });
-    return Promise.all(jobs).then(function () { return out; });
+    return chain.then(function () { return out; });
   }
 
   /* ---------------------------------------------------------

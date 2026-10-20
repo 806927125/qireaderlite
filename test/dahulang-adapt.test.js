@@ -160,6 +160,15 @@ ok(/QR\.__qrCookieSnapshot/.test(javai) || /__qrCookieSnapshot/.test(javai) ||
    /__qrCookieSnapshot/.test(fs.readFileSync(path.join(ENGINE, 'source-api.js'), 'utf8')),
    'cookie 罐从可更新的快照读（中途能补新 cookie）');
 
+// 同步 ajax 的循环机制（登录交接链）
+ok(/MAX_PASS/.test(analyzer), '循环有轮数上限（防死循环卡死 App）');
+ok(/function loop\(\)/.test(analyzer) && /fetchRecorded\(recorded, cache\)/.test(analyzer),
+   '两遍跑改成循环 + 顺序抓（浏览器在前 → 交接在后）');
+ok(/QR\.__qrAjaxCache && Object\.prototype\.hasOwnProperty\.call\(QR\.__qrAjaxCache, u\)[\s\S]{0,120}__qrAjaxRecord/.test(javai),
+   'ajax 是【缓存优先】再录制（反过来会死循环 + 浏览器反复弹）');
+ok(/__qrSuppressToast\) return Promise\.resolve\(''\);/.test(javai),
+   '第一遍的 toast / log 都静音（假报错别混进日志）');
+
 // ───────── ③ 脚本清单三处一致 ─────────
 console.log('\n=== 3. 引擎脚本清单三处一致 ===');
 const swift = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');
