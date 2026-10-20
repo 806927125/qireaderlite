@@ -97,10 +97,16 @@ ok((web.match(/Color\.white\.opacity\(0\.34\)/g) || []).length === 0,
 //    我只给三个**子页**写了 ClearNavigationBackground，**根页漏了** →
 //    系统玻璃被这层不透明底整个遮死，后面插画透不出来，面板是块米黄色板子。
 //    对照证据：目录面板没有 NavigationStack，所以它是透明的。
-ok((web.match(/ClearNavigationBackground\(\)/g) || []).length === 4,
-   'ClearNavigationBackground 出现 4 次：根页 + 3 个子页（根页以前漏了）');
-ok(/\.toolbar\(\.hidden, for: \.navigationBar\)[\s\S]{0,200}ClearNavigationBackground\(\)/.test(web),
-   '根页藏导航栏的同时**必须**清 containerBackground');
+// 主面板**没有** NavigationStack 了（它会吃满全屏 → 面板变全屏、内容居中），
+// 三个子页各自用系统 .sheet，各带一个 ClearNavigationBackground。
+ok((web.match(/ClearNavigationBackground\(\)/g) || []).length === 3,
+   'ClearNavigationBackground 出现 3 次：三个子页各一个');
+ok(!/private var settingsContent[\s\S]{0,400}NavigationStack/.test(web),
+   '主面板不含 NavigationStack（它会吃满全屏，面板变全屏、内容居中）');
+ok(/\.sheet\(isPresented: \$showDisplaySettings\)/.test(web) &&
+   /\.sheet\(isPresented: \$showLayoutSettings\)/.test(web) &&
+   /\.sheet\(isPresented: \$showMoreSettings\)/.test(web),
+   '三个子页各自用系统 .sheet');
 // 磁贴：一层统一淡底 + 两行文字
 {
   // 规格：按钮背景 rgba(0,0,0,.05)（不是 --fill 的冷灰 12%）

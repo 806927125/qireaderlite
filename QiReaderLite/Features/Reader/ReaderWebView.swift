@@ -437,6 +437,19 @@ struct ReaderWebView: View {
                 }
             }
         }
+        // 三个子页用系统 sheet（主面板是 overlay，NavigationStack 不能放里面）
+        .sheet(isPresented: $showDisplaySettings) {
+            NavigationStack { displaySettingsPage }
+                .modifier(ClearNavigationBackground())
+        }
+        .sheet(isPresented: $showLayoutSettings) {
+            NavigationStack { layoutSettingsPage }
+                .modifier(ClearNavigationBackground())
+        }
+        .sheet(isPresented: $showMoreSettings) {
+            NavigationStack { moreSettingsPage }
+                .modifier(ClearNavigationBackground())
+        }
         // 面板走 overlay（在下面的 ZStack 底部），不用 .sheet
         .sheet(isPresented: $showPageDiag) {
             NavigationStack {
@@ -661,45 +674,31 @@ struct ReaderWebView: View {
         return win?.safeAreaInsets.bottom ?? 34
     }
 
-    /// 面板内容（NavigationStack 包着，子页要 push）
+    /// 面板内容 —— **故意不用 NavigationStack**。
+    ///
+    /// ⚠️ NavigationStack 是 flexible 的：放进 overlay 里会**吃满整个屏幕**，
+    ///    内容被垂直居中 → 面板变成全屏、上下各一大片空白（真机就是这样炸的）。
+    ///    它也不能在「想让它贴合内容」的容器里用（ideal height 算不准）。
+    ///
+    /// 所以：**主面板 = 纯 VStack**（自然高度），三个子页各自用系统 `.sheet`。
     private var settingsContent: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                panelContent
+        VStack(spacing: 0) {
+            panelContent
+        }
+        .frame(maxWidth: .infinity)
+        // 内容按**自然高度**撑开
+        .fixedSize(horizontal: false, vertical: true)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: SheetContentHeightKey.self, value: geo.size.height)
             }
-            .frame(maxWidth: .infinity)
-            // 内容按**自然高度**撑开（`fixedSize` 必须在这里，不能在 NavigationStack 外面 ——
-            // 外面的话 NavigationStack 的 ideal height ≈ 0，面板会塌成一条）
-            .fixedSize(horizontal: false, vertical: true)
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(key: SheetContentHeightKey.self, value: geo.size.height)
-                }
-            )
-            .onPreferenceChange(SheetContentHeightKey.self) { h in
-                guard h > 0 else { return }
-                let screenH = UIScreen.main.bounds.height
-                let hardCap = screenH * 0.80
-                let target = min(max(h, 200), 900, hardCap)
-                if abs(target - sheetHeight) > 1 { sheetHeight = target }
-            }
-            .toolbar(.hidden, for: .navigationBar)
-            .modifier(ClearNavigationBackground())
-            .navigationDestination(isPresented: $showDisplaySettings) {
-                displaySettingsPage
-                    .toolbar(.visible, for: .navigationBar)
-                    .modifier(ClearNavigationBackground())
-            }
-            .navigationDestination(isPresented: $showLayoutSettings) {
-                layoutSettingsPage
-                    .toolbar(.visible, for: .navigationBar)
-                    .modifier(ClearNavigationBackground())
-            }
-            .navigationDestination(isPresented: $showMoreSettings) {
-                moreSettingsPage
-                    .toolbar(.visible, for: .navigationBar)
-                    .modifier(ClearNavigationBackground())
-            }
+        )
+        .onPreferenceChange(SheetContentHeightKey.self) { h in
+            guard h > 0 else { return }
+            let screenH = UIScreen.main.bounds.height
+            let hardCap = screenH * 0.80
+            let target = min(max(h, 200), 900, hardCap)
+            if abs(target - sheetHeight) > 1 { sheetHeight = target }
         }
     }
 
