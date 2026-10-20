@@ -42,20 +42,37 @@ ok(/QR\.__qrMsgSink\s*=\s*null/.test(javai),
 ok(/function pushMsg\(/.test(javai) && /QR\.__qrPushMsg\s*=\s*pushMsg/.test(javai),
    '有 pushMsg 收集函数');
 
+// ⚠️ 窗口要给宽：log 函数的体比较长（Error 对象的处理），
+//    窗口窄了会**匹配不到函数体** → 报红但代码是对的（这种假红踩过）。
 ['toast', 'longToast', 'log'].forEach((fn) => {
-  const m = javai.match(new RegExp(fn + ':\\s*function[\\s\\S]{0,600}?\\n\\s*\\},'));
+  const m = javai.match(new RegExp(fn + ':\\s*function[\\s\\S]{0,1400}?\\n\\s*\\},'));
   ok(!!m && /pushMsg\(/.test(m[0]),
      `java.${fn} 会把原文交给 pushMsg（不然站方的结果全丢了）`);
 });
 
-// ⚠️ 顺序：必须在 __qrSuppressToast 判断**之后**
-//    否则两遍跑的第一遍（ajax 是假的）站方报的「登录失败 / JSON Parse error」
-//    会被当成真结果收进来 → 明明登录成功了，用户看到「失败」。
+// ⚠️ 顺序：**先收集（进暂存区），再决定要不要显示**
+//    以前是「先静音再收集」→ 第一遍一律静音
+//    → 副作用是**没用到 ajax 的真结果也被吃掉**：
+//    站方 login() 发现邮箱密码为空 → toast「请先填写邮箱和密码」
+//    → 那一遍没有 ajax → 不会有第二遍 → 那句话永远不出现。
+//    （真机联调实测踩到：login op 什么原文都收不到）
 ['toast', 'longToast', 'log'].forEach((fn) => {
-  const m = javai.match(new RegExp(fn + ':\\s*function[\\s\\S]{0,600}?\\n\\s*\\},'));
-  ok(!!m && m[0].indexOf('__qrSuppressToast') < m[0].indexOf('pushMsg('),
-     `java.${fn} 是先静音再收集（第一遍的假报错不能收）`);
+  const m = javai.match(new RegExp(fn + ':\\s*function[\\s\\S]{0,1400}?\\n\\s*\\},'));
+  ok(!!m && m[0].indexOf('pushMsg(') < m[0].indexOf('__qrSuppressToast'),
+     `java.${fn} 是先收集再静音（消息进暂存区，跑完再定夺）`);
 });
+
+// 暂存机制：跑完第一遍才知道有没有 ajax → 决定这遍消息真假
+ok(/QR\.__qrHoldBegin\s*=\s*function/.test(javai), '有暂存区开/关接口');
+ok(/QR\.__qrHoldEnd\s*=\s*function/.test(javai), '有暂存区收尾接口');
+ok(/if \(keep && h\.length\)/.test(javai), '暂存消息按 keep 决定要不要交出去');
+const analyzer = readCode(path.join(ENGINE, 'rule-analyzer.js'));
+ok(/QR\.__qrHoldBegin/.test(analyzer) && /QR\.__qrHoldEnd\(real\)/.test(analyzer),
+   'runJs 第一遍用暂存区，跑完按「有没有录到 ajax」定夺真假');
+ok(/var real = \(recorded\.length === 0\)/.test(analyzer),
+   '「没录到 ajax = 这一遍是真的」这条判据在');
+ok(/depth === 0 && QR\.__qrMsgSink && QR\.__qrHoldBegin/.test(analyzer),
+   '只有装了 sink 的 op 才暂存（别的 op 行为完全不变）');
 
 // ───────── ② 引擎：login op 回传原文 ─────────
 console.log('\n=== 2. login op 回传站方原文 ===');

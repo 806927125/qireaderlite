@@ -43,18 +43,48 @@
    * **完全不知道登录到底成没成功**（登录面板那句还是我们自己编的）。
    *
    * 所以 op 期间装一个 sink，把原文攒起来回传给原生侧。
-   * ⚠️ 必须放在 `__qrSuppressToast` 判断**之后**：
-   *    两遍跑的第一遍 ajax 是假的，站方会报「登录失败 / JSON Parse error」，
-   *    那是**假报错**，收进来就等于告诉用户「登录失败了」。
    */
   QR.__qrMsgSink = null;
 
+  /**
+   * **暂存区** —— 两遍跑的第一遍，消息先存这儿，跑完再决定要不要交出去。
+   *
+   * 为什么需要：两遍跑的第一遍 ajax 是**假的**（只录 URL 不发），
+   * 站方解析失败会报「登录失败 / JSON Parse error」—— 那是**假报错**，
+   * 绝不能给用户看。
+   *
+   * 但「第一遍一律静音」有个致命副作用：**没用到 ajax 的第一遍，
+   * 它的结果是真的，也被一起吃掉了**。
+   *   典型：站方 login() 发现邮箱密码为空 → toast「请先填写邮箱和密码」
+   *   → 这一遍没有 ajax → 没有第二遍 → 那句话永远不出现。
+   *
+   * 所以改成：跑完这一遍再看有没有录到 ajax
+   *   · 录到了 → 这一遍是假的 → 消息丢掉
+   *   · 没录到 → 这一遍是真的 → 消息交出去
+   */
+  var MSG_HOLD = null;
+
   function pushMsg(m) {
+    var s = String(m == null ? '' : m);
+    if (MSG_HOLD) { try { MSG_HOLD.push(s); } catch (e) {} return; }
     var sink = QR.__qrMsgSink;
     if (!sink) return;
-    try { sink.push(String(m == null ? '' : m)); } catch (e) {}
+    try { sink.push(s); } catch (e) {}
   }
   QR.__qrPushMsg = pushMsg;
+
+  /** 开始暂存（runJs 的第一遍调用） */
+  QR.__qrHoldBegin = function () { MSG_HOLD = []; return MSG_HOLD; };
+  /** 结束暂存：keep=true 才把消息交给 sink */
+  QR.__qrHoldEnd = function (keep) {
+    var h = MSG_HOLD || [];
+    MSG_HOLD = null;
+    if (keep && h.length) {
+      var sink = QR.__qrMsgSink;
+      if (sink) { try { Array.prototype.push.apply(sink, h); } catch (e) {} }
+    }
+    return h;
+  };
 
   /* ---------------- base64：三级兜底 ---------------- */
 
@@ -422,26 +452,37 @@
 
     // --- 杂项 ---
     log: function () {
-      // ⚠️ 第一遍的 ajax 是假的 → 站方报的错也是假的（「用户后台登录交接失败:
-      //    JSON Parse error」就是这么来的）→ 第一遍的日志也静音，
-      //    否则自检面板里全是假报错，真错反而看不见。
-      if (QR.__qrSuppressToast) return Promise.resolve('');
       var msg = Array.prototype.map.call(arguments, function (a) {
-        try { return typeof a === 'string' ? a : JSON.stringify(a); } catch (e) { return String(a); }
+        try {
+          if (typeof a === 'string') return a;
+          // ⚠️ Error 对象 JSON.stringify 出来是 "{}"（属性都不可枚举）→ 日志里啥都看不见。
+          //    站方 catch 之后习惯 `java.log(e)` → 至少把 "Error: xxx" 露出来。
+          if (a && typeof a === 'object' && typeof a.message === 'string'
+              && (a.name === 'Error' || a instanceof Error)) {
+            return String(a.name || 'Error') + ': ' + a.message;
+          }
+          return JSON.stringify(a);
+        } catch (e) { return String(a); }
       }).join(' ');
+      // ⚠️ 先收集（进暂存区），再决定要不要显示：
+      //    站方 checkStatus() 那张**会员卡片**走的就是 java.log，
+      //    它在第一遍是真结果（没 ajax）→ 不能被静音吃掉。
       pushMsg(msg);
+      if (QR.__qrSuppressToast) return Promise.resolve('');
       return nativeCall('log', { msg: msg });
     },
     // ⚠️ 两遍跑的第一遍要**静音**：那一遍的 ajax 是假的，
     //    站方解析失败会弹「登录失败 / JSON Parse error」→ 用户看到假报错。
+    // ⚠️ 但 pushMsg 在静音判断**之前** —— 消息先进暂存区，
+    //    跑完这一遍再定夺（没 ajax 的真结果不能被吃掉）。
     longToast: function (s) {
-      if (QR.__qrSuppressToast) return Promise.resolve('');
       pushMsg(s);
+      if (QR.__qrSuppressToast) return Promise.resolve('');
       return nativeCall('toast', { msg: String(s) });
     },
     toast: function (s) {
-      if (QR.__qrSuppressToast) return Promise.resolve('');
       pushMsg(s);
+      if (QR.__qrSuppressToast) return Promise.resolve('');
       return nativeCall('toast', { msg: String(s) });
     },
     getCookie: function (url) { return nativeCall('getCookie', { url: resolveUrl(url) }).then(function (r) { return r.value; }); },

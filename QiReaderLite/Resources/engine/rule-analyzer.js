@@ -331,8 +331,24 @@
       QR.__qrAjaxCache = cache;
       // 只有第一遍静音：那一遍的 ajax 是假的，报错是假的
       QR.__qrSuppressToast = (depth === 0);
+      // ⚠️⚠️ 第一遍的消息**先暂存**，跑完这一遍再决定要不要交出去：
+      //   · 这一遍录到了 ajax → 这一遍是假的 → 消息丢掉（否则用户看到假报错）
+      //   · 这一遍没录到 ajax → 这一遍是真的 → 消息交出去
+      //
+      //   以前是「第一遍一律静音」→ 副作用是**没用到 ajax 的真结果也被吃掉**：
+      //   典型：站方 login() 发现邮箱密码为空 → toast「请先填写邮箱和密码」
+      //   → 那一遍没有 ajax → 不会有第二遍 → 那句话永远不出现。
+      //   （实测踩到：login op 什么原文都收不到，站方报啥用户都看不到）
+      //
+      // ⚠️ 只在**装了 sink** 时才暂存：没装 sink 的 op 行为完全不变。
+      var holding = null;
+      if (depth === 0 && QR.__qrMsgSink && QR.__qrHoldBegin) {
+        holding = QR.__qrHoldBegin();
+      }
       depth++;
       return once().then(function (r) {
+        var real = (recorded.length === 0);
+        if (holding) QR.__qrHoldEnd(real);
         if (!recorded.length || depth >= MAX_PASS) { restore(); return r; }
         return fetchRecorded(recorded, cache).then(function () { return loop(); });
       });
