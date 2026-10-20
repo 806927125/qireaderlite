@@ -505,3 +505,33 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(/applyThemeChange\(\)[\s\S]{0,900}host\.setSettings\(settingsPayload/.test(rv),
      'applyThemeChange 重新下发 settings（WebView 滚动模式）');
 }
+
+// ── 阅读渲染层迁到 Swift ──
+// reader.html + ReaderHost 那套 WebView 渲染**不再使用**（换背景要重进正文才生效）。
+// 注意：engine.js（书源规则引擎）**仍在 WebView 里跑** —— 站方规则要求 JS，
+// 那个跟阅读渲染是两回事。
+{
+  const fs4 = require('fs');
+  const rv = fs4.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  ok(/SwiftScrollReaderView\(/.test(rv), '滚动模式用 SwiftScrollReaderView');
+  ok(!/ReaderWebContainer\(\s*\n?\s*host: session\.host/.test(rv),
+     '滚动模式不再用 ReaderWebContainer（WebView 渲染）');
+  ok(/private var scrollLoadedTexts/.test(rv), '有已加载正文集合（当前章 + 预取邻章）');
+  ok(/onRequestChapter: \{ idx in[\s\S]{0,120}session\.prefetch/.test(rv),
+     '窗口里缺的章 → 后台预取');
+  ok(/onVisibleChapter: \{ ch in[\s\S]{0,160}session\.followIndex/.test(rv),
+     '滚到别的章 → followIndex 跟着走');
+
+  const core = fs4.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderScrollCore.swift'), 'utf8');
+  ok(/enum ReaderScrollCore/.test(core), '有 ReaderScrollCore（scroll-core.js 的 Swift 翻译）');
+  ok(/func trimChapterWindow/.test(core) && /func shouldReportProgress/.test(core)
+     && /func viewportAnchorAdjustment/.test(core) && /func chooseTrimRemovalSide/.test(core)
+     && /func normalizedTitleHeight/.test(core),
+     'ReaderScrollCore 覆盖 JS 版导出的 5 个函数');
+  const sv = fs4.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
+  ok(/ReaderScrollCore\.shouldReportProgress/.test(sv), '进度上报用 ReaderScrollCore 节流');
+  ok(/normalizedParagraphs/.test(sv), '段落拆分对齐 reader.js 的 normalizedParagraphs');
+  // CI 必须跑 Swift↔JS 对拍
+  const wf = fs4.readFileSync(path.join(ROOT, '../.github/workflows/build-ipa.yml'), 'utf8');
+  ok(/scroll-core-parity/.test(wf), 'CI 跑 Swift↔JS 对拍');
+}

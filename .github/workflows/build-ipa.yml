@@ -24,6 +24,20 @@ jobs:
           echo "SDK  : $(xcrun --sdk iphoneos --show-sdk-version)"
           xcodebuild -showsdks | grep -i "iphoneos" || true
 
+      - name: 滚动内核 Swift↔JS 对拍
+        run: |
+          # 读渲染层从 WebView 迁到 Swift，滚动内核（章节窗口裁剪 / 进度节流 /
+          # 视口锚点）也一并翻成了 Swift。
+          # 这里做**真对拍**：JS 原版跑一批用例生成期望值 → Swift 版跑同一批 → 比。
+          set -e
+          mkdir -p test/fixtures
+          node test/scroll-core-cases.js --emit > test/fixtures/scroll-core-cases.json
+          node test/scroll-core-cases.js
+          swiftc -O test/scroll-core-parity.swift \
+                 QiReaderLite/Features/Reader/Paging/ReaderScrollCore.swift \
+                 -o /tmp/scroll-core-parity
+          /tmp/scroll-core-parity .
+
       - name: 编译
         run: |
           # || true 只为让脚本能往下走到打印错误那步

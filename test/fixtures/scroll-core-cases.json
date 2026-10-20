@@ -1,0 +1,516 @@
+[
+  {
+    "name": "chooseTrim: first=null → last",
+    "fn": "chooseTrim",
+    "args": [
+      null,
+      9,
+      4,
+      null
+    ],
+    "expected": "last"
+  },
+  {
+    "name": "chooseTrim: last=null → last",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      null,
+      4,
+      null
+    ],
+    "expected": "first"
+  },
+  {
+    "name": "chooseTrim: append → first",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      9,
+      4,
+      "append"
+    ],
+    "expected": "first"
+  },
+  {
+    "name": "chooseTrim: prepend → last",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      9,
+      4,
+      "prepend"
+    ],
+    "expected": "last"
+  },
+  {
+    "name": "chooseTrim: 未知 mode → 按距离",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      9,
+      4,
+      "weird"
+    ],
+    "expected": "last"
+  },
+  {
+    "name": "chooseTrim: anchor==first → 翻转",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      9,
+      0,
+      "append"
+    ],
+    "expected": "last"
+  },
+  {
+    "name": "chooseTrim: anchor==last → 翻转",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      9,
+      9,
+      "append"
+    ],
+    "expected": "first"
+  },
+  {
+    "name": "chooseTrim: 距离相等取 first",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      8,
+      4,
+      null
+    ],
+    "expected": "first"
+  },
+  {
+    "name": "chooseTrim: 距离相等(append)",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      8,
+      4,
+      "append"
+    ],
+    "expected": "first"
+  },
+  {
+    "name": "chooseTrim: 靠近 last",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      8,
+      7,
+      null
+    ],
+    "expected": "first"
+  },
+  {
+    "name": "chooseTrim: 负数坐标",
+    "fn": "chooseTrim",
+    "args": [
+      -5,
+      3,
+      -1,
+      null
+    ],
+    "expected": "first"
+  },
+  {
+    "name": "trimWindow: 超限裁两端",
+    "fn": "trimWindow",
+    "args": [
+      [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      3,
+      3,
+      "append"
+    ],
+    "expected": {
+      "kept": [
+        3,
+        4,
+        5
+      ],
+      "removed": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "trimWindow: 不超限原样",
+    "fn": "trimWindow",
+    "args": [
+      [
+        1,
+        2
+      ],
+      5,
+      1,
+      null
+    ],
+    "expected": {
+      "kept": [
+        1,
+        2
+      ],
+      "removed": []
+    }
+  },
+  {
+    "name": "trimWindow: limit=0 全清",
+    "fn": "trimWindow",
+    "args": [
+      [
+        1,
+        2,
+        3
+      ],
+      0,
+      2,
+      null
+    ],
+    "expected": {
+      "kept": [],
+      "removed": [
+        1,
+        3,
+        2
+      ]
+    }
+  },
+  {
+    "name": "trimWindow: prepend 方向",
+    "fn": "trimWindow",
+    "args": [
+      [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      3,
+      1,
+      "prepend"
+    ],
+    "expected": {
+      "kept": [
+        1,
+        2,
+        3
+      ],
+      "removed": [
+        5,
+        4
+      ]
+    }
+  },
+  {
+    "name": "trimWindow: anchor 保持",
+    "fn": "trimWindow",
+    "args": [
+      [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      3,
+      2,
+      "append"
+    ],
+    "expected": {
+      "kept": [
+        2,
+        3,
+        4
+      ],
+      "removed": [
+        1,
+        5
+      ]
+    }
+  },
+  {
+    "name": "trimWindow: 单章",
+    "fn": "trimWindow",
+    "args": [
+      [
+        7
+      ],
+      3,
+      7,
+      null
+    ],
+    "expected": {
+      "kept": [
+        7
+      ],
+      "removed": []
+    }
+  },
+  {
+    "name": "trimWindow: 空数组",
+    "fn": "trimWindow",
+    "args": [
+      [],
+      3,
+      0,
+      null
+    ],
+    "expected": {
+      "kept": [],
+      "removed": []
+    }
+  },
+  {
+    "name": "shouldReport: includeProgress=false",
+    "fn": "shouldReport",
+    "args": [
+      false,
+      false,
+      false,
+      0,
+      1000
+    ],
+    "expected": false
+  },
+  {
+    "name": "shouldReport: chapterChanged",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      true,
+      false,
+      1000,
+      1010
+    ],
+    "expected": true
+  },
+  {
+    "name": "shouldReport: force",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      false,
+      true,
+      1000,
+      1010
+    ],
+    "expected": true
+  },
+  {
+    "name": "shouldReport: 首次(last=0)",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      false,
+      false,
+      0,
+      1000
+    ],
+    "expected": true
+  },
+  {
+    "name": "shouldReport: 节流内(差200<260)",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      false,
+      false,
+      1000,
+      1200
+    ],
+    "expected": false
+  },
+  {
+    "name": "shouldReport: 节流外(差300>260)",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      false,
+      false,
+      1000,
+      1300
+    ],
+    "expected": true
+  },
+  {
+    "name": "shouldReport: 差260 严格大于→false",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      false,
+      false,
+      1000,
+      1260
+    ],
+    "expected": false
+  },
+  {
+    "name": "shouldReport: 差261 → true",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      false,
+      false,
+      1000,
+      1261
+    ],
+    "expected": true
+  },
+  {
+    "name": "shouldReport: last 负数",
+    "fn": "shouldReport",
+    "args": [
+      true,
+      false,
+      false,
+      -5,
+      1000
+    ],
+    "expected": true
+  },
+  {
+    "name": "viewport: 全 null",
+    "fn": "viewport",
+    "args": [
+      null,
+      null,
+      null
+    ],
+    "expected": {
+      "delta": 0,
+      "targetScrollTop": 0,
+      "shouldRestore": false
+    }
+  },
+  {
+    "name": "viewport: anchor null",
+    "fn": "viewport",
+    "args": [
+      null,
+      130,
+      500
+    ],
+    "expected": {
+      "delta": 130,
+      "targetScrollTop": 630,
+      "shouldRestore": true
+    }
+  },
+  {
+    "name": "viewport: 正常",
+    "fn": "viewport",
+    "args": [
+      100,
+      130,
+      500
+    ],
+    "expected": {
+      "delta": 30,
+      "targetScrollTop": 530,
+      "shouldRestore": true
+    }
+  },
+  {
+    "name": "viewport: 差 0.5 恰好 → restore",
+    "fn": "viewport",
+    "args": [
+      100,
+      100.5,
+      500
+    ],
+    "expected": {
+      "delta": 0.5,
+      "targetScrollTop": 500.5,
+      "shouldRestore": true
+    }
+  },
+  {
+    "name": "viewport: 差 0.4 → 不 restore",
+    "fn": "viewport",
+    "args": [
+      100,
+      100.4,
+      500
+    ],
+    "expected": {
+      "delta": 0.4000000000000057,
+      "targetScrollTop": 500.4,
+      "shouldRestore": false
+    }
+  },
+  {
+    "name": "viewport: 负偏移",
+    "fn": "viewport",
+    "args": [
+      100,
+      80,
+      500
+    ],
+    "expected": {
+      "delta": -20,
+      "targetScrollTop": 480,
+      "shouldRestore": true
+    }
+  },
+  {
+    "name": "viewport: scroll null",
+    "fn": "viewport",
+    "args": [
+      100,
+      130,
+      null
+    ],
+    "expected": {
+      "delta": 30,
+      "targetScrollTop": 30,
+      "shouldRestore": true
+    }
+  },
+  {
+    "name": "titleHeight: null → 0",
+    "fn": "titleHeight",
+    "args": [
+      null
+    ],
+    "expected": 0
+  },
+  {
+    "name": "titleHeight: 负 → 0",
+    "fn": "titleHeight",
+    "args": [
+      -5
+    ],
+    "expected": 0
+  },
+  {
+    "name": "titleHeight: 0 → 0",
+    "fn": "titleHeight",
+    "args": [
+      0
+    ],
+    "expected": 0
+  },
+  {
+    "name": "titleHeight: 正常",
+    "fn": "titleHeight",
+    "args": [
+      42.5
+    ],
+    "expected": 42.5
+  }
+]

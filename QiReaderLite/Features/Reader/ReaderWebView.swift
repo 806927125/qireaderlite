@@ -190,6 +190,17 @@ struct ReaderWebView: View {
         )
     }
 
+    /// Swift 滚动阅读用的「已加载正文」集合：当前章 + 已预取的邻章。
+    private var scrollLoadedTexts: [Int: String] {
+        var d: [Int: String] = [:]
+        let i = session.index
+        if !session.chapterText.isEmpty { d[i] = session.chapterText }
+        for j in (i - 2)...(i + 2) where j != i {
+            if let t = session.prefetchedText(index: j) { d[j] = t.body }
+        }
+        return d
+    }
+
     /// 换章加载中 / 换章失败 的提示层。
     /// 失败时给「重试」按钮 —— 只报错不给出口等于把用户堵死。
     /// 原生分页模式下的点击分发。
@@ -384,10 +395,35 @@ struct ReaderWebView: View {
                             }
                         }
                 } else {
-                    ReaderWebContainer(
-                        host: session.host,
-                        pageTurn: true,
-                        onSwipe: { delta in session.step(delta) }
+                    // ⚠️ Swift 原生滚动阅读 —— 替代 `reader.html` + `ReaderHost` 的
+                    //    WebView 渲染。
+                    //    迁移原因：WebView 那条路**阅读设置只在 session.start() 时
+                    //    下发一次**，换背景/字号要退出重进正文才生效（真机反馈）；
+                    //    而且正文样式要靠 CSS 跟 SwiftUI 侧各写一份，两边永远对不齐。
+                    //
+                    //    迁到 Swift 后排版参数只有一份（跟原生分页共用
+                    //    ReaderLayoutConfig），换主题 → 改 config → 重排，立刻生效。
+                    SwiftScrollReaderView(
+                        chapters: session.flat,
+                        currentIndex: session.index,
+                        loadedTexts: scrollLoadedTexts,
+                        failedChapters: [],
+                        config: layoutConfig,
+                        baseURL: nil,
+                        onProgress: { _, ratio in saveProgress(ratio: ratio) },
+                        onVisibleChapter: { ch in
+                            // 滚到别的章 → 跟着走（不跳，只跟）
+                            guard ch != session.index else { return }
+                            session.followIndex(ch)
+                        },
+                        onRequestChapter: { idx in
+                            // 窗口里还没加载的章 → 后台预取
+                            Task { _ = await session.prefetch(index: idx) }
+                        },
+                        onTapCenter: {
+                            withAnimation(.easeInOut(duration: 0.18)) { showChrome = true }
+                        },
+                        onTapEdge: { dir in session.step(dir) }
                     )
                     .ignoresSafeArea(edges: .bottom)
                 }
