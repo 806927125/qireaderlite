@@ -553,11 +553,17 @@ struct ReaderWebView: View {
                     .frame(width: 34, height: 34)
                     .glassCircle()
             }
+            // ⚠️ 栖阅顶栏中间是**一个圆角胶囊**，里面装着书名 + 副标题两行。
+            //    我原来只是两个裸 Text，没有胶囊底 → 跟栖阅对不上。
             VStack(alignment: .leading, spacing: 1) {
                 Text(book.name).font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ink).lineLimit(1)
                 Text(book.sourceName).font(.caption2).foregroundStyle(Theme.sub).lineLimit(1)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .liquidGlass(cornerRadius: 20, strength: 1.0)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 4)
             // coverUrl 是非可选 String，别用 if let（CI 就是在这儿红的）
             if !book.coverUrl.isEmpty, let coverURL = URL(string: book.coverUrl) {
@@ -588,20 +594,22 @@ struct ReaderWebView: View {
                      : "\(session.index + 1) / \(max(session.flat.count, 1))")
                     .font(.footnote).foregroundStyle(Theme.sub)
             }
+            // ⚠️ 栖阅是 **‹ 在最左、› 在最右**，滑块夹在中间。
+            //    我之前把两个箭头都堆在左边（‹ › 滑块），跟栖阅对不上。
             HStack(spacing: 10) {
                 Button { session.step(-1) } label: {
                     Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
                 }
                 .disabled(session.index <= 0)
-                Button { session.step(1) } label: {
-                    Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
-                }
-                .disabled(session.index >= session.flat.count - 1)
                 Slider(
                     value: Binding(
                         get: { Double(session.index) },
                         set: { session.jump(to: Int($0.rounded())) }),
                     in: 0...Double(max(session.flat.count - 1, 1)), step: 1)
+                Button { session.step(1) } label: {
+                    Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
+                }
+                .disabled(session.index >= session.flat.count - 1)
             }
             .foregroundStyle(Theme.ink)
             HStack(spacing: 0) {

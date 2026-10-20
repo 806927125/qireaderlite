@@ -535,3 +535,24 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   const wf = fs4.readFileSync(path.join(ROOT, '../.github/workflows/build-ipa.yml'), 'utf8');
   ok(/scroll-core-parity/.test(wf), 'CI 跑 Swift↔JS 对拍');
 }
+
+// ── 顶栏 / 底栏对齐栖阅 ──
+{
+  const fs5 = require('fs');
+  const rv = fs5.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  const top = rv.slice(rv.indexOf('private var topBar'),
+                       rv.indexOf('private var bottomBar'));
+  const bot = rv.slice(rv.indexOf('private var bottomBar'));
+  // ① 顶栏中间：书名 + 副标题要装在一个圆角胶囊里
+  ok(/Text\(book\.name\)[\s\S]{0,220}Text\(book\.sourceName\)[\s\S]{0,200}liquidGlass\(cornerRadius: 20/.test(top),
+     '顶栏书名+副标题装在圆角胶囊里（栖阅那样）');
+  // ② 底栏：‹ 在最左、› 在最右，滑块夹中间
+  const arrowRow = bot.slice(bot.indexOf('HStack(spacing: 10) {'),
+                             bot.indexOf('HStack(spacing: 0) {'));
+  ok(arrowRow.indexOf('chevron.left') < arrowRow.indexOf('Slider(')
+     && arrowRow.indexOf('Slider(') < arrowRow.indexOf('chevron.right'),
+     '底栏 ‹ 在最左、› 在最右，滑块在中间（栖阅那样）');
+  ok(arrowRow.indexOf('chevron.right') < arrowRow.indexOf('chevron.left') + 100
+     || arrowRow.indexOf('chevron.left') < arrowRow.indexOf('chevron.right'),
+     '两个箭头不堆在同一边');
+}
