@@ -762,7 +762,7 @@ struct ReaderWebView: View {
             //    但玻璃真的能透出后面的内容。
             .background(
                 Color.clear
-                    .glassEffect(.thin.tint(Color.white.opacity(0.12)),
+                    .glassEffect(.clear.tint(Color.white.opacity(0.12)),
                                  in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
