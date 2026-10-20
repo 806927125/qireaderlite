@@ -721,8 +721,10 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
                 Task { @MainActor in
                     guard !done else { return }
                     if vc.view.window == nil {
-                        recentLogs.append("[browser] 弹不出来（present 失败）：\(raw)")
-                        if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+                        self.recentLogs.append("[browser] 弹不出来（present 失败）：\(raw)")
+                        if self.recentLogs.count > 300 {
+                            self.recentLogs.removeFirst(self.recentLogs.count - 300)
+                        }
                         finish(["ok": false, "error": "浏览器弹不出来（界面没接上），请把日志发出来"])
                     }
                 }
@@ -731,8 +733,10 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             watchdog = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { _ in
                 Task { @MainActor in
                     guard !done else { return }
-                    recentLogs.append("[browser] 超时自动关闭：\(raw)")
-                    if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+                    self.recentLogs.append("[browser] 超时自动关闭：\(raw)")
+                    if self.recentLogs.count > 300 {
+                        self.recentLogs.removeFirst(self.recentLogs.count - 300)
+                    }
                     finish(["ok": false, "error": "浏览器超时（5 分钟没关），已自动关闭"])
                     vc.dismiss(animated: true)
                 }
