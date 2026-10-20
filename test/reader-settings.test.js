@@ -185,10 +185,14 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 // 面板背景 = **液态玻璃**（用户明确要：栖阅风格液态玻璃）。
 // build102 我拿「折射会扭掉边缘控件」把它换成磨砂白，那是**误解**诉求 ——
 // 折射不是成因，成因是**内容区高度不够、控件被裁**。
-ok(/\.glassEffect\(\.regular, in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '面板用 .glassEffect(.regular) 液态玻璃');
-ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel),
-   '不用磨砂白（用户要液态玻璃）');
+// 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
+// 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
+// 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
+ok(/\.background\(\s*Color\.white\.opacity\(0\.82\),\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
+   '面板底色 white@0.82（规格表：rgba(255,255,255,.82) + 模糊 24）');
+ok(/\.background\(\s*\.ultraThinMaterial,\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
+   '面板模糊 .ultraThinMaterial（规格表：模糊 24）');
+ok(!/glassEffect\(/.test(panel), '不用 .glassEffect（通透玻璃上白块看不出层次）');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
 // 目录 sheet 本来就该有 detent（.medium/.large）；
 // 只判定**设置面板**那一段没有 detent。
@@ -280,13 +284,15 @@ ok(/\.padding\(\.top, 12\)/.test(panel), '面板内部顶部留白 12（规格�
      '左右 padding 恰好两次：一次在玻璃前、一次在玻璃后');
 }
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
-ok(!/\.background\(Color\.white\.opacity\(0\.82\)/.test(panel),
-   '**不**留 white@.82（那是普通毛玻璃，不是液态玻璃）');
-ok(/\.glassEffect\(\.regular, in: RoundedRectangle\(cornerRadius: 22/.test(panel),
-   '面板是液态玻璃 .glassEffect(.regular)');
-ok(!/\.background \{[\s\S]{0,200}RoundedRectangle\(cornerRadius: 22/.test(web),
-   '不写 .background { RoundedRectangle(...) }（flexible Shape 会铺满）');
-// ⚠️ 内容区高度必须用 `.frame(height:)` 固定，**不能**用 `.fixedSize`。
+// 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
+// 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
+// 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
+ok(/\.background\(\s*Color\.white\.opacity\(0\.82\),\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
+   '面板底色 white@0.82（规格表：rgba(255,255,255,.82) + 模糊 24）');
+ok(/\.background\(\s*\.ultraThinMaterial,\s*\n?\s*in: RoundedRectangle\(cornerRadius: 22/.test(panel),
+   '面板模糊 .ultraThinMaterial（规格表：模糊 24）');
+ok(!/glassEffect\(/.test(panel), '不用 .glassEffect（通透玻璃上白块看不出层次）');
+ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 //    build103 我把 fixedSize 放在 **NavigationStack 外面** ——
 //    NavigationStack 的 ideal height 算出来接近 **0**，面板只剩 padding 撑起来
 //    的 86pt，真机表现：**面板卡在屏幕底，只露薄薄一条**。
@@ -375,8 +381,8 @@ ok(/Text\(subtitle \?\? ""\)\.font\(\.system\(size: 13\)\)/.test(ft),
 ok(!/Color\.clear\.frame\(width: 18, height: 18\)/.test(ft),
    '不再有空图标占位（没有图标行，这个 hack 没用了）');
 ok(!/frame\(height: 76\)/.test(ft), '宫格不设固定高度（两行文字自然等高）');
-ok(/padding\(\.vertical, 9\)[\s\S]{0,40}padding\(\.horizontal, 4\)/.test(ft),
-   '宫格内边距 9/4（参考实现 .cell padding:9px 4px 8px）');
+ok(/\.padding\(\.top, 9\)[\s\S]{0,60}padding\(\.horizontal, 4\)[\s\S]{0,60}padding\(\.bottom, 8\)/.test(ft),
+   '宫格内边距 9/4/8（规格表 .cell padding:9px 4px 8px）');
 ok(/cornerRadius: 12/.test(ft), '宫格圆角 12（参考实现 .cell）');
 ok(/VStack\(spacing: 8\) \{\s*tileRow\(0\)/.test(web), '宫格间距 8（参考实现 gap:8px）');
 // ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。

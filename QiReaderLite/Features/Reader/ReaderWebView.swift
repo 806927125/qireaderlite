@@ -627,9 +627,19 @@ struct ReaderWebView: View {
             // ⚠️ 必须用 `background(_:in:)` 重载，**不能**写 `.background { Shape }`：
             //    后者闭包里的 Shape 是 flexible view，ZStack 给多大 proposal
             //    它就撑多大 → 背景铺满整屏（build88 炸过）。
+            // 规格表：面板背景 rgba(255,255,255,.82) + 模糊 24
+            //
+            // ⚠️ 之前用 `.glassEffect(.regular)`（iOS 26 折射玻璃）——
+            //    面板太通透，**内层白块 white@.55 叠在上面几乎看不出层次**，
+            //    参考实现里那块白卡是**明显**比面板亮的。
+            //    磨砂白（.82 + blur 24）才是规格表 / 参考实现的效果。
             .background(
-                Color.clear
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                Color.white.opacity(0.82),
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             // 规格表：面板阴影 0 4 30 rgba(0,0,0,.12)
@@ -1142,8 +1152,10 @@ struct ReaderWebView: View {
             // 区分「已实现 / 没实现」靠**文字深浅**，不是有没有底
             .foregroundStyle(ready ? Theme.ink : Theme.sub.opacity(0.45))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
+            // 规格：按钮内边距 上 9 / 左右 4 / 下 8
+            .padding(.top, 9)
             .padding(.horizontal, 4)
+            .padding(.bottom, 8)
             // 规格：按钮背景 rgba(0,0,0,.05)（不是 --fill 的冷灰 12%）
             .background(Color.black.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
