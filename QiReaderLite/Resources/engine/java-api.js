@@ -155,7 +155,22 @@
 
   var java = {
     // --- 网络 ---
-    ajax: function (url) { return applyUrlArg(url, function (u) { return java.get(u); }); },
+    /**
+     * Legado 的 `java.ajax` 是**同步**的：直接返回正文。
+     * 站方大量这么写：`JSON.parse(java.ajax(url))`。
+     * 我们的原生桥是异步的（只能 postMessage）→ 只能两遍跑：
+     *   ① 录制模式：只记 URL，不真发（配合引擎的静音开关，不报假错）
+     *   ② 引擎把 URL 抓回来放进缓存
+     *   ③ 缓存命中 → **同步**返回正文
+     */
+    ajax: function (url) {
+      var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
+      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u); return ''; }
+      if (QR.__qrAjaxCache && Object.prototype.hasOwnProperty.call(QR.__qrAjaxCache, u)) {
+        return QR.__qrAjaxCache[u];
+      }
+      return applyUrlArg(url, function (x) { return java.get(x); });
+    },
     get: function (url, headers) { return rawRequest(resolveUrl(url), 'GET', headers || {}, null, 20000).then(mkJsoupish); },
     post: function (url, body, headers) { return rawRequest(resolveUrl(url), 'POST', headers || {}, body, 20000).then(mkJsoupish); },
     put: function (url, body, headers) { return rawRequest(resolveUrl(url), 'PUT', headers || {}, body, 20000).then(mkJsoupish); },
@@ -347,8 +362,16 @@
       }).join(' ');
       return nativeCall('log', { msg: msg });
     },
-    longToast: function (s) { return nativeCall('toast', { msg: String(s) }); },
-    toast: function (s) { return nativeCall('toast', { msg: String(s) }); },
+    // ⚠️ 两遍跑的第一遍要**静音**：那一遍的 ajax 是假的，
+    //    站方解析失败会弹「登录失败 / JSON Parse error」→ 用户看到假报错。
+    longToast: function (s) {
+      if (QR.__qrSuppressToast) return Promise.resolve('');
+      return nativeCall('toast', { msg: String(s) });
+    },
+    toast: function (s) {
+      if (QR.__qrSuppressToast) return Promise.resolve('');
+      return nativeCall('toast', { msg: String(s) });
+    },
     getCookie: function (url) { return nativeCall('getCookie', { url: resolveUrl(url) }).then(function (r) { return r.value; }); },
     setCookie: function (url, cookie) { return nativeCall('setCookie', { url: resolveUrl(url), cookie: String(cookie) }); },
     cacheFile: function (path, content) { return nativeCall('cacheFile', { path: String(path), text: String(content == null ? '' : content) }).then(function (r) { return r.value === '1'; }); },

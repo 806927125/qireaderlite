@@ -266,13 +266,79 @@
       }
       evalCache[key] = fn;
     }
-    var out;
-    try {
-      out = fn.apply(scope, args.concat([fixRhinoLenient(code)]));
-    } catch (e) {
-      return Promise.reject(new Error('JS 执行失败: ' + (e && e.message)));
+    var fixed = fixRhinoLenient(code);
+
+    function once() {
+      try {
+        return Promise.resolve(fn.apply(scope, args.concat([fixed])));
+      } catch (e) {
+        return Promise.reject(new Error('JS 执行失败: ' + (e && e.message)));
+      }
     }
-    return Promise.resolve(out);
+
+    // ⚠️⚠️ **两遍跑**：让 `java.ajax` 能同步返回正文。
+    //
+    // Legado 的 java.ajax 是**同步**的（`JSON.parse(java.ajax(url))` 到处都在用）；
+    // 我们的原生桥是异步的（只能 postMessage，回调才异步）→
+    // 直接返回 Promise → 站方 JSON.parse(Promise) 直接炸 →
+    // 表现为「登录失败 / JSON Parse error: Unexpected EOF」这种**看不出原因**的错。
+    //
+    // 所以：
+    //   ① 第一遍：java.ajax 只记录 URL（并把 toast 静音，免得报假错）
+    //   ② 把记下来的 URL 抓回来（**认 URL 里的 ,{json} 后缀** —— method/headers/body）
+    //   ③ 第二遍：java.ajax 命中缓存 → 同步返回正文 → 站方的 JSON.parse 就正常了
+    //
+    // 没用到 ajax 的规则只跑一遍，行为不变。
+    var recorded = [];
+    var prevRecord = QR.__qrAjaxRecord;
+    var prevCache = QR.__qrAjaxCache;
+    var prevToast = QR.__qrSuppressToast;
+    QR.__qrAjaxRecord = function (u) { recorded.push(String(u)); return ''; };
+    QR.__qrAjaxCache = {};
+    QR.__qrSuppressToast = true;
+
+    function restore() {
+      QR.__qrAjaxRecord = prevRecord;
+      QR.__qrAjaxCache = prevCache;
+      QR.__qrSuppressToast = prevToast;
+    }
+
+    return once().then(function (r) {
+      QR.__qrAjaxRecord = prevRecord;
+      QR.__qrSuppressToast = prevToast;
+      if (!recorded.length) { QR.__qrAjaxCache = prevCache; return r; }
+      return fetchRecorded(recorded).then(function (cache) {
+        QR.__qrAjaxCache = cache;
+        return once().then(function (r2) {
+          QR.__qrAjaxCache = prevCache;
+          return r2;
+        });
+      });
+    }).catch(function (e) {
+      restore();
+      throw e;
+    });
+  }
+
+  /**
+   * 把录下来的 URL 抓回来。
+   * ⚠️ 必须用 analyzeUrl 拆 `,{json}` 后缀 ——
+   *    否则 POST 的 method/headers/body 全丢，URL 里还粘着后缀 → 服务端返回空。
+   */
+  function fetchRecorded(list) {
+    var out = {};
+    var jobs = list.map(function (u) {
+      var t = null;
+      try { t = (QR.analyzeUrl) ? QR.analyzeUrl(u, { baseUrl: '' }) : null; } catch (e) { t = null; }
+      var url = (t && t.url) ? t.url : u;
+      var method = (t && t.method) || 'GET';
+      var headers = (t && t.headers) || {};
+      var body = (t && t.body) || '';
+      return QR.java.rawRequest(url, method, headers, body)
+        .then(function (resp) { out[u] = (resp && resp._body) || ''; })
+        .catch(function () { out[u] = ''; });
+    });
+    return Promise.all(jobs).then(function () { return out; });
   }
 
   /* ---------------------------------------------------------

@@ -342,6 +342,9 @@
     }, Promise.resolve([]));
   }
 
+  // 暴露给 rule-analyzer 用（两遍跑时要用它把 URL 里的 ,{json} 后缀拆开）
+  QR.analyzeUrl = analyzeUrl;
+
   /**
    * `data:` 伪 URL 的内容。
    *

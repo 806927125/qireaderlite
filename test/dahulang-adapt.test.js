@@ -131,6 +131,14 @@ ok(/setUseReplaceRule/.test(api) && /wrapped\[fn\]/.test(api),
    'book 上补了 Legado 的 Book 方法（setUseReplaceRule 等）');
 ok(/var key: ''/.test(analyzer) || /key: ''/.test(analyzer), 'scope 里有 key（站方 jsLib 常用）');
 
+// 同步 ajax（两遍跑）—— Legado 的 java.ajax 是同步的，我们原生桥是异步的
+ok(/__qrAjaxRecord/.test(javai) && /__qrAjaxCache/.test(javai),
+   'java.ajax 支持录制/缓存（两遍跑的第一遍录 URL，第二遍同步返回正文）');
+ok(/__qrSuppressToast/.test(javai), '第一遍静音 toast（免得报「登录失败」假错）');
+ok(/function fetchRecorded/.test(analyzer) && /QR\.analyzeUrl/.test(analyzer),
+   '抓回来的 URL 认 ,{json} 后缀（method/headers/body 不丢）');
+ok(/QR\.analyzeUrl = analyzeUrl/.test(eng), 'engine.js 把 analyzeUrl 暴露给规则层');
+
 // ───────── ③ 脚本清单三处一致 ─────────
 console.log('\n=== 3. 引擎脚本清单三处一致 ===');
 const swift = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');
