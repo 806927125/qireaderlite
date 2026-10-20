@@ -165,7 +165,7 @@
      */
     ajax: function (url) {
       var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
-      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u); return ''; }
+      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'ajax', ''); return ''; }
       if (QR.__qrAjaxCache && Object.prototype.hasOwnProperty.call(QR.__qrAjaxCache, u)) {
         return QR.__qrAjaxCache[u];
       }
@@ -187,7 +187,38 @@
     getStrResponse: function (url, headers) { return java.get(url, headers); },
     getSource: function (url) { return java.get(url).then(function (d) { return d.raw().documentElement.outerHTML; }); },
     webView: function (html, url) { return Promise.reject(new Error('当前版本未实现 webView 交互')); },
-    startBrowser: function () { return Promise.reject(new Error('当前版本未实现交互式浏览器')); },
+    /**
+     * 内嵌浏览器（Legado 的 startBrowser / startBrowserAwait / showBrowser…）
+     *
+     * ⚠️ 站方是**同步**用的：
+     *     let page = java.startBrowserAwait(url, '番茄登录');
+     *     let html = page.body();
+     *    → 我们的原生桥是异步的 → 同样走「两遍跑」：
+     *      第一遍只记 URL（并静音 toast），原生侧弹浏览器等用户关掉，
+     *      第二遍命中缓存 → 同步返回那个对象。
+     */
+    startBrowser: function (url, title) {
+      var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
+      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return ''; }
+      return java.openBrowser(u, title);
+    },
+    startBrowserAwait: function (url, title) {
+      var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
+      if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return mkBrowserLike({}); }
+      if (QR.__qrAjaxCache && Object.prototype.hasOwnProperty.call(QR.__qrAjaxCache, u)) {
+        return QR.__qrAjaxCache[u];
+      }
+      return java.openBrowser(u, title).then(function (r) {
+        return mkBrowserLike((r && r.value) || {});
+      });
+    },
+    showBrowser: function (url, title) { return java.startBrowser(url, title); },
+    showReadingBrowser: function (url, title) { return java.startBrowser(url, title); },
+    startBrowserDp: function (url, title) { return java.startBrowser(url, title); },
+    openBrowser: function (url, title) {
+      return nativeCall('openBrowser', { url: resolveUrl(url), title: String(title || '') })
+        .then(function (r) { return mkBrowserLike((r && r.value) || {}); });
+    },
     openUrl: function (url) { return java.open(url); },
     open: function (url) { return java.open(url); },
 
@@ -388,6 +419,18 @@
   java.cacheFileRaw = rawRequest;
   java.rawRequest = rawRequest;
   java._b64Dec = null;   // 原生 base64 通道，预留给将来的注入
+
+  /** 浏览器返回的「页面对象」—— 站方调 .body() 拿 HTML */
+  function mkBrowserLike(v) {
+    var html = String((v && v.html) || '');
+    return {
+      body: function () { return html; },
+      html: html,
+      url: String((v && v.url) || ''),
+      cookie: String((v && v.cookie) || ''),
+      toString: function () { return html; }
+    };
+  }
 
   function applyUrlArg(url, fn) {
     if (url && typeof url === 'object') {

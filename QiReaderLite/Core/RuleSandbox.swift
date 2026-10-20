@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SwiftUI
 import UIKit
 
 // MARK: - 资源定位
@@ -519,13 +520,56 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         case "deviceID":
             return ok(["value": UIDevice.current.identifierForVendor?.uuidString ?? "qiReaderLite"])
 
-        case "showBrowser":
-            // MVP 不实现交互式浏览器，明确回绝而不是假装成功
-            return err("当前版本未实现交互式浏览器")
+        case "openBrowser":
+            // 内嵌浏览器：弹出来 → 用户登录/扫码 → 关掉 → 把页面 HTML/URL/cookie 交回去。
+            // 聚合源的「番茄登录 / 注册 / 用户后台 / 教程」全靠它。
+            return await self.openBrowser(args)
 
         default:
             return err("原生侧没有实现 fn=\(fn)")
         }
+    }
+
+    // MARK: 内嵌浏览器
+
+    /// 弹内嵌浏览器，等用户关掉，把页面 HTML / URL / cookie 交回去。
+    ///
+    /// ⚠️ 必须**等用户关掉**才能返回 —— 站方是这么用的：
+    ///    `let page = java.startBrowserAwait(url, '番茄登录'); let html = page.body();`
+    ///    也就是「打开 → 用户扫码 → 关闭 → 读页面」。
+    private func openBrowser(_ args: [String: Any]) async -> [String: Any] {
+        guard let raw = args["url"] as? String,
+              let u = URL(string: raw), u.scheme != nil else {
+            return ["ok": false, "error": "URL 非法: \(args["url"] as? String ?? "nil")"]
+        }
+        let title = args["title"] as? String ?? ""
+        guard let host = Self.topViewController() else {
+            return ["ok": false, "error": "找不到可显示的界面"]
+        }
+        return await withCheckedContinuation { (cont: CheckedContinuation<[String: Any], Never>) in
+            var done = false
+            let sheet = BrowserSheet(url: raw, title: title) { html, url, cookie in
+                guard !done else { return }
+                done = true
+                cont.resume(returning: ["ok": true, "value": [
+                    "html": html, "url": url, "cookie": cookie
+                ]])
+            }
+            let vc = UIHostingController(rootView: sheet)
+            vc.modalPresentationStyle = .fullScreen
+            host.present(vc, animated: true)
+        }
+    }
+
+    /// 当前最顶层的 view controller（present 浏览器要用）
+    static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        let win = scene?.windows.first(where: { $0.isKeyWindow }) ?? scene?.windows.first
+        var vc = win?.rootViewController
+        while let next = vc?.presentedViewController { vc = next }
+        return vc
     }
 
     // MARK: HTTP

@@ -139,6 +139,20 @@ ok(/function fetchRecorded/.test(analyzer) && /QR\.analyzeUrl/.test(analyzer),
    '抓回来的 URL 认 ,{json} 后缀（method/headers/body 不丢）');
 ok(/QR\.analyzeUrl = analyzeUrl/.test(eng), 'engine.js 把 analyzeUrl 暴露给规则层');
 
+// 内嵌浏览器（番茄登录/注册/后台/教程 这些按钮全靠它）
+ok(/startBrowserAwait: function/.test(javai) && /showBrowser: function/.test(javai),
+   'startBrowser / startBrowserAwait / showBrowser 都有实现');
+ok(/mkBrowserLike/.test(javai) && /body: function/.test(javai),
+   '浏览器返回的页面对象有 .body()（站方这么用）');
+ok(/openBrowser: function/.test(javai), '浏览器走原生桥 openBrowser');
+ok(/rec\.kind === 'browser'/.test(analyzer), '两遍跑认得出浏览器类调用');
+ok(/QR\.java\.openBrowser/.test(analyzer), '浏览器 URL 由原生侧弹窗处理');
+const bsw = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Features', 'Browser', 'BrowserSheet.swift'), 'utf8');
+ok(/websiteDataStore = \.default\(\)/.test(bsw), '浏览器用共享 cookie 罐（登录态留得住）');
+ok(/HTTPCookieStorage\.shared\.setCookie/.test(bsw), '关掉时把 cookie 同步进 shared 罐（引擎请求要用）');
+const rbs = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');
+ok(/case "openBrowser"/.test(rbs) && /func openBrowser/.test(rbs), '原生桥有 openBrowser（弹浏览器等关闭）');
+
 // ───────── ③ 脚本清单三处一致 ─────────
 console.log('\n=== 3. 引擎脚本清单三处一致 ===');
 const swift = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');

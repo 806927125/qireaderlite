@@ -293,7 +293,10 @@
     var prevRecord = QR.__qrAjaxRecord;
     var prevCache = QR.__qrAjaxCache;
     var prevToast = QR.__qrSuppressToast;
-    QR.__qrAjaxRecord = function (u) { recorded.push(String(u)); return ''; };
+    QR.__qrAjaxRecord = function (u, kind, title) {
+      recorded.push({ url: String(u), kind: kind || 'ajax', title: String(title || '') });
+      return '';
+    };
     QR.__qrAjaxCache = {};
     QR.__qrSuppressToast = true;
 
@@ -327,7 +330,14 @@
    */
   function fetchRecorded(list) {
     var out = {};
-    var jobs = list.map(function (u) {
+    var jobs = list.map(function (rec) {
+      var u = rec.url;
+      // 浏览器类：弹内嵌浏览器等用户关掉 → 拿页面 HTML
+      if (rec.kind === 'browser') {
+        return QR.java.openBrowser(u, rec.title)
+          .then(function (page) { out[u] = page; })
+          .catch(function () { out[u] = ''; });
+      }
       var t = null;
       try { t = (QR.analyzeUrl) ? QR.analyzeUrl(u, { baseUrl: '' }) : null; } catch (e) { t = null; }
       var url = (t && t.url) ? t.url : u;
