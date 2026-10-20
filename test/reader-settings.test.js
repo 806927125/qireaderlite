@@ -495,11 +495,11 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
 {
   const fs3 = require('fs');
   const rv = fs3.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
-  ok(/onChange\(of: themeKey\)[\s\S]{0,80}applyThemeChange\(\)/.test(rv),
-     'themeKey 变化 → applyThemeChange（换背景要立刻生效）');
-  ok(/onChange\(of: followSystemAppearance\)/.test(rv) &&
-     /onChange\(of: darkScheme\)/.test(rv),
-     '跟随系统 / 系统深浅色变化 → 同样要重新下发');
+  // ⚠️ 统一成一个签名监听（覆盖 themeKey / followSystemAppearance / darkScheme
+  //    以及字号/行距/段距/字体/对齐/基线）—— 分开挂会漏项，
+  //    漏掉的那些就是「改了不生效」的来源。
+  ok(/onChange\(of: readerLayoutSig\)[\s\S]{0,60}applyThemeChange\(\)/.test(rv),
+     '统一签名变化 → applyThemeChange（所有设置都要立刻生效）');
   ok(/private func applyThemeChange\(\)[\s\S]{0,600}syncPager\(size: pagerViewport\)/.test(rv),
      'applyThemeChange 走 syncPager（原生分页：config 重新求值 + 重排）');
   ok(/applyThemeChange\(\)[\s\S]{0,900}host\.setSettings\(settingsPayload/.test(rv),
@@ -574,9 +574,15 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(/private var readerLayoutSig: String/.test(rv), '有排版统一签名');
   ok(/onChange\(of: readerLayoutSig\)/.test(rv), '监听统一签名（一次覆盖全部设置项）');
   for (const k of ['fontSize','lineSpacing','paraSpacing','themeKey','fontKey',
-                   'paraAlign','verticalJustify','showBaseline','baselineScope']) {
+                   'paraAlign','verticalJustify','showBaseline','baselineScope',
+                   'baselineColorHex']) {
     ok(rv.includes(k), '排版签名含 ' + k);
   }
+  // ⚠️ 签名里只能列**真实存在**的 @AppStorage。
+  //    之前写了 horizontalMargin（它是 layoutConfig 里写死的 20，不是 @AppStorage）
+  //    → 编译报 "cannot find 'horizontalMargin' in scope"。
+  ok(!/readerLayoutSig[\s\S]{0,400}horizontalMargin/.test(rv),
+     '排版签名里不引用不存在的 horizontalMargin（它是写死的 20，不是 @AppStorage）');
 
   // ④ 设置面板按住下拖关闭（跟目录一样）
   ok(/panelDragOffset/.test(rv), '设置面板有拖拽位移状态');

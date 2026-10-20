@@ -230,33 +230,34 @@ struct ReaderWebView: View {
         }
     }
 
-    /// ⚠️ 换阅读背景（配色 / 跟随系统）后，**两条渲染路径都要重新下发**：
+    /// 排版/主题的**统一签名** —— 任何一项变了都要立刻重排。
+    ///
+    /// ⚠️ 之前只挂了 `onChange(of: themeKey)` 等零散几项，结果：
+    ///   · 分页模式：改字号/行距**不生效**（`syncPager` 只在尺寸/正文变化时调）
+    ///   · 滚动模式：只有字号生效（`fontSize` 恰好是 @AppStorage，能触发 body 重算）
+    ///   · 行距/段距/对齐/基线/字体 —— 全都不生效
+    ///
+    /// 合成一个签名统一监听，一次覆盖全部。
+    /// ⚠️ 只能列**真实存在**的 @AppStorage（horizontalMargin 是 layoutConfig 里写死的 20，
+    ///    不是 @AppStorage，引用它编译不过）。
+    private var readerLayoutSig: String {
+        "\(fontSize)|\(lineSpacing)|\(paraSpacing)|\(themeKey)|\(followSystemAppearance)|"
+            + "\(darkScheme == .dark)|\(fontKey)|\(paraAlign)|\(verticalJustify)|"
+            + "\(showBaseline)|\(baselineScope)|\(baselineColorHex)"
+    }
+
+    /// ⚠️ 换阅读设置（配色 / 字号 / 行距…）后，**两条渲染路径都要重新下发**：
     ///
     ///   ① **原生分页**：`layoutConfig` 是 computed property，主题色在里面
     ///      （`textColor: UIColor(theme.ink)` / `backgroundColor: UIColor(theme.bg)`），
     ///      但它只有被 `syncPager` 重新求值并赋给 `pager.config` 才生效。
-    ///      而 `syncPager` 之前**只在尺寸变化时**被调用 → 换主题不动。
+    ///      而 `syncPager` 之前**只在尺寸变化时**被调用 → 改设置不动。
     ///      状态栏（SwiftUI 层）立刻变了，正文（pager 自己画）却没变。
     ///
-    ///   ② **WebView 滚动模式**：`settingsPayload` 只在 `session.start()` 时发一次，
-    ///      换主题不重发 → reader.html 的配色也不变。
+    ///   ② **Swift 滚动模式**：`SwiftScrollReaderView` 靠 `config` 重排，
+    ///      SwiftUI body 重算就会传新 config ✓（这里再调一次是保险）。
     ///
     /// 症状：用户说「换背景只有状态栏生效，要重进正文才变过来」。
-    /// 排版/主题的**统一签名** —— 任何一项变了都要立刻重排。
-    ///
-            // ⚠️ 任何一项排版/主题设置变了都要**立刻**生效，
-            //    不能要退出重进正文才变（真机反馈）。
-            //    监听**统一签名**，一次覆盖字号/行距/段距/配色/字体/对齐/基线。
-            .onChange(of: readerLayoutSig) { _, _ in applyThemeChange() }
-    ///   · 行距/段距/对齐/基线/字体 —— 全都不生效
-    ///
-    /// 合成一个签名统一监听，一次覆盖全部。
-    private var readerLayoutSig: String {
-        "\(fontSize)|\(lineSpacing)|\(paraSpacing)|\(themeKey)|\(followSystemAppearance)|"
-            + "\(darkScheme == .dark)|\(fontKey)|\(paraAlign)|\(verticalJustify)|"
-            + "\(showBaseline)|\(baselineScope)|\(horizontalMargin)|\(baselineColorHex)"
-    }
-
     private func applyThemeChange() {
         // ① 原生分页：重新求值 layoutConfig → pager.config → 重排（sig 含 themeKey，不会被幂等挡掉）
         syncPager(size: pagerViewport)
@@ -396,9 +397,10 @@ struct ReaderWebView: View {
                 .onChange(of: session.chapterText) { _, _ in syncPager(size: pagerViewport) }
             // ⚠️ 换背景（配色 / 跟随系统深浅色）必须**立刻**生效，
             //    不能要退出重进正文才变（真机反馈）。
-            .onChange(of: themeKey) { _, _ in applyThemeChange() }
-            .onChange(of: followSystemAppearance) { _, _ in applyThemeChange() }
-            .onChange(of: darkScheme) { _, _ in applyThemeChange() }
+            // ⚠️ 任何一项排版/主题设置变了都要**立刻**生效，
+            //    不能要退出重进正文才变（真机反馈）。
+            //    监听**统一签名**，一次覆盖字号/行距/段距/配色/字体/对齐/基线。
+            .onChange(of: readerLayoutSig) { _, _ in applyThemeChange() }
                 if useNativePaging {
                     // 原生分页：容器交给 UIPageViewController（系统管手势/边界/动画），
                     // CoreText 只负责把一章文本切成若干页。
