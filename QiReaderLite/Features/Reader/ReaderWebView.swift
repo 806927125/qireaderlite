@@ -610,12 +610,11 @@ struct ReaderWebView: View {
             // ② 内部 padding（玻璃**里面**）
             //
             // 顶部留白：栖阅真机面板顶到「小」那行约 **42pt**。
-            // 这里是 34，再加字号行自己的 8 = **42** ✓
-            // （那 8 是留给玻璃边缘折射区的安全距离，栖阅是磨砂白不需要）。
+            // 这里是 28，再加 top-card 自己的 padding 14 = **42** ✓
             // 「整体下移」是误读 —— 用户要下移的是**下面那 8 个宫格按钮**，
             // 不是整个面板内容（见 featureGrid 的 padding(.top, ...)）。
             // 栖阅真机面板顶到「小」那行的距离约 **42pt**（截图量）。
-            .padding(.top, 34)
+            .padding(.top, 28)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 
@@ -791,14 +790,44 @@ struct ReaderWebView: View {
     ///    「阴影」= **这个玻璃容器自己投的 box-shadow**，
     ///    控件坐在**容器**里，不是在「容器里的白块」里。
     ///    从 build82 到 build89 一直多加了一层不该有的东西。
+    /// 面板内容 = **上半白块**（字号/色块/跟随/翻页）+ 下面 8 个宫格。
+    ///
+    /// 上半白块照 ui.txt 的 `.top-card`：
+    ///     .top-card { background: rgba(255,255,255,.55);
+    ///                 border-radius: 16px;
+    ///                 padding: 14px 12px 2px;
+    ///                 margin-bottom: 12px;
+    ///                 box-shadow: 0 1px 6px rgba(0,0,0,.04); }
+    ///
+    /// ⚠️ SwiftUI 的 padding 顺序要跟 CSS 对齐：
+    ///   CSS 的 `padding` 在 `background` **之内**（背景盖住 padding 区）
+    ///   → SwiftUI 必须 `.padding(...)` **在** `.background(...)` **之前**
+    ///   （padding 在 background 之后 = 外部 padding，会把背景推远）
+    ///
+    /// ⚠️ `margin-bottom: 12px` 是白块到宫格的**外部**间距
+    ///   → SwiftUI 放在白块 `.background()` 之后。
     private var panelContent: some View {
         VStack(spacing: 0) {
-            sizeRow
-            hairLine
-            paletteGrid
-            followSystemRow
-            hairLine
-            pageTurnRow
+            // ── 上半白块 ──
+            VStack(spacing: 0) {
+                sizeRow
+                hairLine
+                paletteGrid
+                followSystemRow
+                hairLine
+                pageTurnRow
+            }
+            .padding(EdgeInsets(top: 14, leading: 12, bottom: 2, trailing: 12))
+            .background(
+                Color.white.opacity(0.55),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 1)
+            // margin-bottom: 12 —— 白块和下面 8 个宫格的距离
+            .padding(.bottom, 12)
+
+            // 8 个宫格（独立在白块外）
+            featureGrid
         }
     }
     /// ui.txt: .divider { height:1px; background:rgba(0,0,0,.07); margin:0 2px 10px }
@@ -840,15 +869,9 @@ struct ReaderWebView: View {
         }
         .padding(.horizontal, 2)
         .padding(.bottom, 10)
-        // ⚠️ 字号行是面板内容的**第一行**，它上面就是**玻璃边缘**。
-        //    iOS 26 液态玻璃在边缘有一圈折射区，紧贴顶边的东西会被"啃"掉一块
-        //    —— 真机表现：「小」「大」「楷体」三个控件**上面**各缺一块
-        //    （用户：「那缺口在上面啊」）。
-        //
-        //    这三个控件**都在这一行**，所以一起中招 —— 也对上了用户圈的那三个。
-        //
-        //    修法：这一行**自己再往下挪**，离玻璃边缘留够距离。
-        .padding(.top, 8)
+        // ⚠️ 字号行原本还要自己 .padding(.top, 8) 躲开玻璃边缘的折射区，
+        //    现在 **top-card 白块**隔在它和玻璃之间了 —— 白块上沿离面板顶 28pt，
+        //    折射区吃不到控件，那 8 就不需要了。
     }
 
     /// 小 / 大：灰底圆角方块
@@ -1041,9 +1064,8 @@ struct ReaderWebView: View {
             tileRow(0)
             tileRow(4)
         }
-        // ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
-        //    给它们自己加一段上边距，跟上面的 chips 行拉开距离。
-        .padding(.top, 12)
+        // 「8 个宫格下移」的间距现在由**上面 top-card 的 margin-bottom 12** 提供
+        //（白块和宫格之间天然有一段），这里不用再叠一次。
     }
 
     /// 一行 4 格。⚠️ `Self.tiles` 是**元组数组**，元组不是 Identifiable，

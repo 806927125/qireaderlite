@@ -208,7 +208,7 @@ ok(navMod.indexOf('containerBackground(.clear, for: .navigation)') >= 0,
 
 console.log('\n── 高度贴合内容 ──');
 const mainSheet = web.slice(web.indexOf('private var settingsContent'),
-                            web.indexOf('private func hairLine'));
+                            web.indexOf('private var hairLine'));
 ok(/VStack/.test(mainSheet), '主面板用 VStack（内容行数固定，高度确定）');
 ok(/panelContent[\s\S]{0,40}featureGrid/.test(mainSheet),
    '主面板 = panelContent + featureGrid（没有内层白卡了）');
@@ -247,20 +247,20 @@ ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
   // 玻璃层 = 第一个 `.background(... in: RoundedRectangle(cornerRadius: 22)`
   const glassAt = panel.indexOf('in: RoundedRectangle(cornerRadius: 22');
   const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 34)');
+  const innerTop = panel.indexOf('.padding(.top, 28)');
   const innerBot = panel.indexOf('.padding(.bottom, 16)');
   const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
   const outerBot = panel.lastIndexOf('.padding(.bottom, Self.bottomSafeInset + 14)');
   // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
   // 顶部 12 → 30 → 42 → 50：用户连续要「按钮整体下移一点」。
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 34 / bottom 16）');
+  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 28 / bottom 16）');
   // 顶部 12 → 30 → 42：用户连续要「里面整体往下挪」，
   // 栖阅真机面板顶到「小」那行的距离约 42pt（截图量）。
   // 顶部 12 → 30 → 42 → 56：栖阅那块是**磨砂白**（没有玻璃边缘折射），
 // 面板顶到「小」那行约 42pt；我们用**真液态玻璃**，边缘有折射区，
 // 控件离边缘太近会被"啃"掉一块（用户：「那缺口在上面啊」）。
 // 顶部总留白 = 面板内 34 + 字号行 8 = 42，对齐栖阅真机。
-ok(/\.padding\(\.top, 34\)/.test(panel), '面板内部顶部留白 34');
+ok(/\.padding\(\.top, 28\)/.test(panel), '面板内部顶部留白 28（+ top-card 的 14 = 42）');
   ok(innerPad >= 0 && innerPad < glassAt,
      '内部 padding 在 玻璃**之前**（玻璃里面）');
   ok(innerBot < glassAt, '内部底 padding 在玻璃之前');
@@ -379,20 +379,17 @@ ok(/cornerRadius: 12/.test(ft), '宫格圆角 12（参考实现 .cell）');
 ok(/VStack\(spacing: 8\) \{\s*tileRow\(0\)/.test(web), '宫格间距 8（参考实现 gap:8px）');
 // ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
 //    之前我理解成「整体下移」，把面板内部 top padding 一路加到 56 —— 方向错了。
-ok(/private var featureGrid[\s\S]{0,400}padding\(\.top, 12\)/.test(web),
-   '8 个宫格按钮自己往下挪（padding.top 12）');
-ok(/padding\(\.top, 34\)/.test(panel),
-   '面板内部顶留白 34（总留白 42 = 栖阅实测值）');
+ok(web.slice(web.indexOf('private var panelContent: some View {'),
+             web.indexOf('private var hairLine')).includes('.padding(.bottom, 12)'),
+   '白块和宫格之间有 12 间距（ui.txt margin-bottom:12，在 top-card 之后）');
+ok(/padding\(\.top, 28\)/.test(panel),
+   '面板内部顶留白 28（总留白 42 = 栖阅实测值）');
 // ⚠️ 字号行是面板内容的第一行，它上面就是玻璃边缘 —— 三个控件
 //    （小/大/楷体）同处这一行，所以一起被"啃"掉上沿。
-ok(/private var sizeRow[\s\S]{0,900}padding\(\.top, 8\)/.test(web),
-   '字号行自己下移 8（给玻璃边缘折射区留的安全距离）');
-// ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
-//    之前我理解成「整体下移」，把面板内部 top padding 一路加到 56 —— 方向错了。
-ok(/private var featureGrid[\s\S]{0,400}padding\(\.top, 12\)/.test(web),
-   '8 个宫格按钮自己往下挪（padding.top 12）');
-ok(/padding\(\.top, 34\)/.test(panel),
-   '面板内部顶留白 34（总留白 42 = 栖阅实测值）');
+ok(!/private var sizeRow[\s\S]{0,900}padding\(\.top, 8\)/.test(web),
+   '字号行不再自己下移（top-card 白块已隔开玻璃边缘）');
+ok(/padding\(\.top, 28\)/.test(panel),
+   '面板内部顶留白 28（总留白 42 = 栖阅实测值）');
 
 // ⚠️ 参考实现建议「去掉置灰（enabled:false）」让它看着正常 —— **不采纳**。
 //    未实现的功能（朗读 / 高亮 / 气泡 / 格式 / 页眉页脚）置灰是用户明确要的：
@@ -409,4 +406,27 @@ ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假
   const sv = fs2.readFileSync(path.join(ROOT, 'Features/Settings/SettingsView.swift'), 'utf8');
   ok(sv.includes('build \\(AppBuildInfo.number)'), '设置页显示 build 号');
   ok(/CFBundleVersion/.test(sv), 'build 号从 Info.plist 读');
+}
+
+// ── 上半白块（top-card）──
+// 照 ui.txt 的 .top-card：
+//     background: rgba(255,255,255,.55); border-radius: 16px;
+//     padding: 14px 12px 2px;  margin-bottom: 12px;
+//     box-shadow: 0 1px 6px rgba(0,0,0,.04);
+//
+// ⚠️ CSS 的 padding 在 background **之内**（背景盖住 padding 区），
+//    所以 SwiftUI 必须是 `.padding(...)` **在** `.background(...)` **之前**。
+//    写反了会把白块推远（内容离白块边没有内边距）。
+{
+  const pc2 = web.slice(web.indexOf('private var panelContent: some View {'),
+                         web.indexOf('private var hairLine'));
+  ok(/padding\(EdgeInsets\(top: 14, leading: 12, bottom: 2, trailing: 12\)\)[\s\S]{0,140}background\(\s*Color\.white\.opacity\(0\.55\)/.test(pc2),
+     'top-card：padding 在 background 之前（CSS 的 padding 在 background 之内）');
+  ok(/Color\.white\.opacity\(0\.55\)/.test(pc2), 'top-card 底色 white@0.55（ui.txt 原值）');
+  ok(/cornerRadius: 16/.test(pc2), 'top-card 圆角 16');
+  ok(/shadow\(color: Color\.black\.opacity\(0\.04\), radius: 6, x: 0, y: 1\)/.test(pc2),
+     'top-card 阴影 0 1px 6px rgba(0,0,0,.04)');
+  ok(/\.padding\(\.bottom, 12\)/.test(pc2), 'top-card margin-bottom 12');
+  ok(/sizeRow[\s\S]{0,200}hairLine[\s\S]{0,200}paletteGrid[\s\S]{0,200}followSystemRow[\s\S]{0,200}hairLine[\s\S]{0,200}pageTurnRow/.test(pc2),
+     '白块里含：字号/线/色块/跟随/线/翻页（不含 8 个宫格）');
 }
