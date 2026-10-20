@@ -24,6 +24,8 @@ cd "$(dirname "$0")/.."
 # 有些门禁依赖本机文件（书源 JSON），没有就自己跳过 —— 那是「跳过」不是「通过」
 declare -a GATES=(
   "login-status:test/login-status.test.js"
+  "engine-lint:test/engine-lint.test.js"
+  "engine-smoke:test/engine-smoke.test.js"
   "login-card:test/live-login-card.test.js"
   "fq-login:test/live-fq-login.test.js"
   "reader-settings:test/reader-settings.test.js"

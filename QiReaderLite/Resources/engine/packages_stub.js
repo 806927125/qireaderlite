@@ -1194,6 +1194,38 @@ Packages.org.jsoup.nodes.Document = Packages.org.jsoup.nodes.Document || functio
 Packages.org.jsoup.nodes.Element = Packages.org.jsoup.nodes.Element || function() {};
 
 // ------ okhttp3 (最小存根，使用 java.ajax 桥接) ------
+
+/**
+ * okhttp3 stub 用的取数函数。
+ *
+ * ⚠️⚠️ **这个函数以前根本没定义**（用了没声明 → 运行时 ReferenceError）：
+ *    eslint 的 no-undef 扫出来的（其它门禁都抓不到 —— JS 的未声明变量
+ *    只有运行时才炸，而 node 的 vm 上下文用 Proxy 拦全局对象，
+ *    严格模式对未声明变量赋值**根本不抛** → jsdom 永远测不出来）。
+ *    ⇒ 任何用到 okhttp3 的书源都会在运行时炸。
+ *
+ * 用引擎自己的请求通道：`java.ajax(url + ',{json}')`
+ * （两遍跑机制认这个 `,{json}` 后缀，会把 method/headers/body 带去真请求）✅
+ */
+function _jsoupConnectFetch(url, method, body, headersJson) {
+  var opts = { method: String(method || 'GET') };
+  try {
+    var h = JSON.parse(headersJson || '{}');
+    if (h && typeof h === 'object' && Object.keys(h).length) opts.headers = h;
+  } catch (e) { /* 头解析不了就算了 */ }
+  if (body) opts.body = String(body);
+  var full = String(url) + ',' + JSON.stringify(opts);
+  var resp = '';
+  try { resp = String(java.ajax(full)); } catch (e) { resp = ''; }
+  return {
+    body: resp,
+    bytes: [],
+    code: resp ? 200 : 0,
+    url: String(url),
+    headers: {}
+  };
+}
+
 Packages.okhttp3 = Packages.okhttp3 || {};
 if (!Packages.okhttp3.OkHttpClient) {
     Packages.okhttp3.OkHttpClient = function() {

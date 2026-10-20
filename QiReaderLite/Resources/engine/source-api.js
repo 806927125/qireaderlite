@@ -35,6 +35,18 @@
 
   /** host → "k=v; k2=v2" */
   var cookieSnapshot = {};
+  /**
+   * 本次 op 里**从浏览器合并回来**的域。
+   *
+   * ⚠️⚠️ **必须在这里声明！**（踩过一次：用了没声明 → ReferenceError）
+   *    `__qrInstallCookieSnapshot` 每个 op 开头都会执行 → 一执行就抛
+   *    → **每个 op 都失败** → 引擎等于废了 → 用户看到「登录都点不了了」。
+   *
+   * 用途：站方 🍅番茄登录第一步是 `cookie.removeCookie("fanqienovel.com")`
+   *（清旧会话），而两遍跑下这段会跑两遍 → 第二遍会把**刚从浏览器拿到的**
+   * sessionid 删掉 → removeCookie 靠这个表跳过它们。
+   */
+  var mergedHosts = {};
 
   function hostOf(url) {
     var s = String(url == null ? '' : url);
