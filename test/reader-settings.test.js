@@ -465,3 +465,20 @@ ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假
 // @3x 下 1pt = 3 物理像素，系统分隔线是 1 物理像素 = 1/scale pt。
 ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
    '分隔线是发丝线 1/scale pt（@3x 下 1 物理像素）');
+
+// ── 引擎 JS 桥接（真机报过 code 5）──
+{
+  const fs2 = require('fs');
+  const sb = fs2.readFileSync(path.join(ROOT, 'Core/RuleSandbox.swift'), 'utf8');
+  // ⚠️ JSON.stringify 对 **函数 / Symbol** 返回 undefined（不是字符串），
+  //    脚本返回 undefined → WebKit 抛 code 5「返回结果的类型不受支持」。
+  //    之前只处理了 v === undefined，函数/Symbol 漏了。
+  ok(/typeof s !== 'string'/.test(sb),
+     'JS 桥接：JSON.stringify 结果必须再判一次 typeof（函数/Symbol 会返回 undefined）');
+  ok(/JSON 序列化失败/.test(sb), 'JSON.stringify 抛异常（循环引用）时有兜底错误信息');
+  ok(/JSON 序列化失败/.test(sb) && /typeof s !== 'string'/.test(sb),
+     '脚本无论如何都返回字符串');
+  // 并发：同一个 WKWebView 上并发 callAsyncJavaScript 会让结果类型不受支持。
+  ok(/serializer\.run/.test(sb), 'invoke 走串行器（并发会触发 code 5）');
+  ok(/private actor InvokeSerializer/.test(sb), '有 InvokeSerializer 串行器');
+}

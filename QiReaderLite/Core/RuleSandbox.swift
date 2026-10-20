@@ -103,6 +103,29 @@ enum ResourceLocator {
 /// 注意 `WKScriptMessageHandler` 必须显式列在 conformance 里 —— 只写方法不写 conformance
 /// 的话，编译器只在调用点报一句「does not conform」，很容易看漏。
 @MainActor
+/// 把 `callAsyncJavaScript` **串行化**。
+///
+/// ⚠️ 为什么要串行：同一个 WKWebView 上**并发**跑多个
+///    `callAsyncJavaScript` 时，只要有一个在执行期间页面被导航/重载，
+///    其余的结果就会变成不支持的类型 → `WKError.javaScriptResultTypeIsUnsupported`
+///    （code 5，「执行 JavaScript 返回结果的类型不受支持」）。
+///
+///    真机症状：发现页**退出重进**才报错 —— `.task` 重跑时上一轮的
+///    `exploreKinds` 还没结束，两个调用叠在一起。
+private actor InvokeSerializer {
+    private var tail: Task<Void, Never>?
+
+    func run<T>(_ body: @Sendable @escaping () async throws -> T) async throws -> T {
+        let prev = tail
+        let current = Task<T, Error> {
+            if let prev { await prev.value }
+            return try await body()
+        }
+        tail = Task { _ = try? await current.value }
+        return try await current.value
+    }
+}
+
 final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     static let shared = RuleSandbox()
 
@@ -307,6 +330,17 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
 
     /// 调一次引擎操作。`op` 对应 `engine.js` 里的 `OPS`。
     func invoke(_ op: String, _ payload: [String: Any] = [:], source: BookSource? = nil) async throws -> Any {
+        // ⚠️ 串行执行：并发 callAsyncJavaScript 会让 WKError code 5
+        //    （「返回结果的类型不受支持」）。发现页退出重进时 .task 重跑会叠两个。
+        try await serializer.run { [self] in
+            try await invokeLocked(op, payload, source: source)
+        }
+    }
+
+    private let serializer = InvokeSerializer()
+
+    private func invokeLocked(_ op: String, _ payload: [String: Any],
+                              source: BookSource?) async throws -> Any {
         boot()
         await waitReady()
         let prev = currentSource
@@ -332,7 +366,26 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         let script = """
         try {
             var v = await window.__qrInvoke(\(Self.jsonString(op)), \(argJSON));
-            return JSON.stringify(v === undefined ? null : v);
+            var s = null;
+            try {
+                // ⚠️⚠️ JSON.stringify 对 **函数 / Symbol** 返回 **undefined**（不是字符串！），
+                //    对循环引用会**抛异常**。
+                //    脚本一旦返回 undefined，WebKit 就抛
+                //    WKError.javaScriptResultTypeIsUnsupported (code 5)
+                //    —— 中文本地化：「执行 JavaScript 返回结果的类型不受支持」。
+                //
+                //    所以这里必须**保证返回的一定是字符串**：
+                //    · v 是 undefined → 换成 null
+                //    · v 是函数/Symbol → stringify 得到 undefined → 兜底成错误 JSON
+                //    · v 是循环引用   → stringify 抛异常 → 兜底成错误 JSON（并带上原因）
+                s = JSON.stringify(v === undefined ? null : v);
+            } catch (e2) {
+                s = JSON.stringify({ error: 'JSON 序列化失败: ' + String((e2 && e2.message) || e2) });
+            }
+            if (typeof s !== 'string') {
+                s = JSON.stringify({ error: '引擎返回了不可序列化的值（type=' + (typeof v) + '）' });
+            }
+            return s;
         } catch (e) {
             return JSON.stringify({ error: String((e && e.message) || e) });
         }
