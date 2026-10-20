@@ -54,7 +54,8 @@ const pc = web.slice(web.indexOf('private var panelContent'),
                       _hairDef > 0 ? _hairDef : web.length);
 const featureGrid = web.slice(web.indexOf('private var featureGrid'),
                                web.indexOf('private func featureTileLabel'));
-const ft = web.slice(web.indexOf('private func featureTileLabel'));
+const ft = web.slice(web.indexOf('private func featureTileLabel'),
+                         web.indexOf('private var displaySettingsPage'));
 const fontMenu = web.slice(web.indexOf('private var fontMenu'),
                               web.indexOf('private var paletteGrid'));   // paletteGrid 紧跟 fontMenu
 const slider = fs.readFileSync(path.join(ROOT, 'Features/Reader/Paging/QRSlider.swift'), 'utf8');
@@ -382,8 +383,12 @@ ok(/Text\(name\)\.font\(\.system\(size: 18, weight: \.semibold\)\)/.test(ft),
    '宫格第一行 18pt（参考实现 .ic 18）');
 ok(/Text\(subtitle \?\? ""\)\.font\(\.system\(size: 13\)\)/.test(ft),
    '宫格第二行 13pt（参考实现 .t1 13）');
-ok(/Color\.clear\.frame\(width: 18, height: 18\)/.test(ft),
-   '「格式」那格无图标 → 用 18×18 占位保持八格基线一致');
+// ui.txt 的 .cell 只有**两行**：.ic(占图标位,放大字18) + .t1(13)。
+// 之前多画了一行 SF Symbol 图标 → 三行 81pt（规格是 52pt），
+// 8 个按钮因此显得太大。
+ok(!/Image\(systemName: icon\)/.test(ft), '宫格**没有** SF Symbol 图标行（ui.txt .ic 位放大字）');
+ok(/Text\(name\)\.font\(\.system\(size: 18, weight: \.semibold\)\)[\s\S]{0,120}Text\(subtitle \?\? ""\)\.font\(\.system\(size: 13\)\)/.test(ft),
+   '宫格两行：.ic 位放大字 18 + .t1 副标题 13');
 ok(!/frame\(height: 76\)/.test(ft), '宫格不设固定高度（两行文字自然等高）');
 ok(/\.padding\(\.top, 9\)[\s\S]{0,60}padding\(\.horizontal, 4\)[\s\S]{0,60}padding\(\.bottom, 8\)/.test(ft),
    '宫格内边距 9/4/8（规格表 .cell padding:9px 4px 8px）');

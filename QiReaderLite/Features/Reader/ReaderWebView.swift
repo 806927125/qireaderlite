@@ -943,13 +943,15 @@ struct ReaderWebView: View {
             guard ready else { return }
             action()
         } label: {
+            // ui.txt 的 .cell 只有**两行**：
+            //     .ic  → 占图标位，这里放大字（18）
+            //     .t1  → 副标题 13
+            //     .t2  → display:none
+            //
+            // ⚠️ 我之前多画了一行 SF Symbol 图标 → 三行 81pt，
+            //    规格是 9 + 18 + 4 + 13 + 8 = **52pt**。
+            //    多了那一行就是「8 个按钮太大」的根因。
             VStack(spacing: 4) {
-                if !icon.isEmpty {
-                    Image(systemName: icon).font(.system(size: 18))
-                } else {
-                    // 「格式」那格栖阅**没有图标** —— 用同尺寸占位保持八格内容基线一致
-                    Color.clear.frame(width: 18, height: 18)
-                }
                 Text(name).font(.system(size: 18, weight: .semibold))
                 Text(subtitle ?? "").font(.system(size: 13))
             }
