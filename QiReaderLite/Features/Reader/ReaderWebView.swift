@@ -409,6 +409,14 @@ struct ReaderWebView: View {
             .onChange(of: pageTurnMode) { _, _ in
                 syncPager(size: pagerViewport)
             }
+            // ⚠️ 打开「大小」面板时把顶栏/底栏藏掉：
+            //    ① 底栏那个「目录 / 大小 / 自检」控制块不该跟面板叠在一起；
+            //    ② 底栏常驻会把面板**顶在上方**（看着"靠上"），
+            //       藏掉之后面板自然就落到屏幕底了（用户：「往下挪挪」）。
+            //    关闭面板时恢复。
+            .onChange(of: showSettings) { _, on in
+                withAnimation(.easeInOut(duration: 0.22)) { showChrome = !on }
+            }
                 if useNativePaging {
                     // 原生分页：容器交给 UIPageViewController（系统管手势/边界/动画），
                     // CoreText 只负责把一章文本切成若干页。
@@ -448,7 +456,10 @@ struct ReaderWebView: View {
                             Task { _ = await session.prefetch(index: idx) }
                         },
                         onTapCenter: {
-                            withAnimation(.easeInOut(duration: 0.18)) { showChrome = true }
+                            // ⚠️ 要 **toggle**：点中间在「显示顶栏底栏」和「隐藏它们」之间切。
+                            //    原来写的是 `showChrome = true` —— 已经显示时点了没反应，
+                            //    底栏永远消不掉（真机反馈「没有点中间隐藏这些手势」）。
+                            withAnimation(.easeInOut(duration: 0.18)) { showChrome.toggle() }
                         },
                         onTapEdge: { dir in session.step(dir) },
                         onSwipeUp: {

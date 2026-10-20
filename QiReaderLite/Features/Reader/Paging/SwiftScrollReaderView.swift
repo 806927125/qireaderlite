@@ -316,14 +316,26 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
             if let t = pendingLoaded[idx] {
                 body = t
                 box.stateLabel.isHidden = true
+                box.spinner.isHidden = true
+                box.spinner.stopAnimating()
                 box.bodyView.isHidden = false
             } else {
                 body = ""
-                box.stateLabel.isHidden = false
                 box.bodyView.isHidden = true
-                box.stateLabel.text = pendingFailed.contains(idx) ? "加载失败" : "加载中…"
-                box.stateLabel.textColor = config.textColor.withAlphaComponent(0.5)
-                box.stateLabel.font = .systemFont(ofSize: config.fontSize)
+                if pendingFailed.contains(idx) {
+                    // 失败才出文字
+                    box.stateLabel.isHidden = false
+                    box.spinner.isHidden = true
+                    box.spinner.stopAnimating()
+                    box.stateLabel.text = "加载失败"
+                    box.stateLabel.textColor = config.textColor.withAlphaComponent(0.5)
+                    box.stateLabel.font = .systemFont(ofSize: config.fontSize)
+                } else {
+                    // 加载中 → **转圈**（用户：「加载就显示转圈的那个加载」）
+                    box.stateLabel.isHidden = true
+                    box.spinner.isHidden = false
+                    box.spinner.startAnimating()
+                }
             }
             box.bodyView.attributedText = makeBodyText(body, config: config, baseURL: pendingBaseURL)
         }
@@ -567,6 +579,8 @@ final class ChapterBox: UIView {
     let titleLabel = UILabel()
     let bodyView = UITextView()
     let stateLabel = UILabel()
+    /// 加载中的转圈
+    let spinner = UIActivityIndicatorView(style: .medium)
 
     private var boxHeight: NSLayoutConstraint!
     private var bodyHeight: NSLayoutConstraint!
@@ -577,9 +591,12 @@ final class ChapterBox: UIView {
         addSubview(titleLabel)
         addSubview(bodyView)
         addSubview(stateLabel)
+        addSubview(spinner)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         bodyView.translatesAutoresizingMaskIntoConstraints = false
         stateLabel.translatesAutoresizingMaskIntoConstraints = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.hidesWhenStopped = true
 
         boxHeight = heightAnchor.constraint(equalToConstant: 0)
         bodyHeight = bodyView.heightAnchor.constraint(equalToConstant: 0)
@@ -592,6 +609,8 @@ final class ChapterBox: UIView {
             stateLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
             stateLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: margin),
             stateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -margin),
+            spinner.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            spinner.leadingAnchor.constraint(equalTo: leadingAnchor, constant: margin),
             bodyView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
             bodyView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: margin),
             bodyView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -margin),
@@ -610,8 +629,12 @@ final class ChapterBox: UIView {
                 CGSize(width: width - margin * 2, height: .greatestFiniteMagnitude)).height + 12
         }
         if bodyView.isHidden {
-            total += stateLabel.sizeThatFits(
-                CGSize(width: width - margin * 2, height: .greatestFiniteMagnitude)).height
+            // 失败出文字、加载中出转圈 —— 两者高度都算上
+            let h = stateLabel.isHidden
+                ? spinner.intrinsicContentSize.height
+                : stateLabel.sizeThatFits(
+                    CGSize(width: width - margin * 2, height: .greatestFiniteMagnitude)).height
+            total += h
         } else {
             let h = bodyView.sizeThatFits(
                 CGSize(width: width - margin * 2, height: .greatestFiniteMagnitude)).height

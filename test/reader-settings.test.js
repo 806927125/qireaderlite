@@ -654,3 +654,27 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(lets.every(l => (l.match(/\\\(/g) || []).length <= 4),
      '每个 let 最多 4 个插值（太长会 type-check 超时）');
 }
+
+// ── 滚动模式：加载转圈 / 点中间 toggle / 打开设置藏底栏 ──
+{
+  const fsA = require('fs');
+  const sv = fsA.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
+  const rv = fsA.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+
+  // ① 加载中显示转圈（失败才出文字）
+  ok(/let spinner = UIActivityIndicatorView/.test(sv), '有 UIActivityIndicatorView');
+  ok(/box\.spinner\.startAnimating\(\)/.test(sv), '加载中 → 转圈');
+  ok(/box\.spinner\.stopAnimating\(\)/.test(sv), '加载完/失败 → 停转圈');
+  ok(/pendingFailed\.contains\(idx\)[\s\S]{0,200}加载失败/.test(sv), '失败才显示文字');
+
+  // ② 打开设置面板时藏 chrome（底栏「目录/大小/自检」不该跟面板叠着）
+  ok(/onChange\(of: showSettings\)/.test(rv), '监听 showSettings');
+  ok(/onChange\(of: showSettings\)[\s\S]{0,160}showChrome = !on/.test(rv),
+     '打开设置 → 藏 chrome（面板不再被底栏顶着，自然下移）');
+
+  // ③ 滚动模式点中间 → toggle（原来只会 show，底栏永远消不掉）
+  ok(/onTapCenter: \{[\s\S]{0,200}showChrome\.toggle\(\)/.test(rv),
+     '滚动模式点中间 → toggle 顶栏/底栏');
+  ok(!/onTapCenter: \{[\s\S]{0,120}showChrome = true/.test(rv),
+     '不再只 show 不 toggle');
+}
