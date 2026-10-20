@@ -73,6 +73,13 @@ struct PageBackdrop: View {
 struct GlassCard: ViewModifier {
     var cornerRadius: CGFloat = 18
     var strong = false
+    /// 档位：大卡片默认走 **`.clear`（通透）**。
+    ///
+    /// ⚠️ 为什么卡片跟阅读器面板分开：
+    ///    · 卡片是**大面积**，压在彩色光斑上 → 要能透出底下的插画，才像"悬浮的玻璃"
+    ///    · 阅读器面板是**正文后面** → 要磨砂底，字才看得清（那边直接用 `liquidGlass`，默认 `.regular`）
+    ///    以前两边都 `.regular` → 卡片成了一块乳白板子（用户：「整块玻璃透明度不够」）
+    var variant: GlassVariant = .clear
 
     func body(content: Content) -> some View {
         // ⚠️ 这里**必须**委托给 LiquidGlass，不要自己叠半透明白。
@@ -87,15 +94,17 @@ struct GlassCard: ViewModifier {
             tint: strong
                 ? [Color.white.opacity(0.30), Theme.pageTop.opacity(0.10)]
                 : [Color.white.opacity(0.22), Theme.pageTop.opacity(0.08)],
-            strength: strong ? 1.15 : 1.0
+            strength: strong ? 1.15 : 1.0,
+            variant: variant
         )
     }
 }
 
 extension View {
     /// 栖阅那种半透明毛玻璃卡片
-    func glassCard(cornerRadius: CGFloat = 18, strong: Bool = false) -> some View {
-        modifier(GlassCard(cornerRadius: cornerRadius, strong: strong))
+    func glassCard(cornerRadius: CGFloat = 18, strong: Bool = false,
+                   variant: GlassVariant = .clear) -> some View {
+        modifier(GlassCard(cornerRadius: cornerRadius, strong: strong, variant: variant))
     }
 }
 

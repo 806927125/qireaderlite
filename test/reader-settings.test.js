@@ -746,13 +746,14 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(!/glassEffect\(\.thin/.test(all),
      '不许用 .thin（Glass 根本没这个成员，编译不过）');
   ok(!/glassEffect\(\.clear/.test(all),
-     '全局不用 .clear（太透）；用 .regular + 可调 tint');
+     '不许绕过档位直接 glassEffect(.clear)（档位统一由 GlassVariant 决定）');
   ok((all.match(/Glass\.regular\.tint\(/g) || []).length >= 1,
      '玻璃用 .regular + tint');
   ok(/@Environment\(\\\.glassTint\)/.test(lg),
      'LiquidGlass 从 environment 读可调浓度');
-  ok(/Glass\.regular\.tint\(Color\.white\.opacity\(glassTint\)\)/.test(lg),
-     'LiquidGlass 的 tint 强度跟着 environment 走');
+  ok(/Glass\.regular\.tint\(Color\.white\.opacity\(white\)\)/.test(lg) &&
+     /Glass\.clear\.tint\(Color\.white\.opacity\(white\)\)/.test(lg),
+     'LiquidGlass 两档的 tint 强度都跟着 environment 走');
 
   // 可调功能本身
   const fsD = require('fs');
@@ -765,4 +766,38 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
      '「更多设置」里有玻璃通透度滑块');
   ok(/@AppStorage\(GlassTintStore\.key\)/.test(rv) && /@AppStorage\(GlassTintStore\.key\)/.test(app),
      '两端用同一个 key 存玻璃浓度');
+}
+
+// ── 玻璃档位：大卡片通透(.clear) / 阅读器面板磨砂(.regular) ──
+//
+// 用户：「整块玻璃透明度不够」——
+// 原来**所有**表面都用 .regular，磨砂底 + 0.20 白 tint = 一块乳白板子，
+// 底下的彩色光斑一点都透不出来。问题出在**档位**，不是 tint 深浅。
+// 现在分档：大卡片 .clear（纯折射，透背景），阅读器面板 .regular（正文要看得清）。
+{
+  const fsE = require('fs');
+  const lg = stripComments(fsE.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8'));
+  const comp = stripComments(fsE.readFileSync(path.join(ROOT, 'App/Components.swift'), 'utf8'));
+  const rvw = stripComments(fsE.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
+
+  ok(/enum GlassVariant/.test(lg) && /case regular/.test(lg) && /case clear/.test(lg),
+     '有 GlassVariant 档位（.regular 磨砂 / .clear 通透）');
+  ok(/var variant: GlassVariant = \.regular/.test(lg),
+     'LiquidGlass 有 variant 参数（默认 .regular）');
+  ok(/Glass\.clear\.tint\(/.test(lg) && /Glass\.regular\.tint\(/.test(lg),
+     '两档都走系统的 Glass.tint');
+  ok(/variant == \.clear \? glassTint \* 0\.55 : glassTint/.test(lg),
+     'clear 档的白色浓度跟着 environment 走（量程压缩到 0.55）');
+  // 设置页也要能调玻璃浓度：站在发现页想调不用先进一本书
+  const setv = stripComments(fsE.readFileSync(path.join(ROOT, 'Features/Settings/SettingsView.swift'), 'utf8'));
+  ok(/@AppStorage\(GlassTintStore\.key\)/.test(setv),
+     '设置页也用同一个 key 存玻璃浓度');
+  ok(/玻璃通透度/.test(setv) && /Slider\(value: \$glassTintPercent, in: 0\.\.\.100, step: 5\)/.test(setv),
+     '设置页有玻璃通透度滑块（发现页直接能调）');
+  ok(/var variant: GlassVariant = \.clear/.test(comp),
+     '大卡片 GlassCard 默认走 .clear（能透出底下的彩色光斑）');
+  ok(/func glassCard\([^)]*variant: GlassVariant = \.clear/.test(comp),
+     'glassCard 入口默认 .clear');
+  ok(!/liquidGlass\([^)]*variant/.test(rvw),
+     '阅读器面板不切 .clear（正文压在面板上，字必须清楚）');
 }

@@ -57,6 +57,27 @@ private struct GlassRim: View {
     }
 }
 
+// MARK: - 玻璃档位
+
+/// 玻璃的两档观感。**这是 iOS 26 唯一能连续调的轴之外，唯一能换的一档。**
+///
+/// iOS 26 的 `Glass` 只有三个静态成员：`.regular` / `.clear` / `.identity`。
+/// `.identity` 是没有效果，等于不用；真正有意义的切换就是 `.regular` ⇄ `.clear`。
+///
+/// - `.regular`：自带**不透明磨砂底**。正文压在后面也看得清 → 给**阅读器面板**。
+/// - `.clear`：**没有磨砂底**，只有折射和高光 → 能真透出底下的插画 → 给**大面积卡片**。
+///
+/// ⚠️ 用户反馈：「整块玻璃透明度不够」——
+///    原因是**所有**表面都用 `.regular`，卡片也用磨砂底，再叠 0.20 白
+///    → 就是一块乳白板子，后面什么都透不出来（`Glass.regular` 的底材才是主因，
+///    不是 tint 深浅）。所以不是「把 tint 调小」能解决的，是**档位用错了**。
+enum GlassVariant: Equatable {
+    /// 默认：磨砂底 + tint。字最清楚，用在正文后面。
+    case regular
+    /// 高透明：纯折射 + 高光。透出背景，用在大面积卡片。
+    case clear
+}
+
 // MARK: - 修饰器
 
 struct LiquidGlass: ViewModifier {
@@ -68,6 +89,8 @@ struct LiquidGlass: ViewModifier {
     var strength: Double = 1.0
     /// 圆形（顶栏返回键那种）
     var isCircle: Bool = false
+    /// 档位：`.regular`（磨砂，字清楚）/ `.clear`（通透，透背景）
+    var variant: GlassVariant = .regular
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -96,19 +119,22 @@ struct LiquidGlass: ViewModifier {
     @available(iOS 26.0, *)
     @ViewBuilder
     private func systemGlass(_ content: Content) -> some View {
-        // ⚠️ 用 **.clear** 不用 **.regular**。
-        //
-        //    iOS 26 的 `Glass` 只有三个静态成员（**没有 .thin**）：
-        //        .regular  — 默认，中等透明
-        //        .clear    — **高透明**
+        // ⚠️ iOS 26 的 `Glass` 只有三个静态成员（**没有 .thin**）：
+        //        .regular  — 自带不透明磨砂底
+        //        .clear    — 没有磨砂底，只有折射 + 高光（高透明）
         //        .identity — 无效果
-        //    `.regular` 自带不透明材质色 → 玻璃看着**一点都不通透**，
-        //    后面的正文/插画基本看不见（用户：「全局的液态玻璃透明度调整一下」）。
-        //    `.clear` 保留折射和高光，但材质色几乎透明，真的能透出后面。
-        // 用 `.regular`（有材质）+ 可调的白色 tint：
-        // `.clear` 太透（正文糊在面板上看不清），`.regular` 不加 tint 又太实。
-        // tint 连续可调，用户自己找那个"刚好能看清后面"的点。
-        let g = Glass.regular.tint(Color.white.opacity(glassTint))
+        //
+        // 档位由 `variant` 决定，不是全局一刀切：
+        //   · `.regular` → 阅读器面板（正文压在上面，字必须清楚）
+        //   · `.clear`   → 大面积卡片（要透出底下的彩色光斑）
+        //
+        // 两档的白色浓度都跟同一个 `glassTint`（滑块）走，
+        // 但 **clear 档的量程压缩到 0.55** ——
+        // 大面积卡片即使把滑块拉到底也不该变成白板，「白板」是阅读器面板的活。
+        let white = variant == .clear ? glassTint * 0.55 : glassTint
+        let g: Glass = variant == .clear
+            ? Glass.clear.tint(Color.white.opacity(white))
+            : Glass.regular.tint(Color.white.opacity(white))
         if isCircle {
             content.glassEffect(g, in: .circle)
         } else {
@@ -122,28 +148,35 @@ struct LiquidGlass: ViewModifier {
     /// ⚠️ 每一层都拆成独立小 View / 局部 let：
     ///    整条修饰链直接串起来会触发 "unable to type-check in reasonable time"。
     private func legacyGlass(_ content: Content) -> some View {
-        let fill = GlassFill(tint: tint, strength: strength)
+        // 手搓版没有"档位"这个概念，用**降低白色层**来近似 `.clear`：
+        // 磨砂（.ultraThinMaterial）还在，但上面的白渐变和高光压到 45% → 更透。
+        let s = variant == .clear ? strength * 0.45 : strength
+        let fill = GlassFill(tint: tint, strength: s)
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let inner = RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
                                      style: .continuous)
-            .strokeBorder(.white.opacity(0.10 * strength), lineWidth: 1)
+            .strokeBorder(.white.opacity(0.10 * s), lineWidth: 1)
 
         let withFill = content.background(fill).clipShape(shape)
-        let withRim = withFill.overlay(GlassRim(cornerRadius: cornerRadius, strength: strength))
+        let withRim = withFill.overlay(GlassRim(cornerRadius: cornerRadius, strength: s))
         let withInner = withRim.overlay(inner).compositingGroup()
         let withShadow = withInner
-            .shadow(color: .black.opacity(0.13 * strength), radius: 12, x: 0, y: 5)
-            .shadow(color: .white.opacity(0.10 * strength), radius: 2, x: 0, y: -1)
+            .shadow(color: .black.opacity(0.13 * s), radius: 12, x: 0, y: 5)
+            .shadow(color: .white.opacity(0.10 * s), radius: 2, x: 0, y: -1)
         return withShadow
     }
 }
 
 extension View {
     /// 圆角液态玻璃卡片
+    ///
+    /// - Parameter variant: `.regular` = 磨砂（字清楚）/ `.clear` = 通透（透背景）
     func liquidGlass(cornerRadius: CGFloat = 20,
                      tint: [Color] = [.white.opacity(0.22), .white.opacity(0.08)],
-                     strength: Double = 1.0) -> some View {
-        modifier(LiquidGlass(cornerRadius: cornerRadius, tint: tint, strength: strength))
+                     strength: Double = 1.0,
+                     variant: GlassVariant = .regular) -> some View {
+        modifier(LiquidGlass(cornerRadius: cornerRadius, tint: tint,
+                             strength: strength, variant: variant))
     }
 
     /// 玻璃圆按钮（顶栏那个返回键）

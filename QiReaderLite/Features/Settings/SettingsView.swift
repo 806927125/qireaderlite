@@ -16,6 +16,13 @@ struct SettingsView: View {
 
     @AppStorage("fontSize") private var fontSize: Double = 18
     @AppStorage("lineSpacing") private var lineSpacing: Double = 6
+    /// 液态玻璃浓度 —— 跟阅读器「更多设置 → 玻璃通透度」**同一个 key**，两边实时同步。
+    ///
+    /// ⚠️ 为什么设置页也要放一份：
+    ///    玻璃浓度影响的是**全站**（书架/发现/详情/阅读），
+    ///    但滑块原来只藏在阅读器面板里 —— 站在发现页想调玻璃，
+    ///    得先进一本书再翻到「更多设置」，绕得没法用。
+    @AppStorage(GlassTintStore.key) private var glassTintPercent: Double = 45
 
     var body: some View {
         ZStack {
@@ -80,6 +87,31 @@ struct SettingsView: View {
                             }
                             Slider(value: $lineSpacing, in: 0...20, step: 1)
                                 .tint(Theme.accent)
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    // 外观：液态玻璃浓度（全局，跟阅读器里的滑块同一个 key）
+                    settingsGroup {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "circle.lefthalf.filled")
+                                    .font(.system(size: 17))
+                                    .foregroundStyle(Theme.tagPurple)
+                                    .frame(width: 26)
+                                Text("玻璃通透度")
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(Theme.ink)
+                                Spacer()
+                                Text("\(Int(glassTintPercent))")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Theme.accent)
+                            }
+                            Slider(value: $glassTintPercent, in: 0...100, step: 5)
+                                .tint(Theme.accent)
+                            Text("数值越大越不透明（玻璃越实、字越清楚）")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.sub)
                         }
                         .padding(.vertical, 4)
                     }
