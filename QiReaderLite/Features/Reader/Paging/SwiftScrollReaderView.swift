@@ -46,6 +46,10 @@ struct SwiftScrollReaderView: UIViewRepresentable {
     var onTapCenter: () -> Void
     /// 点击左侧 / 右侧
     var onTapEdge: (Int) -> Void   // -1 左 / +1 右
+    /// 上滑退出阅读（设置里的「上滑退出阅读」开关打开时）
+    var onSwipeUp: () -> Void
+    /// 当前是否允许上滑退出
+    var swipeUpExitEnabled: Bool = false
 
     /// 窗口内保留多少章
     var windowSize: Int = 5
@@ -55,12 +59,16 @@ struct SwiftScrollReaderView: UIViewRepresentable {
         v.delegate = context.coordinator
         v.onTapEdge = onTapEdge
         v.onTapCenter = onTapCenter
+        v.onSwipeUp = onSwipeUp
+        v.swipeUpExitEnabled = swipeUpExitEnabled
         return v
     }
 
     func updateUIView(_ uiView: ScrollReaderUIView, context: Context) {
         uiView.onTapEdge = onTapEdge
         uiView.onTapCenter = onTapCenter
+        uiView.onSwipeUp = onSwipeUp
+        uiView.swipeUpExitEnabled = swipeUpExitEnabled
         uiView.apply(
             chapters: chapters,
             currentIndex: currentIndex,
@@ -96,11 +104,15 @@ protocol ScrollReaderUIViewDelegate: AnyObject {
 }
 
 /// UIKit 实现
-final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
+final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
 
     weak var delegate: ScrollReaderUIViewDelegate?
     var onTapEdge: (Int) -> Void = { _ in }
     var onTapCenter: () -> Void = {}
+    /// 上滑退出
+    var onSwipeUp: () -> Void = {}
+    /// 设置里「上滑退出阅读」开关的当前值
+    var swipeUpExitEnabled: Bool = false
 
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
@@ -156,6 +168,11 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
             stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
         ])
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
+        // ⑤ 上滑退出：跟滚动**同时**识别，只有明显向上才触发
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handleSwipeUp(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = self
+        addGestureRecognizer(pan)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -460,6 +477,25 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
         return best
     }
 
+    // MARK: - 上滑退出
+
+    @objc private func handleSwipeUp(_ g: UIPanGestureRecognizer) {
+        guard swipeUpExitEnabled else { return }
+        let v = g.translation(in: self)
+        // 明显向上（dy 为负）且纵向为主
+        guard v.y < -90, abs(v.y) > abs(v.x) * 1.6 else { return }
+        if g.state == .ended || g.state == .cancelled { onSwipeUp() }
+    }
+
+    // MARK: - 手势协调
+
+    /// 上滑手势要跟滚动**同时**识别（不能 require 失败把滚动搞死），
+    /// 所以返回 true 让两者共存；真正的判定在 handleSwipeUp 里。
+    func gestureRecognizer(_ g: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
+    }
+
     // MARK: - 点击
 
     @objc private func handleTap(_ g: UITapGestureRecognizer) {
@@ -478,22 +514,29 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // 章节高度自己算（UITextView 没有 intrinsic size，Auto Layout 算不准）
         for box in chapterViews.values {
-            guard box.bodyView.isHidden == false else { continue }
-            let target = box.bodyView.sizeThatFits(
-                CGSize(width: bounds.width - 40, height: .greatestFiniteMagnitude))
-            if abs(box.bodyView.frame.height - target.height) > 0.5 {
-                box.bodyView.frame.size.height = target.height
-            }
+            box.updateHeights(width: bounds.width)
         }
     }
 }
 
 /// 一个章节的容器：标题 + 正文 + 状态
+///
+/// ⚠️ 高度必须**自己算**：UITextView 没有 intrinsic size，Auto Layout 不会
+///    知道它该多高。之前我用「top + bottom 约束」把它撑满，结果每个章节
+///    高度算错 → 滚动区下面留了一大片空白（真机反馈「下面那些还隐藏不了」）。
+///
+///    现在改成：bodyView 只约束 top + 高度（高度自己算），
+///    章节整体高度也用一条**可更新的 height 约束**。
 final class ChapterBox: UIView {
     let titleLabel = UILabel()
     let bodyView = UITextView()
     let stateLabel = UILabel()
+
+    private var boxHeight: NSLayoutConstraint!
+    private var bodyHeight: NSLayoutConstraint!
+    private let margin: CGFloat = 20
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -503,22 +546,48 @@ final class ChapterBox: UIView {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         bodyView.translatesAutoresizingMaskIntoConstraints = false
         stateLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        boxHeight = heightAnchor.constraint(equalToConstant: 0)
+        bodyHeight = bodyView.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 20),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            boxHeight,
+            bodyHeight,
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: margin),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: margin),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -margin),
             stateLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
-            stateLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            stateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            stateLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
+            stateLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: margin),
+            stateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -margin),
             bodyView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
-            bodyView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            bodyView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            bodyView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
+            bodyView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: margin),
+            bodyView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -margin),
+            // ⚠️ bodyView **不**约束到底 —— 高度由 bodyHeight 给，
+            //    章节总高由 boxHeight 给。否则 Auto Layout 会互相打架。
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// 按内容算出各块高度并写回约束。
+    func updateHeights(width: CGFloat) {
+        var total: CGFloat = margin
+        if !titleLabel.isHidden {
+            total += titleLabel.sizeThatFits(
+                CGSize(width: width - margin * 2, height: .greatestFiniteMagnitude)).height + 12
+        }
+        if bodyView.isHidden {
+            total += stateLabel.sizeThatFits(
+                CGSize(width: width - margin * 2, height: .greatestFiniteMagnitude)).height
+        } else {
+            let h = bodyView.sizeThatFits(
+                CGSize(width: width - margin * 2, height: .greatestFiniteMagnitude)).height
+            bodyHeight.constant = h
+            total += h
+        }
+        total += margin
+        // 只在真的变了才改约束，否则会无限触发 layout
+        if abs(boxHeight.constant - total) > 0.5 { boxHeight.constant = total }
+    }
 }
 
 private extension CGFloat {

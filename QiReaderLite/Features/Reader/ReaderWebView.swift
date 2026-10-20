@@ -45,6 +45,8 @@ struct ReaderWebView: View {
     @StateObject private var session: ReaderSession
     @State private var showCatalog = false
     @State private var showSettings = false
+    /// 设置面板按住下拖时的位移（跟目录的拖拽关闭一个手感）
+    @State private var panelDragOffset: CGFloat = 0
     @State private var showPageDiag = false
     @State private var showChrome = false
     /// 子页：显示设置 / 间距设置
@@ -240,6 +242,21 @@ struct ReaderWebView: View {
     ///      换主题不重发 → reader.html 的配色也不变。
     ///
     /// 症状：用户说「换背景只有状态栏生效，要重进正文才变过来」。
+    /// 排版/主题的**统一签名** —— 任何一项变了都要立刻重排。
+    ///
+            // ⚠️ 任何一项排版/主题设置变了都要**立刻**生效，
+            //    不能要退出重进正文才变（真机反馈）。
+            //    监听**统一签名**，一次覆盖字号/行距/段距/配色/字体/对齐/基线。
+            .onChange(of: readerLayoutSig) { _, _ in applyThemeChange() }
+    ///   · 行距/段距/对齐/基线/字体 —— 全都不生效
+    ///
+    /// 合成一个签名统一监听，一次覆盖全部。
+    private var readerLayoutSig: String {
+        "\(fontSize)|\(lineSpacing)|\(paraSpacing)|\(themeKey)|\(followSystemAppearance)|"
+            + "\(darkScheme == .dark)|\(fontKey)|\(paraAlign)|\(verticalJustify)|"
+            + "\(showBaseline)|\(baselineScope)|\(horizontalMargin)|\(baselineColorHex)"
+    }
+
     private func applyThemeChange() {
         // ① 原生分页：重新求值 layoutConfig → pager.config → 重排（sig 含 themeKey，不会被幂等挡掉）
         syncPager(size: pagerViewport)
@@ -423,7 +440,12 @@ struct ReaderWebView: View {
                         onTapCenter: {
                             withAnimation(.easeInOut(duration: 0.18)) { showChrome = true }
                         },
-                        onTapEdge: { dir in session.step(dir) }
+                        onTapEdge: { dir in session.step(dir) },
+                        onSwipeUp: {
+                            // ⑤ 上滑退出阅读（设置里那个开关）
+                            if swipeUpExit { dismiss() }
+                        },
+                        swipeUpExitEnabled: swipeUpExit
                     )
                     .ignoresSafeArea(edges: .bottom)
                 }
@@ -728,19 +750,27 @@ struct ReaderWebView: View {
             .padding(.horizontal, 14)
             .padding(.bottom, Self.bottomSafeInset + 14)
 
-            .offset(y: showSettings ? 0 : sheetHeight + 48)
+            .offset(y: showSettings ? panelDragOffset : sheetHeight + 48)
             .opacity(showSettings ? 1 : 0)
             .animation(.spring(response: 0.34, dampingFraction: 0.86),
                        value: showSettings)
+            .animation(.spring(response: 0.32, dampingFraction: 0.85),
+                       value: panelDragOffset)
             .allowsHitTesting(showSettings)
-            // 下拉关闭
+            // ④ 跟目录一样：**按住往下拖**，面板跟着手指走；
+            //    拖过阈值松手 → 关掉；没拖够 → 弹回去。
             .gesture(
-                DragGesture(minimumDistance: 8)
+                DragGesture(minimumDistance: 6)
+                    .onChanged { v in
+                        // 只往下拖，往上忽略
+                        guard v.translation.height > 0 else { return }
+                        panelDragOffset = min(v.translation.height, 320)
+                    }
                     .onEnded { v in
-                        if v.translation.height > 42
-                            || v.predictedEndTranslation.height > 90 {
-                            showSettings = false
-                        }
+                        let go = panelDragOffset > 110
+                            || v.predictedEndTranslation.height > 220
+                        if go { showSettings = false }
+                        panelDragOffset = 0
                     }
             )
             .accessibilityIdentifier("readerSettingsPanel")
@@ -1160,7 +1190,6 @@ struct ReaderWebView: View {
                 }
                 settingRow(title: "上滑退出阅读", icon: "arrow.up") {
                     Toggle("", isOn: $swipeUpExit).labelsHidden().tint(Theme.accent)
-                        .disabled(true)
                 }
                 settingRow(title: "iPad 或宽屏横屏时自动同屏显示左右两页", icon: "rectangle.split.2x1") {
                     Toggle("", isOn: $twoPageSpread).labelsHidden().tint(Theme.accent)

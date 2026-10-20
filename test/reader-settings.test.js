@@ -556,3 +556,37 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
      || arrowRow.indexOf('chevron.left') < arrowRow.indexOf('chevron.right'),
      '两个箭头不堆在同一边');
 }
+
+// ── 用户一次提的 5 个问题 ──
+{
+  const fs6 = require('fs');
+  const rv = fs6.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  const sv = fs6.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
+
+  // ① 滚动模式章节高度自算（之前 Auto Layout 算错 → 下面留一大片空白）
+  ok(/func updateHeights\(width: CGFloat\)/.test(sv), '章节高度自己算');
+  ok(/bodyHeight = bodyView\.heightAnchor\.constraint/.test(sv),
+     'bodyView 高度用可更新约束（不靠 bottom 约束撑）');
+  ok(!/bodyView\.bottomAnchor\.constraint\(equalTo: bottomAnchor/.test(sv),
+     'bodyView 不约束到底（会跟自算高度打架）');
+
+  // ②③ 排版/主题任何一项变了都要立刻重排 → 统一签名
+  ok(/private var readerLayoutSig: String/.test(rv), '有排版统一签名');
+  ok(/onChange\(of: readerLayoutSig\)/.test(rv), '监听统一签名（一次覆盖全部设置项）');
+  for (const k of ['fontSize','lineSpacing','paraSpacing','themeKey','fontKey',
+                   'paraAlign','verticalJustify','showBaseline','baselineScope']) {
+    ok(rv.includes(k), '排版签名含 ' + k);
+  }
+
+  // ④ 设置面板按住下拖关闭（跟目录一样）
+  ok(/panelDragOffset/.test(rv), '设置面板有拖拽位移状态');
+  ok(/DragGesture\(minimumDistance: 6\)[\s\S]{0,400}panelDragOffset = min/.test(rv),
+     '设置面板可按住往下拖（面板跟着手指走）');
+  ok(/value: panelDragOffset/.test(rv), '拖拽有回弹动画');
+
+  // ⑤ 上滑退出阅读
+  ok(/onSwipeUp/.test(sv) && /swipeUpExitEnabled/.test(sv), '滚动层支持上滑退出');
+  ok(/handleSwipeUp/.test(sv) && /v\.y < -90/.test(sv), '上滑判定：明显向上才退出');
+  ok(/if swipeUpExit \{ dismiss\(\) \}/.test(rv), '上滑退出接 dismiss');
+  ok(!/上滑退出阅读[\s\S]{0,200}\.disabled\(true\)/.test(rv), '「上滑退出阅读」开关不再置灰');
+}
