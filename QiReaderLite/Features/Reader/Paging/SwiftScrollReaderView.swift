@@ -77,17 +77,26 @@ struct SwiftScrollReaderView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: ScrollReaderUIViewDelegate {}
+    final class Coordinator: ScrollReaderUIViewDelegate {
+        func scrollReader(_ v: ScrollReaderUIView, didReportProgress chapter: Int, ratio: Double) {}
+        func scrollReader(_ v: ScrollReaderUIView, didChangeVisibleChapter chapter: Int) {}
+        func scrollReader(_ v: ScrollReaderUIView, didRequestChapter index: Int) {}
+    }
+}
+
+/// SwiftScrollReaderView 的回调协议。
+///
+/// ⚠️ 必须放在**文件顶层**：嵌套在 ScrollReaderUIView 里面的话，
+///    外层的 Coordinator 拿不到这个类型（编译报
+///    "cannot find type 'ScrollReaderUIViewDelegate' in scope"）。
+protocol ScrollReaderUIViewDelegate: AnyObject {
+    func scrollReader(_ v: ScrollReaderUIView, didReportProgress chapter: Int, ratio: Double)
+    func scrollReader(_ v: ScrollReaderUIView, didChangeVisibleChapter chapter: Int)
+    func scrollReader(_ v: ScrollReaderUIView, didRequestChapter index: Int)
 }
 
 /// UIKit 实现
 final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
-
-    protocol ScrollReaderUIViewDelegate: AnyObject {
-        func scrollReader(_ v: ScrollReaderUIView, didReportProgress chapter: Int, ratio: Double)
-        func scrollReader(_ v: ScrollReaderUIView, didChangeVisibleChapter chapter: Int)
-        func scrollReader(_ v: ScrollReaderUIView, didRequestChapter index: Int)
-    }
 
     weak var delegate: ScrollReaderUIViewDelegate?
     var onTapEdge: (Int) -> Void = { _ in }
@@ -294,7 +303,12 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
         if config.firstLineIndent > 0 {
             para.firstLineHeadIndent = config.firstLineIndent
         }
-        para.verticalAlignment = config.verticalJustify ? .bottom : .top
+        // ⚠️ NSParagraphStyle **没有** verticalAlignment 属性（编译报
+        //    "has no member 'verticalAlignment'"）。UITextView 也不支持
+        //    「行内垂直两端对齐」—— 那是 CSS line-height 的行为。
+        //    所以 verticalJustify 在滚动模式下**不生效**（原生分页那边
+        //    用 NSLayoutManager 自己算，是生效的）。
+        //    留这个字段是为了跟 config 的语义对齐，不静默吞掉。
 
         for (i, piece) in Self.normalizedParagraphs(text).enumerated() {
             if i > 0 { out.append(NSAttributedString(string: "\n", attributes: nil)) }
@@ -329,16 +343,20 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
                                          attributes: [.font: font, .paragraphStyle: para, .foregroundColor: color]))
             return
         }
+        // ⚠️ cursor 用 **Int（utf16 offset）**，不能用 String.Index 去比 Int
+        //    （编译报 "referencing operator function '>' on 'BinaryInteger'
+        //    requires that 'String.Index' conform to 'BinaryInteger'"）。
         let ns = text as NSString
         var cursor = 0
         re.enumerateMatches(in: text, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
-            guard let m, let r = Range(m.range, in: text) else { return }
-            if r.lowerBound > cursor {
-                let seg = String(text[text.index(text.startIndex, offsetBy: cursor)..<text.index(text.startIndex, offsetBy: r.lowerBound)])
+            guard let m else { return }
+            let loc = m.range.location
+            if loc > cursor {
+                let seg = ns.substring(with: NSRange(location: cursor, length: loc - cursor))
                 out.append(NSAttributedString(string: seg,
                                              attributes: [.font: font, .paragraphStyle: para, .foregroundColor: color]))
             }
-            let tag = String(text[r])
+            let tag = ns.substring(with: m.range)
             if let img = Self.imageTag(tag), let url = Self.resolveImageURL(img.src, baseURL: baseURL) {
                 let att = NSTextAttachment()
                 att.image = Self.loadImage(url)
@@ -347,10 +365,10 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate {
                 out.append(NSAttributedString(string: tag,
                                              attributes: [.font: font, .paragraphStyle: para, .foregroundColor: color]))
             }
-            cursor = r.upperBound
+            cursor = loc + m.range.length
         }
-        if cursor < text.count {
-            let seg = String(text[text.index(text.startIndex, offsetBy: cursor)...])
+        if cursor < ns.length {
+            let seg = ns.substring(from: cursor)
             out.append(NSAttributedString(string: seg,
                                          attributes: [.font: font, .paragraphStyle: para, .foregroundColor: color]))
         }
