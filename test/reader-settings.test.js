@@ -197,11 +197,11 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 //
 // ⚠️ 之前在「结构还没对」时来回换过这个背景（.82 磨砂白 ↔ .glassEffect），
 //    两边都不对 —— 那是**结构问题**不是材质问题。结构对了（build120）才比得了材质。
-ok(/\.glassEffect\(\.regular\.tint\(Color\.white\.opacity\(0\.12\)\)/.test(panel),
-   '面板是**液态玻璃** .glassEffect(.regular) + 白 tint 0.12（通透但白块还能分层）');
+ok(/\.glassEffect\(\.thin\.tint\(Color\.white\.opacity\(0\.12\)\)/.test(panel),
+   '面板是**液态玻璃** .glassEffect(.thin) + 白 tint 0.12（通透但白块还能分层）');
 // ⚠️ 白 tint 别调回 0.35 —— 玻璃会白得一点都不通透，后面的正文看不见
 //    （用户：「液态玻璃透明度调整一下，一点都不透明」）。
-ok(!/glassEffect\(\.regular\.tint\(Color\.white\.opacity\(0\.(3[0-9]|[4-9][0-9])/.test(panel),
+ok(!/glassEffect\(\.thin\.tint\(Color\.white\.opacity\(0\.(3[0-9]|[4-9][0-9])/.test(panel),
    '玻璃白 tint 不超过 0.12（别调回 0.35，会一点都不透明）');
 ok(/\.background\(\s*Color\.clear\s*\n?\s*\.glassEffect/.test(panel),
    '面板玻璃用 background(_:in:) 重载（.background { Shape } 会撑成全屏）');
@@ -299,8 +299,8 @@ ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 // 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
 // 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
 // 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
-ok(/\.glassEffect\(\.regular/.test(panel), '面板是液态玻璃');
-ok(/\.glassEffect\(\.regular\.tint\(/.test(panel), '液态玻璃带白 tint（内层白块要能分层）');
+ok(/\.glassEffect\(\.thin/.test(panel), '面板是液态玻璃 .thin');
+ok(/\.glassEffect\(\.thin\.tint\(/.test(panel), '液态玻璃带白 tint（内层白块要能分层）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
@@ -700,4 +700,22 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
      '首章没正文 → 章节内容（标题/加载中文字）全藏');
   ok(/currentHasText[\s\S]{0,300}stack\.isHidden = false/.test(sv),
      '首章正文到了 → 正常显示内容');
+}
+
+// ── 全局液态玻璃透明度 ──
+// 用户：「我说的是全局的液态玻璃透明度」——
+// 顶栏/底栏/胶囊按钮/返回键，全都走 App/LiquidGlass.swift 的 LiquidGlass。
+// iOS 26 的 Glass 分档：.ultraThin < .thin < .regular < .thick。
+// **.regular 自带不透明材质色** → 玻璃看着一点都不通透。
+{
+  const fsC = require('fs');
+  const lg = fsC.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8');
+  const all = lg + fsC.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  ok(!/glassEffect\(\.regular/.test(all),
+     '全局不用 .regular（自带不透明材质色，一点都不通透）');
+  ok((all.match(/glassEffect\(\.thin/g) || []).length >= 5,
+     '全局玻璃统一用 .thin');
+  ok(/glassEffect\(\.thin, in: \.circle\)/.test(lg), '圆形玻璃 .thin');
+  ok(/glassEffect\(\.thin, in: \.capsule\)/.test(lg), '胶囊玻璃 .thin');
+  ok(/glassEffect\(\.thin, in: \.rect\(cornerRadius: r\)\)/.test(lg), '圆角矩形玻璃 .thin');
 }

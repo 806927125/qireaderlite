@@ -401,8 +401,8 @@ ok(/\.padding\(\.vertical, 10\)/.test(catalog), '行内上下留白 10');
   ok(!/glassEffectShape/.test(after),
      '.glassCapsule() 后面没有再跟 .glassEffectShape —— 玻璃不许叠两层');
   const lgl2 = stripComments(fs.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8'));
-  ok(/func glassCapsule/.test(lgl2) && /glassEffect\(\.regular, in: \.capsule\)/.test(lgl2),
-     'glassCapsule 自己分流到系统 .capsule（iOS26）/ 手搓 999（17~25），一个修饰符搞定');
+  ok(/func glassCapsule/.test(lgl2) && /glassEffect\(\.thin, in: \.capsule\)/.test(lgl2),
+     'glassCapsule 自己分流到系统 .capsule（iOS26，用 .thin 保持通透）/ 手搓 999（17~25）');
 }
 ok(/\.background\(NoScrollExpand\(\)\)/.test(catalog),
    '目录挂了 NoScrollExpand —— 「目录上滑只滚目录，页面不变大」靠它');

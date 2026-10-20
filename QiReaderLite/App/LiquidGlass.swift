@@ -94,10 +94,15 @@ struct LiquidGlass: ViewModifier {
     @available(iOS 26.0, *)
     @ViewBuilder
     private func systemGlass(_ content: Content) -> some View {
+        // ⚠️ 用 **.thin** 不用 **.regular**。
+        //    iOS 26 的 Glass 分档：.ultraThin < .thin < .regular < .thick。
+        //    `.regular` 自带不透明材质色 → 玻璃看着**一点都不通透**，
+        //    后面的内容基本看不见（用户：「全局的液态玻璃透明度调整一下」）。
+        //    降到 `.thin`：保留折射/高光，材质色薄一档，真的能透。
         if isCircle {
-            content.glassEffect(.regular, in: .circle)
+            content.glassEffect(.thin, in: .circle)
         } else {
-            content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            content.glassEffect(.thin, in: .rect(cornerRadius: cornerRadius))
         }
     }
     #endif
@@ -148,7 +153,7 @@ extension View {
                       tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
         #if compiler(>=6.2)
         if USE_SYSTEM_GLASS, #available(iOS 26.0, *) {
-            return AnyView(self.glassEffect(.regular, in: .capsule))
+            return AnyView(self.glassEffect(.thin, in: .capsule))
         }
         return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength)))
         #else
@@ -168,13 +173,14 @@ extension View {
     func glassEffectShape(_ shape: GlassShape) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
+            // 同 systemGlass：全局用 .thin（.regular 太实，一点都不通透）
             switch shape {
             case .capsule:
-                self.glassEffect(.regular, in: .capsule)
+                self.glassEffect(.thin, in: .capsule)
             case .circle:
-                self.glassEffect(.regular, in: .circle)
+                self.glassEffect(.thin, in: .circle)
             case .rounded(let r):
-                self.glassEffect(.regular, in: .rect(cornerRadius: r))
+                self.glassEffect(.thin, in: .rect(cornerRadius: r))
             }
         } else {
             self.liquidGlass(cornerRadius: shape.cornerRadiusFallback)
