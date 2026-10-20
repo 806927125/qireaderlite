@@ -17,8 +17,9 @@ struct QiReaderLiteApp: App {
             RootView()
                 .environmentObject(sources)
                 .environmentObject(library)
-                // 玻璃浓度注入 environment → 全站 14 处玻璃调用点自动跟随
-                .environment(\.glassTint, glassTintPercent / 100 * 0.45)
+                // 玻璃浓度注入 environment → 全站 25 处玻璃调用点自动跟随
+                // （0 = 纯玻璃，0.85 = 乳白玻璃 ≈ 栖阅的 rgba(255,255,255,.82)）
+                .environment(\.glassTint, glassTintPercent / 100 * GlassTintStore.maxVeil)
                 .task { RuleSandbox.shared.boot() }
         }
     }

@@ -197,8 +197,12 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 //
 // ⚠️ 之前在「结构还没对」时来回换过这个背景（.82 磨砂白 ↔ .glassEffect），
 //    两边都不对 —— 那是**结构问题**不是材质问题。结构对了（build120）才比得了材质。
-ok(/\.glassEffect\(Glass\.regular\.tint\(Color\.white\.opacity\(glassTint\)\)/.test(panel),
-   '面板是**液态玻璃** .glassEffect(.regular) + 可调白 tint');
+// ⚠️ 面板的白度现在由**自绘的白纱层**控制（玻璃下面垫一层），
+//    不用 Glass.tint() —— tint 是色彩映射，系统会自己反向调节 → 滑块等于没接。
+ok(/\.glassEffect\(Glass\.regular,/.test(panel),
+   '面板是**液态玻璃** .glassEffect(.regular)');
+ok(/Color\.white\.opacity\(max\(glassTint, 0\.35\)\)/.test(panel),
+   '面板的白纱层可调（有下限 0.35，盖在正文上不能透到字打架）');
 // ⚠️ 白 tint 别调回 0.35 —— 玻璃会白得一点都不通透，后面的正文看不见
 //    （用户：「液态玻璃透明度调整一下，一点都不透明」）。
 ok(!/glassEffect\(\.clear/.test(panel),
@@ -299,8 +303,9 @@ ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 // 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
 // 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
 // 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
-ok(/\.glassEffect\(Glass\.regular\.tint\(/.test(panel), '面板是液态玻璃 .regular + 可调 tint');
-ok(/\.glassEffect\(Glass\.regular\.tint\(/.test(panel), '液态玻璃带可调白 tint（内层白块要能分层）');
+ok(/\.glassEffect\(Glass\.regular,/.test(panel), '面板是液态玻璃 .regular');
+ok(/\.background\(Color\.white\.opacity\(max\(glassTint, 0\.35\)\)/.test(panel),
+   '面板有自绘白纱层（内层白块要能分层）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
@@ -747,13 +752,14 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
      '不许用 .thin（Glass 根本没这个成员，编译不过）');
   ok(!/glassEffect\(\.clear/.test(all),
      '不许绕过档位直接 glassEffect(.clear)（档位统一由 GlassVariant 决定）');
-  ok((all.match(/Glass\.regular\.tint\(/g) || []).length >= 1,
-     '玻璃用 .regular + tint');
+  ok((all.match(/Glass\.regular/g) || []).length >= 1,
+     '玻璃用系统的 Glass.regular');
+  ok((all.match(/Color\.white\.opacity\(/g) || []).length >= 1,
+     '白度由自绘白纱层控制（不用 tint 控不透明度）');
   ok(/@Environment\(\\\.glassTint\)/.test(lg),
      'LiquidGlass 从 environment 读可调浓度');
-  ok(/Glass\.regular\.tint\(Color\.white\.opacity\(white\)\)/.test(lg) &&
-     /Glass\.clear\.tint\(Color\.white\.opacity\(white\)\)/.test(lg),
-     'LiquidGlass 两档的 tint 强度都跟着 environment 走');
+  ok(/let veil = Color\.white\.opacity\(max\(glassTint, minVeil\)\)/.test(lg),
+     'LiquidGlass 的白纱浓度跟着 environment 走');
 
   // 可调功能本身
   const fsD = require('fs');
@@ -767,37 +773,67 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(/@AppStorage\(GlassTintStore\.key\)/.test(rv) && /@AppStorage\(GlassTintStore\.key\)/.test(app),
      '两端用同一个 key 存玻璃浓度');
 }
-
-// ── 玻璃档位：大卡片通透(.clear) / 阅读器面板磨砂(.regular) ──
+// ── 玻璃档位 + 白纱层：大卡片通透(.clear) / 阅读器面板磨砂(.regular) ──
 //
-// 用户：「整块玻璃透明度不够」——
-// 原来**所有**表面都用 .regular，磨砂底 + 0.20 白 tint = 一块乳白板子，
-// 底下的彩色光斑一点都透不出来。问题出在**档位**，不是 tint 深浅。
-// 现在分档：大卡片 .clear（纯折射，透背景），阅读器面板 .regular（正文要看得清）。
+// 用户连着提了两次：
+//   ①「整块玻璃透明度不够」→ 卡片也用 .regular（磨砂底）= 一块乳白板子
+//   ②「这个透明度，调了跟没调一样」→ 拿 `Glass.tint()` 的 alpha 当不透明度旋钮，
+//      但 Apple 的 tint 是「按内容亮度生成色调」的**色彩映射**，而且系统还会
+//      为了保证可读性自己反向调节 tint 量 → 设定被稀释，滑块等于没接。
+//
+// 现在的做法（Apple 给 .clear 的官方药方）：
+//   · 档位管「透不透」：.clear = 纯折射（透背景）/ .regular = 磨砂（字清楚）
+//   · **白纱层**管「实不实」：我们自己画的 dimming layer，垫在玻璃**下面**，
+//     alpha 就是我们说了算 → 滑块终于有反应
 {
   const fsE = require('fs');
   const lg = stripComments(fsE.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8'));
   const comp = stripComments(fsE.readFileSync(path.join(ROOT, 'App/Components.swift'), 'utf8'));
   const rvw = stripComments(fsE.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
+  const appv = stripComments(fsE.readFileSync(path.join(ROOT, 'App/QiReaderLiteApp.swift'), 'utf8'));
+  const gtv = stripComments(fsE.readFileSync(path.join(ROOT, 'App/GlassTint.swift'), 'utf8'));
 
   ok(/enum GlassVariant/.test(lg) && /case regular/.test(lg) && /case clear/.test(lg),
      '有 GlassVariant 档位（.regular 磨砂 / .clear 通透）');
   ok(/var variant: GlassVariant = \.regular/.test(lg),
      'LiquidGlass 有 variant 参数（默认 .regular）');
-  ok(/Glass\.clear\.tint\(/.test(lg) && /Glass\.regular\.tint\(/.test(lg),
-     '两档都走系统的 Glass.tint');
-  ok(/variant == \.clear \? glassTint \* 0\.55 : glassTint/.test(lg),
-     'clear 档的白色浓度跟着 environment 走（量程压缩到 0.55）');
+  ok(/variant == \.clear \? Glass\.clear : Glass\.regular/.test(lg),
+     '档位直接选系统的 Glass.clear / Glass.regular');
+
+  // ⚠️ 核心：不再拿 tint 的 alpha 当不透明度
+  ok(!/Glass\.regular\.tint\(/.test(lg) && !/Glass\.clear\.tint\(/.test(lg),
+     '不用 Glass.tint() 控不透明度（tint 是色彩映射，系统会自己调 → 调了跟没调一样）');
+  ok(!/Glass\.regular\.tint\(/.test(rvw),
+     '阅读器面板也不用 tint 控白度');
+
+  // 白纱层：垫在玻璃下面，alpha 跟 environment 走
+  ok(/glassEffect\(g, in: \.rect\(cornerRadius: cornerRadius\)\)[\s\S]{0,120}background\(veil, in: RoundedRectangle/.test(lg),
+     '玻璃下面垫了白纱层（dimming layer，Apple 给 .clear 的官方药方）');
+  ok(/let veil = Color\.white\.opacity\(max\(glassTint, minVeil\)\)/.test(lg),
+     '白纱浓度跟着 environment 走（并受 minVeil 兜底）');
+  ok(/var minVeil: Double = 0/.test(lg),
+     'LiquidGlass 有白纱下限参数 minVeil');
+
+  // 量程：0 = 纯玻璃，0.85 = 乳白（≈ 栖阅 rgba(255,255,255,.82)）
+  ok(/static let maxVeil: Double = 0\.85/.test(gtv),
+     '白纱上限 0.85（对上栖阅的 rgba(255,255,255,.82)）');
+  ok(/glassTintPercent \/ 100 \* GlassTintStore\.maxVeil/.test(appv),
+     'App 根注入的白纱量程是 0~0.85（不是旧的 0.45）');
+
   // 设置页也要能调玻璃浓度：站在发现页想调不用先进一本书
   const setv = stripComments(fsE.readFileSync(path.join(ROOT, 'Features/Settings/SettingsView.swift'), 'utf8'));
   ok(/@AppStorage\(GlassTintStore\.key\)/.test(setv),
      '设置页也用同一个 key 存玻璃浓度');
   ok(/玻璃通透度/.test(setv) && /Slider\(value: \$glassTintPercent, in: 0\.\.\.100, step: 5\)/.test(setv),
      '设置页有玻璃通透度滑块（发现页直接能调）');
+
+  // 分档：大卡片 .clear + 白纱下限 0（全程可调）；阅读器面板 .regular + 下限 0.35
   ok(/var variant: GlassVariant = \.clear/.test(comp),
      '大卡片 GlassCard 默认走 .clear（能透出底下的彩色光斑）');
   ok(/func glassCard\([^)]*variant: GlassVariant = \.clear/.test(comp),
      'glassCard 入口默认 .clear');
-  ok(!/liquidGlass\([^)]*variant/.test(rvw),
-     '阅读器面板不切 .clear（正文压在面板上，字必须清楚）');
+  ok(/minVeil: 0/.test(comp),
+     '大卡片白纱下限 0（滑块能一路透到底）');
+  ok(/glassEffect\(Glass\.regular,[\s\S]{0,200}Color\.white\.opacity\(max\(glassTint, 0\.35\)\)/.test(rvw),
+     '阅读器面板是 .regular + 白纱下限 0.35（盖在正文上，不能透到字打架）');
 }

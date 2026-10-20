@@ -95,7 +95,9 @@ struct GlassCard: ViewModifier {
                 ? [Color.white.opacity(0.30), Theme.pageTop.opacity(0.10)]
                 : [Color.white.opacity(0.22), Theme.pageTop.opacity(0.08)],
             strength: strong ? 1.15 : 1.0,
-            variant: variant
+            variant: variant,
+            // 大卡片不设白纱下限 —— 它就是要能一路透到底（透出底下的彩色光斑）
+            minVeil: 0
         )
     }
 }

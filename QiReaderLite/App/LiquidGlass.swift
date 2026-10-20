@@ -28,6 +28,8 @@ private let USE_SYSTEM_GLASS = true
 private struct GlassFill: View {
     var tint: [Color]
     var strength: Double
+    /// 白纱层浓度（0 最透）—— 跟系统玻璃一个语义
+    var veil: Double = 0
 
     var body: some View {
         ZStack {
@@ -37,6 +39,8 @@ private struct GlassFill: View {
                                     .black.opacity(0.05 * strength)],
                            startPoint: .top, endPoint: .bottom)
             LinearGradient(colors: tint, startPoint: .topLeading, endPoint: .bottomTrailing)
+            // 白纱在最上层（手搓版没有系统玻璃可采样，只能直接盖）
+            Rectangle().fill(Color.white.opacity(veil))
         }
     }
 }
@@ -59,38 +63,45 @@ private struct GlassRim: View {
 
 // MARK: - 玻璃档位
 
-/// 玻璃的两档观感。**这是 iOS 26 唯一能连续调的轴之外，唯一能换的一档。**
+/// 玻璃的两档观感。**这是 iOS 26 能换的一档。**
 ///
 /// iOS 26 的 `Glass` 只有三个静态成员：`.regular` / `.clear` / `.identity`。
 /// `.identity` 是没有效果，等于不用；真正有意义的切换就是 `.regular` ⇄ `.clear`。
 ///
-/// - `.regular`：自带**不透明磨砂底**。正文压在后面也看得清 → 给**阅读器面板**。
-/// - `.clear`：**没有磨砂底**，只有折射和高光 → 能真透出底下的插画 → 给**大面积卡片**。
+/// - `.regular`：自带**不透明磨砂底**，而且会**自适应**（自动判断背景明暗、
+///   调整 tint 和动态范围来保证上面的字看得清）。正文压在后面也看得清 → 给**阅读器面板**。
+/// - `.clear`：**没有磨砂底，也没有自适应**，只有折射和高光，永久通透。
+///   Apple 明确说：clear **必须配一层 dimming layer** 才够清晰 → 给**大面积卡片**。
 ///
 /// ⚠️ 用户反馈：「整块玻璃透明度不够」——
-///    原因是**所有**表面都用 `.regular`，卡片也用磨砂底，再叠 0.20 白
-///    → 就是一块乳白板子，后面什么都透不出来（`Glass.regular` 的底材才是主因，
-///    不是 tint 深浅）。所以不是「把 tint 调小」能解决的，是**档位用错了**。
+///    原因是**所有**表面都用 `.regular`，卡片也用磨砂底 → 一块乳白板子，
+///    后面什么都透不出来（`Glass.regular` 的底材才是主因，不是 tint 深浅）。
+///    所以不是「把 tint 调小」能解决的，是**档位用错了**。
 enum GlassVariant: Equatable {
-    /// 默认：磨砂底 + tint。字最清楚，用在正文后面。
+    /// 默认：磨砂 + 自适应。字最清楚，用在正文后面。
     case regular
-    /// 高透明：纯折射 + 高光。透出背景，用在大面积卡片。
+    /// 高透明：纯折射 + 高光。透出背景，用在大面积卡片（配白纱层）。
     case clear
 }
 
 // MARK: - 修饰器
 
 struct LiquidGlass: ViewModifier {
-    /// 玻璃的白色浓度（0 最透，0.45 最实）—— 由 environment 注入，用户可调
+    /// 玻璃上**白纱层**的浓度（0 = 纯玻璃，0.85 = 乳白）—— environment 注入，用户可调
     @Environment(\.glassTint) private var glassTint
     var cornerRadius: CGFloat = 20
-    /// 玻璃里透出的环境色（栖阅那种淡蓝/淡紫）
+    /// 玻璃里透出的环境色（栖阅那种淡蓝/淡紫）—— 只给手搓版用
     var tint: [Color] = [.white.opacity(0.22), .white.opacity(0.08)]
     var strength: Double = 1.0
     /// 圆形（顶栏返回键那种）
     var isCircle: Bool = false
     /// 档位：`.regular`（磨砂，字清楚）/ `.clear`（通透，透背景）
     var variant: GlassVariant = .regular
+    /// 白纱的**下限** —— 有些表面不能太透：
+    ///   · 阅读器设置面板是**盖在正文上面**的，白纱太低 → 后面的章节字会透出来跟面板字打架
+    ///   · 顶栏胶囊/返回键太小，太透就没轮廓了
+    ///   · 大面积卡片不需要下限（它就是想透出底下的插画）
+    var minVeil: Double = 0
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -119,26 +130,31 @@ struct LiquidGlass: ViewModifier {
     @available(iOS 26.0, *)
     @ViewBuilder
     private func systemGlass(_ content: Content) -> some View {
-        // ⚠️ iOS 26 的 `Glass` 只有三个静态成员（**没有 .thin**）：
-        //        .regular  — 自带不透明磨砂底
-        //        .clear    — 没有磨砂底，只有折射 + 高光（高透明）
-        //        .identity — 无效果
+        // ⚠️ 这里**不**用 `Glass.tint()` 来控不透明度。
         //
-        // 档位由 `variant` 决定，不是全局一刀切：
-        //   · `.regular` → 阅读器面板（正文压在上面，字必须清楚）
-        //   · `.clear`   → 大面积卡片（要透出底下的彩色光斑）
+        //    Apple 官方（WWDC25 "Meet Liquid Glass"）说得很清楚：
+        //      · tint 是「根据内容亮度生成一系列色调」的**色彩映射**，不是不透明度旋钮
+        //      · 系统还会**为了保证可读性自己反向调节 tint 的量**
+        //        （"The amount of tint and the dynamic range shift to always
+        //          ensure buttons remain legible"）
+        //    → 拿 tint 的 alpha 当滑块，系统把设定稀释掉 =「调了跟没调一样」（实测）。
         //
-        // 两档的白色浓度都跟同一个 `glassTint`（滑块）走，
-        // 但 **clear 档的量程压缩到 0.55** ——
-        // 大面积卡片即使把滑块拉到底也不该变成白板，「白板」是阅读器面板的活。
-        let white = variant == .clear ? glassTint * 0.55 : glassTint
-        let g: Glass = variant == .clear
-            ? Glass.clear.tint(Color.white.opacity(white))
-            : Glass.regular.tint(Color.white.opacity(white))
+        //    官方给 `.clear` 开的药方是：**配一层 dimming layer**
+        //    （"it needs a dimming layer to darken the underlying content"）。
+        //    那层白纱是**我们自己画的**，alpha 就是我们说了算 → 滑块才真的有用。
+        //
+        // 层次（从后到前）：白纱 → 玻璃 → 内容
+        //   白纱垫在玻璃**下面** → 玻璃采样到的是「被白纱压过」的背景，
+        //   玻璃自己的高光/折射还在，但整体变白变实。
+        let g: Glass = variant == .clear ? Glass.clear : Glass.regular
+        let veil = Color.white.opacity(max(glassTint, minVeil))
         if isCircle {
             content.glassEffect(g, in: .circle)
+                .background(veil, in: Circle())
         } else {
             content.glassEffect(g, in: .rect(cornerRadius: cornerRadius))
+                .background(veil, in: RoundedRectangle(cornerRadius: cornerRadius,
+                                                        style: .circular))
         }
     }
     #endif
@@ -151,7 +167,7 @@ struct LiquidGlass: ViewModifier {
         // 手搓版没有"档位"这个概念，用**降低白色层**来近似 `.clear`：
         // 磨砂（.ultraThinMaterial）还在，但上面的白渐变和高光压到 45% → 更透。
         let s = variant == .clear ? strength * 0.45 : strength
-        let fill = GlassFill(tint: tint, strength: s)
+        let fill = GlassFill(tint: tint, strength: s, veil: max(glassTint, minVeil))
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let inner = RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
                                      style: .continuous)
@@ -174,14 +190,15 @@ extension View {
     func liquidGlass(cornerRadius: CGFloat = 20,
                      tint: [Color] = [.white.opacity(0.22), .white.opacity(0.08)],
                      strength: Double = 1.0,
-                     variant: GlassVariant = .regular) -> some View {
+                     variant: GlassVariant = .regular,
+                     minVeil: Double = 0.25) -> some View {
         modifier(LiquidGlass(cornerRadius: cornerRadius, tint: tint,
-                             strength: strength, variant: variant))
+                             strength: strength, variant: variant, minVeil: minVeil))
     }
 
     /// 玻璃圆按钮（顶栏那个返回键）
     func glassCircle(tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
-        modifier(LiquidGlass(cornerRadius: 999, tint: tint, isCircle: true))
+        modifier(LiquidGlass(cornerRadius: 999, tint: tint, isCircle: true, minVeil: 0.25))
     }
 
     /// 玻璃胶囊（栖阅顶栏那种图标组、目录底部的搜索框）
@@ -196,7 +213,8 @@ extension View {
                       tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
         // ⚠️ iOS 26 上必须走 LiquidGlass 修饰器（它内部有 @Environment 能拿到
         //    用户可调的玻璃浓度）；这里直接 glassEffect(.clear) 就**调不动了**。
-        return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength)))
+        return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint,
+                                           strength: strength, minVeil: 0.25)))
     }
 
     /// 只设玻璃的**形状**，不碰别的修饰链。
@@ -212,11 +230,11 @@ extension View {
         // 同 glassCapsule：走 LiquidGlass 修饰器，才能吃到用户可调的玻璃浓度。
         switch shape {
         case .capsule:
-            modifier(LiquidGlass(cornerRadius: 999))
+            modifier(LiquidGlass(cornerRadius: 999, minVeil: 0.25))
         case .circle:
-            modifier(LiquidGlass(cornerRadius: 999, isCircle: true))
+            modifier(LiquidGlass(cornerRadius: 999, isCircle: true, minVeil: 0.25))
         case .rounded(let r):
-            modifier(LiquidGlass(cornerRadius: r))
+            modifier(LiquidGlass(cornerRadius: r, minVeil: 0.25))
         }
     }
 }

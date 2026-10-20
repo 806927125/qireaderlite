@@ -759,15 +759,20 @@ struct ReaderWebView: View {
             //    .glassEffect），两边都不对 —— 其实是**结构问题**不是材质问题。
             //    现在结构对了（build120），才轮得到比材质。
             //
-            // tint 决定玻璃有多「白」、有多不通透。
-            //    之前用 .white.opacity(0.35) —— 白得太多，玻璃**一点都不通透**，
-            //    后面正文和主题插画基本看不见（用户：「液态玻璃透明度调整一下」）。
-            //    降到 **0.12**：留一点白度（不然内层白块 white@.55 分不出层次），
-            //    但玻璃真的能透出后面的内容。
+            // ⚠️ 这里**不**用 `Glass.tint()` 控白度 ——
+            //    Apple 的 tint 是「按内容亮度生成色调」的色彩映射，系统还会为了
+            //    保证可读性自己反向调节 tint 量 → 拿它当不透明度旋钮 =「调了跟没调一样」。
+            //    正确做法（Apple 给 .clear 的官方药方）：**一层 dimming layer**。
+            //    白纱垫在玻璃**下面**，alpha 是我们自己说了算 → 滑块才真的有用。
+            //
+            // 面板是**盖在正文上面**的 → 白纱要有下限 0.35，
+            // 否则滑到 0 时后面的章节字会透出来跟面板里的字打架。
             .background(
                 Color.clear
-                    .glassEffect(Glass.regular.tint(Color.white.opacity(glassTint)),
+                    .glassEffect(Glass.regular,
                                  in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .background(Color.white.opacity(max(glassTint, 0.35)),
+                                in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
 
