@@ -678,3 +678,22 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(!/onTapCenter: \{[\s\S]{0,120}showChrome = true/.test(rv),
      '不再只 show 不 toggle');
 }
+
+// ── 滚动模式进入时：首章正文没到 → 整屏只显示居中大转圈 ──
+// 用户原话：「加载的时候应该是中间加载圈圈，其他都不显示的，加载完成出正文」
+{
+  const fsB = require('fs');
+  const sv = fsB.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
+  ok(/centerSpinner = UIActivityIndicatorView\(style: \.large\)/.test(sv),
+     '有整屏居中的大转圈（.large）');
+  ok(/centerSpinner\.centerXAnchor\.constraint\(equalTo: centerXAnchor\)/.test(sv) &&
+     /centerSpinner\.centerYAnchor\.constraint\(equalTo: centerYAnchor\)/.test(sv),
+     '转圈居中');
+  ok(/private func updateLoadingState\(\)/.test(sv), '有加载态切换');
+  ok(/currentHasText[\s\S]{0,400}centerSpinner\.startAnimating\(\)/.test(sv),
+     '首章没正文 → 转圈转起来');
+  ok(/centerSpinner\.startAnimating\(\)[\s\S]{0,200}stack\.isHidden = true/.test(sv),
+     '首章没正文 → 章节内容（标题/加载中文字）全藏');
+  ok(/currentHasText[\s\S]{0,300}stack\.isHidden = false/.test(sv),
+     '首章正文到了 → 正常显示内容');
+}

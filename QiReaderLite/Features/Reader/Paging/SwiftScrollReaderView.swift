@@ -118,6 +118,9 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
 
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
+    /// 首章正文还没到时的**整屏居中大转圈**
+    /// （用户：「加载的时候应该是中间加载圈圈，其他都不显示的」）
+    private let centerSpinner = UIActivityIndicatorView(style: .large)
     /// 章下标 → 章节视图
     private var chapterViews: [Int: ChapterBox] = [:]
     /// 窗口内章号（有序）
@@ -169,6 +172,13 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
             stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
             stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
         ])
+        addSubview(centerSpinner)
+        centerSpinner.translatesAutoresizingMaskIntoConstraints = false
+        centerSpinner.hidesWhenStopped = true
+        NSLayoutConstraint.activate([
+            centerSpinner.centerXAnchor.constraint(equalTo: centerXAnchor),
+            centerSpinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
         // ⑤ 上滑退出：跟滚动**同时**识别，只有明显向上才触发
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleSwipeUp(_:)))
@@ -208,6 +218,7 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
 
         let chapterChanged = currentIndex != pendingCurrent
         pendingCurrent = currentIndex
+        updateLoadingState()
         rebuildWindowIfNeeded(currentIndex: currentIndex, force: needsRebuild)
         if needsRebuild { restackAll() }
         // 换章后视口要落到**新章的开头**，否则窗口动了、眼睛还停在老地方。
@@ -251,6 +262,23 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
         }
         windowIndices = desired
         restackAll()
+    }
+
+    /// 首章正文没到 → **整屏只显示居中大转圈**（章节标题、"加载中…"文字全不显示）；
+    /// 正文到了 → 正常显示章节内容。
+    private func updateLoadingState() {
+        let currentHasText = !(pendingLoaded[pendingCurrent] ?? "").isEmpty
+        if currentHasText {
+            centerSpinner.stopAnimating()
+            centerSpinner.isHidden = true
+            stack.isHidden = false
+            scrollView.isHidden = false
+        } else {
+            centerSpinner.startAnimating()
+            centerSpinner.isHidden = false
+            // 「其他都不显示」—— 章节标题 / 加载中文字 先藏掉
+            stack.isHidden = true
+        }
     }
 
     /// 请求窗口里还没正文的章（每个只请求一次，别反复刷）
