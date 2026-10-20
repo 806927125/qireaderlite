@@ -238,6 +238,12 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
         for idx in desired where chapterViews[idx] == nil {
             chapterViews[idx] = makeChapterBox(index: idx)
         }
+        // ⚠️ 窗口里**还没正文**的章 → 主动请求。
+        //    之前我定义了 onRequestChapter 回调但**从没在这里调过** ——
+        //    结果邻章永远是「加载中…」，用户说「一进滚动模式显示的不对，
+        //    要切换一下翻页才正常」（切翻页时原生分页的 onNeedChapter 会预取，
+        //    切回来就有内容了）。
+        requestMissingChapters(in: desired)
         // 不在窗口里的要摘（保留 anchor，避免闪烁）
         let keep = Set(desired)
         for idx in windowIndices where !keep.contains(idx) {
@@ -245,6 +251,21 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
         }
         windowIndices = desired
         restackAll()
+    }
+
+    /// 请求窗口里还没正文的章（每个只请求一次，别反复刷）
+    private var requestedChapters: Set<Int> = []
+    private func requestMissingChapters(in indices: [Int]) {
+        for idx in indices {
+            let hasText = !(pendingLoaded[idx] ?? "").isEmpty
+            guard !hasText, !requestedChapters.contains(idx) else { continue }
+            requestedChapters.insert(idx)
+            pendingOnRequest?(idx)
+        }
+        // 已经拿到正文的，下次窗口变动时允许重新请求（内容可能更新）
+        for idx in requestedChapters where !(pendingLoaded[idx] ?? "").isEmpty {
+            requestedChapters.remove(idx)
+        }
     }
 
     private func clearStack() {
@@ -494,8 +515,9 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
         // 明显向上（dy 为负）且纵向为主
         guard v.y < -90, abs(v.y) > abs(v.x) * 1.6 else { return }
         // ⚠️ 只有**从底部起手**才触发（用户要求）：
-        //    底部 30% 往上滑 = 退出；正文中间往上滑 = 正常滚动。
-        guard swipeStartY > bounds.height * 0.70 else { return }
+        //    「下半部分的下半部分」= 底部 **25%** 往上滑 = 退出；
+        //    其余地方往上滑 = 正常滚动。
+        guard swipeStartY > bounds.height * 0.75 else { return }
         if g.state == .ended || g.state == .cancelled { onSwipeUp() }
     }
 

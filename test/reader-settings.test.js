@@ -595,7 +595,8 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(/handleSwipeUp/.test(sv) && /v\.y < -90/.test(sv), '上滑判定：明显向上才退出');
   // ⚠️ 只有**从底部起手**才算上滑退出（正文中间往上滑 = 正常滚动）
   ok(/swipeStartY = g\.location\(in: self\)\.y/.test(sv), '记录上滑手势起点');
-  ok(/swipeStartY > bounds\.height \* 0\.70/.test(sv), '只有底部 30% 起手才触发退出');
+  // 「下半部分的下半部分」= 底部 25%
+  ok(/swipeStartY > bounds\.height \* 0\.75/.test(sv), '只有底部 25% 起手才触发退出');
   // ③ 设置面板整块都能往下拖 → 必须 simultaneousGesture（gesture 会被子视图吃掉）
   ok(/\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 6\)/.test(rv),
      '设置面板用 simultaneousGesture（gesture 会让上半拖不动）');
@@ -605,4 +606,33 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   ok(/frame\(maxWidth: 340\)/.test(top), '书名胶囊限宽 340');
   ok(/if swipeUpExit \{ dismiss\(\) \}/.test(rv), '上滑退出接 dismiss');
   ok(!/上滑退出阅读[\s\S]{0,200}\.disabled\(true\)/.test(rv), '「上滑退出阅读」开关不再置灰');
+}
+
+// ── 分页模式字号/行距切换要立刻生效 ──
+// 根因：`renders[c]` 是**按章缓存**的页，config 换了但缓存不清 →
+// 改字号完全没反应。真机反馈「所有翻页模式下字体大小切换不生效」。
+{
+  const fs7 = require('fs');
+  const pg = fs7.readFileSync(path.join(ROOT, 'Features/Reader/Paging/PagedChapterPager.swift'), 'utf8');
+  const cf = fs7.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderLayoutConfig.swift'), 'utf8');
+  ok(/didSet \{[\s\S]{0,300}invalidateLayout\(\)/.test(pg),
+     'config 变更 → invalidateLayout（清章级缓存 + 重排）');
+  ok(/private func invalidateLayout\(\)[\s\S]{0,300}renders\.removeAll\(\)/.test(pg),
+     'invalidateLayout 清掉 renders（按章缓存的页是旧 config 排的）');
+  ok(/invalidateLayout\(\)[\s\S]{0,200}rebuildSpine/.test(pg) &&
+     /invalidateLayout\(\)[\s\S]{0,300}show\(cursor: cursor/.test(pg),
+     'invalidateLayout 重建 spine 并跳回当前页');
+  ok(/var layoutFingerprint: String/.test(cf), 'ReaderLayoutConfig 有排版指纹（判重）');
+}
+
+// ── 滚动模式要主动预取邻章 ──
+// 之前定义了 onRequestChapter 回调但**从没调过** → 邻章永远「加载中…」，
+// 一进滚动模式显示不对，切一次翻页（原生分页的 onNeedChapter 会预取）才正常。
+{
+  const fs8 = require('fs');
+  const sv = fs8.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
+  ok(/requestMissingChapters\(in: desired\)/.test(sv), '窗口变化时会请求缺正文的章');
+  ok(/private func requestMissingChapters/.test(sv) && /pendingOnRequest\?\(idx\)/.test(sv),
+     'requestMissingChapters 真的调了 onRequestChapter');
+  ok(/requestedChapters: Set<Int>/.test(sv), '已请求的章去重（不反复刷）');
 }

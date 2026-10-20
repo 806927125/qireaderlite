@@ -21,7 +21,24 @@ final class PagedChapterPager: NSObject {
 
     // MARK: 输入
 
-    var config: ReaderLayoutConfig = ReaderLayoutConfig()
+    /// 排版配置。
+    ///
+    /// ⚠️ **改了必须让章级缓存失效**：`renders[c]` 是按章缓存的页，
+    ///    排好的页是**旧 config** 排的。config 直接换掉而缓存不清 →
+    ///    改字号/行距完全没反应（真机反馈：分页模式下字体大小切换不生效）。
+    var config: ReaderLayoutConfig = ReaderLayoutConfig() {
+        didSet {
+            guard config.layoutFingerprint != oldValue.layoutFingerprint else { return }
+            invalidateLayout()
+        }
+    }
+
+    /// 排版变了 → 丢掉按章缓存的页，重新排。
+    private func invalidateLayout() {
+        renders.removeAll()
+        rebuildSpine(around: cursor)
+        show(cursor: cursor, animated: false)
+    }
     var pageSize: CGSize = .zero
     var turnMode: String = "slide"
     var background: UIColor = .systemBackground

@@ -84,6 +84,18 @@ struct ReaderLayoutConfig {
     /// 底线范围：整行 / 按文字
     var baselineScope: ReaderBaselineScope = .full
 
+    /// 排版**指纹** —— 用来判断「排版有没有真的变」。
+    ///
+    /// ⚠️ 不能给 ReaderLayoutConfig 加 Equatable：里面有 UIColor，
+    ///    UIColor 的 == 只比颜色本身，不比「是不是同一个对象」，
+    ///    用来判重不可靠。改成显式的指纹字符串。
+    var layoutFingerprint: String {
+        "\(fontSize)|\(lineSpacing)|\(paragraphSpacing)|\(horizontalMargin)|"
+            + "\(topMargin)|\(bottomMargin)|\(firstLineIndent)|\(fontFamily)|\(isBold)|"
+            + "\(textColor)|\(backgroundColor)|\(paraAlign.rawValue)|\(verticalJustify)|"
+            + "\(showBaseline)|\(baselineColor)|\(baselineScope.rawValue)"
+    }
+
     /// 一页的内容区尺寸（视口扣掉四周边距）
     func pageSize(in viewport: CGSize) -> CGSize {
         CGSize(width: max(80, viewport.width - horizontalMargin * 2),
