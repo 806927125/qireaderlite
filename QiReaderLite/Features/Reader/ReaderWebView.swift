@@ -609,12 +609,12 @@ struct ReaderWebView: View {
             //
             // ② 内部 padding（玻璃**里面**）
             //
-            // 顶部留白：栖阅真机面板顶到「小」那行约 **42pt**。
-            // 这里是 28，再加 top-card 自己的 padding 14 = **42** ✓
+            // 规格表：面板内边距 上 12 / 左右 14 / 下 16
+            // （加上 top-card 自己的 14，第一行离面板顶 26pt）
             // 「整体下移」是误读 —— 用户要下移的是**下面那 8 个宫格按钮**，
             // 不是整个面板内容（见 featureGrid 的 padding(.top, ...)）。
             // 栖阅真机面板顶到「小」那行的距离约 **42pt**（截图量）。
-            .padding(.top, 28)
+            .padding(.top, 12)
             .padding(.horizontal, 14)
             .padding(.bottom, 16)
 
@@ -631,6 +631,9 @@ struct ReaderWebView: View {
                 Color.clear
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            // 规格表：面板阴影 0 4 30 rgba(0,0,0,.12)
+            .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 4)
 
             // ① 定位留白（玻璃**外面**）：左右 14；底部要让开 home indicator。
             //
@@ -1141,7 +1144,8 @@ struct ReaderWebView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .padding(.horizontal, 4)
-            .background(Self.qrFill,
+            // 规格：按钮背景 rgba(0,0,0,.05)（不是 --fill 的冷灰 12%）
+            .background(Color.black.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
