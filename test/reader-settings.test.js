@@ -593,6 +593,16 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   // ⑤ 上滑退出阅读
   ok(/onSwipeUp/.test(sv) && /swipeUpExitEnabled/.test(sv), '滚动层支持上滑退出');
   ok(/handleSwipeUp/.test(sv) && /v\.y < -90/.test(sv), '上滑判定：明显向上才退出');
+  // ⚠️ 只有**从底部起手**才算上滑退出（正文中间往上滑 = 正常滚动）
+  ok(/swipeStartY = g\.location\(in: self\)\.y/.test(sv), '记录上滑手势起点');
+  ok(/swipeStartY > bounds\.height \* 0\.70/.test(sv), '只有底部 30% 起手才触发退出');
+  // ③ 设置面板整块都能往下拖 → 必须 simultaneousGesture（gesture 会被子视图吃掉）
+  ok(/\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 6\)/.test(rv),
+     '设置面板用 simultaneousGesture（gesture 会让上半拖不动）');
+  // ④ 顶栏书名胶囊要居中
+  ok(/Spacer\(minLength: 8\)[\s\S]{0,120}Text\(book\.name\)[\s\S]{0,400}Spacer\(minLength: 8\)/.test(top),
+     '顶栏书名胶囊前后各有 Spacer（居中）');
+  ok(/frame\(maxWidth: 340\)/.test(top), '书名胶囊限宽 340');
   ok(/if swipeUpExit \{ dismiss\(\) \}/.test(rv), '上滑退出接 dismiss');
   ok(!/上滑退出阅读[\s\S]{0,200}\.disabled\(true\)/.test(rv), '「上滑退出阅读」开关不再置灰');
 }

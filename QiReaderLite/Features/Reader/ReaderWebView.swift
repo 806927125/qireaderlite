@@ -401,6 +401,12 @@ struct ReaderWebView: View {
             //    不能要退出重进正文才变（真机反馈）。
             //    监听**统一签名**，一次覆盖字号/行距/段距/配色/字体/对齐/基线。
             .onChange(of: readerLayoutSig) { _, _ in applyThemeChange() }
+            // ⚠️ 翻页模式（滚动 / 仿真 / 滑动 / 平移 / 无动画）切换后要**立刻**生效，
+            //    不能要重进正文。`useNativePaging` 变了 → 渲染分支换了，
+            //    但 pager 里已经排好的页还是旧模式的 → 必须重新 setMode + 重排。
+            .onChange(of: pageTurnMode) { _, _ in
+                syncPager(size: pagerViewport)
+            }
                 if useNativePaging {
                     // 原生分页：容器交给 UIPageViewController（系统管手势/边界/动画），
                     // CoreText 只负责把一章文本切成若干页。
@@ -579,6 +585,8 @@ struct ReaderWebView: View {
             }
             // ⚠️ 栖阅顶栏中间是**一个圆角胶囊**，里面装着书名 + 副标题两行。
             //    我原来只是两个裸 Text，没有胶囊底 → 跟栖阅对不上。
+            Spacer(minLength: 8)
+            // ⚠️ 胶囊要**居中**（栖阅那样），所以前后各一个 Spacer 等分剩余空间。
             VStack(alignment: .leading, spacing: 1) {
                 Text(book.name).font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ink).lineLimit(1)
@@ -587,8 +595,8 @@ struct ReaderWebView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .liquidGlass(cornerRadius: 20, strength: 1.0)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 4)
+            .frame(maxWidth: 340)
+            Spacer(minLength: 8)
             // coverUrl 是非可选 String，别用 if let（CI 就是在这儿红的）
             if !book.coverUrl.isEmpty, let coverURL = URL(string: book.coverUrl) {
                 AsyncImage(url: coverURL) { img in
@@ -761,7 +769,11 @@ struct ReaderWebView: View {
             .allowsHitTesting(showSettings)
             // ④ 跟目录一样：**按住往下拖**，面板跟着手指走；
             //    拖过阈值松手 → 关掉；没拖够 → 弹回去。
-            .gesture(
+            // ⚠️ 必须是 `simultaneousGesture`，不能是 `gesture`：
+            //    `gesture` 会被**子视图自己的手势优先吃掉**（Toggle / 按钮 / 滑块），
+            //    结果就是「只有没控件的下半部分能拖，上半拖不动」。
+            //    simultaneous = 同时识别，整块面板都能往下拖。
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 6)
                     .onChanged { v in
                         // 只往下拖，往上忽略

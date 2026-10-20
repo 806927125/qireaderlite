@@ -111,6 +111,8 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
     var onTapCenter: () -> Void = {}
     /// 上滑退出
     var onSwipeUp: () -> Void = {}
+    /// 上滑手势的**起点 y**（用来判断是不是从底部起手）
+    private var swipeStartY: CGFloat = 0
     /// 设置里「上滑退出阅读」开关的当前值
     var swipeUpExitEnabled: Bool = false
 
@@ -481,9 +483,19 @@ final class ScrollReaderUIView: UIView, UIScrollViewDelegate, UIGestureRecognize
 
     @objc private func handleSwipeUp(_ g: UIPanGestureRecognizer) {
         guard swipeUpExitEnabled else { return }
+        // ⚠️ 起点要记下来：`g.translation` 是相对**开始**的位移，
+        //    而 `g.location` 是**当前**手指位置 —— 判定「是不是从底部起手」
+        //    必须用起点。
+        if g.state == .began {
+            swipeStartY = g.location(in: self).y
+            return
+        }
         let v = g.translation(in: self)
         // 明显向上（dy 为负）且纵向为主
         guard v.y < -90, abs(v.y) > abs(v.x) * 1.6 else { return }
+        // ⚠️ 只有**从底部起手**才触发（用户要求）：
+        //    底部 30% 往上滑 = 退出；正文中间往上滑 = 正常滚动。
+        guard swipeStartY > bounds.height * 0.70 else { return }
         if g.state == .ended || g.state == .cancelled { onSwipeUp() }
     }
 
