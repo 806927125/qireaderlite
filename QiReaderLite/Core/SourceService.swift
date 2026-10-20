@@ -18,6 +18,40 @@ final class SourceService {
         }
     }
 
+    // MARK: 登录
+
+    /// 跑书源的登录动作（loginUrl 里的 `login(true)` / `register()` / `checkStatus()` …）
+    ///
+    /// - Parameters:
+    ///   - action: loginUi 里按钮的 action（如 `login(true)`）
+    ///   - formValues: 表单值（字段名 → 值）。引擎把它挂在 `result` 上，
+    ///     站方 login() 里读的就是 `result['邮箱']` / `result['密码']`。
+    /// - Returns: 是否成功 + 失败原因（成功时 message 为空）
+    func login(source: BookSource, action: String,
+               formValues: [String: String]) async throws -> (ok: Bool, message: String) {
+        var p: [String: Any] = ["action": action, "formValues": formValues]
+        let srcData = try AppEncoder.encode(source)
+        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        p["source"] = srcDict
+        p["cookieSnapshot"] = CookieJar.snapshot()
+        let raw = try await RuleSandbox.shared.invoke("login", p, source: source)
+        // 登录动作会改书籍变量 / 登录信息 → 落盘
+        if let obj = raw as? [String: Any] {
+            if let v = obj["__sourceVars"] as? String {
+                SourceVariables.setVars(v, for: source.bookSourceUrl)
+            }
+            if let l = obj["__loginInfo"] as? String {
+                SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
+            }
+        }
+        let dict = raw as? [String: Any] ?? [:]
+        let ok = dict["ok"] as? Bool ?? false
+        let err = dict["error"] as? String ?? ""
+        return (ok, err)
+    }
+
     // MARK: 桥接
 
     private func json(_ payload: [String: Any]) -> [String: Any] { payload }

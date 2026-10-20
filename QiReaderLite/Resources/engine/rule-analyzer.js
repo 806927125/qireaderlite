@@ -185,6 +185,9 @@
       book: undefined,
       chapter: undefined,
       page: 1,
+      // 搜索词 —— 站方的 jsLib/规则里经常直接用 `key`
+      // （🍅大灰狼的 explore 规则就用了 → 不给就是 "key is not defined"）
+      key: '',
       // 常用快捷方式，真实 Legado 里有些是宿主注入的
       JSON: JSON, Math: Math, Date: Date, RegExp: RegExp,
       String: String, Number: Number, Array: Array, Object: Object,
@@ -233,6 +236,22 @@
   }
 
   function runJs(code, scope) {
+    // ⚠️⚠️ jsLib 里的函数是**全局作用域**的（间接 eval 定义的），
+    //    所以它们体里的自由变量（`source` / `result` / `book`）解析到的是
+    //    **全局对象**，不是规则 scope。
+    //    站方 login()/setArguments() 就是这么写的：
+    //        const { source } = this;  let open_argument = source.getVariable();
+    //        result = JSON.parse(source.getLoginInfo());
+    //    → 全局对象上必须**同时**有 source 和 result，否则：
+    //        "Cannot read properties of undefined (reading 'getVariable')"
+    //        "result is not defined"
+    if (scope && typeof g !== 'undefined') {
+      try {
+        if (scope.source !== undefined) g.source = scope.source;
+        if (scope.result !== undefined) g.result = scope.result;
+        if (scope.book !== undefined) g.book = scope.book;
+      } catch (e) { /* 忽略 */ }
+    }
     var names = Object.keys(scope);
     var args = names.map(function (k) { return scope[k]; });
     var key = names.join(',') + '\u0001' + code;

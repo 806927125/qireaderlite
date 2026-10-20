@@ -194,6 +194,13 @@
       vars[String(key)] = String(value);
       return '';
     };
+    // Legado 的 Book 上还有这几个方法，站方会调
+    // （🍅大灰狼的 init 规则就调了 book.setUseReplaceRule / book.readConfig）
+    wrapped.readConfig = wrapped.readConfig || {};
+    ['setUseReplaceRule', 'setUseReplaceJs', 'setChapterUpdateMode',
+     'setSearchTocUrl', 'setChapterUrl'].forEach(function (fn) {
+      wrapped[fn] = function () { return ''; };
+    });
     return wrapped;
   }
 

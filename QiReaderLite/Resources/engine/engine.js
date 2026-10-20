@@ -66,6 +66,40 @@
   }
 
   /* ---------------------------------------------------------
+   * 登录：loginUrl + 表单值
+   * ------------------------------------------------------- */
+
+  var loginLoaded = {};
+
+  /**
+   * 把 loginUrl 当 jsLib 一样加载进**全局作用域**。
+   * 里面是 `function login(flag){…}` / `register()` / `checkStatus()` 这种定义，
+   * 不加载到全局，登录界面点按钮时就找不到函数。
+   */
+  function ensureLoginLib(source) {
+    if (!source || !source.loginUrl) return Promise.resolve();
+    var key = (source.bookSourceUrl || source.bookSourceName || 'anon') + '#login';
+    if (loginLoaded[key]) return Promise.resolve();
+    loginLoaded[key] = true;
+    // ⚠️ loginUrl 依赖 jsLib 里的东西（比如 `host` 服务器列表）→
+    //    **必须先把 jsLib 加载了**，否则 loginUrl 一加载就 "host is not defined"。
+    return ensureJsLib(source).then(function () {
+    var prevSource = g.source;
+    try {
+      var fn = new Function('__code', 'return (0, eval)(__code);');
+      g.source = QR.wrapSource ? QR.wrapSource(source) : source;
+      try { fn(String(source.loginUrl)); }
+      catch (e) { QR.java.log('[loginUrl 出错] ' + (source.bookSourceName || key) + ': ' + e.message); }
+      finally { g.source = prevSource; }
+    } catch (e) {
+      g.source = prevSource;
+      QR.java.log('[loginUrl 出错] ' + e.message);
+    }
+    return Promise.resolve();
+    });
+  }
+
+  /* ---------------------------------------------------------
    * URL 模板
    * ------------------------------------------------------- */
 
@@ -630,6 +664,41 @@
         return { books: r.books, total: r.books.length, nextUrl: r.nextUrl || '' };
       }).catch(function (e) {
         return { books: [], total: 0, error: String(e && e.message || e) };
+      });
+    },
+
+    /**
+     * 登录：跑 loginUrl 里的动作（login(true) / register() / checkStatus() …）
+     *
+     * ⚠️ 表单值挂在 **result** 上 —— Legado 就是这么给的，
+     *    站方 login() 里读的是 `result['邮箱']` / `result['密码']`。
+     */
+    login: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureLoginLib(src).then(function () {
+        var action = String(p.action || '').trim();
+        if (!action) return { ok: false, error: '没有登录动作' };
+        var formValues = (p.formValues && typeof p.formValues === 'object') ? p.formValues : {};
+        var scope = rule.makeScope({
+          result: formValues,
+          source: src,
+          book: p.book,
+          baseUrl: baseUrlOf(src),
+          key: p.key || ''
+        });
+        // jsLib 里的函数用 `this.source` 拿 source（this = 全局对象）→ op 期间挂上
+        var prevSource = g.source;
+        g.source = QR.wrapSource ? QR.wrapSource(src) : src;
+        return rule.runJs(action, scope)
+          .then(function (r) {
+            g.source = prevSource;
+            return { ok: true, result: (r == null ? '' : String(r)) };
+          })
+          .catch(function (e) {
+            g.source = prevSource;
+            return { ok: false, error: String(e && e.message || e) };
+          });
       });
     },
 

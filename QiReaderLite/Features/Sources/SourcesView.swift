@@ -11,6 +11,8 @@ struct SourcesView: View {
     @State private var netDiagText: String?
     @State private var netDiagBusy = false
     @State private var filter = ""
+    /// 要登录的书源（点书源行右侧的钥匙图标）
+    @State private var loginTarget: BookSource?
 
     var shown: [BookSource] {
         filter.isEmpty ? store.sources : store.sources.filter {
@@ -36,6 +38,10 @@ struct SourcesView: View {
         }
         .navigationTitle("书源 (\(store.enabled.count))")
         .searchable(text: $filter, prompt: "搜书源名 / 分组")
+        // 书源登录：点行右侧的钥匙图标
+        .sheet(item: $loginTarget) { src in
+            SourceLoginSheet(source: src)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -181,6 +187,17 @@ struct SourcesView: View {
                 }
             }
             Spacer(minLength: 0)
+            // 有 loginUrl 的源给一个登录入口（登录信息/书籍变量存在本地）
+            if let lu = s.loginUrl, !lu.isEmpty {
+                Button {
+                    loginTarget = s
+                } label: {
+                    Image(systemName: "key.horizontal.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+            }
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.sub.opacity(0.55))

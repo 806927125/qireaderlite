@@ -120,6 +120,17 @@ ok(/\[URL 里的 JS 出错\]/.test(eng),
 ok(/hexDecodeToString: function/.test(javai) && /b64decode\(s\)/.test(javai),
    'hexDecodeToString 对 base64 串容错（站方写 base64 却按 hex 读）');
 
+// 登录通道
+ok(/function ensureLoginLib/.test(eng), 'loginUrl 能像 jsLib 一样加载进全局');
+ok(/login: function \(p\)/.test(eng), '引擎有 login 操作');
+ok(/result: formValues/.test(eng), '表单值挂在 result 上（站方读 result[\'邮箱\']）');
+ok(/ensureJsLib\(source\)\.then/.test(eng), 'loginUrl 之前先加载 jsLib（它依赖 jsLib 的 host）');
+ok(/g\.result = scope\.result/.test(analyzer),
+   'jsLib 函数在全局作用域 → 全局要同步 source/result/book');
+ok(/setUseReplaceRule/.test(api) && /wrapped\[fn\]/.test(api),
+   'book 上补了 Legado 的 Book 方法（setUseReplaceRule 等）');
+ok(/var key: ''/.test(analyzer) || /key: ''/.test(analyzer), 'scope 里有 key（站方 jsLib 常用）');
+
 // ───────── ③ 脚本清单三处一致 ─────────
 console.log('\n=== 3. 引擎脚本清单三处一致 ===');
 const swift = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');
