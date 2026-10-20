@@ -121,6 +121,39 @@
     "expected": "first"
   },
   {
+    "name": "chooseTrim: anchor=null ≡ anchor=0",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      9,
+      null,
+      "append"
+    ],
+    "expected": "last"
+  },
+  {
+    "name": "chooseTrim: anchor=null 且 first=0 → 翻转",
+    "fn": "chooseTrim",
+    "args": [
+      0,
+      9,
+      null,
+      null
+    ],
+    "expected": "last"
+  },
+  {
+    "name": "chooseTrim: 空串 first ≡ 0",
+    "fn": "chooseTrim",
+    "args": [
+      "",
+      9,
+      4,
+      null
+    ],
+    "expected": "last"
+  },
+  {
     "name": "trimWindow: 超限裁两端",
     "fn": "trimWindow",
     "args": [
@@ -469,6 +502,34 @@
   },
   {
     "name": "viewport: scroll null",
+    "fn": "viewport",
+    "args": [
+      100,
+      130,
+      null
+    ],
+    "expected": {
+      "delta": 30,
+      "targetScrollTop": 30,
+      "shouldRestore": true
+    }
+  },
+  {
+    "name": "viewport: anchor null ≡ 0",
+    "fn": "viewport",
+    "args": [
+      null,
+      130,
+      500
+    ],
+    "expected": {
+      "delta": 130,
+      "targetScrollTop": 630,
+      "shouldRestore": true
+    }
+  },
+  {
+    "name": "viewport: scroll null ≡ 0",
     "fn": "viewport",
     "args": [
       100,

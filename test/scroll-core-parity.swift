@@ -18,11 +18,20 @@ func jStr(_ any: Any?) -> String? {
     if any is NSNull { return nil }
     return any as? String
 }
+/// ⚠️ 必须模拟 JS 的 `Number(x)` 语义：
+///    `Number(null) === 0`（不是 NaN！）、`Number("") === 0`、`Number(undefined) === NaN`。
+///    之前这里把 null 传成 nil，Swift 侧收到的输入就跟 JS 原版不一样，
+///    对拍直接抓出 2 条不一致（viewport: anchor null / scroll null）。
 func jDouble(_ any: Any?) -> Double? {
-    if any is NSNull { return nil }
+    if any is NSNull { return 0 }          // JS: Number(null) === 0
     if let d = any as? Double { return d }
     if let i = any as? Int { return Double(i) }
-    return nil
+    if let s = any as? String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return 0 }          // JS: Number("") === 0
+        return Double(t)
+    }
+    return nil                            // 非数值 → NaN → nil
 }
 func jInt(_ any: Any?) -> Int? {
     if any is NSNull { return nil }

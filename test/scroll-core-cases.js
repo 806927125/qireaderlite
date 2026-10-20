@@ -40,6 +40,14 @@ const CASES = [
     args: [0, 8, 7, null] },
   { name: 'chooseTrim: 负数坐标',           fn: 'chooseTrim',
     args: [-5, 3, -1, null] },
+  // ⚠️ JS 的 Number(null) === 0 —— anchor 传 null 等价于 anchor=0，
+  //    **不是**「无 anchor」。这几条专门钉死这个语义。
+  { name: 'chooseTrim: anchor=null ≡ anchor=0', fn: 'chooseTrim',
+    args: [0, 9, null, 'append'] },
+  { name: 'chooseTrim: anchor=null 且 first=0 → 翻转', fn: 'chooseTrim',
+    args: [0, 9, null, null] },
+  { name: 'chooseTrim: 空串 first ≡ 0',     fn: 'chooseTrim',
+    args: ['', 9, 4, null] },
 
   { name: 'trimWindow: 超限裁两端',        fn: 'trimWindow',
     args: [[1,2,3,4,5], 3, 3, 'append'] },
@@ -82,6 +90,9 @@ const CASES = [
   { name: 'viewport: 差 0.4 → 不 restore',     fn: 'viewport', args: [100, 100.4, 500] },
   { name: 'viewport: 负偏移',                  fn: 'viewport', args: [100, 80, 500] },
   { name: 'viewport: scroll null',             fn: 'viewport', args: [100, 130, null] },
+  // ⚠️ Number(null) === 0 → scroll=null 等价于 scroll=0
+  { name: 'viewport: anchor null ≡ 0',        fn: 'viewport', args: [null, 130, 500] },
+  { name: 'viewport: scroll null ≡ 0',        fn: 'viewport', args: [100, 130, null] },
 
   { name: 'titleHeight: null → 0',            fn: 'titleHeight', args: [null] },
   { name: 'titleHeight: 负 → 0',              fn: 'titleHeight', args: [-5] },
