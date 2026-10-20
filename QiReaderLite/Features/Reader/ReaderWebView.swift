@@ -33,6 +33,8 @@ struct ReaderWebView: View {
     @AppStorage("reader.verticalJustify") private var verticalJustify: Bool = false
     @AppStorage("reader.tapAnywhere") private var tapAnywhereTurnsPage: Bool = true
     @AppStorage("reader.swipeUpExit") private var swipeUpExit: Bool = false
+    /// 液态玻璃浓度（滑块用；App 根把它注入 environment）
+    @AppStorage(GlassTintStore.key) private var glassTintPercent: Double = 45
     @AppStorage("reader.twoPageSpread") private var twoPageSpread: Bool = false
     @AppStorage("reader.contentInHeaderFooter") private var contentInHeaderFooter: Bool = false
     @AppStorage("reader.baselineColor") private var baselineColorHex: String = "#B8B8B8"
@@ -68,6 +70,8 @@ struct ReaderWebView: View {
     }
 
     @Environment(\.colorScheme) private var darkScheme
+    /// 液态玻璃浓度（用户可调，App 根注入）—— 0 最透，0.45 最实
+    @Environment(\.glassTint) private var glassTint
 
     /// 分页容器。
     /// ⚠️ @StateObject 要求 ObservableObject，PagedReaderController 不是
@@ -762,7 +766,7 @@ struct ReaderWebView: View {
             //    但玻璃真的能透出后面的内容。
             .background(
                 Color.clear
-                    .glassEffect(.clear.tint(Color.white.opacity(0.12)),
+                    .glassEffect(Glass.regular.tint(Color.white.opacity(glassTint)),
                                  in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -1227,6 +1231,31 @@ struct ReaderWebView: View {
                     Toggle("", isOn: $contentInHeaderFooter).labelsHidden().tint(Theme.accent)
                         .disabled(true)
                 }
+
+                Spacer(minLength: 12)
+                sectionHeader("外观")
+                // ── 液态玻璃浓度：0 最透（后面正文直接透出来）/ 100 最实（乳白玻璃）──
+                //
+                // iOS 26 的 Glass 只有三档，档位之间观感差别很大而且调不了中间值。
+                // 这里用 **`.regular` + 可调的白色 tint** 连续调：
+                // `.clear` 太透（正文糊在面板上），`.regular` 不加 tint 又太实。
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Image(systemName: "circle.lefthalf.filled")
+                            .font(.system(size: 14)).foregroundStyle(Theme.sub)
+                            .frame(width: 20)
+                        Text("玻璃通透度").font(.subheadline).foregroundStyle(Theme.ink)
+                        Spacer()
+                        Text("\(Int(glassTintPercent))")
+                            .font(.caption).foregroundStyle(Theme.sub)
+                    }
+                    Slider(value: $glassTintPercent, in: 0...100, step: 5)
+                        .tint(Theme.accent)
+                    Text("数值越大越不透明（玻璃越实、字越清楚）")
+                        .font(.caption2).foregroundStyle(Theme.sub)
+                }
+                .padding(.vertical, 8)
+
                 Spacer(minLength: 24)
             }
             .padding(.horizontal, 16)

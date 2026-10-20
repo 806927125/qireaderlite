@@ -4,6 +4,8 @@ import SwiftUI
 struct QiReaderLiteApp: App {
     @StateObject private var sources = SourceStore()
     @StateObject private var library = LibraryStore()
+    /// 液态玻璃浓度（用户可调）—— 0 最透，1 最实
+    @AppStorage(GlassTintStore.key) private var glassTintPercent: Double = 45
 
     init() {
         // 引擎沙盒尽早起来，首个界面就要用到
@@ -15,6 +17,8 @@ struct QiReaderLiteApp: App {
             RootView()
                 .environmentObject(sources)
                 .environmentObject(library)
+                // 玻璃浓度注入 environment → 全站 14 处玻璃调用点自动跟随
+                .environment(\.glassTint, glassTintPercent / 100 * 0.45)
                 .task { RuleSandbox.shared.boot() }
         }
     }

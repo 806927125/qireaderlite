@@ -401,8 +401,10 @@ ok(/\.padding\(\.vertical, 10\)/.test(catalog), '行内上下留白 10');
   ok(!/glassEffectShape/.test(after),
      '.glassCapsule() 后面没有再跟 .glassEffectShape —— 玻璃不许叠两层');
   const lgl2 = stripComments(fs.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8'));
-  ok(/func glassCapsule/.test(lgl2) && /glassEffect\(\.clear, in: \.capsule\)/.test(lgl2),
-     'glassCapsule 自己分流到系统 .capsule（iOS26，用 .clear 保持通透）/ 手搓 999（17~25）');
+  // ⚠️ glassCapsule 必须走 LiquidGlass 修饰器（内部有 @Environment 拿得到
+  //    用户可调的玻璃浓度）；直接 glassEffect(.clear) 就调不动了。
+  ok(/func glassCapsule/.test(lgl2) && /modifier\(LiquidGlass\(cornerRadius: 999/.test(lgl2),
+     'glassCapsule 走 LiquidGlass 修饰器（能吃到可调的玻璃浓度）');
 }
 ok(/\.background\(NoScrollExpand\(\)\)/.test(catalog),
    '目录挂了 NoScrollExpand —— 「目录上滑只滚目录，页面不变大」靠它');

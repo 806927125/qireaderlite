@@ -60,6 +60,8 @@ private struct GlassRim: View {
 // MARK: - 修饰器
 
 struct LiquidGlass: ViewModifier {
+    /// 玻璃的白色浓度（0 最透，0.45 最实）—— 由 environment 注入，用户可调
+    @Environment(\.glassTint) private var glassTint
     var cornerRadius: CGFloat = 20
     /// 玻璃里透出的环境色（栖阅那种淡蓝/淡紫）
     var tint: [Color] = [.white.opacity(0.22), .white.opacity(0.08)]
@@ -103,10 +105,14 @@ struct LiquidGlass: ViewModifier {
         //    `.regular` 自带不透明材质色 → 玻璃看着**一点都不通透**，
         //    后面的正文/插画基本看不见（用户：「全局的液态玻璃透明度调整一下」）。
         //    `.clear` 保留折射和高光，但材质色几乎透明，真的能透出后面。
+        // 用 `.regular`（有材质）+ 可调的白色 tint：
+        // `.clear` 太透（正文糊在面板上看不清），`.regular` 不加 tint 又太实。
+        // tint 连续可调，用户自己找那个"刚好能看清后面"的点。
+        let g = Glass.regular.tint(Color.white.opacity(glassTint))
         if isCircle {
-            content.glassEffect(.clear, in: .circle)
+            content.glassEffect(g, in: .circle)
         } else {
-            content.glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
+            content.glassEffect(g, in: .rect(cornerRadius: cornerRadius))
         }
     }
     #endif
@@ -155,14 +161,9 @@ extension View {
     ///    17~25 → 手搓 cornerRadius 999），**一个就够**。
     func glassCapsule(strength: Double = 1.1,
                       tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
-        #if compiler(>=6.2)
-        if USE_SYSTEM_GLASS, #available(iOS 26.0, *) {
-            return AnyView(self.glassEffect(.clear, in: .capsule))
-        }
+        // ⚠️ iOS 26 上必须走 LiquidGlass 修饰器（它内部有 @Environment 能拿到
+        //    用户可调的玻璃浓度）；这里直接 glassEffect(.clear) 就**调不动了**。
         return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength)))
-        #else
-        return AnyView(modifier(LiquidGlass(cornerRadius: 999, tint: tint, strength: strength)))
-        #endif
     }
 
     /// 只设玻璃的**形状**，不碰别的修饰链。
@@ -175,23 +176,15 @@ extension View {
     ///    效果退化成「半透明白卡片」（这坑 Components.swift 里也标注过）。
     @ViewBuilder
     func glassEffectShape(_ shape: GlassShape) -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            // 同 systemGlass：全局用 .clear（.regular 太实，一点都不通透）
-            switch shape {
-            case .capsule:
-                self.glassEffect(.clear, in: .capsule)
-            case .circle:
-                self.glassEffect(.clear, in: .circle)
-            case .rounded(let r):
-                self.glassEffect(.clear, in: .rect(cornerRadius: r))
-            }
-        } else {
-            self.liquidGlass(cornerRadius: shape.cornerRadiusFallback)
+        // 同 glassCapsule：走 LiquidGlass 修饰器，才能吃到用户可调的玻璃浓度。
+        switch shape {
+        case .capsule:
+            modifier(LiquidGlass(cornerRadius: 999))
+        case .circle:
+            modifier(LiquidGlass(cornerRadius: 999, isCircle: true))
+        case .rounded(let r):
+            modifier(LiquidGlass(cornerRadius: r))
         }
-        #else
-        self.liquidGlass(cornerRadius: shape.cornerRadiusFallback)
-        #endif
     }
 }
 

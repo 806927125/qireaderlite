@@ -197,12 +197,12 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 //
 // ⚠️ 之前在「结构还没对」时来回换过这个背景（.82 磨砂白 ↔ .glassEffect），
 //    两边都不对 —— 那是**结构问题**不是材质问题。结构对了（build120）才比得了材质。
-ok(/\.glassEffect\(\.clear\.tint\(Color\.white\.opacity\(0\.12\)\)/.test(panel),
-   '面板是**液态玻璃** .glassEffect(.clear) + 白 tint 0.12（通透但白块还能分层）');
+ok(/\.glassEffect\(Glass\.regular\.tint\(Color\.white\.opacity\(glassTint\)\)/.test(panel),
+   '面板是**液态玻璃** .glassEffect(.regular) + 可调白 tint');
 // ⚠️ 白 tint 别调回 0.35 —— 玻璃会白得一点都不通透，后面的正文看不见
 //    （用户：「液态玻璃透明度调整一下，一点都不透明」）。
-ok(!/glassEffect\(\.clear\.tint\(Color\.white\.opacity\(0\.(3[0-9]|[4-9][0-9])/.test(panel),
-   '玻璃白 tint 不超过 0.12（别调回 0.35，会一点都不透明）');
+ok(!/glassEffect\(\.clear/.test(panel),
+   '面板不用 .clear（太透，正文糊在面板上看不清）；用 .regular + 可调 tint');
 ok(/\.background\(\s*Color\.clear\s*\n?\s*\.glassEffect/.test(panel),
    '面板玻璃用 background(_:in:) 重载（.background { Shape } 会撑成全屏）');
 // 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
@@ -299,8 +299,8 @@ ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 // 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
 // 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
 // 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
-ok(/\.glassEffect\(\.clear/.test(panel), '面板是液态玻璃 .clear');
-ok(/\.glassEffect\(\.clear\.tint\(/.test(panel), '液态玻璃带白 tint（内层白块要能分层）');
+ok(/\.glassEffect\(Glass\.regular\.tint\(/.test(panel), '面板是液态玻璃 .regular + 可调 tint');
+ok(/\.glassEffect\(Glass\.regular\.tint\(/.test(panel), '液态玻璃带可调白 tint（内层白块要能分层）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
@@ -716,13 +716,36 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   //        .clear    — 高透明
   //        .identity — 无效果
   //    **没有 .thin**（我编过一次，CI 报 "type 'Glass' has no member 'thin'"）。
-  ok(!/glassEffect\(\.regular/.test(all),
-     '全局不用 .regular（自带不透明材质色，一点都不通透）');
+  // iOS 26 的 `Glass` **只有三个**静态成员：
+  //        .regular  — 默认，中等透明
+  //        .clear    — 高透明（太透，正文糊在面板上）
+  //        .identity — 无效果
+  //    **没有 .thin**（我编过一次，CI 报 "type 'Glass' has no member 'thin'"）。
+  //
+  // 现在统一用 **.regular + 可调的白色 tint**：
+  //   · .clear 太透（用户：「阅读那里太透明了」）
+  //   · .regular 不加 tint 又太实
+  //   · tint 连续可调 → 用户自己在「更多设置 → 玻璃通透度」里找那个点
   ok(!/glassEffect\(\.thin/.test(all),
      '不许用 .thin（Glass 根本没这个成员，编译不过）');
-  ok((all.match(/glassEffect\(\.clear/g) || []).length >= 5,
-     '全局玻璃统一用 .clear（高透明）');
-  ok(/glassEffect\(\.clear, in: \.circle\)/.test(lg), '圆形玻璃 .clear');
-  ok(/glassEffect\(\.clear, in: \.capsule\)/.test(lg), '胶囊玻璃 .clear');
-  ok(/glassEffect\(\.clear, in: \.rect\(cornerRadius: r\)\)/.test(lg), '圆角矩形玻璃 .clear');
+  ok(!/glassEffect\(\.clear/.test(all),
+     '全局不用 .clear（太透）；用 .regular + 可调 tint');
+  ok((all.match(/Glass\.regular\.tint\(/g) || []).length >= 1,
+     '玻璃用 .regular + tint');
+  ok(/@Environment\(\\\.glassTint\)/.test(lg),
+     'LiquidGlass 从 environment 读可调浓度');
+  ok(/Glass\.regular\.tint\(Color\.white\.opacity\(glassTint\)\)/.test(lg),
+     'LiquidGlass 的 tint 强度跟着 environment 走');
+
+  // 可调功能本身
+  const fsD = require('fs');
+  const app = fsD.readFileSync(path.join(ROOT, 'App/QiReaderLiteApp.swift'), 'utf8');
+  const gt = fsD.readFileSync(path.join(ROOT, 'App/GlassTint.swift'), 'utf8');
+  const rv = fsD.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  ok(/environment\(\\\.glassTint/.test(app), 'App 根把玻璃浓度注入 environment');
+  ok(/GlassTintStore/.test(gt), '有 GlassTintStore（存 UserDefaults）');
+  ok(/玻璃通透度/.test(rv) && /Slider\(value: \$glassTintPercent/.test(rv),
+     '「更多设置」里有玻璃通透度滑块');
+  ok(/@AppStorage\(GlassTintStore\.key\)/.test(rv) && /@AppStorage\(GlassTintStore\.key\)/.test(app),
+     '两端用同一个 key 存玻璃浓度');
 }
