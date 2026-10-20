@@ -90,10 +90,13 @@ struct ReaderLayoutConfig {
     ///    UIColor 的 == 只比颜色本身，不比「是不是同一个对象」，
     ///    用来判重不可靠。改成显式的指纹字符串。
     var layoutFingerprint: String {
-        "\(fontSize)|\(lineSpacing)|\(paragraphSpacing)|\(horizontalMargin)|"
-            + "\(topMargin)|\(bottomMargin)|\(firstLineIndent)|\(fontFamily)|\(isBold)|"
-            + "\(textColor)|\(backgroundColor)|\(paraAlign.rawValue)|\(verticalJustify)|"
-            + "\(showBaseline)|\(baselineColor)|\(baselineScope.rawValue)"
+        // ⚠️ 必须拆成几个短 let —— 一次拼太长 Swift 编译器会
+        //    "unable to type-check this expression in reasonable time"（CI 报过）。
+        let a = "\(fontSize)|\(lineSpacing)|\(paragraphSpacing)|\(horizontalMargin)"
+        let b = "\(topMargin)|\(bottomMargin)|\(firstLineIndent)|\(fontFamily)|\(isBold)"
+        let c = "\(textColor)|\(backgroundColor)|\(paraAlign.rawValue)|\(verticalJustify)"
+        let d = "\(showBaseline)|\(baselineColor)|\(baselineScope.rawValue)"
+        return a + b + c + d
     }
 
     /// 一页的内容区尺寸（视口扣掉四周边距）

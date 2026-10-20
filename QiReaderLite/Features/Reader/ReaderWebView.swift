@@ -241,9 +241,11 @@ struct ReaderWebView: View {
     /// ⚠️ 只能列**真实存在**的 @AppStorage（horizontalMargin 是 layoutConfig 里写死的 20，
     ///    不是 @AppStorage，引用它编译不过）。
     private var readerLayoutSig: String {
-        "\(fontSize)|\(lineSpacing)|\(paraSpacing)|\(themeKey)|\(followSystemAppearance)|"
-            + "\(darkScheme == .dark)|\(fontKey)|\(paraAlign)|\(verticalJustify)|"
-            + "\(showBaseline)|\(baselineScope)|\(baselineColorHex)"
+        // ⚠️ 同样拆成短 let —— 一次拼太长编译器会 type-check 超时（CI 报过）。
+        let a = "\(fontSize)|\(lineSpacing)|\(paraSpacing)|\(themeKey)"
+        let b = "\(followSystemAppearance)|\(darkScheme == .dark)|\(fontKey)|\(paraAlign)"
+        let c = "\(verticalJustify)|\(showBaseline)|\(baselineScope)|\(baselineColorHex)"
+        return a + b + c
     }
 
     /// ⚠️ 换阅读设置（配色 / 字号 / 行距…）后，**两条渲染路径都要重新下发**：

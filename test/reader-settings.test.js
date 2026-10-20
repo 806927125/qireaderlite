@@ -636,3 +636,21 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
      'requestMissingChapters 真的调了 onRequestChapter');
   ok(/requestedChapters: Set<Int>/.test(sv), '已请求的章去重（不反复刷）');
 }
+
+// ── 长字符串拼接会让 Swift 编译器 type-check 超时 ──
+// CI 报过：ReaderLayoutConfig.swift: "the compiler is unable to type-check
+// this expression in reasonable time"。所以指纹类字符串必须拆成短 let。
+{
+  const fs9 = require('fs');
+  const cf = fs9.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderLayoutConfig.swift'), 'utf8');
+  const rv = fs9.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
+  const fpBlock = cf.slice(cf.indexOf('var layoutFingerprint'),
+                           cf.indexOf('func pageSize'));
+  const sigBlock = rv.slice(rv.indexOf('private var readerLayoutSig'),
+                            rv.indexOf('private func applyThemeChange'));
+  // 每一段拼接的 let 不超过 4 个插值
+  const lets = (fpBlock + sigBlock).match(/let [a-z] = "[^"]*"/g) || [];
+  ok(lets.length >= 4, '指纹拆成了多个短 let');
+  ok(lets.every(l => (l.match(/\\\(/g) || []).length <= 4),
+     '每个 let 最多 4 个插值（太长会 type-check 超时）');
+}
