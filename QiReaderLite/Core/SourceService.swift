@@ -305,14 +305,19 @@ final class SourceService {
     }
 
     /// 诊断一次目录请求：URL / 状态 / 命中数 / 第一条章节的 HTML 都摆出来
-    func explainToc(source: BookSource, tocUrl: String, bookUrl: String) async throws -> String {
-        let raw = try await RuleSandbox.shared.invoke("explainToc",
-            ["tocUrl": tocUrl, "bookUrl": bookUrl], source: source)
+    func explainToc(source: BookSource, tocUrl: String, bookUrl: String,
+                    book: Book? = nil) async throws -> String {
+        var payload: [String: Any] = ["tocUrl": tocUrl, "bookUrl": bookUrl]
+        // ⚠️ 必须带 book：站方 chapterList 第一句就调 book.getVariable('custom')
+        //   → 不给就抛异常 → 目录一条不剩 → 诊断还误报「规则没命中」。
+        if let b = book { payload["book"] = b.rawJSON }
+        let raw = try await RuleSandbox.shared.invoke("explainToc", payload, source: source)
         guard let dict = raw as? [String: Any] else { return "引擎没有返回诊断数据" }
         var out: [String] = []
         for k in ["请求URL", "最终URL", "状态码", "响应字节", "页面标题",
                   "chapterList规则", "chapterName规则", "chapterUrl规则",
-                  "规则命中元素", "取到的章节名", "取到的章节URL",
+                  "规则命中元素", "JS路径命中", "JS报错",
+                  "取到的章节名", "取到的章节URL",
                   "选择器报错", "解析报错", "元素统计", "命中条目样本",
                   "候选容器", "目录容器样本", "结论"] {
             if let v = dict[k] {

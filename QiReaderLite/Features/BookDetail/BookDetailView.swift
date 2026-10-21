@@ -50,7 +50,8 @@ struct BookDetailView: View {
                                 tocDiag = (try? await SourceService.shared.explainToc(
                                     source: src,
                                     tocUrl: book.tocUrl.isEmpty ? book.cleanBookUrl : book.tocUrl,
-                                    bookUrl: book.cleanBookUrl)) ?? "诊断跑失败了"
+                                    bookUrl: book.cleanBookUrl,
+                                    book: book)) ?? "诊断跑失败了"
                                 tocDiagBusy = false
                             }
                         } label: {

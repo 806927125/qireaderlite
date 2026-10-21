@@ -1031,7 +1031,13 @@
       runtime.source = src;
       return ensureJsLib(src).then(function () {
         var tocRule = src.ruleToc || {};
-        var ctx = { baseUrl: baseUrlOf(src), source: src };
+        // ⚠️⚠️ **必须带 book** —— 站方的 chapterList 第一句就调
+        //   `book.getVariable('custom')`（🍅大灰狼就是）→
+        //   不给 book → 站方 JS 抛「Cannot read properties of undefined
+        //   (reading 'getVariable')」→ 目录一条不剩 →
+        //   而诊断会**误报**「chapterList 一个都没命中 —— 规则对不上」❌
+        //   （用户会以为规则写错，其实只是诊断没喂 book）
+        var ctx = { baseUrl: baseUrlOf(src), source: src, book: p.book };
         var out = {};
         var raw = p.tocUrl || p.bookUrl || '';
         return buildUrl(raw, ctx).then(function (target) {
@@ -1056,9 +1062,17 @@
               out.chapterUrl规则 = ruleText(tocRule.chapterUrl);
               var doc = null;
               try { doc = dom.parseHTML(body, out.最终URL || target.url); } catch (e) { out.解析报错 = String(e && e.message || e); }
+              var specText = ruleText(tocRule.chapterList);
+              // ⚠️⚠️ **先判规则类型**：复合/JS 规则（🍅大灰狼的 chapterList 就是
+              //   `<js>…</js>$.data`）**CSS 路径对它没有意义** ——
+              //   要么 0 命中，要么从「十六进制载荷」里瞎解析出几个假节点。
+              //   ⇒ 以前诊断只跑 CSS 路径 → 结论恒为「chapterList 一个都没命中」
+              //     （对复合规则是**假的**）→ 白白误导人以为规则写错了。
+              var specKind = rule.classify(specText, ctx);
+              var isJsRule = (specKind === rule.T.JS);
               var nodes = [];
-              if (doc) {
-                try { nodes = rule.resolveNodes(ruleText(tocRule.chapterList), doc, {}); }
+              if (doc && !isJsRule) {
+                try { nodes = rule.resolveNodes(specText, doc, {}); }
                 catch (e2) { out.选择器报错 = String(e2 && e2.message || e2); }
               }
               out.规则命中元素 = nodes.length;
@@ -1075,7 +1089,8 @@
                 } catch (e3) { out.取值报错 = String(e3 && e3.message || e3); }
               }
               // 没命中 → 扫候选容器（跟 explain 一样）
-              if (nodes.length === 0 && doc) {
+              // ⚠️ 复合/JS 规则不用扫（扫的是十六进制载荷，纯噪音）
+              if (nodes.length === 0 && doc && !isJsRule) {
                 var counts = {}, tags = {};
                 try {
                   var all = doc.querySelectorAll('[class]');
@@ -1114,9 +1129,39 @@
                 }
                 out.目录容器样本 = sm.join('\n\n') || '没找到像目录容器的标签';
               }
-              if (nodes.length === 0) out.结论 = '**chapterList 一个都没命中** —— 目录规则对不上';
-              else out.结论 = '命中 ' + nodes.length + ' 条（看下面的章节名/URL 对不对）';
-              return out;
+              if (nodes.length > 0) {
+                out.结论 = '命中 ' + nodes.length + ' 条（看下面的章节名/URL 对不对）';
+                return out;
+              }
+              // ⚠️⚠️ CSS 路径 0 命中 **不等于**「规则没命中」：
+              //   🍅大灰狼的 chapterList 是**复合规则**（`<js>…</js>$.data`），
+              //   CSS 路径对它**必然 0 命中** → 以前这里恒报
+              //   「chapterList 一个都没命中 —— 目录规则对不上」→ **纯误导**
+              //   （用户会以为规则写错，其实规则是对的，锅在别处）。
+              //   ⇒ 现在按**真实路径**（toc op 的做法：跑 JS → 再走尾部选择器）
+              //     再跑一遍，把真实条数 / JS 报错摆出来，诊断才说真话。
+              return rule.getJsonListDiag(ruleText(tocRule.chapterList), doc, ctx)
+                .then(function (diag) {
+                  out.JS路径命中 = diag.items.length;
+                  if (diag.error) out.JS报错 = diag.error;
+                  if (diag.items.length) {
+                    var it0 = diag.items[0] || {};
+                    out.取到的章节名 = String(it0.title || it0.name || '').slice(0, 60);
+                    out.取到的章节URL = String(it0.url || it0.href || '').slice(0, 120);
+                    out.结论 = '复合/JS 规则真实命中 ' + diag.items.length
+                      + ' 条（CSS 路径对它不适用，**别当成规则没命中**）';
+                  } else {
+                    out.结论 = 'chapterList 真的一条都没解析出来'
+                      + (diag.error ? '（JS 报错：' + diag.error + '）'
+                                     : '（规则不是 JS，CSS 也没命中）');
+                  }
+                  return out;
+                })
+                .catch(function (e) {
+                  out.结论 = 'chapterList 真的一条都没解析出来（诊断也炸了：'
+                    + String(e && e.message || e) + '）';
+                  return out;
+                });
             })
             .catch(function (e) { out.结论 = '请求失败：' + String(e && e.message || e); return out; });
         });

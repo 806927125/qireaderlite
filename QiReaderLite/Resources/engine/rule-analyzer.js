@@ -514,6 +514,42 @@
     }
   }
 
+  /**
+   * 诊断版 `getJsonList`：**把 JS 报错也带出来**
+   *
+   * 为什么要有它（2026-10-21）：
+   *   目录诊断（engine.js 的 explainToc）以前**只按 HTML/CSS 路径**数节点 →
+   *   对 🍅大灰狼这种**复合规则**（`<js>…</js>$.data`）**必然 0 命中** →
+   *   结论恒为「chapterList 一个都没命中 —— 目录规则对不上」→ **纯误导**，
+   *   白白让人以为规则写错了、其实规则是对的。
+   *
+   *   这里按**真实路径**（toc op 的做法：JS → 再走尾部选择器）跑一遍，
+   *   把真实条数 + JS 报错摆出来，诊断才说真话。
+   */
+  function getJsonListDiag(rule, base, ctx) {
+    ctx = ctx || {};
+    try {
+      var scope = makeScope(jsScope(base, base, ctx, rule));
+      var r = interpolate(applyGetPut(String(rule == null ? '' : rule), scope), scope);
+      var kind = classify(r, ctx);
+      if (kind !== T.JS) return Promise.resolve({ items: [], error: '', kind: kind });
+      var body = stripModePrefix(r, kind);
+      var jt = splitJsWithTail(body);
+      if (!jt.sel) return Promise.resolve({ items: [], error: '复合规则没有尾部选择器', kind: kind });
+      return runJs(jt.code, makeScope(jsScope(base, base, ctx, body)))
+        .then(function (res) {
+          var items = selectFromJsResult(res, jt.sel, ctx, base);
+          return { items: Array.isArray(items) ? items : (items ? [items] : []),
+                   error: '', kind: kind };
+        })
+        .catch(function (e) {
+          return { items: [], error: String(e && e.message || e), kind: kind };
+        });
+    } catch (e) {
+      return Promise.resolve({ items: [], error: String(e && e.message || e), kind: 'error' });
+    }
+  }
+
   function evalOne(rule, base, ctx) {
     ctx = ctx || {};
     var baseUrl = ctx.baseUrl || '';
@@ -1182,6 +1218,7 @@
     isJSONText: isJSONText,
     evalJsonPathList: evalJsonPathList,
     getJsonList: getJsonList,
+    getJsonListDiag: getJsonListDiag,
     splitTop: splitTop,
     toLines: toLines,
     getElements: getElements,

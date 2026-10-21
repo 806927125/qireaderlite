@@ -61,8 +61,12 @@ ok(!/Text\s*\(\s*"[^"]*\bprivacy\s*:/.test(swiftNoComment), '也没在 Text() �
 
 {
   const { win } = createSandbox({ origin: 'https://cxb-pro.cread.com/' });
-  const pack = JSON.parse(fs.readFileSync(
-    process.env.SRC_PACK || '/workspace/out/配置文件125个-轻阅适配版.json', 'utf8'));
+  const packFile = process.env.SRC_PACK || [
+    '/workspace/out/配置文件125个-轻阅适配版.json',
+    path.join(__dirname, '..', 'sources', '配置文件125个-轻阅适配版.json'),
+  ].find(p => fs.existsSync(p));
+  if (!packFile) { console.log('  ℹ️  125 源包不在本机 → 跳过'); }
+  const pack = packFile ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : [];
   const mfzs = pack.find(s => /免费追书/.test(s.bookSourceName));
   ok(!!mfzs, '在 125 源包里找到「免费追书」');
 
