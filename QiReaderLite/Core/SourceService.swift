@@ -479,9 +479,28 @@ final class SourceService {
         return out.isEmpty ? "没有诊断信息" : out.joined(separator: "\n")
     }
 
+    /// 👁️ 观测用：把几个 URL 压成一行日志进自检面板。
+    ///    URL 可能极长（`data:;base64,…` 载荷动辄几千字符）→ 必须截断，
+    ///    否则 300 条日志窗口会被一条撑爆，真正的信息反而看不见了。
+    private func logURL(_ tag: String, bookUrl: String, tocUrl: String,
+                        bookUrlOfBook: String, bookTocUrl: String = "") {
+        func b(_ s: String) -> String {
+            if s.isEmpty { return "(空)" }
+            return s.count > 200 ? String(s.prefix(200)) + "…[全长\(s.count)]" : s
+        }
+        let msg = "[Swift·\(tag)] 传入tocUrl=" + b(tocUrl)
+            + " | 传入bookUrl=" + b(bookUrl)
+            + " | book.tocUrl=" + b(bookTocUrl)
+            + " | book.cleanBookUrl=" + b(bookUrlOfBook)
+        RuleSandbox.shared.appendLog(msg)
+    }
+
     func bookInfo(source: BookSource, bookUrl: String, fallback: Book? = nil) async throws -> Book {
         var p: [String: Any] = ["bookUrl": bookUrl]
         if let f = fallback { p["book"] = f.rawJSON }
+        // 👁️ 观测（2026-10-21 真机 0 章排查）：Swift 侧看到的 URL 是什么形状
+        logURL("详情入参", bookUrl: bookUrl,
+               tocUrl: fallback?.tocUrl ?? "", bookUrlOfBook: fallback?.cleanBookUrl ?? "")
         let dto: BookInfoDTO = try await call("bookInfo", p, as: BookInfoDTO.self, source: source)
         guard var b = dto.book?.toBook(origin: source.bookSourceUrl, sourceName: source.name) else {
             throw ServiceError.engineFailed("详情页没解析出书名")
@@ -491,6 +510,7 @@ final class SourceService {
         b.bookUrl = bookUrl
         b.detailLoaded = true
         if b.tocUrl.isEmpty { b.tocUrl = bookUrl }
+        logURL("详情出参", bookUrl: bookUrl, tocUrl: b.tocUrl, bookUrlOfBook: b.cleanBookUrl)
         return b
     }
 
@@ -502,8 +522,14 @@ final class SourceService {
         //    「Cannot read properties of undefined (reading 'getVariable')」
         //    → **整条目录规则静默失效 → 一条章节都解析不出来**
         if let b = book { p["book"] = b.rawJSON }
+        // 👁️ 观测（2026-10-21 真机 0 章排查）：
+        //   **重点看 `book.tocUrl` 是不是空的** —— 空的话详情页回退成书籍页，
+        //   站方的 `data:;base64,…` 目录载荷就压根没进来。
+        logURL("目录入参", bookUrl: bookUrl, tocUrl: tocUrl,
+               bookUrlOfBook: book?.cleanBookUrl ?? "", bookTocUrl: book?.tocUrl ?? "")
         let dto: TocDTO = try await call("toc", p, as: TocDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
+        RuleSandbox.shared.appendLog("[目录出参] 章节数=\(dto.chapters.count)")
         return dto.chapters.map {
             Chapter(url: $0.url, title: $0.title, index: $0.index, isVolume: $0.isVolume, tag: $0.tag)
         }

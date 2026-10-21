@@ -405,6 +405,17 @@
    * ⚠️ 返回**原始载荷**不解码 —— 站方的 init 规则自己会解
    *    （`JSON.parse(java.hexDecodeToString(result))`）。
    */
+  /**
+   * 日志用：把可能很长的 URL / 载荷压成一行可读文本。
+   * ⚠️ base64 载荷动辄几千字符 → 不截断的话 300 条日志窗口瞬间被一条撑爆。
+   */
+  function brief(v, max) {
+    var s = String(v == null ? '' : v);
+    var n = max || 200;
+    if (s.length <= n) return s;
+    return s.slice(0, n) + '…[全长' + s.length + ']';
+  }
+
   function dataUrlContent(u) {
     var s = String(u == null ? '' : u);
     var i = s.indexOf(',');
@@ -422,6 +433,17 @@
     //   ⇒ 这里**两种形态都认**（宿主侧已修，但引擎这边再兜一道）。
     var m = /,\s*(?=\{|%7B)/i.exec(data);
     if (m) data = data.slice(0, m.index);
+    // 👁️ **只观测，不改行为**（2026-10-21 真机 0 章排查）：
+    //   之前这里加过「在第一个 `&` 处截断」⇒ 实测是回归（2566 章 → 0 章）⇒ 已撤。
+    //   现在只把载荷的真实形状打出来，让真机数据说话：
+    //   · 长度 —— 载荷是不是被截短了
+    //   · 有没有 `&` —— 真机上到底有没有 query 粘进来
+    //   · 开头 120 字符 —— 长什么样
+    try {
+      QR.java.log('[data:载荷] 原始长=' + s.length + ' 剥后长=' + data.length +
+        ' 含&=' + (data.indexOf('&') >= 0 ? '有' : '无') +
+        ' 前120=' + brief(data, 120));
+    } catch (e) {}
     return data;
   }
 
@@ -1326,6 +1348,15 @@
             f(bi.name), f(bi.author), f(bi.intro), f(bi.kind),
             f(bi.lastChapter), f(bi.coverUrl), f(bi.tocUrl), f(bi.wordCount)
           ]).then(function (v) {
+            // 👁️ 观测：详情页最终给出的 tocUrl 是什么形状（2026-10-21 真机 0 章排查）
+            //   站方 ruleBookInfo.tocUrl 为空时回退成 `url`（书籍页），
+            //   而 🍅大灰狼的 tocUrl 应该是 `data:;base64,…` ⇒ 两者行为完全不同。
+            try {
+              QR.java.log('[详情] 入参 bookUrl=' + brief(p.bookUrl) +
+                ' ‖ 站方tocUrl字段=' + brief(v[6]) +
+                ' ‖ 实际tocUrl=' + brief(absolutizeMaybe(v[6] || url, page.url)) +
+                ' ‖ 书名=' + brief(v[0], 40));
+            } catch (e) {}
             return {
               book: {
                 name: v[0] || (p.book && p.book.name) || '',
@@ -1354,12 +1385,26 @@
         var tr = src.ruleToc || {};
         var url = absolutizeMaybe(p.tocUrl || p.bookUrl, baseUrlOf(src));
         if (!url) return { chapters: [], error: '目录 URL 为空' };
+        // 👁️ 观测：目录 URL 是怎么算出来的（2026-10-21 真机 0 章排查）
+        try {
+          QR.java.log('[目录] 入参 tocUrl=' + brief(p.tocUrl) +
+            ' ‖ bookUrl=' + brief(p.bookUrl) +
+            ' ‖ book.tocUrl=' + brief(p.book && p.book.tocUrl) +
+            ' ‖ 实际用=' + brief(url));
+        } catch (e) {}
         var ctx = { baseUrl: url, source: src, book: p.book };
         var maxPages = Math.max(1, p.maxPages || 3);
 
         /** 抓一页目录，返回 { list, nextUrl } */
         function one(u, offset) {
+          try { QR.java.log('[目录] 请求 url=' + brief(u)); } catch (e) {}
           return fetchPage({ url: u, headers: {} }, ctx).then(function (page) {
+            try {
+              QR.java.log('[目录] 返回 最终url=' + brief(page.url) +
+                ' 状态=' + (page.resp && page.resp.code) +
+                ' 正文长=' + (page.text ? page.text.length : 0) +
+                ' isJSON=' + (ctx.isJSON ? 1 : 0));
+            } catch (e) {}
             markContent(ctx, page);
             var spec = ruleText(tr.chapterList);
             return rule.getElements(spec, page.doc, ctx).then(function (jsRes) {
@@ -1411,6 +1456,10 @@
               var nextUrl = absolutizeMaybe(explicit || findNextPage(page.doc, page.url), page.url);
               // 下一跳 URL 必须真的变了，否则会死循环
               if (nextUrl && nextUrl === u) nextUrl = '';
+              try {
+                QR.java.log('[目录] 本页命中=' + (list ? list.length : 0) +
+                  ' 条 ‖ nextUrl=' + brief(nextUrl, 160));
+              } catch (e) {}
               return { list: list, nextUrl: nextUrl };
             });
           });
@@ -1427,9 +1476,14 @@
         }
 
         return loop(url, 0, []).then(function (chapters) {
+          try {
+            QR.java.log('[目录] 完成 总章节=' + (chapters ? chapters.length : 0) +
+              ' ‖ 抓了 ' + maxPages + ' 页上限');
+          } catch (e) {}
           return { chapters: chapters };
         });
       }).catch(function (e) {
+        try { QR.java.log('[目录] 抛错 ' + String(e && e.message || e)); } catch (e2) {}
         return { chapters: [], error: String(e && e.message || e) };
       });
     },
