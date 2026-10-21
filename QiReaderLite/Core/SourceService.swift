@@ -38,6 +38,8 @@ final class SourceService {
         var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
+        srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         p["cookieSnapshot"] = CookieJar.snapshot()
         let raw = try await RuleSandbox.shared.invoke("login", p, source: source)
@@ -48,6 +50,10 @@ final class SourceService {
             }
             if let l = obj["__loginInfo"] as? String {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
+            }
+            // 栖阅机制：loginHeader（自动注入到每次请求头）
+            if let h = obj["__loginHeader"] as? String {
+                SourceVariables.setLoginHeader(h, for: source.bookSourceUrl)
             }
         }
         let dict = raw as? [String: Any] ?? [:]
@@ -68,6 +74,8 @@ final class SourceService {
         var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
+        srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         var p: [String: Any] = ["source": srcDict]
         p["cookieSnapshot"] = CookieJar.snapshot()
         let raw = try await RuleSandbox.shared.invoke("loginProbe", p, source: source)
@@ -98,6 +106,8 @@ final class SourceService {
         // 引擎侧同步读。改完由引擎回传（见下面 __sourceVars）。
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
+        srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         // cookie 快照：同理，Legado 的 cookie.getCookie(url) 也是同步的。
         p["cookieSnapshot"] = CookieJar.snapshot()

@@ -225,8 +225,18 @@ struct SourceLoginSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
                 Button {
+                    let raw = fqToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // ① 栖阅机制：loginHeader → **自动注入到每次请求头**
+                    //    （聚合源要 sessionid 才能同步番茄数据）
+                    if raw.isEmpty {
+                        SourceVariables.setLoginHeader("", for: source.bookSourceUrl)
+                    } else {
+                        let v = raw.hasPrefix("sessionid=") ? raw : "sessionid=" + raw
+                        SourceVariables.setLoginHeader("Cookie: " + v, for: source.bookSourceUrl)
+                    }
+                    // ② 站方自己也读这个键（双保险，两边都能用）
                     SourceVariables.setLoginInfoValue(
-                        "手动填写番茄token(可不填)", fqToken.trimmingCharacters(in: .whitespacesAndNewlines),
+                        "手动填写番茄token(可不填)", raw,
                         for: source.bookSourceUrl)
                     fqTokenSaved = true
                 } label: {

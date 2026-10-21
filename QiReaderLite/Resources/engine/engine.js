@@ -1394,6 +1394,7 @@
           var dirty = QR.__qrTakeDirty();
           if (dirty.vars !== undefined) r.__sourceVars = dirty.vars;
           if (dirty.login !== undefined) r.__loginInfo = dirty.login;
+          if (dirty.loginHeader !== undefined) r.__loginHeader = dirty.loginHeader;
         }
         return r;
       })

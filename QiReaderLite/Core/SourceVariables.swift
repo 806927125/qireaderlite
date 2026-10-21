@@ -55,6 +55,30 @@ enum SourceVariables {
         UserDefaults.standard.set(json, forKey: loginPrefix + sourceUrl)
     }
 
+    // MARK: - loginHeader（栖阅机制）
+
+    /// 登录头（栖阅 §9.2：**纯字符串，会自动注入到每次请求头**）
+    ///
+    /// 用途：番茄 sessionid 这类「不来自 cookie 罐、但每个请求都要带」的凭据。
+    /// 聚合源（🍅大灰狼）要 sessionid 才能同步番茄数据，
+    /// 而它只能从 cookie 罐里翻 → 在 Safari 登录的读不到 → 一直提示「未登录番茄」。
+    /// 有了这个：填一次 → 之后每个请求自动带上 ✅
+    private static let headerPrefix = "sourceheader."
+
+    static func loginHeader(for sourceUrl: String) -> String {
+        guard !sourceUrl.isEmpty else { return "" }
+        return UserDefaults.standard.string(forKey: headerPrefix + sourceUrl) ?? ""
+    }
+
+    static func setLoginHeader(_ value: String, for sourceUrl: String) {
+        guard !sourceUrl.isEmpty else { return }
+        if value.isEmpty {
+            UserDefaults.standard.removeObject(forKey: headerPrefix + sourceUrl)
+        } else {
+            UserDefaults.standard.set(value, forKey: headerPrefix + sourceUrl)
+        }
+    }
+
     /// 改登录信息里的**一项**（不覆盖别的字段）
     ///
     /// ⚠️ 为什么要这个：站方（🍅大灰狼）的 exploreUrl 会读

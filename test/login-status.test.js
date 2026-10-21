@@ -452,6 +452,27 @@ console.log('\n=== 16. 番茄 sessionid 手动兜底 ===');
      '目录诊断走 fetchPage（data: 伪 URL 不能真去 fetch）');
 }
 
+// ───────── ⑰ loginHeader（栖阅机制）+ 书源改造 ─────────
+console.log('\n=== 17. loginHeader 自动注入 + 目录 JS 一次算完 ===');
+// 栖阅《书源制作文档》§9.2 🟢：loginHeader「存的是纯字符串，**会自动注入到每次请求头**」
+// → 番茄 sessionid 填一次，之后每个请求都带上 → 发现页不再说「未登录番茄」
+{
+  const sa = readCode(path.join(ENGINE, 'source-api.js'));
+  ok(/getLoginHeader/.test(sa) && /putLoginHeader/.test(sa),
+     '引擎有 source.getLoginHeader / putLoginHeader');
+  const svc2 = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'SourceService.swift'));
+  ok(/loginHeader\(for: source\.bookSourceUrl\)/.test(svc2),
+     'SourceService 读/写 loginHeader');
+  const sb3 = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'RuleSandbox.swift'));
+  ok(/loginHeader\(for: src\.bookSourceUrl\)/.test(sb3),
+     '原生请求会注入 loginHeader');
+  ok(/forHTTPHeaderField: name/.test(sb3),
+     '按「名称: 值」逐行注入');
+  const sls3 = readCode(path.join(ROOT, 'QiReaderLite', 'Features', 'Sources', 'SourceLoginSheet.swift'));
+  ok(/setLoginHeader\("Cookie: "/.test(sls3) || /setLoginHeader\(/.test(sls3),
+     '登录面板把 sessionid 写进 loginHeader');
+}
+
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

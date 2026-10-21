@@ -191,6 +191,20 @@
 
     /** 登录信息（map） */
     wrapped.getLoginInfoMap = function () { return loginInfo; };
+
+    // ── loginHeader（栖阅机制，§9.2 🟢）──
+    // 「存的是纯字符串，**会自动注入到每次请求头**」
+    // 用途：番茄的 sessionid 之类「不来自 cookie 罐、但每个请求都要带」的凭据。
+    // 聚合源（🍅大灰狼）要 sessionid 才能同步番茄数据，
+    // 而它只能从 cookie 罐里翻 → 在 Safari 登录的读不到 → 一直提示「未登录番茄」。
+    // 有了 loginHeader：填一次 → 之后每个请求自动带上 ✅
+    var loginHeader = (src.__loginHeader == null) ? '' : String(src.__loginHeader);
+    wrapped.getLoginHeader = function () { return loginHeader; };
+    wrapped.putLoginHeader = function (v) {
+      loginHeader = String(v == null ? '' : v);
+      QR.__qrDirtyLoginHeader = loginHeader;
+      return '';
+    };
     /** 登录信息（JSON 串） */
     wrapped.getLoginInfo = function () {
       try { return JSON.stringify(loginInfo); } catch (e) { return '{}'; }
@@ -284,6 +298,7 @@
   QR.__qrResetDirty = function () {
     QR.__qrDirtyVars = undefined;
     QR.__qrDirtyLogin = undefined;
+    QR.__qrDirtyLoginHeader = undefined;
     QR.__qrDirtyCookie = false;
   };
 
@@ -292,6 +307,7 @@
     var out = {};
     if (QR.__qrDirtyVars !== undefined) out.vars = QR.__qrDirtyVars;
     if (QR.__qrDirtyLogin !== undefined) out.login = QR.__qrDirtyLogin;
+    if (QR.__qrDirtyLoginHeader !== undefined) out.loginHeader = QR.__qrDirtyLoginHeader;
     if (QR.__qrDirtyCookie) out.cookie = true;
     return out;
   };
