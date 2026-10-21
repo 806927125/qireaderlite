@@ -11,6 +11,8 @@ struct BookDetailView: View {
     @State private var tocDiagBusy = false
     @State private var loading = false
     @State private var statusText = ""
+    /// 目录在**后台**加载（详情页先出来，目录自己补）—— 用户要求「先出详情页再出目录」
+    @State private var tocLoading = false
     @State private var showCatalog = false
     @State private var readerChapter: Chapter?
     /// 简介默认截 6 行，栖阅那个「展开全部」就是干这个的
@@ -39,6 +41,14 @@ struct BookDetailView: View {
                 // ⚠️ 原来只在 1~2 章时显示诊断按钮，**0 章反而不显示** ——
                 //    而 0 章恰恰是最需要诊断的情况（toc() 成功返回但一条没解析出来，
                 //    不抛错，页面上什么都看不出来）。
+                // ⚠️ 目录在后台加载时，给个明确提示（别让人以为页面是空的）
+                if tocLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("目录加载中…（详情已出，目录随后补上）")
+                            .font(.caption).foregroundStyle(Theme.sub)
+                    }
+                }
                 if chapters.count <= 2 || !statusText.isEmpty {
                     HStack(spacing: 6) {
                         Text(chapters.isEmpty ? "目录一章都没解析出来" : "只解析出 \(chapters.count) 章，多半不对")
@@ -318,23 +328,37 @@ struct BookDetailView: View {
             problems.append("详情解析失败：\(error.localizedDescription)")
         }
 
-        // 2) 目录
-        let tocURL = book.tocUrl.isEmpty ? book.cleanBookUrl : book.tocUrl
-        do {
-            let list = try await SourceService.shared.toc(
-                source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl, book: book)
-            chapters = list
-            if list.isEmpty {
-                problems.append("目录接口通了但一条章节都没解析出来（chapterList 规则没命中）")
-            }
-            if let last = library.item(for: book.id)?.lastChapterIndex,
-               last > 0, last < list.count {
-                readerChapter = nil   // 只是预热，不自动跳
-            }
-        } catch {
-            problems.append("目录加载失败：\(error.localizedDescription)")
-        }
         statusText = problems.joined(separator: "\n")
+
+        // 2) 目录 —— **异步另起**，不拖住详情页 ✅
+        //
+        // ⚠️ 用户要求（2026-10-21）：「**先出详情页再出目录**」
+        //    目录要跑站方 2000+ 章的 JS（每章一次 URL 计算）⇒ 可能十几秒到一分钟
+        //    ⇒ 以前是**串行等它** ⇒ 详情页跟着一起转圈（用户原话「详情页一直在转圈」）❗
+        //    ⇒ 现在：详情出来就渲染（loading 立刻结束），目录在下面自己补 ✅
+        tocLoading = true
+        Task { @MainActor in
+            defer { tocLoading = false }
+            var errs: [String] = []
+            let tocURL = book.tocUrl.isEmpty ? book.cleanBookUrl : book.tocUrl
+            do {
+                let list = try await SourceService.shared.toc(
+                    source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl, book: book)
+                chapters = list
+                if list.isEmpty {
+                    errs.append("目录接口通了但一条章节都没解析出来（chapterList 规则没命中）")
+                }
+                if let last = library.item(for: book.id)?.lastChapterIndex,
+                   last > 0, last < list.count {
+                    readerChapter = nil   // 只是预热，不自动跳
+                }
+            } catch {
+                errs.append("目录加载失败：\(error.localizedDescription)")
+            }
+            if !errs.isEmpty {
+                statusText = (statusText.isEmpty ? "" : statusText + "\n") + errs.joined(separator: "\n")
+            }
+        }
     }
 }
 
