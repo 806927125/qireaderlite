@@ -52,12 +52,8 @@ async function nativeMock(fn, args) {
     case 'request': {
       const url = String(args.url || '');
       const method = (args.method || 'GET').toUpperCase();
+      const __t0 = Date.now();
       reqs.push({ url, method });
-      const headers = Object.assign({ 'User-Agent': UA }, args.headers || {});
-      const h = hostOf(url);
-      if (!headers.cookie && jar[h]) {
-        headers.cookie = Object.entries(jar[h]).map(([k, v]) => `${k}=${v}`).join('; ');
-      }
       try {
         const res = await fetch(url, {
           method, headers,
@@ -69,9 +65,18 @@ async function nativeMock(fn, args) {
           const kv = line.split(';')[0]; const i = kv.indexOf('=');
           if (i > 0) { jar[h] = jar[h] || {}; jar[h][kv.slice(0, i).trim()] = kv.slice(i + 1).trim(); }
         }
+        const last = reqs[reqs.length - 1];
+        last.ms = Date.now() - __t0; last.code = res.status; last.len = text.length;
         return { ok: true, code: res.status, url: res.url, headers: {}, body: text };
       } catch (e) {
+        const last = reqs[reqs.length - 1];
+        last.ms = Date.now() - __t0; last.err = String(e && e.message || e);
         return { ok: false, error: String(e && e.message || e) };
+      }
+      const headers = Object.assign({ 'User-Agent': UA }, args.headers || {});
+      const h = hostOf(url);
+      if (!headers.cookie && jar[h]) {
+        headers.cookie = Object.entries(jar[h]).map(([k, v]) => `${k}=${v}`).join('; ');
       }
     }
     case 'getCookie': {
@@ -144,6 +149,14 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   //   把 `,{"type":"x"}` 变成 `,%7B%22type%22%3A%22x%22%7D` ⇒ 引擎剥不掉后缀
   //   ⇒ 载荷被污染 → 站方 JSON.parse 炸 → 详情页整条规则静默失效（**真机专属**）。
   //   ⇒ 引擎这边要能扛住这个形态（Swift 侧已修，这里是第二道防线）。
+  console.log('\n  ── 每个请求的耗时 ──');
+  reqs.forEach((r, i) => {
+    console.log(`   ${i + 1}. ${String(r.ms || 0).padStart(6)}ms  ${r.method}  ${String(r.url).slice(0, 96)}` +
+      (r.code !== undefined ? `  → ${r.code} / ${r.len} 字节` : '') + (r.err ? `  ✗ ${r.err}` : ''));
+  });
+  const total = reqs.reduce((a, r) => a + (r.ms || 0), 0);
+  console.log(`   共 ${reqs.length} 个请求，合计 ${total}ms`);
+
   console.log('\n=== ② 被 Foundation 规范化过的书源 URL（回归用例）===');
   {
     const raw = String(book.bookUrl || '');

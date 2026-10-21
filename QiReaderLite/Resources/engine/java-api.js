@@ -320,13 +320,16 @@
   /* ---------------- HTTP ---------------- */
 
   function rawRequest(url, method, headers, data, timeout) {
+    // ⚠️ 超时必须**显式**传给 nativeCall（默认 40s ❗）——
+    //    站方（🍅大灰狼）有 8 个 host 的失败兜底，一个卡住就等满 40s × 7 = 几分钟。
+    var __t = timeout ? timeout / 1000 : 12;
     return nativeCall('request', {
       url: String(url || ''),
       method: String(method || 'GET').toUpperCase(),
       headers: headers || {},
       body: data == null ? '' : String(data),
-      timeout: timeout ? timeout / 1000 : 20
-    }).then(function (r) {
+      timeout: __t
+    }, (__t + 3) * 1000).then(function (r) {
       if (!r || r.ok === false) throw new Error((r && r.error) || '请求失败');
       // ⚠️ 记住**最后一次响应** —— 站方 JS 崩的时候，日志里要能看出
       //    「它拿到的到底是啥」。否则只看到一句 `abstract.split` 这种天书，

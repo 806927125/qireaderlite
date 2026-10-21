@@ -577,6 +577,27 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         }
     }
 
+    /// **共享的 URLSession**（连接复用 ⇒ 连续请求不用重新握手）
+    ///
+    /// ⚠️ headers 是**每个请求自己设**的（URLRequest 上），这里只放 UA 兜底；
+    ///    cookie 罐共用 `HTTPCookieStorage.shared` ✅（站方登录态靠它）。
+    private static var sessionCache: [String: URLSession] = [:]
+
+    private static func sharedSession(headers: [String: String], timeout: Double) -> URLSession {
+        let key = "\(timeout)|\(headers["User-Agent"] ?? "")"
+        if let s = sessionCache[key] { return s }
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.httpAdditionalHeaders = headers
+        cfg.timeoutIntervalForRequest = timeout
+        cfg.httpCookieStorage = HTTPCookieStorage.shared
+        cfg.httpShouldSetCookies = true
+        // 站方很多接口是 keep-alive ⇒ 别急着断
+        cfg.requestCachePolicy = .useProtocolCachePolicy
+        let s = URLSession(configuration: cfg)
+        sessionCache[key] = s
+        return s
+    }
+
     private func reply(id: Int, result: [String: Any]) {
         let js = "window.__qrResolve(\(id), \(Self.jsonString(result)));"
         webView.evaluateJavaScript(js, completionHandler: nil)
@@ -850,19 +871,28 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             req.httpBody = d
         }
 
-        let timeout = min(max(args["timeout"] as? Double ?? 20, 3), 90)
+        // ⚠️ 超时从 20s 降到 12s：站方（🍅大灰狼）的详情流程有 **8 个 host 的失败兜底**，
+        //    一个 host 卡住就等满超时 → 7 个兜底能把详情页拖到两分钟 ❗
+        //    12s 足够正常响应，又不会让兜底链失控。
+        let timeout = min(max(args["timeout"] as? Double ?? 12, 3), 90)
 
         // httpAdditionalHeaders 是**可选**属性，不能直接下标赋值
         // （`cfg.httpAdditionalHeaders["X"] = v` 编译不过），得先把字典拼好再赋
         var sessionHeaders = header
         sessionHeaders["User-Agent"] = req.value(forHTTPHeaderField: "User-Agent") ?? ua
 
+        // ⚠️⚠️ **必须复用同一个 URLSession**（2026-10-21 真机「详情页很慢很慢」）：
+        //   原来每次请求都 `URLSession(configuration: cfg)` 新建一个 ephemeral session
+        //   ⇒ 每次都要**重新 TCP 连接 + TLS 握手**（弱网下 1~3 秒）
+        //   ⇒ 而 🍅大灰狼的详情流程要发 3~8 次请求（还有 8 个 host 的失败兜底）
+        //   ⇒ 详情页光握手就耗掉十几秒 ❗
+        //   ⇒ 共享 session ⇒ 连接复用 ⇒ 后续请求只花 RTT ✅
         let cfg = URLSessionConfiguration.ephemeral
         cfg.httpAdditionalHeaders = sessionHeaders
         cfg.timeoutIntervalForRequest = timeout
         cfg.httpCookieStorage = HTTPCookieStorage.shared
         cfg.httpShouldSetCookies = true
-        let session = URLSession(configuration: cfg)
+        let session = Self.sharedSession(headers: sessionHeaders, timeout: timeout)
 
         var result = await Self.perform(req: req, session: session)
 
