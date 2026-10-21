@@ -15,12 +15,19 @@ struct CategoryPickerView: View {
 
     @State private var search = ""
 
-    /// 按 style 分组。style 为空的一律归到「其他」——
-    /// 不少站的 exploreUrl 不带分组，硬按空串分组会显示成一个空标题。
+    /// 按**分组**归类（栖阅同款：`ExploreCategorySplit.groups()`）
+    ///
+    /// ⚠️ 2026-10-21 修：原来按 `style` 分组 ❗
+    ///    但 🍅大灰狼的组标题是 exploreUrl 里那些**装饰行**
+    ///    （`○ *。*☆ 排行榜 ☆*。* ○`）⇒ 引擎解析成 `group` 字段 ✅
+    ///    ⇒ 不按 group 分组的话，所有分类会挤成一个「全部分类」，
+    ///       栖阅那种「分类 / ☆排行榜☆ / ☆热门标签☆」的分组就出不来 ❗
+    ///    （style 仍作兜底：有些站的 exploreUrl 走 style 字段）
     private var groups: [(String, [SourceService.KindDTO])] {
         var dict: [String: [SourceService.KindDTO]] = [:]
         for k in kinds {
-            let key = k.style.trimmingCharacters(in: .whitespacesAndNewlines)
+            var key = k.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            if key.isEmpty { key = k.style.trimmingCharacters(in: .whitespacesAndNewlines) }
             let name = key.isEmpty ? "全部分类" : key
             dict[name, default: []].append(k)
         }

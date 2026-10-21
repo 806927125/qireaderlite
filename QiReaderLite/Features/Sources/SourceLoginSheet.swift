@@ -55,12 +55,11 @@ struct SourceLoginSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    ForEach(fields) { f in
-                        switch f.type {
-                        case "password":
-                            SecureField(f.name, text: binding(f.name))
-                                .textFieldStyle(.roundedBorder)
-                        case "button":
+                    // ── 按钮排成**两列**（栖阅登录页同款：站方那 19 个按钮两列排）──
+                    //    文本/密码框仍整行 ✅
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                                        GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                        ForEach(fields.filter { $0.type == "button" }) { f in
                             Button {
                                 run(f.action)
                             } label: {
@@ -70,16 +69,23 @@ struct SourceLoginSheet: View {
                                     }
                                     Text(f.name)
                                         .font(.system(size: 15, weight: .medium))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.7)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 11)
                             }
-                            .buttonStyle(.borderedProminent)
+                            // ⚠️ 栖阅登录页的按钮是**浅色玻璃 + 蓝字**（不是实心蓝块）
+                            .buttonStyle(.bordered)
                             .tint(Theme.accent)
-                            // ⚠️ 只禁用**正在跑的那个**按钮。
-                            //    以前是 `.disabled(busy)` → 全面板禁用 →
-                            //    一旦某个 op 卡住，busy 永远 true → **登录都点不了了**
                             .disabled(runningAction != nil)
+                        }
+                    }
+                    ForEach(fields.filter { $0.type != "button" }) { f in
+                        switch f.type {
+                        case "password":
+                            SecureField(f.name, text: binding(f.name))
+                                .textFieldStyle(.roundedBorder)
                         default:
                             TextField(f.name, text: binding(f.name))
                                 .textFieldStyle(.roundedBorder)
