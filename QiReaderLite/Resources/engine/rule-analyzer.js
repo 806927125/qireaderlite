@@ -256,11 +256,19 @@
     var args = names.map(function (k) { return scope[k]; });
     var key = names.join(',') + '\u0001' + code;
     var fn = evalCache[key];
+    var fnExpr = null;
     if (!fn) {
       try {
         /* jshint evil:true */
         fn = new Function(names.concat(['__qrCode']).join(','),
           'return eval(__qrCode);');
+        // ⚠️ 栖阅语义（AnalyseRule+JavaScript 的 cstring 原文）：
+        //   语法错时**再试一次「整段当表达式」**：
+        //     Function("return (" + __script + ");")
+        //   ⇒ 像 `@js:{a:1}` 这种**对象字面量**规则（当脚本跑是语法错）
+        //     第二次就能拿到值。轻阅原来直接失败 ❌
+        fnExpr = new Function(names.concat(['__qrCode']).join(','),
+          'return eval("(" + __qrCode + ")");');
       } catch (e) {
         return Promise.reject(new Error('JS 作用域非法: ' + e.message));
       }
@@ -272,6 +280,14 @@
       try {
         return Promise.resolve(fn.apply(scope, args.concat([fixed])));
       } catch (e) {
+        // 语法错 → 整段当表达式再试一次（栖阅语义）
+        if (e && e.name === 'SyntaxError' && fnExpr) {
+          try {
+            return Promise.resolve(fnExpr.apply(scope, args.concat([fixed])));
+          } catch (e2) {
+            return Promise.reject(new Error('JS 执行失败: ' + (e2 && e2.message)));
+          }
+        }
         return Promise.reject(new Error('JS 执行失败: ' + (e && e.message)));
       }
     }

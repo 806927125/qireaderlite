@@ -207,7 +207,24 @@
     var method = String(opt.method || 'GET').toUpperCase();
     var headers = {};
     for (var hk in (opt.headers || {})) headers[hk] = String(opt.headers[hk]);
-    var body = opt.body != null ? String(opt.body) : '';
+    // ⚠️⚠️ body 可能是**对象**（站方 `url,{"method":"POST","body":{"html":""}}`）——
+    //   原来直接 `String(opt.body)` → **"[object Object]"** 发出去 ❌
+    //   栖阅（AnalyzeUrl+Request 的字面量）有 `application/json; charset=utf-8`
+    //   + 正规 JSON 序列化 ⇒ **照搬它**。
+    var body = '';
+    var isJsonBody = false;
+    if (opt.body != null) {
+      if (typeof opt.body === 'object') {
+        try { body = JSON.stringify(opt.body); isJsonBody = true; }
+        catch (e) { body = String(opt.body); }
+      } else {
+        body = String(opt.body);
+      }
+    }
+    // JSON body 补 Content-Type（URL 选项里的头**替换**源级头，所以这里说了算）
+    if (isJsonBody && !headers['Content-Type'] && !headers['content-type']) {
+      headers['Content-Type'] = 'application/json; charset=utf-8';
+    }
 
     // ⚠️⚠️ query 重新编码**对所有方法都要做**（原来只做 GET，真机栽在这）：
     //   站方 POST 请求的 query 里常有**裸中文**（`source=番茄`）和**裸 JSON**
