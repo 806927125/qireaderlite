@@ -290,8 +290,11 @@ struct SourceLoginSheet: View {
         let results = LegadoCompat.pingHosts(hosts, timeout: 6)
         let ok = results.filter { ($0["ok"] as? Bool) == true }
         guard let best = ok.first, let host = best["host"] as? String else {
-            let detail = results.map { r in
-                "\(r["host"] as? String ?? "") \(((r["ok"] as? Bool) == true ? "通" : "不通")"
+            // ⚠️ 不用嵌套引号的字符串插值（Swift 里 `\(r["host"])` 这种写法很容易被转义搞坏）
+            let detail = results.map { r -> String in
+                let h = r["host"] as? String ?? ""
+                let good = (r["ok"] as? Bool) == true
+                return h + (good ? " 通" : " 不通")
             }.joined(separator: "、")
             probeResult = "全部线路都不通：\(detail)"
             return

@@ -1,4 +1,10 @@
 import Foundation
+// ⚠️ Linux（沙盒 swiftc）上 URLSession 在 FoundationNetworking 里，iOS 上在 Foundation
+//    ⇒ 条件导入，两边都能编 ✅（沙盒 Swift 门禁的价值就在这）
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+import Dispatch
 
 /// Legado 兼容层的「纯计算能力」—— **一律用 Swift 写**，JS 只做转发。
 ///
