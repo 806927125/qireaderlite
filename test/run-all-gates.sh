@@ -28,6 +28,7 @@ declare -a GATES=(
   "engine-smoke:test/engine-smoke.test.js"
   "login-card:test/live-login-card.test.js"
   "fq-login:test/live-fq-login.test.js"
+  "live-explore:test/live-explore.test.js"
   "reader-settings:test/reader-settings.test.js"
   "reader-native-paging:test/reader-native-paging.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"

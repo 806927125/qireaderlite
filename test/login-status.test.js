@@ -360,6 +360,30 @@ console.log('\n=== 13. 登录面板按钮不被永久禁用 ===');
      'op 超时 → 自动重置引擎（串行队列里的卡死 op 不死，队列就一直堵）');
 }
 
+// ───────── ⑭ JSON 列表要摊平（Legado 语义）─────────
+console.log('\n=== 14. JSON 列表摊平（发现页/搜索页出书）===');
+// 用户真机：「发现页没有书」。诊断说「规则只命中 0 个元素」——
+// ⚠️ 但那条诊断（engine.js 的 explain op）**自己就按 HTML 解析**去数 CSS 节点
+//    → 对 JSON 接口源**必然**报「命中 0 个」→ **诊断结论是误导**。
+// 真正的原因：站方 ruleExplore.bookList = `$.data`，`$.data` 命中的是**一个数组**
+// → jsonpath.select 返回 `[那个数组]`（数组本身）→ 引擎把整个数组当成一本书
+// → `$.book_name` 取不到 → **书全被丢掉** → 列表页空。
+{
+  ok(/function jsonListOf\(result\)/.test(engine),
+     '有 jsonListOf（把命中的数组摊平成元素）');
+  ok(/items = jsonListOf\(QR\.jsonpath\.select/.test(engine),
+     'extractBooks 用 jsonListOf 取列表（发现页/搜索页）');
+  ok(/jItems = jsonListOf\(QR\.jsonpath\.select/.test(engine),
+     '目录（JSON 章节）也摊平');
+  ok(/result\.length === 1 && Array\.isArray\(result\[0\]\)/.test(engine),
+     '只摊平一层（数组的元素），不深摊');
+}
+{
+  // 联调测试要在
+  ok(fs.existsSync(path.join(ROOT, 'test', 'live-explore.test.js')),
+     '有发现页的真机联调测试');
+}
+
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

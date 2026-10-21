@@ -513,6 +513,26 @@
     return dom.parseHTML(wrapped, baseUrl);
   }
 
+  /**
+   * JSON 列表 → **数组的元素**（Legado 语义）
+   *
+   * ⚠️⚠️ 这是「发现页/搜索页没有书」的真凶（用户真机报的）：
+   *   站方的 ruleExplore.bookList = `$.data`，而 `$.data` 命中的是**一个数组**
+   *   → jsonpath.select 返回 `[那个数组]`（数组本身，不是它的元素）
+   *   → 引擎把**整个数组当成一本书** → `$.book_name` 取不到 → **书全被丢掉**
+   *   → 列表页空。
+   *
+   * Legado 的行为：`$.data` 命中数组时，返回**数组的元素**（10 本就是 10 个条目）。
+   *
+   * ⚠️ 不能用 `QR.rule.flatten` —— 那个是给 DOM/标量用的，
+   *    对 JSON **对象**会 `JSON.stringify` 成字符串 ❌
+   */
+  function jsonListOf(result) {
+    if (!Array.isArray(result)) return [];
+    if (result.length === 1 && Array.isArray(result[0])) return result[0];
+    return result;
+  }
+
   function extractBooks(page, listRule, ctx, opts) {
     opts = opts || {};
     var listRuleStr = ruleText(listRule.bookList);
@@ -524,7 +544,7 @@
       var body = rule.stripModePrefix(listRuleStr, kind);
       var items = [];
       if (kind === 'jsonpath') {
-        try { items = QR.jsonpath.select(JSON.parse(page.text), body) || []; } catch (e) { items = []; }
+        try { items = jsonListOf(QR.jsonpath.select(JSON.parse(page.text), body)); } catch (e) { items = []; }
       } else {
         try { items = rule.getElements(listRuleStr, page.doc, ctx).values || []; } catch (e) { items = []; }
       }
@@ -1190,8 +1210,8 @@
                 try {
                   var jKind = rule.classify(spec, ctx);
                   if (rule.T && rule.T.JSONPATH === jKind || jKind === 'jsonpath') {
-                    jItems = QR.jsonpath.select(JSON.parse(page.text),
-                      rule.stripModePrefix(spec, jKind)) || [];
+                    jItems = jsonListOf(QR.jsonpath.select(JSON.parse(page.text),
+                      rule.stripModePrefix(spec, jKind)));
                   }
                 } catch (e) { jItems = []; }
                 if (!jItems.length) {
