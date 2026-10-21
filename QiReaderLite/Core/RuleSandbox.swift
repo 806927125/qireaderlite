@@ -414,6 +414,28 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///    （浏览器那个 op 自己有 5 分钟看门狗，这里给 6 分钟留余量）
     static let opTimeoutSeconds: Double = 360
 
+    /// 把书源给的 URL 字符串解析成 `URL`
+    ///
+    /// ⚠️⚠️ **为什么要兜底重试**（2026-10-21 真机栽过）：
+    ///   `URL(string:)` 遇到 `{` `}` `"` 裸中文这些字符**直接返回 nil**。
+    ///   而站方的 POST 请求 query 里就有这些：
+    ///   `…/detail?book_id=xxx&source=番茄&tab=小说&variable={"custom":""}`
+    ///   → URL 解析失败 → **请求根本没发出去** → 引擎把失败吞成空串 →
+    ///     站方 `JSON.parse('')` → 「JSON Parse error: Unable to parse JSON string」
+    ///     → 详情数据为空 → 简介规则炸「abstract.split」。
+    ///   ⇒ 沙盒用 Node fetch（自己会编码）所以全绿，**真机才炸**。
+    ///   ⇒ 这里再兜一层：解析不了就百分号编码一遍再试。
+    private static func parseURL(_ raw: String) -> URL? {
+        let s = String(raw)
+        if let u = URL(string: s), u.scheme != nil { return u }
+        // 只保留 URL 合法字符（保留 : / ? # [ ] @ ! $ & ' ( ) * + , ; =）
+        let allowed = CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=")
+        guard let encoded = s.addingPercentEncoding(withAllowedCharacters: allowed),
+              let u2 = URL(string: encoded), u2.scheme != nil else { return nil }
+        return u2
+    }
+
     func invoke(_ op: String, _ payload: [String: Any] = [:], source: BookSource? = nil) async throws -> Any {
         let prev = invokeTail
         let current = Task<Any, Error> {
@@ -779,7 +801,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         // ⚠️ 别写 URLRequest(url: URL(string: "")!) —— Apple 平台上 URL(string: "") 返回 nil，
         // 强解包会**每次发请求都崩**。Kotlin 的 URL("") 是合法空 URL，Swift 不是。
         guard let raw = args["url"] as? String,
-              let u = URL(string: raw), u.scheme != nil else {
+              let u = Self.parseURL(raw) else {
             return ["ok": false, "error": "URL 非法: \(args["url"] as? String ?? "nil")"]
         }
         var req = URLRequest(url: u)

@@ -209,12 +209,21 @@
     for (var hk in (opt.headers || {})) headers[hk] = String(opt.headers[hk]);
     var body = opt.body != null ? String(opt.body) : '';
 
-    if (method === 'GET' && abs.indexOf('?') > 0) {
-      // GET 的 query 走 analyzeQuery 重新编码（keyword 这类中文要变 %E6%96%97）
+    // ⚠️⚠️ query 重新编码**对所有方法都要做**（原来只做 GET，真机栽在这）：
+    //   站方 POST 请求的 query 里常有**裸中文**（`source=番茄`）和**裸 JSON**
+    //   （`variable={"custom":""}`）→ iOS 的 `URL(string:)` 遇到 `{` `"` 裸中文
+    //   **直接判非法返回 nil** → 请求**根本没发出去** → 引擎把失败吞成空串
+    //   → 站方 `JSON.parse('')` → 「JSON Parse error: Unable to parse JSON string」
+    //   → 详情数据为空 → 简介规则炸「undefined is not an object (evaluating 'abstract.split')」。
+    //
+    //   ⚠️ 沙盒用 Node 的 fetch，它**自己会编码** → 沙盒全绿、真机炸。
+    //      这就是「沙盒能跑 ≠ 真机能跑」的典型，别再只看沙盒。
+    if (abs.indexOf('?') > 0) {
       var qi = abs.indexOf('?');
       abs = abs.slice(0, qi) + '?' + encodeFields(abs.slice(qi + 1));
-      body = '';
-    } else if (method === 'POST' && body && !/^[[{]/.test(body.trim())) {
+      if (method === 'GET') body = '';
+    }
+    if (method === 'POST' && body && !/^[[{]/.test(body.trim())) {
       // Legado: 非 JSON/XML 的 form body 走 analyzeFields 编码
       body = encodeFields(body);
     }

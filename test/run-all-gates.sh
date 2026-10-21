@@ -32,6 +32,7 @@ declare -a GATES=(
   "fq-login:test/live-fq-login.test.js"
   "live-explore:test/live-explore.test.js"
   "live-toc:test/live-toc.test.js"
+  "live-bookinfo:test/live-bookinfo.test.js"
   "reader-settings:test/reader-settings.test.js"
   "reader-native-paging:test/reader-native-paging.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
