@@ -386,6 +386,14 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         NSLog("%@", stamped)
     }
 
+    /// **清空引擎日志**
+    ///
+    /// ⭐ 用户要「测试完日志要清空」⇒ 手动按钮 + 测书源开始时自动清空，
+    ///    这样报告里只有**本次**的日志，不会混着上一次的。
+    func clearLogs() {
+        recentLogs.removeAll()
+    }
+
     /// 日志行的时间戳（`HH:mm:ss.SSS`）
     private static let logTimeFormatter: DateFormatter = {
         let f = DateFormatter()

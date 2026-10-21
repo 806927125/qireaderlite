@@ -51,6 +51,14 @@ struct SourceTestView: View {
                     }
                     .disabled(report == nil)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    // ⭐ 「测试完日志要清空」—— 手动一键清
+                    Button {
+                        RuleSandbox.shared.clearLogs()
+                    } label: {
+                        Label("清空日志", systemImage: "trash")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("好") { dismiss() }
                 }
@@ -270,6 +278,9 @@ struct SourceTestView: View {
     private func run() async {
         running = true
         report = nil
+        // ⚠️ **开始测试前先清空日志** ⇒ 报告里只有**本次**的日志，
+        //    不会混着上一次跑剩下的（用户要「测试完日志要清空」）
+        RuleSandbox.shared.clearLogs()
         let r = await SourceTestRunner.run(source)
         report = r
         running = false

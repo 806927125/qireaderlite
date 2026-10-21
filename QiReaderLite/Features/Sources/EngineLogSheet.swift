@@ -182,6 +182,15 @@ struct EngineLogSheet: View {
                               systemImage: copied ? "checkmark" : "doc.on.clipboard")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    // ⭐ 「测试完日志要清空」—— 一键清掉，避免旧日志混着新日志看花眼
+                    Button {
+                        RuleSandbox.shared.clearLogs()
+                    } label: {
+                        Label("清空日志", systemImage: "trash")
+                    }
+                    .disabled(logs.isEmpty)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("好") { dismiss() }
                 }
