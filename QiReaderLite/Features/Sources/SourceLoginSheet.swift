@@ -291,7 +291,7 @@ struct SourceLoginSheet: View {
         let ok = results.filter { ($0["ok"] as? Bool) == true }
         guard let best = ok.first, let host = best["host"] as? String else {
             let detail = results.map { r in
-                "\(r["host"] as? String ?? "") \(($0["ok"] as? Bool) == true ? "通" : "不通")"
+                "\(r["host"] as? String ?? "") \(((r["ok"] as? Bool) == true ? "通" : "不通")"
             }.joined(separator: "、")
             probeResult = "全部线路都不通：\(detail)"
             return
