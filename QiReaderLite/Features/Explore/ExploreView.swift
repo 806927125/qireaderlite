@@ -238,6 +238,10 @@ struct ExploreView: View {
             if selected != nil {
                 await loadBooks()
             }
+            // ⚠️ **自动选线**（2026-10-21 用户原话「检测当前服务器只是看快不快的，没有别的用处」）
+            //    ⇒ 那就 App 自己测自己切：测速站方所有线路 → 最快的写进书源变量 ✅
+            //    （一次启动里每个源只测一次；当前线路够快就不折腾）
+            Task { _ = await SourceService.shared.autoPickFastestLine(source: s) }
         } catch {
             statusText = error.localizedDescription
             kinds = []

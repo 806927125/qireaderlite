@@ -294,6 +294,70 @@ final class SourceService {
         return dto.books.map { $0.toBook(origin: source.bookSourceUrl, sourceName: source.name) }
     }
 
+    // MARK: - 自动选线
+
+    /// 一次启动里已经测过的源（避免每次都测）
+    private static var probedSources: Set<String> = []
+
+    /// **自动选线**：测速站方所有线路 → 把最快的一条写进书源变量的 `server`
+    ///
+    /// ⚠️ 为什么必须自动（2026-10-21 用户原话）：
+    ///    「**检测当前服务器只是看线路快不快的，没有别的用处**」——
+    ///    站方的 `checkNet()` 只**测**不**切**（切线是 `set_server()`）⇒
+    ///    让人手点没意义 ⇒ **App 自己测自己切** ✅
+    ///
+    /// 逻辑：
+    /// - 当前线路通且不比最快的慢 2 倍以上 → **不动**（别折腾）
+    /// - 否则 → 把最快的那条写进 `server` ✅（站方下一次请求就用它）
+    ///
+    /// - Returns: 选中的线路（没换就是原来的）
+    @discardableResult
+    func autoPickFastestLine(source: BookSource) async -> String? {
+        let url = source.bookSourceUrl
+        guard !url.isEmpty else { return nil }
+        if Self.probedSources.contains(url) { return nil }
+        Self.probedSources.insert(url)
+
+        // ① 站方的全部线路（jsLib 的 host 数组）+ 当前线路
+        var hosts = (try? await sourceHosts(source: source)) ?? []
+        let varsText = SourceVariables.vars(for: url)
+        var current = ""
+        if let m = try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any],
+           let sv = m["server"] as? String { current = sv }
+        if !current.isEmpty && !hosts.contains(current) { hosts.insert(current, at: 0) }
+        guard hosts.count > 1 else { return current.isEmpty ? nil : current }
+
+        // ② 并发测速（5 秒超时，够短不干等）
+        let results = LegadoCompat.pingHosts(hosts, timeout: 5)
+        let okList = results.filter { ($0["ok"] as? Bool) == true }
+        guard let best = okList.first, let bestHost = best["host"] as? String else {
+            // 全都不通 → 保持原样（让站方自己逐条兜底）
+            return current.isEmpty ? nil : current
+        }
+        let bestMs = (best["ms"] as? Int) ?? 999999
+        let curMs = results.first { ($0["host"] as? String) == current }
+            .flatMap { $0["ms"] as? Int } ?? -1
+        let curOK = results.first { ($0["host"] as? String) == current }
+            .flatMap { $0["ok"] as? Bool } ?? false
+
+        // ③ 当前线路已经够快 → 不折腾
+        if curOK && curMs >= 0 && curMs <= bestMs * 2 { return current }
+
+        // ④ 换线：写进书源变量
+        guard var m = (try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any]) else {
+            return bestHost
+        }
+        m["server"] = bestHost
+        if let d = try? JSONSerialization.data(withJSONObject: m),
+           let t = String(data: d, encoding: .utf8) {
+            SourceVariables.setVars(t, for: url)
+        }
+        let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
+        NSLog("%@", msg)
+        RuleSandbox.shared.appendLog(msg)
+        return bestHost
+    }
+
     /// **站方的全部线路**（jsLib 里的 `host` 数组）—— 用来测速挑一条通的
     func sourceHosts(source: BookSource) async throws -> [String] {
         let srcData = try AppEncoder.encode(source)

@@ -371,6 +371,13 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             "window.QR && (window.QR.__qrSyncEnabled = \(on ? "true" : "false"));\n;void 0;")
     }
 
+    /// 往引擎日志里追加一条（宿主侧用，比如自动选线的结果）
+    func appendLog(_ line: String) {
+        recentLogs.append(line)
+        if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+        NSLog("%@", line)
+    }
+
     private func markReady() {
         guard !ready else { return }
         ready = true
