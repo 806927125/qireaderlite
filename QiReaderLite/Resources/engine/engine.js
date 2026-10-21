@@ -240,9 +240,20 @@
       abs = abs.slice(0, qi) + '?' + encodeFields(abs.slice(qi + 1));
       if (method === 'GET') body = '';
     }
-    if (method === 'POST' && body && !/^[[{]/.test(body.trim())) {
-      // Legado: 非 JSON/XML 的 form body 走 analyzeFields 编码
-      body = encodeFields(body);
+    if (method === 'POST' && body) {
+      var bt = body.trim();
+      if (!isJsonBody && (bt.charAt(0) === '{' || bt.charAt(0) === '[')) {
+        // JSON **字符串** body → 也要 application/json（Legado 语义）
+        if (!headers['Content-Type'] && !headers['content-type']) {
+          headers['Content-Type'] = 'application/json; charset=utf-8';
+        }
+      } else if (!isJsonBody) {
+        // Legado: 非 JSON/XML 的 form body 走 analyzeFields 编码
+        body = encodeFields(body);
+        if (!headers['Content-Type'] && !headers['content-type']) {
+          headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8';
+        }
+      }
     }
 
     // Legado: 解析后用新 URL 的目录更新 baseUrl，后续相对路径才找得到
@@ -261,6 +272,17 @@
    * query / form body 的字段编码 —— 对齐 Legado 的 analyzeFields / analyzeQuery。
    * 关键：已经有 %XX 的不重复编码，**字面量 + 要保留**（form 编码里 + 就是空格）。
    */
+  /**
+   * 查询串 / 表单体的字段编码 —— **跟 Core/AnalyzeUrl.swift 的 analyzeFields 逐字同语义**
+   *
+   * ⚠️⚠️ **'+' 必须编码成 %2B**（Legado 原样，栖阅有 formPercentEncodedComponent）：
+   *   留着 '+' 的话，服务器按 form 解码 query 时会把它变成**空格** →
+   *   🍅大灰狼的 book_id 是 base64，base64 里出现 '+' → book_id 被损坏 →
+   *   **表现为「有的书能开、有的书开不了」**（不是 100% 复现，很难查）。
+   *
+   * 保留字符：字母数字 + `-._`；结构符 `=` `&` 原样；
+   * 已有 `%XX` 不重复编码；其余按 UTF-8 字节 %XX。
+   */
   function encField(v) {
     var s = String(v == null ? '' : v), out = '', i = 0;
     while (i < s.length) {
@@ -268,9 +290,10 @@
         out += s.substr(i, 3); i += 3; continue;
       }
       var c = s.charAt(i);
-      if (/[A-Za-z0-9_.\-~!*'()]/.test(c)) out += c;
-      else if (c === '+') out += '+';
-      else out += encodeURIComponent(c);
+      if (c === '=' || c === '&') { out += c; i++; continue; }
+      if (c === '+') { out += '%2B'; i++; continue; }
+      if (/[A-Za-z0-9_.\-]/.test(c)) { out += c; i++; continue; }
+      out += encodeURIComponent(c);
       i++;
     }
     return out;

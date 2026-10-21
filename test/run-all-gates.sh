@@ -30,6 +30,7 @@ declare -a GATES=(
   "toc-diag-truth:test/toc-diag-truth.test.js"
   "b64-url-mangle:test/b64-url-mangle.test.js"
   "qiyue-parity:test/qiyue-parity.test.js"
+  "analyze-url-parity:test/analyze-url-parity.test.js"
   "fq-login:test/live-fq-login.test.js"
   "live-explore:test/live-explore.test.js"
   "live-toc:test/live-toc.test.js"

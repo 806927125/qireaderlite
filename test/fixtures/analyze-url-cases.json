@@ -1,0 +1,112 @@
+[
+  {
+    "name": "大灰狼详情请求（裸中文+裸JSON+对象body）",
+    "raw": "https://v5.langge.uk/detail?book_id=NzE4OTU0NDA3Nzk4NDAwOTI3Nw&source=番茄&tab=小说&variable={\"custom\":\"\"},{\"method\":\"POST\",\"body\":{\"html\":\"\"}}",
+    "base": "",
+    "expected": {
+      "url": "https://v5.langge.uk/detail?book_id=NzE4OTU0NDA3Nzk4NDAwOTI3Nw&source=%E7%95%AA%E8%8C%84&tab=%E5%B0%8F%E8%AF%B4&variable=%7B%22custom%22%3A%22%22%7D",
+      "method": "POST",
+      "body": "{\"html\":\"\"}",
+      "contentType": "application/json; charset=utf-8"
+    }
+  },
+  {
+    "name": "GET + 中文关键词",
+    "raw": "https://x.com/s?keyword=斗破苍穹",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/s?keyword=%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9",
+      "method": "GET",
+      "body": "",
+      "contentType": ""
+    }
+  },
+  {
+    "name": "base64 book_id 里带 '+'（会被服务器解成空格）",
+    "raw": "https://x.com/d?book_id=abc+def&z=1",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/d?book_id=abc%2Bdef&z=1",
+      "method": "GET",
+      "body": "",
+      "contentType": ""
+    }
+  },
+  {
+    "name": "base64 带 '/'",
+    "raw": "https://x.com/d?book_id=a/b+c=",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/d?book_id=a%2Fb%2Bc=",
+      "method": "GET",
+      "body": "",
+      "contentType": ""
+    }
+  },
+  {
+    "name": "已有 %XX 不重复编码",
+    "raw": "https://x.com/d?k=%E4%B8%AD&n=1",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/d?k=%E4%B8%AD&n=1",
+      "method": "GET",
+      "body": "",
+      "contentType": ""
+    }
+  },
+  {
+    "name": "表单 body",
+    "raw": "https://x.com/p,{\"method\":\"POST\",\"body\":\"a=1&b=番茄\"}",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/p",
+      "method": "POST",
+      "body": "a=1&b=%E7%95%AA%E8%8C%84",
+      "contentType": "application/x-www-form-urlencoded; charset=utf-8"
+    }
+  },
+  {
+    "name": "JSON 字符串 body",
+    "raw": "https://x.com/p,{\"method\":\"POST\",\"body\":\"{\\\"a\\\":1}\"}",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/p",
+      "method": "POST",
+      "body": "{\"a\":1}",
+      "contentType": "application/json; charset=utf-8"
+    }
+  },
+  {
+    "name": "相对地址 + baseUrl",
+    "raw": "../a/b.html",
+    "base": "https://x.com/x/y/",
+    "expected": {
+      "url": "https://x.com/x/a/b.html",
+      "method": "GET",
+      "body": "",
+      "contentType": ""
+    }
+  },
+  {
+    "name": "URL 里带自定义头",
+    "raw": "https://x.com/a,{\"headers\":{\"Referer\":\"https://x.com/\"}}",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/a",
+      "method": "GET",
+      "body": "",
+      "contentType": ""
+    }
+  },
+  {
+    "name": "普通逗号不能误伤",
+    "raw": "https://x.com/a,b,c",
+    "base": "",
+    "expected": {
+      "url": "https://x.com/a,b,c",
+      "method": "GET",
+      "body": "",
+      "contentType": ""
+    }
+  }
+]
