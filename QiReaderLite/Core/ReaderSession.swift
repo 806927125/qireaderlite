@@ -202,7 +202,7 @@ final class ReaderSession: ObservableObject {
         guard flat.indices.contains(i), i != index else { return false }
         guard let s = sources?.source(id: book.origin) else { return false }
         do {
-            let dto = try await SourceService.shared.content(source: s, chapter: flat[i])
+            let dto = try await SourceService.shared.content(source: s, chapter: flat[i], book: book)
             guard !dto.content.isEmpty else { return false }
             prefetched[i] = (dto.title.isEmpty ? flat[i].title : dto.title, dto.content)
             return true
@@ -264,7 +264,7 @@ final class ReaderSession: ObservableObject {
         loadingChapter = true
         defer { if self.index == i { loadingChapter = false } }
         do {
-            let dto = try await SourceService.shared.content(source: s, chapter: ch)
+            let dto = try await SourceService.shared.content(source: s, chapter: ch, book: book)
             // 用户已经翻到别的章了，这份结果作废
             guard self.index == i else { return }
             host.update(index: i, text: dto.content,

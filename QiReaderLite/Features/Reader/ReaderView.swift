@@ -155,13 +155,13 @@ struct ReaderView: View {
         busy = true
         errorText = ""
         do {
-            var dto = try await SourceService.shared.content(source: s, chapter: ch)
+            var dto = try await SourceService.shared.content(source: s, chapter: ch, book: book)
             // 站方章节内分页：一直追到没有 nextUrl 为止
             var guardCount = 0
             while !dto.nextUrl.isEmpty && guardCount < 8 {
                 var nextCh = ch
                 nextCh.url = dto.nextUrl
-                let more = try await SourceService.shared.content(source: s, chapter: nextCh)
+                let more = try await SourceService.shared.content(source: s, chapter: nextCh, book: book)
                 if more.content.isEmpty { break }
                 dto.content += "\n\n" + more.content
                 dto.nextUrl = more.nextUrl

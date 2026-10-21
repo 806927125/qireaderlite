@@ -459,8 +459,8 @@ ok(!/if let i = firstIndex\(ofChapter:/.test(pager),
    'firstIndex(ofChapter:) 返回非可选，别写 if let（编译报 conditional binding must have Optional type）');
 ok(/func adoptFreshChapterList\(_ newCount: Int\)/.test(pager),
    'pager 能按新章数重建 spine（且不清 texts，不弹走当前页）');
-ok(/toc\(source: src, tocUrl: bk\.tocUrl, bookUrl: bk\.bookUrl\)/.test(web),
-   '刷新目录是真发一次 toc 请求');
+ok(/toc\(source: src, tocUrl: bk\.tocUrl, bookUrl: bk\.bookUrl, book: bk\)/.test(web),
+   '刷新目录是真发一次 toc 请求（**而且带 book** —— 站方目录 JS 要 book.getVariable）');
 ok(/session\.onPageEdge\?\(/.test(web),
    '提示走 session.onPageEdge（ReaderWebView 自己没有这个属性）');
 ok(!/[^.]\bonPageEdge\?\(/.test(web.replace(/session\.onPageEdge\?\(/g, '')),

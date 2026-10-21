@@ -289,7 +289,7 @@ struct BookDetailView: View {
         let tocURL = book.tocUrl.isEmpty ? book.cleanBookUrl : book.tocUrl
         do {
             let list = try await SourceService.shared.toc(
-                source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl)
+                source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl, book: book)
             chapters = list
             if list.isEmpty {
                 problems.append("目录接口通了但一条章节都没解析出来（chapterList 规则没命中）")

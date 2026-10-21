@@ -349,18 +349,29 @@ final class SourceService {
         return b
     }
 
-    func toc(source: BookSource, tocUrl: String, bookUrl: String) async throws -> [Chapter] {
-        let dto: TocDTO = try await call("toc",
-            json(["tocUrl": tocUrl, "bookUrl": bookUrl, "maxPages": 5]), as: TocDTO.self, source: source)
+    func toc(source: BookSource, tocUrl: String, bookUrl: String, book: Book? = nil) async throws -> [Chapter] {
+        var p = json(["tocUrl": tocUrl, "bookUrl": bookUrl, "maxPages": 5])
+        // ⚠️⚠️ **必须传 book**！
+        //    站方目录 JS（🍅大灰狼的 ruleToc.chapterList）会调
+        //    `book.getVariable('custom')` → 没有 book → 站方 JS 直接抛
+        //    「Cannot read properties of undefined (reading 'getVariable')」
+        //    → **整条目录规则静默失效 → 一条章节都解析不出来**
+        if let b = book { p["book"] = b.rawJSON }
+        let dto: TocDTO = try await call("toc", p, as: TocDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
         return dto.chapters.map {
             Chapter(url: $0.url, title: $0.title, index: $0.index, isVolume: $0.isVolume, tag: $0.tag)
         }
     }
 
-    func content(source: BookSource, chapter: Chapter) async throws -> ContentDTO {
+    func content(source: BookSource, chapter: Chapter, book: Book? = nil) async throws -> ContentDTO {
         var p: [String: Any] = ["chapterUrl": chapter.url]
         p["chapter"] = ["title": chapter.title, "url": chapter.url]
+        // ⚠️⚠️ **必须传 book**！站方正文 JS（🍅大灰狼的 ruleContent.content）第一句就调
+        //    `book.getVariable('custom')` → 没有 book → 站方 JS 抛
+        //    「Cannot read properties of undefined (reading 'getVariable')」
+        //    → 整条正文规则静默失效 → **正文是空的**（标题倒是对的，那条规则不用 book）
+        if let b = book { p["book"] = b.rawJSON }
         let dto = try await call("content", p, as: ContentDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
         return dto
@@ -380,7 +391,11 @@ extension Book {
     var rawJSON: [String: Any] {
         ["bookUrl": bookUrl, "name": name, "author": author, "intro": intro,
          "kind": kind, "lastChapter": lastChapter, "coverUrl": coverUrl, "wordCount": wordCount,
-         "tocUrl": tocUrl]
+         "tocUrl": tocUrl,
+         // ⚠️ 必须有 variables —— 站方会调 `book.getVariable('custom')`
+         //    （🍅大灰狼的 ruleToc.chapterList / ruleContent.content 都调）
+         //    → 没有这个键，wrapBook 的 vars 是空的 → 取不到 → 规则照常跑（返回 ''）
+         "variables": [String: String]()]
     }
 }
 

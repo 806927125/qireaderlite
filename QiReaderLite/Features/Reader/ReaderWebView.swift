@@ -140,7 +140,7 @@ struct ReaderWebView: View {
         Task {
             defer { isRefreshingCatalog = false }
             do {
-                let fresh = try await sources.service.toc(source: src, tocUrl: bk.tocUrl, bookUrl: bk.bookUrl)
+                let fresh = try await sources.service.toc(source: src, tocUrl: bk.tocUrl, bookUrl: bk.bookUrl, book: bk)
                 if session.replaceChapters(fresh) {
                     chapters = fresh.filter { !$0.isVolume }
                     pageCtl.pager.adoptFreshChapterList(chapters.count)

@@ -100,9 +100,9 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   console.log('\n=== ② explore（真跑发现页列表）===');
   // ⚠️ 前几个 kind 是**分组标题**（线路/模式/频道…）没有 url → 要挑有 url 的真分类
   const allKinds = kinds.kinds || [];
-  const picked = allKinds.find(k => /get_discover/.test(String(k.url || '')))
-             || allKinds.find(k => /番茄/.test(String(k.title || '')))
-             || allKinds.find(k => k.url);
+  // ⚠️ 只挑**真分类**（URL 是 get_discover…）——
+  //    有些分类是「动作按钮」（URL 是 {{java.startBrowser(...)}}），不是列表页
+  const picked = allKinds.find(k => /get_discover/.test(String(k.url || '')));
   const kindUrl = (picked && picked.url) || '';
   console.log('  用分类:', picked && picked.title, '→', kindUrl ? kindUrl.slice(0, 90) : '(无)');
   const r = await win.eval(`window.__qrInvoke('explore', ${JSON.stringify({

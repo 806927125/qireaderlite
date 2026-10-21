@@ -1200,7 +1200,19 @@
           return fetchPage({ url: u, headers: {} }, ctx).then(function (page) {
             markContent(ctx, page);
             var spec = ruleText(tr.chapterList);
-            return rule.getElements(spec, page.doc, ctx).then(function () {
+            return rule.getElements(spec, page.doc, ctx).then(function (jsRes) {
+              // ★★★ 复合规则 `<js>…</js>$.data`（🍅大灰狼的目录就是这种）：
+              //   先跑 JS（解 data: URL → ajax 拿 catalog JSON）→ 再用 `$.data` 取章节
+              //   `getElements` **会**做这条链 ✅
+              //   而 `resolveNodes` 只认 CSS → 复合规则的章节**全丢** → 目录空 ❌
+              //   ⚠️ 以前这里把 getElements 的结果**丢掉了**，直接走 resolveNodes。
+              var specKind = rule.classify(spec, ctx);
+              if (specKind === rule.T.JS) {
+                // ⚠️ 必须用 getJsonList：getElements 会把 JSON 对象 flatten 成字符串 ❌
+                return rule.getJsonList(spec, page.doc, ctx).then(function (jsItems) {
+                  return collectChapters(jsItems || [], offset, page.url, tr, ctx);
+                });
+              }
               // ★ JSON 响应的目录：章节是 JSON 对象（`$.list..bookChapters[*]`），
               //   不是 DOM 节点。必须直接 jsonpath 取**对象**，
               //   否则 resolveNodes 在 Document 上按 CSS 解析 → 0 节点 → 退回整页，
@@ -1268,7 +1280,12 @@
         var cr = src.ruleContent || {};
         var url = absolutizeMaybe(p.chapterUrl, baseUrlOf(src));
         if (!url) return { content: '', error: '章节 URL 为空' };
-        var ctx = { baseUrl: url, source: src, chapter: p.chapter };
+        // ⚠️⚠️ **必须带 book**！
+        //    站方正文 JS 会调 `book.getVariable('custom')`（🍅大灰狼的 ruleContent.content）
+        //    → ctx 里没有 book → 站方 JS 报
+        //    「Cannot read properties of undefined (reading 'getVariable')」
+        //    → 整条规则静默失效 → **正文是空的**（标题倒是对的，因为那条规则不用 book）
+        var ctx = { baseUrl: url, source: src, chapter: p.chapter, book: p.book };
         return fetchPage({ url: url, headers: {} }, ctx).then(function (page) {
           markContent(ctx, page);
           // webJs：给站方解密/改写正文用，跑完拿它吐出的 HTML

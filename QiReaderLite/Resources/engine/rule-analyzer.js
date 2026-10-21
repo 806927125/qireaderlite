@@ -481,6 +481,39 @@
    * @param base  基准节点 / 文本
    * @param ctx   { baseUrl, source, book, chapter, ... }
    */
+  /**
+   * 列表规则（书单/目录）专用入口：复合规则 `<js>…</js>$.data` → **返回 JSON 对象数组**
+   *
+   * ⚠️ 为什么不能直接用 `getElements`：
+   *    它最后会 `flatten()` → 把 JSON **对象** `JSON.stringify` 成字符串 ❌
+   *    → 章节/书单的字段（title/url/name）全毁 → **列表空**。
+   *    （🍅大灰狼的 ruleToc.chapterList 就是这种复合规则：
+   *      `<js>解 data: URL → ajax 拿 catalog JSON → data;</js>$.data`）
+   *
+   * ⚠️ 也不能用 `evalJsonPath`：它会把命中的**数组**当一个元素（Legado 语义要摊平）
+   *    → 整本目录被当成一条 ❌
+   */
+  function getJsonList(rule, base, ctx) {
+    ctx = ctx || {};
+    try {
+      var scope = makeScope(jsScope(base, base, ctx, rule));
+      var r = interpolate(applyGetPut(String(rule == null ? '' : rule), scope), scope);
+      var kind = classify(r, ctx);
+      if (kind !== T.JS) return Promise.resolve([]);
+      var body = stripModePrefix(r, kind);
+      var jt = splitJsWithTail(body);
+      if (!jt.sel) return Promise.resolve([]);
+      return runJs(jt.code, makeScope(jsScope(base, base, ctx, body)))
+        .then(function (res) { return selectFromJsResult(res, jt.sel, ctx, base); })
+        .catch(function (e) {
+          QR.java.log('[列表规则出错]', String(body).slice(0, 100), e && e.message);
+          return [];
+        });
+    } catch (e) {
+      return Promise.resolve([]);
+    }
+  }
+
   function evalOne(rule, base, ctx) {
     ctx = ctx || {};
     var baseUrl = ctx.baseUrl || '';
@@ -714,7 +747,10 @@
     var baseUrl = ctx.baseUrl || '';
     // JSONPath（$.xxx / $[0]）—— 聚合源最常见的尾部形态
     if (s.charAt(0) === '$') {
-      var jp = evalJsonPath(res, s);
+      // ⚠️ 用 evalJsonPathList（不 stringify 对象、摊平一层数组）
+      //    复合规则 `<js>…</js>$.data` 的尾巴走这里 —— 用 evalJsonPath 会把
+      //    章节对象 stringify 成字符串 → 章节全毁 ❌
+      var jp = evalJsonPathList(res, s);
       return jp && jp.length ? jp : [];
     }
     // 其余按 CSS/XPath：把结果当 HTML 解析
@@ -796,6 +832,39 @@
     }
     var r = QR.jsonpath.select(data, rule);
     return flatten(r, '');
+  }
+
+  /**
+   * JSONPath 取**列表**（Legado 语义）
+   *
+   * ⚠️ 不能用 `evalJsonPath`：
+   *   ① 它 flatten → 命中数组时返回 `[那个数组]`（数组本身，不是元素）
+   *      → 整页书/章节被当成**一条** → 列表只剩 1 条 ❌
+   *   ② flatten 对 JSON **对象**会 `JSON.stringify` 成字符串
+   *      → 章节/书单的字段（title/url）全毁 ❌
+   *
+   * 这里：摊平**一层**数组，**对象原样保留** ✅
+   */
+  function evalJsonPathList(text, rule) {
+    var data = text;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (e) { return []; }
+    } else if (data == null || typeof data !== 'object') {
+      return [];
+    }
+    var r;
+    try { r = QR.jsonpath.select(data, rule); } catch (e) { return []; }
+    if (!Array.isArray(r)) return [];
+    var out = [];
+    for (var i = 0; i < r.length; i++) {
+      var v = r[i];
+      if (Array.isArray(v)) {
+        for (var j = 0; j < v.length; j++) out.push(v[j]);   // 摊平一层
+      } else {
+        out.push(v);                                          // 对象原样保留
+      }
+    }
+    return out;
   }
 
   function evalXPath(root, rule) {
@@ -1111,6 +1180,8 @@
     classify: classify,
     stripModePrefix: stripModePrefix,
     isJSONText: isJSONText,
+    evalJsonPathList: evalJsonPathList,
+    getJsonList: getJsonList,
     splitTop: splitTop,
     toLines: toLines,
     getElements: getElements,

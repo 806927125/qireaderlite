@@ -384,6 +384,48 @@ console.log('\n=== 14. JSON 列表摊平（发现页/搜索页出书）===');
      '有发现页的真机联调测试');
 }
 
+// ───────── ⑮ 目录/正文必须把 book 传进去 ─────────
+console.log('\n=== 15. 目录/正文要传 book（站方 JS 调 book.getVariable）===');
+// 站方 🍅大灰狼的 ruleToc.chapterList / ruleContent.content **第一句**就调
+//   `book.getVariable('custom')`
+// → App 的 toc/content 调用**没传 book** → 站方 JS 抛
+//   「Cannot read properties of undefined (reading 'getVariable')」
+// → 整条规则静默失效 → 目录空 / 正文空
+{
+  const svc = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'SourceService.swift'));
+  ok(/func toc\(source: BookSource, tocUrl: String, bookUrl: String, book: Book\? = nil\)/.test(svc),
+     'toc 调用带 book 参数');
+  ok(/func content\(source: BookSource, chapter: Chapter, book: Book\? = nil\)/.test(svc),
+     'content 调用带 book 参数');
+  ok(/p\["book"\] = b\.rawJSON/.test(svc), 'book 用 rawJSON 传进引擎');
+  ok(/"variables": \[String: String\]\(\)/.test(svc),
+     'rawJSON 带 variables（站方 book.getVariable 读它）');
+  // 引擎侧：content op 的 ctx 必须有 book
+  ok(/chapter: p\.chapter, book: p\.book/.test(engine),
+     'content op 的 ctx 带 book');
+  // 复合规则要保留 JSON 对象
+  ok(/function getJsonList\(rule, base, ctx\)/.test(readCode(path.join(ENGINE, 'rule-analyzer.js'))),
+     '有 getJsonList（复合规则 <js>…</js>$.data 保留 JSON 对象，不被 stringify）');
+  ok(/function evalJsonPathList\(text, rule\)/.test(readCode(path.join(ENGINE, 'rule-analyzer.js'))),
+     '有 evalJsonPathList（摊平一层数组 + 保留对象）');
+}
+{
+  // 调用点都要传 book
+  const callSites = [
+    'QiReaderLite/Features/BookDetail/BookDetailView.swift',
+    'QiReaderLite/Features/Reader/ReaderWebView.swift',
+    'QiReaderLite/Core/ReaderSession.swift',
+    'QiReaderLite/Features/Reader/ReaderView.swift',
+  ];
+  for (const f of callSites) {
+    const code = readCode(path.join(ROOT, f));
+    ok(/bookUrl: book\.cleanBookUrl, book: book\)/.test(code) || /book: bk\)/.test(code)
+       || /chapter: flat\[i\], book: book\)/.test(code) || /chapter: ch, book: book\)/.test(code)
+       || /chapter: nextCh, book: book\)/.test(code),
+       `${f.split('/').pop()} 的调用点传了 book`);
+  }
+}
+
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

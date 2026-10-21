@@ -29,6 +29,7 @@ declare -a GATES=(
   "login-card:test/live-login-card.test.js"
   "fq-login:test/live-fq-login.test.js"
   "live-explore:test/live-explore.test.js"
+  "live-toc:test/live-toc.test.js"
   "reader-settings:test/reader-settings.test.js"
   "reader-native-paging:test/reader-native-paging.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
@@ -70,8 +71,18 @@ for entry in "${GATES[@]}"; do
     continue
   fi
 
+  # 活体测试（打真服务器）会偶发抖动 → 失败重试一次再判
   out="$(node "$file" 2>&1)"
   rc=$?
+  case "$name" in
+    live-*|fq-login)
+      if [ "$rc" -ne 0 ]; then
+        sleep 5
+        out="$(node "$file" 2>&1)"
+        rc=$?
+      fi
+      ;;
+  esac
 
   # ① 先判崩溃（崩了就不会有汇总行）
   #    ⚠️ 不能拿 "Error" 裸匹配 —— 测试用例名里就有「→ Error」这种字样
