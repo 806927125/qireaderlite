@@ -15,9 +15,22 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SWIFTC=""
-for c in /tmp/swift/usr/bin/swiftc "$(command -v swiftc || true)"; do
+# ⚠️⚠️ **沙盒会把 /tmp 清掉**（2026-10-21 踩过：/tmp/swift 没了 →
+#    Swift 层门禁**静默跳过** → 「全绿」其实是没跑 ⇒ 一行 Swift 代码都没被验过）。
+# ⇒ 所以：**先找 /tmp，再找 workspace 里的常驻位置**，还不行就自动建软链。
+for c in /tmp/swift/usr/bin/swiftc \
+         "$(dirname "$(dirname "$0")")/../.toolchain/swift/usr/bin/swiftc" \
+         "$(command -v swiftc || true)"; do
   [ -x "$c" ] && { SWIFTC="$c"; break; }
 done
+# 找到 workspace 里的但 /tmp/swift 不存在 ⇒ 建软链，让下面那段 LD_LIBRARY_PATH 生效
+if [ -n "$SWIFTC" ] && [ ! -x /tmp/swift/usr/bin/swiftc ]; then
+  WLIB="$(cd "$(dirname "$(dirname "$SWIFTC")")" && pwd)"
+  if [ -d "$WLIB" ]; then
+    mkdir -p /tmp 2>/dev/null
+    ln -sfn "$WLIB" /tmp/swift 2>/dev/null || true
+  fi
+fi
 # ⚠️ 沙盒下 swiftc 是**动态链**的：libswiftCore.so 在 /tmp/swift/usr/lib/swift/linux
 #    不设这个环境变量 → `error while loading shared libraries: libswiftCore.so`
 if [ -d /tmp/swift/usr/lib/swift/linux ]; then
