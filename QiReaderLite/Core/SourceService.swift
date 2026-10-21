@@ -344,19 +344,42 @@ final class SourceService {
         guard hosts.count > 1 else { return current.isEmpty ? nil : current }
 
         // ② 并发测速（5 秒超时）—— **async，不占主线程**（主线程被阻塞会被 watchdog 杀 ❗）
+        //
+        // ⚠️⚠️⚠️ **测两轮，按「成功次数」排**（2026-10-21 真机实测踩到的）：
+        //   原来只测**一轮**，取「最快的那条」⇒ 但一轮里通一次**可能只是侥幸**
+        //   ⇒ 真机上选中了 **v10**（而 v10 恰恰是偶发 502/超时最狠的那条）
+        //   ⇒ 之后 fquser / group_name 反复超时重试
+        //   ⇒ **一次 exploreKinds 要 40 秒**，而且结果不稳（时好时坏）⭐
+        //   ⇒ 现在测两轮：**两轮都通 > 只通一轮**，同档再比延迟
         let results = await LegadoCompat.pingHosts(hosts, timeout: 5)
-        let okList = results.filter { ($0["ok"] as? Bool) == true }
-        guard let best = okList.first, let bestHost = best["host"] as? String else {
+        let results2 = await LegadoCompat.pingHosts(hosts, timeout: 5)
+        var score: [String: (okCount: Int, ms: Int)] = [:]
+        for r in results + results2 {
+            let h = (r["host"] as? String) ?? ""
+            if h.isEmpty { continue }
+            let ok = (r["ok"] as? Bool) == true
+            let ms = (r["ms"] as? Int) ?? 999999
+            var e = score[h] ?? (0, 999999)
+            if ok { e.0 += 1 }
+            if ok && ms < e.1 { e.1 = ms }
+            score[h] = e
+        }
+        // 成功次数多的优先；次数一样比延迟
+        let ranked = score.sorted { a, b in
+            if a.value.0 != b.value.0 { return a.value.0 > b.value.0 }
+            return a.value.1 < b.value.1
+        }
+        guard let top = ranked.first, top.value.0 > 0 else {
             // 全都不通 → 保持原样（让站方自己逐条兜底）
             return current.isEmpty ? nil : current
         }
-        let bestMs = (best["ms"] as? Int) ?? 999999
-        let curMs = results.first { ($0["host"] as? String) == current }
-            .flatMap { $0["ms"] as? Int } ?? -1
-        let curOK = results.first { ($0["host"] as? String) == current }
-            .flatMap { $0["ok"] as? Bool } ?? false
+        let bestHost = top.key
+        let bestMs = top.value.1
+        let curScore = score[current]
+        let curOK = (curScore?.okCount ?? 0) >= 2
+        let curMs = curScore?.ms ?? -1
 
-        // ③ 当前线路已经够快 → 不折腾
+        // ③ 当前线路**两轮都通**且够快 → 不折腾
         if curOK && curMs >= 0 && curMs <= bestMs * 2 { return current }
 
         // ④ 换线：写进书源变量

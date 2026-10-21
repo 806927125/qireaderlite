@@ -233,7 +233,15 @@ struct ExploreView: View {
                 selected = nil
             } else {
                 // 上次选的还在 → 保住；没了才退回第一个
-                selected = kinds.first { $0.url == prevUrl } ?? selected ?? kinds.first
+                // ⚠️ 默认**不要**选中「登录番茄」那种**没有 url 的纯动作项**：
+            //    站方把 `java.startBrowser(...)` 直接写在 url 模板里
+            //    （`"url": '{java.startBrowser("https://fanqienovel.com/","番茄登录");}'`）
+            //    ⇒ 轻阅解析后 url 为**空串** ⇒ 拿它去请求 ⇒「URL 非法」
+            //    ⇒ **整个发现页打不开**（2026-10-21 真机实测）
+            //    ⇒ 它仍然显示在列表里（用户可以点它去登录），但**默认选中第一个有 url 的**。
+            let withURL = kinds.filter { !$0.url.isEmpty }
+            selected = kinds.first { $0.url == prevUrl && !$0.url.isEmpty }
+                ?? (withURL.isEmpty ? kinds.first : withURL.first)
             }
             if selected != nil {
                 await loadBooks()

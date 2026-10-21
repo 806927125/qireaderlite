@@ -436,7 +436,25 @@
     startBrowser: function (url, title) {
       var u = String((url && typeof url === 'object') ? (url.url || '') : (url || ''));
       if (QR.__qrAjaxRecord) { QR.__qrAjaxRecord(u, 'browser', String(title || '')); return ''; }
-      return java.openBrowser(u, title);
+      // ⚠️⚠️⚠️ **没有两遍跑上下文时必须同步返回空串**（2026-10-21 真机实测）：
+      //   站方会把 `java.startBrowser(...)` 直接写在 URL 模板里，例如
+      //     "url": '{java.startBrowser("https://fanqienovel.com/","番茄登录");}'
+      //   轻阅稍后**再解析这个 URL 模板**时，已经**不在两遍跑上下文里**了
+      //   ⇒ `QR.__qrAjaxRecord` 不存在 ⇒ 走 `openBrowser` 直连 ⇒ **返回 Promise**
+      //   ⇒ 那个 Promise 被字符串化塞进 URL ⇒ 变成 **`[object Promise]`**
+      //   ⇒ explore 拿它当 URL 去请求 ⇒「URL 非法: [object Promise]」
+      //   ⇒ **整个发现功能直接挂掉** ❗（真机日志实测，40 秒白等）
+      //
+      //   站方（Legado/栖阅）的 `java.startBrowser` 是**同步**的 ⇒ 返回值是空/无意义的
+      //   ⇒ 这里同步返回 '' 才与站方一致 ⇒ 那个 kind 的 url 变成空串
+      //   ⇒ 它的语义本来就是「点这个分类 = 打开浏览器」这种**纯动作项**，
+      //      没有可请求的 URL ⇒ 空串才是对的 ✅
+      //
+      //   ⚠️ 这里**不弹浏览器**：登录流程走的是两遍跑（有 `QR.__qrAjaxRecord` 分支）
+      //      ⇒ 原生侧在 fetchRecorded 里弹 ⇒ 行为不受影响；
+      //      而在 URL 模板解析时弹 ⇒ 会**打断用户**（真机上一次 exploreKinds 弹了浏览器）。
+      try { QR.java.log('[站方要求打开浏览器] ' + u.slice(0, 160)); } catch (e) {}
+      return '';
     },
     showBrowser: function (url, content, title) {
       // ⚠️ 站方调用形式：`java.showBrowser(pageUrl, htmlContent, title)`（3 个参数）
