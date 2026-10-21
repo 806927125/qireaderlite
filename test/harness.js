@@ -8,6 +8,7 @@ const ENGINE_DIR = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engi
 // 不一致会让"沙盒能跑、真机不跑"或者反过来。
 const FILES = [
   'jsoup-compat.js',
+  'sextant-filter.js', // 栖阅同款 Sextant 过滤表达式（必须在 jsonpath.js 前）
   'jsonpath.js',
   'org-jsoup.js',
   'sha1.js',

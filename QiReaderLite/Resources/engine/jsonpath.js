@@ -102,7 +102,7 @@
   }
 
   /** 把「当前值」推进一步 */
-  function apply(v, st) {
+  function apply(v, st, root) {
     switch (st.t) {
       case 'child':
         return isObj(v) && !(Array.isArray(v)) ? [v[st.name]].filter(function (x) { return x !== undefined; })
@@ -127,6 +127,11 @@
         return st.items.map(function (i) { return v[i < 0 ? v.length + i : i]; })
           .filter(function (x) { return x !== undefined; });
       case 'filter':
+        // 栖阅同款（Sextant 过滤表达式）优先；表达式解析不了就回落老实现，
+        // 认不出来宁可放过也不误杀书源。
+        if (QR.sextantFilter && QR.sextantFilter.canParse(st.expr)) {
+          return toArr(v).filter(function (e) { return QR.sextantFilter.test(e, st.expr, root); });
+        }
         return toArr(v).filter(function (e) { return testFilter(e, st.expr); });
       case 'recurse': {
         var out2 = [];
@@ -179,7 +184,7 @@
     for (var i = 0; i < steps.length; i++) {
       var next = [];
       for (var j = 0; j < cur.length; j++) {
-        var r = apply(cur[j], steps[i]);
+        var r = apply(cur[j], steps[i], data);
         for (var k = 0; k < r.length; k++) if (next.indexOf(r[k]) < 0) next.push(r[k]);
       }
       cur = next;

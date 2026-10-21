@@ -843,7 +843,9 @@
         var base = '';
         // ① 站方自己的服务器设置（登录后会 setArgument('server', ...) 存进书籍变量）
         try {
-          if (typeof getArgument === 'function') base = String(getArgument('server') || '');
+          // ⚠️ 用 g.getArgument 而不是裸 getArgument：裸名在 typeof 检查里运行时安全，
+          //    但 eslint no-undef 会误报（门禁 engine-lint 一直红在这行）。语义完全等价。
+          if (typeof g.getArgument === 'function') base = String(g.getArgument('server') || '');
         } catch (e) { /* 没有这个函数就算了 */ }
         // ② 回退：jsLib 里的 `var host = [...]`（间接 eval → 全局变量）
         if (!base) {

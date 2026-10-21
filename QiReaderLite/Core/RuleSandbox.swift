@@ -15,6 +15,7 @@ enum ResourceLocator {
     /// 引擎脚本的**注入顺序有依赖**，别改
     static let scripts = [
         "jsoup-compat.js",   // 选择器层
+        "sextant-filter.js", // 栖阅同款 Sextant 过滤表达式求值器（必须在 jsonpath.js 前）
         "jsonpath.js",       // JSONPath
         "org-jsoup.js",      // org.jsoup.* 兼容
         "sha1.js",           // 哈希

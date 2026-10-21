@@ -24,6 +24,7 @@ const ENGINE_DIR = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engi
 // 顺序必须与 RuleSandbox.swift 的 ResourceLocator.scripts 一致
 const SCRIPTS = [
   'jsoup-compat.js',
+  'sextant-filter.js', // 栖阅同款 Sextant 过滤表达式（必须在 jsonpath.js 前）
   'jsonpath.js',
   'org-jsoup.js',
   'sha1.js',
