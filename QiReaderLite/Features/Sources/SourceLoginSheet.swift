@@ -264,11 +264,43 @@ struct SourceLoginSheet: View {
         )
     }
 
+    /// **从 App 的 cookie 罐里自动抓番茄 sessionid** → 填进输入框 + 直接写进站方读的两个地方
+    ///
+    /// ⚠️ 为什么必须自动（2026-10-21 用户反馈「登录了的，那个输入框里啥也没有」）：
+    ///    用户在**内置浏览器**里登录番茄后，sessionid 其实**已经在 App 的 cookie 罐里**了，
+    ///    但那个输入框是「手动兜底」→ 不会自动填 → 用户以为没登录成功。
+    /// ⇒ 现在：内置浏览器登录完（loginUi 的动作跑完）→ 自动抓 → 自动填 → **自动写进**
+    ///   ① `source.getLoginInfoMap()['手动填写番茄token(可不填)']`（站方 jsLib 直接读这个键 ✅）
+    ///   ② `loginHeader`（栖阅机制 → 自动注入到每次请求头 ✅）
+    ///   ⇒ 站方不用 cookie 也能认出番茄 sessionid ⇒ 发现页/正文/翻页全通 ✅
+    private func autoFillFQSessionId() {
+        let jar = CookieJar.cookieString(for: "https://fanqienovel.com")
+        guard let sid = Self.extractSessionId(jar), !sid.isEmpty else { return }
+        if fqToken != sid { fqToken = sid }
+        SourceVariables.setLoginInfoValue("手动填写番茄token(可不填)", sid, for: source.bookSourceUrl)
+        SourceVariables.setLoginHeader("Cookie: sessionid=" + sid, for: source.bookSourceUrl)
+        fqTokenSaved = true
+    }
+
+    /// 从 cookie 串里抠出 sessionid 的值
+    private static func extractSessionId(_ cookieString: String) -> String? {
+        for part in cookieString.split(separator: ";") {
+            let kv = part.trimmingCharacters(in: .whitespaces)
+            if kv.lowercased().hasPrefix("sessionid=") {
+                let v = String(kv.dropFirst("sessionid=".count)).trimmingCharacters(in: .whitespaces)
+                if !v.isEmpty { return v }
+            }
+        }
+        return nil
+    }
+
     /// 解析 loginUi（字段名 / 类型 / 按钮动作）
     private func load() {
         // 已存的番茄 token 回填
         fqToken = SourceVariables.loginInfo(for: source.bookSourceUrl)["手动填写番茄token(可不填)"] ?? ""
         fqTokenSaved = !fqToken.isEmpty
+        // ⚠️ 存的没有 → 从 cookie 罐自动抓（内置浏览器登录过的就抓得到）
+        if fqToken.isEmpty { autoFillFQSessionId() }
         guard let raw = source.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
@@ -298,6 +330,9 @@ struct SourceLoginSheet: View {
             defer {
                 busy = false
                 runningAction = nil
+                // ⚠️ 登录动作跑完 = 内置浏览器已经关了 → cookie 罐里该有 sessionid 了
+                //    → 自动抓 + 自动写进站方读的那个键（用户不用手抄）
+                autoFillFQSessionId()
             }
             do {
                 let r = try await withTimeout(seconds: Self.actionTimeout) {
