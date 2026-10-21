@@ -34,6 +34,9 @@ struct SourceLoginSheet: View {
     /// 登录状态检测报告
     @State private var report: LoginStatusReport?
     @State private var probing = false
+    /// 番茄 sessionid（手动兜底）
+    @State private var fqToken = ""
+    @State private var fqTokenSaved = false
 
     struct Field: Identifiable {
         let id = UUID()
@@ -112,6 +115,9 @@ struct SourceLoginSheet: View {
                     .padding(12)
                     .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
 
+                    // ── 番茄 sessionid（手动兜底）──────────
+                    fqTokenBox
+
                     // ── 登录状态检测 ──────────────────────────
                     detectBox
 
@@ -188,6 +194,57 @@ struct SourceLoginSheet: View {
         .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
     }
 
+    // MARK: - 番茄 sessionid（手动兜底）
+
+    /// 番茄 sessionid 手动输入框
+    ///
+    /// ⚠️ 为什么需要：发现页那句「您还未登陆番茄账号」是**大灰狼服务器**说的，
+    ///    它靠请求头里的 `sessionid` 认人。那个 sessionid 来自**我们 App 自己的 cookie 罐**。
+    ///    ⇒ **在 Safari 里登录番茄没用**（cookie 在 Safari 的罐里，App 读不到）
+    ///    ⇒ 只有在 App 内置浏览器里登录才会进我们的罐
+    ///    ⇒ 万一内置浏览器那条路不通，站方**本来就支持手动填**：
+    ///       `source.getLoginInfoMap()['手动填写番茄token(可不填)']` → 这里给它入口 ✅
+    private var fqTokenBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("番茄 sessionid（可选）")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+            TextField("从 fanqienovel.com 复制 sessionid", text: $fqToken)
+                .font(.system(size: 13))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+            // App 自己 cookie 罐里有没有番茄 sessionid
+            let jarCookie = CookieJar.cookieString(for: "https://fanqienovel.com")
+            let hasJar = jarCookie.contains("sessionid")
+            Text(hasJar
+                 ? "✅ App 的 cookie 罐里已有番茄 sessionid（内置浏览器登录成功）"
+                 : "⚠️ App 的 cookie 罐里**没有**番茄 sessionid（在 Safari 登录的读不到）")
+                .font(.caption2)
+                .foregroundStyle(hasJar ? Theme.sub : Color.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button {
+                    SourceVariables.setLoginInfoValue(
+                        "手动填写番茄token(可不填)", fqToken.trimmingCharacters(in: .whitespacesAndNewlines),
+                        for: source.bookSourceUrl)
+                    fqTokenSaved = true
+                } label: {
+                    Label(fqTokenSaved ? "已保存" : "保存", systemImage: fqTokenSaved ? "checkmark" : "square.and.arrow.down")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
+                Text("App 读不到 Safari 的 cookie；在 App 内置浏览器登录番茄最省事，这个是兜底")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+    }
+
     // MARK: - 动作
 
     private func binding(_ key: String) -> Binding<String> {
@@ -199,6 +256,9 @@ struct SourceLoginSheet: View {
 
     /// 解析 loginUi（字段名 / 类型 / 按钮动作）
     private func load() {
+        // 已存的番茄 token 回填
+        fqToken = SourceVariables.loginInfo(for: source.bookSourceUrl)["手动填写番茄token(可不填)"] ?? ""
+        fqTokenSaved = !fqToken.isEmpty
         guard let raw = source.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]

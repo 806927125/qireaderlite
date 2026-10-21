@@ -54,4 +54,27 @@ enum SourceVariables {
         guard !sourceUrl.isEmpty, !json.isEmpty else { return }
         UserDefaults.standard.set(json, forKey: loginPrefix + sourceUrl)
     }
+
+    /// 改登录信息里的**一项**（不覆盖别的字段）
+    ///
+    /// ⚠️ 为什么要这个：站方（🍅大灰狼）的 exploreUrl 会读
+    ///    `source.getLoginInfoMap()['手动填写番茄token(可不填)']` →
+    ///    没有这个入口时，**在 Safari 里登录的番茄**（cookie 在 Safari 的罐里，
+    ///    App 读不到）就永远同步不了数据 → 发现页一直提示「您还未登陆番茄账号」。
+    ///    给了手动输入框，用户从番茄网页复制 sessionid 粘进来就能用 ✅
+    @discardableResult
+    static func setLoginInfoValue(_ key: String, _ value: String, for sourceUrl: String) -> [String: String] {
+        guard !sourceUrl.isEmpty, !key.isEmpty else { return [:] }
+        var map = loginInfo(for: sourceUrl)
+        if value.isEmpty {
+            map.removeValue(forKey: key)
+        } else {
+            map[key] = value
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: map),
+           let json = String(data: data, encoding: .utf8) {
+            UserDefaults.standard.set(json, forKey: loginPrefix + sourceUrl)
+        }
+        return map
+    }
 }

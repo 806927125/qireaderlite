@@ -426,6 +426,32 @@ console.log('\n=== 15. 目录/正文要传 book（站方 JS 调 book.getVariable
   }
 }
 
+// ───────── ⑯ 番茄 sessionid 手动兜底 + 诊断别抓 data: URL ─────────
+console.log('\n=== 16. 番茄 sessionid 手动兜底 ===');
+// 用户真机：「发现页还是提示番茄未登录，明明已经登录了」
+// 根因：站方 exploreUrl 的 getFanqieCookie() 读的是**我们 App 自己的 cookie 罐**，
+//       → 在 **Safari** 里登录番茄，cookie 在 Safari 的罐里，**App 读不到**
+//       → 服务器一直说「您还未登陆番茄账号」
+// 站方**本来就支持手动填**（source.getLoginInfoMap()['手动填写番茄token(可不填)']）
+// → App 得给这个入口
+{
+  const sv = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'SourceVariables.swift'));
+  ok(/setLoginInfoValue\(/.test(sv), '有 setLoginInfoValue（改登录信息里的一项）');
+  ok(/手动填写番茄token/.test(sv) || /setLoginInfoValue/.test(sv),
+     '番茄 token 的键跟站方一致');
+  const sls2 = readCode(path.join(ROOT, 'QiReaderLite', 'Features', 'Sources', 'SourceLoginSheet.swift'));
+  ok(/番茄 sessionid/.test(sls2), '登录面板有「番茄 sessionid」输入框');
+  ok(/setLoginInfoValue\(/.test(sls2), '输入框会写回登录信息');
+  ok(/cookieString\(for: "https:\/\/fanqienovel\.com"\)/.test(sls2)
+     || /cookieString\(for:/.test(sls2),
+     '会显示 App cookie 罐里有没有 sessionid（Safari 登录的读不到）');
+}
+{
+  // 诊断不能真去 fetch data: URL（会报 illegal base64，把人带偏）
+  ok(/fetchPage\(target, ctx\)/.test(engine),
+     '目录诊断走 fetchPage（data: 伪 URL 不能真去 fetch）');
+}
+
 // ───────── 汇总 ─────────
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

@@ -1037,9 +1037,15 @@
         return buildUrl(raw, ctx).then(function (target) {
           out.请求URL = target.url || String(raw);
           if (!target.url) { out.结论 = '目录 URL 为空'; return out; }
-          return QR.java.rawRequest(target.url, 'GET', target.headers || {}, '', 20000)
-            .then(function (resp) {
-              var body = resp._body || resp.body || '';
+          // ⚠️ 必须走 fetchPage（不能 rawRequest）：
+          //    聚合源的目录 URL 是 `data:;base64,…` 伪 URL —— **原生真去 fetch 会炸**
+          //    （URLSession 去解 data: URL 的 base64 → 「illegal base64 data at input byte 9」）
+          //    → 诊断里的「状态码 0 / 响应字节 21」全是这个废数据，
+          //      让人误以为「规则没命中」。真实路径（toc op）走的是 fetchPage ✅
+          return fetchPage(target, ctx)
+            .then(function (page) {
+              var resp = page.resp || {};
+              var body = page.text || '';
               out.最终URL = resp.url || resp._url || '';
               out.状态码 = resp._code || resp.code || 0;
               out.响应字节 = body.length;
