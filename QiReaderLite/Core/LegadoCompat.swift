@@ -181,6 +181,59 @@ enum LegadoCompat {
         return out
     }
 
+    // MARK: - 番茄 sessionid 别名（站方大灰狼的坑）
+
+    /// 番茄域判定（cookie 罐里番茄相关的域）
+    static func isFanqieHost(_ host: String) -> Bool {
+        let h = host.lowercased()
+        return h.contains("fanqienovel.com") || h.contains("fqnovel.com")
+    }
+
+    /// 把番茄 cookie 串里的 `sessionid_ss` 补一条 `sessionid=` 别名
+    ///
+    /// ⚠️⚠️ **为什么**（2026-10-21 真机：「番茄明明登了，发现页一直提示已过期」）：
+    ///
+    /// 站方 exploreUrl 里这段：
+    /// ```js
+    /// var rawCookie = getFanqieCookie() || sdtoken;
+    /// var match = rawCookie.match(/sessionid=[^;]+/);   // ← 只认 sessionid=
+    /// var fqcookie = match ? match[0] : '';
+    /// if (!fqcookie && (sources == '番茄' || sources == '全部')) {
+    ///     java.toast('您还未登陆番茄账号，无法同步数据哦！');
+    /// } else { fqssionid = getSessionId(fqcookie) }
+    /// ```
+    /// 而站方自己的 `getSessionId` 用的是 `sessionid(?:_ss)?=`（**两种都认**），
+    /// `getFanqieCookie` 里的判定也是 `sessionid(?:_ss)?=`（**也认**）。
+    /// ⇒ **只有中间那行老正则不认** ⇒ 站方自己把路堵死了。
+    ///
+    /// 番茄**新版**登录发的 cookie 键是 `sessionid_ss` ⇒ 老正则匹配不到
+    /// ⇒ `fqcookie` 为空 ⇒ 一直 toast「您还未登陆番茄账号」
+    /// ⇒ `ssionid` 参数是空的 ⇒ 大灰狼服务器回「用户未登录番茄账号」
+    ///   /「番茄登录过期，已隐藏番茄书架」⇒ **发现页十几个平台一个都出不来** ⭐
+    ///
+    /// ⇒ 修：**宿主侧补一条 `sessionid=<同值>` 别名**（**不覆盖**已有的 `sessionid`）
+    ///   ⇒ 站方那条老正则立刻能匹配 ⇒ **所有聚合源都受益**（不用改站方书源）✅
+    ///
+    /// ⚠️ 放在这里（纯 Foundation 层）→ **沙盒 swiftc 能真编真跑**，语法错当场发现。
+    static func fanqieSessionAlias(_ cookie: String) -> String {
+        let s = String(cookie)
+        guard !s.isEmpty else { return s }
+        // 已经有标准 `sessionid=` ⇒ 不动（别覆盖站方/服务器真正认的那个）
+        if s.range(of: #"(?:^|;\s*)sessionid="#, options: .regularExpression) != nil {
+            return s
+        }
+        // 找 `sessionid_ss=` 的值
+        guard let r = s.range(of: #"(?:^|;\s*)sessionid_ss=([^;]+)"#, options: .regularExpression) else {
+            return s
+        }
+        let matched = String(s[r])
+        let value = matched
+            .components(separatedBy: "=").last?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        guard !value.isEmpty else { return s }
+        return s + "; sessionid=" + value
+    }
+
     // MARK: - 同步通道分发
 
     /// 同步通道的**唯一**入口：JS 通过 `window.prompt` 把 {fn, args} 送过来，

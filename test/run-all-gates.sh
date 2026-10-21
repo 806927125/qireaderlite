@@ -30,6 +30,8 @@ declare -a GATES=(
   "toc-diag-truth:test/toc-diag-truth.test.js"
   "b64-url-mangle:test/b64-url-mangle.test.js"
   "ajax-retry:test/ajax-retry.test.js"
+  "ajax-candidate-group:test/ajax-candidate-group.test.js"
+  "explore-filter:test/explore-filter.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
   "timeout-budget:test/request-timeout-budget.test.js"

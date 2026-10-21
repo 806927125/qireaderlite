@@ -18,6 +18,12 @@ struct ExploreView: View {
     @State private var loadMoreID = 0
     /// 顶栏分类胶囊点开的「分类筛选」页
     @State private var showCategoryPicker = false
+    /// 顶栏「筛选」点开的「发现页筛选栏」页（站方 exploreUrl 的 `type:"select"` 契约）
+    @State private var showFilterPicker = false
+    /// 站方的发现页筛选栏（平台 / 模式 / 频道 / 字数 / 状态 / 排序…）
+    @State private var filters: [SourceService.FilterDTO] = []
+    /// 已经加载过分类（从详情页返回时**不要**重新加载）
+    @State private var kindsLoaded = false
     /// 点书籍卡片进详情。走 navigationDestination(item:) 而不是 NavigationLink，
     /// 因为后者在 List 行里会自动多出一个行尾箭头。
     @State private var pickedBook: Book?
@@ -28,6 +34,9 @@ struct ExploreView: View {
     init(source: BookSource? = nil) {
         pinnedSourceId = source?.bookSourceUrl
     }
+
+    /// 当前书源的 URL（闭包里要用 ⇒ 不能用局部变量）
+    private var currentSourceUrl: String { current?.bookSourceUrl ?? "" }
 
     private var current: BookSource? {
         if let pid = pinnedSourceId, let s = sources.source(id: pid) { return s }
@@ -48,23 +57,52 @@ struct ExploreView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                // 分类胶囊放导航栏，跟返回键平齐一行。
-                // 之前它跟内容区里的书源名挤在一起，看起来是错位的。
-                Button { showCategoryPicker = true } label: {
-                    HStack(spacing: 4) {
-                        Text(selected?.title ?? "选分类")
-                            .font(.system(size: 14, weight: .medium))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
+                HStack(spacing: 8) {
+                    // ⭐ **筛选按钮**（2026-10-21 补：站方的发现页筛选栏契约）
+                    //   站方 exploreUrl 会返回「平台 / 模式 / 频道 / 字数 / 状态 / 排序」这些
+                    //   `type:"select"` 项（**没有 url 字段**）⇒ 以前混在分类里、点不动
+                    //   ⇒ 用户看到的「平台」那几项**没有 api**（2026-10-21 用户原话）
+                    //   ⇒ 现在单独渲染成筛选栏 ⇒ **42 个平台终于能切**
+                    if !filters.isEmpty {
+                        Button { showFilterPicker = true } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "line.3.horizontal.decrease")
+                                    .font(.system(size: 11, weight: .semibold))
+                                // 有筛选项时显示**当前平台**（一眼知道自己在哪）
+                                if let pf = filters.first(where: { $0.paramKey == "find_source" }),
+                                   let cur = SourceService.FilterDTO.currentValue(
+                                    pf, sourceUrl: current?.bookSourceUrl ?? ""),
+                                   !cur.isEmpty {
+                                    Text(cur)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .lineLimit(1)
+                                }
+                            }
+                            .foregroundStyle(Theme.ink)
+                            .padding(.horizontal, 10)
+                            .frame(height: 34)
+                            .liquidGlass(cornerRadius: 999)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .foregroundStyle(Theme.ink)
-                    .padding(.horizontal, 14)
-                    .frame(height: 34)
-                    .liquidGlass(cornerRadius: 999)
+                    // 分类胶囊放导航栏，跟返回键平齐一行。
+                    // 之前它跟内容区里的书源名挤在一起，看起来是错位的。
+                    Button { showCategoryPicker = true } label: {
+                        HStack(spacing: 4) {
+                            Text(selected?.title ?? "选分类")
+                                .font(.system(size: 14, weight: .medium))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .liquidGlass(cornerRadius: 999)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(kinds.isEmpty)
                 }
-                .buttonStyle(.plain)
-                .disabled(kinds.isEmpty)
             }
         }
         .task { await loadKinds() }
@@ -72,6 +110,38 @@ struct ExploreView: View {
         // sheet 自带顶部区域 + 我自己画的「× 关闭」胶囊打架，下半屏还全是空白。
         .navigationDestination(item: $pickedBook) { b in
             BookDetailView(book: b)
+        }
+        .navigationDestination(isPresented: $showFilterPicker) {
+            ExploreFilterView(
+                filters: filters,
+                current: SourceService.FilterDTO.currentValues(
+                    filters: filters, sourceUrl: currentSourceUrl),
+                onPick: { key, value in
+                    // ⭐ 写源级变量（**必须合并站方默认表**，不能只写一项 ——
+                    //    站方 getArguments 只在变量串为空时才给默认表 ⇒ 只写一项会把源改坏）
+                    let merged = SourceVariables.mergeVars(
+                        userJSON: SourceVariables.vars(for: currentSourceUrl),
+                        defaults: SourceVariables.defaultVars(for: currentSourceUrl))
+                    var obj: [String: Any] = [:]
+                    if let d = merged.data(using: .utf8),
+                       let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                        obj = o
+                    }
+                    obj[key] = value
+                    if let data = try? JSONSerialization.data(withJSONObject: obj),
+                       let str = String(data: data, encoding: .utf8) {
+                        SourceVariables.setVars(str, for: currentSourceUrl)
+                    }
+                    showFilterPicker = false
+                    kindsLoaded = false
+                    selected = nil
+                    books = []
+                    // 站方的 exploreUrl 要重跑才看得到新平台（discoverySource 是在里面读的）
+                    Task { await loadKinds(force: true) }
+                }
+            )
+            .navigationTitle("筛选")
+            .navigationBarTitleDisplayMode(.inline)
         }
         .navigationDestination(isPresented: $showCategoryPicker) {
             CategoryPickerView(
@@ -101,7 +171,8 @@ struct ExploreView: View {
             guard pinnedSourceId == nil else { return }
             selected = nil
             books = []
-            Task { await loadKinds() }
+            kindsLoaded = false          // 换了书源 ⇒ 分类要重来
+            Task { await loadKinds(force: true) }
         }
     }
 
@@ -211,11 +282,16 @@ struct ExploreView: View {
         }
     }
 
-    private func loadKinds() async {
+    private func loadKinds(force: Bool = false) async {
         guard let s = current else {
             kinds = []; statusText = "没有启用且带发现页的书源"; return
         }
         if sourceId == nil { sourceId = pinnedSourceId ?? s.bookSourceUrl }
+        // ⚠️⚠️ **从详情页返回时不要重新加载**（2026-10-21 用户反馈「详情页返回发现，发现页会重新加载」）：
+        //   `.task` 在页面重新出现时会重跑 ⇒ exploreKinds 要跑站方 exploreUrl JS
+        //   （里面还有 ajax + 8 条线路兜底）⇒ **十几秒白等 + 整屏转圈**。
+        //   ⇒ 已经加载过就直接返回（书源换了才 force 重来）。
+        if !force, kindsLoaded, !kinds.isEmpty { return }
         busy = true
         do {
             // ⚠️ 先记住用户上次选的分类。`.task` 在页面重新出现时（从详情页返回）会重跑，
@@ -225,9 +301,12 @@ struct ExploreView: View {
             //    exploreKinds 要跑站方的 exploreUrl JS（里面还有 ajax + 8 条线路兜底）
             //    ⇒ op 层超时 360 秒 → 页面就永远转圈 ❗
             //    20 秒没出来就报错，让用户看到原因（多半是线路不通）。
-            kinds = try await Self.withTimeout(seconds: 20) {
+            let res = try await Self.withTimeout(seconds: 20) {
                 try await SourceService.shared.exploreKinds(source: s)
             }
+            kinds = res.kinds
+            filters = res.filters
+            kindsLoaded = true
             if kinds.isEmpty {
                 statusText = "这个书源没解析出分类"
                 selected = nil

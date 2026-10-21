@@ -995,7 +995,8 @@
               }
             }
             if (!Array.isArray(arr)) arr = (arr && arr.exploreKind) ? arr.exploreKind : [];
-            return { kinds: normalizeKinds(arr, ctx.baseUrl) };
+            var nk = normalizeKinds(arr, ctx.baseUrl);
+            return { kinds: nk.kinds, filters: nk.filters };
           }).catch(function (e) {
             return { kinds: [], error: String(e && e.message || e) };
           });
@@ -1007,14 +1008,17 @@
         if (raw.charAt(0) === '[') {
           var jk = [];
           try { jk = JSON.parse(raw); } catch (e) { jk = []; }
-          if (Array.isArray(jk)) return { kinds: normalizeKinds(jk, ctx.baseUrl) };
+          if (Array.isArray(jk)) {
+            var nk2 = normalizeKinds(jk, ctx.baseUrl);
+            return { kinds: nk2.kinds, filters: nk2.filters };
+          }
         }
         var kinds = raw.split(/(&&|\n)+/).map(function (l) { return String(l).trim(); }).filter(Boolean)
           .map(function (l) {
             var p2 = l.split('::');
             return { title: p2[0], url: dom.absolutize((p2[1] || '').trim(), ctx.baseUrl), style: '' };
           });
-        return { kinds: kinds };
+        return { kinds: kinds, filters: [] };
       });
     },
 
@@ -1557,6 +1561,7 @@
     //      （界面上就是那个「分类筛选」面板：分类 / ☆排行榜☆ / ☆热门标签☆）
     //   ⇒ 轻阅原来把组标题也当成一个分类（URL 为空）→ 分组出不来、点不动 ❗
     var out = [];
+    var filters = [];
     var group = '';
     (arr || []).forEach(function (k) {
       if (typeof k === 'string') {
@@ -1574,6 +1579,39 @@
         out.push({ title: title, url: url, style: '', group: group });
         return;
       }
+      // ⭐⭐⭐ **发现页筛选栏**（栖阅契约，2026-10-21 补）
+      //   站方（🍅大灰狼）的 exploreUrl 返回的是 `qtsj.concat(infoData, groupDatas, style_list)`，
+      //   其中 `qtsj` 是**筛选栏**（不是分类）：
+      //       createFilter('平台', ['番茄','七猫','书旗',…42个], sources, 'find_source', 1)
+      //       createFilter('模式', ['小说','听书','短剧','漫画'], tab, 'find_tab', 0.33)
+      //       createFilter('频道', ['男频','女频'], source_type, 'source_type', 0.33)
+      //   契约：`{ title, type:'select', chars:[选项], default:当前值, action:"show(infoMap['平台'],'find_source')" }`
+      //
+      //   ⚠️ 这些项**没有 url 字段** ⇒ 以前被当成普通分类 ⇒ 出现在分类列表里但点不动
+      //      ⇒ **用户看到「平台」这些项没有 api**（2026-10-21 用户原话）
+      //   ⇒ 现在：单独分流成 `filters` ⇒ 宿主渲染成筛选栏 ⇒ 选中写源级变量 + 刷新
+      var ktype = String((k && k.type) || '').toLowerCase();
+      if (ktype === 'select') {
+        var chars = [];
+        if (Array.isArray(k.chars)) {
+          chars = k.chars.map(function (c) { return String(c); });
+        } else if (typeof k.chars === 'string') {
+          chars = k.chars.split(/[,\n]/).map(function (c) { return c.trim(); }).filter(Boolean);
+        }
+        var ftitle = String(k.title || '');
+        if (ftitle) {
+          filters.push({
+            title: ftitle,
+            type: 'select',
+            chars: chars,
+            default: String(k.default || ''),
+            // ⚠️ 参数名从 action 里抠：`show(infoMap['平台'],'find_source')` → 'find_source'
+            paramKey: filterParamKey(k),
+            action: String(k.action || '')
+          });
+        }
+        return;
+      }
       out.push({
         title: String(k.title || k.name || k.text || ''),
         url: dom.absolutize(String(k.url || k.link || ''), base),
@@ -1581,7 +1619,23 @@
         group: String(k.group || '')
       });
     });
-    return out.filter(function (k) { return k.title; });
+    return { kinds: out.filter(function (k) { return k.title; }), filters: filters };
+  }
+
+  /**
+   * 从筛选栏的 `action` 里抠出**源级变量名**。
+   *
+   * 站方写法：`show(infoMap['平台'],'find_source')` ⇒ 第二个参数就是变量名。
+   * 抠不出来就返回空串（宿主侧会把这一项标成「不可选」，而不是乱写变量）。
+   */
+  function filterParamKey(k) {
+    var a = String((k && k.action) || '');
+    var m = a.match(/infoMap\[['"]([^'"]+)['"]\]\s*,\s*['"]([^'"]+)['"]/);
+    if (m && m[2]) return m[2];
+    // 兜底：`show('平台','find_source')` 这种不带 infoMap 的写法
+    var m2 = a.match(/\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)/);
+    if (m2 && m2[2]) return m2[2];
+    return '';
   }
 
   /* 正文清洗：去广告行、去首尾空行 */

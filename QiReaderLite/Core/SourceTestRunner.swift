@@ -110,7 +110,7 @@ enum SourceTestRunner {
         do {
             var books: [Book] = []
             var how = ""
-            let kinds = try await service.exploreKinds(source: source)
+            let kindsDto = try await service.exploreKinds(source: source)
             // ⚠️⚠️ **必须跳过「个人中心/登录/书架」这类动作项**（2026-10-21 真机实测）：
             //   🍅大灰狼的 kinds 前面几个是 infoData（站方塞的「个人中心」「登录番茄」
             //   「个性推荐」「历史阅读」「大灰狼个人中心」）⇒ 它们是**个人书架**，
@@ -123,6 +123,7 @@ enum SourceTestRunner {
                 if s.isEmpty { return true }
                 return actionWords.contains { s.contains($0) }
             }
+            let kinds = kindsDto.kinds
             let realKinds = kinds.filter { !$0.url.isEmpty && !isAction($0.title) }
             let pick = realKinds.first ?? kinds.first(where: { !$0.url.isEmpty })
             if let k = pick {

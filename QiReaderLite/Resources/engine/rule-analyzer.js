@@ -415,6 +415,35 @@
   function fetchRecorded(list, cache) {
     var out = cache || {};
     var chain = Promise.resolve();
+    // ⚠️⚠️⚠️ **互斥候选归组：同 path+query+method、只有 host 不同 ⇒ 是站方 catch 循环的候选**
+    //
+    //   站方大灰狼的正文规则长这样：
+    //       try { data = java.ajax(base_url + '/content' + op); JSON.parse(data); }
+    //       catch { for (i in host) { data = java.ajax(host[i] + '/content' + op);
+    //                                 JSON.parse(data); setArguments('server', host[i]); break; } }
+    //   ⇒ 这 8 条线路是**互斥候选**（只会用一条），不是顺序链。
+    //
+    //   但「两遍跑」的第 1 遍里，所有 ajax 都返回 ''（录制）⇒ JSON.parse 全抛
+    //   ⇒ **catch 循环把 8 条全录了下来** ⇒ 宿主以前把 8 条**全抓了**。
+    //
+    //   💥 后果（2026-10-21 真机）：一次正文操作向站方发了 **8 条**同 item_id 的请求
+    //      ⇒ **番茄免登录访问次数上限(3 次)被打爆**
+    //      ⇒ 缓存里躺着的全是「您今日免登录访问次数已达上限(3次)！」
+    //      ⇒ 站方第 2 遍命中它 → JSON.parse 成功（合法 JSON！）→ **不换线**
+    //      ⇒ content = "" ⇒ **正文是空的** ⭐
+    //
+    //   ⇒ 修：**同组只抓第一个**，剩下的留给站方自己换线
+    //      （站方第 2 遍如果发现这条不行，catch 循环会录下一条 → 第 3 遍再抓）
+    //      ⇒ 站方一次操作最多 1~2 次请求，限流打不爆 ✅
+    //      ⇒ 而且站方那个「线路故障，已自动切换到」机制**真正生效了**
+    //         （以前是被宿主一次全抓破坏了）
+    // ⚠️⚠️ **每遍开始时重置「本遍候选计数」**
+    //   （跨遍累加会误判：第 1 遍只录了 1 个 URL，第 2 遍累加成 2
+    //    ⇒ 被当成「同组还有备选」⇒ 单候选失败也写空串 ⇒ 不再重试 ❗）
+    var stAll = (out.__grp && out.__grp.st) ? out.__grp.st : null;
+    if (stAll) {
+      for (var gk in stAll) { if (stAll[gk]) stAll[gk].total = 0; }
+    }
     list.forEach(function (rec) {
       var u = rec.url;
       chain = chain.then(function () {
@@ -448,6 +477,64 @@
         var method = (t && t.method) || 'GET';
         var headers = (t && t.headers) || {};
         var body = (t && t.body) || '';
+        // ⚠️ 归组 key：**不含 host**（host 不同 = 不同线路 = 互斥候选）
+        //    ⚠️⚠️ **但必须算上 headers！**（2026-10-21 真机门禁 fq-login 变红抓出来的）
+        //      登录链是「browser 拿 sessionid → 交接 ajax 带 sessionid」，
+        //      两次 ajax 的 path/query/method **完全一样**，只有 **cookie 不同**
+        //      ⇒ 只按 path+query+method 归组 ⇒ 第二遍被判成「同一个候选、已试过」
+        //      ⇒ 永远不重抓 ⇒ `sessionid=undefined` ⇒ **番茄登录直接废掉** ❗
+        //      ⇒ 所以归组条件必须是：**path + query + method + headers 全一样，只有 host 不同**
+        //      ⇒ 那才是真正的「同一个请求换一条线路」
+        var gkey = '';
+        try {
+          var pu = new URL(url);
+          var hk = [];
+          try {
+            var hobj = headers || {};
+            for (var hn in hobj) {
+              if (Object.prototype.hasOwnProperty.call(hobj, hn)) hk.push(hn + '=' + hobj[hn]);
+            }
+            hk.sort();
+          } catch (he) { hk = []; }
+          gkey = pu.pathname + '|' + pu.search + '|' + method + '|' + hk.join('&');
+        } catch (e) {
+          gkey = 'raw|' + u;
+        }
+        // ⭐ 组内状态：**哪些候选已经试过了** + **组里一共有几个候选**
+        //    （跨遍保留 ⇒ 放在 cache 上，用不可枚举属性，`Object.keys` 不会把它算进缓存上限）
+        var st = (out.__grp && out.__grp.st) ? out.__grp.st : null;
+        if (!st) {
+          st = {};
+          try {
+            Object.defineProperty(out, '__grp', {
+              value: { st: st }, enumerable: false, writable: true, configurable: true
+            });
+          } catch (e) { out.__grp = { st: st }; }
+        }
+        var g = st[gkey];
+        if (!g) { g = { tried: [], done: false, total: 0 }; st[gkey] = g; }
+        g.total++;
+        // ⚠️⚠️ **组内已有一条成功 ⇒ 后面的候选不用抓了**（站方只会用一条）
+        if (g.done) {
+          try {
+            QR.java.log('[两遍跑] 同组已有可用线路 ⇒ 跳过候选：' + String(u).slice(0, 120));
+          } catch (e3) {}
+          return;
+        }
+        // ⚠️⚠️ **组内已经试过这个候选 ⇒ 不重复抓**
+        //    （否则站方每遍都重录它 → 死循环抓同一条，永远换不到线）
+        //
+        // ⚠️⚠️ **但单候选（g.total === 1）必须允许重试！**
+        //   没有备选线路时，失败只能重试同一个 URL ——
+        //   写空串会让「命中缓存就不录了」⇒ 这一遍被当成「真的」⇒ **一次抖动就死定**
+        //   （就是 ajax-retry.test.js 保护的那个老坑）
+        if (g.total > 1 && g.tried.indexOf(u) >= 0) {
+          try {
+            QR.java.log('[两遍跑] 同组候选已试过 ⇒ 不重复抓：' + String(u).slice(0, 120));
+          } catch (e3) {}
+          return;
+        }
+        g.tried.push(u);
         return QR.java.rawRequest(url, method, headers, body)
           .then(function (resp) {
             var bodyText = (resp && resp._body) || '';
@@ -467,8 +554,29 @@
             var bad = !!(code && (code < 200 || code >= 400));
             if (bad) {
               delete out[u];
+              // ⭐⭐⭐ **同组还有备选线路 ⇒ 把空串写进缓存**（2026-10-21 真机「正文是空的」）：
+              //   站方的换线机制长这样：
+              //       try { data = java.ajax(base + '/content' + op); JSON.parse(data); }
+              //       catch { for (i in host) { data = java.ajax(host[i] + '/content' + op);
+              //                                 JSON.parse(data); setArguments('server', host[i]); break; } }
+              //   ⇒ 它**只在 JSON.parse 抛异常时才换线**。
+              //   ⇒ 所以失败必须让站方拿到一个「JSON.parse 会抛」的值 ⇒ **空串**正好。
+              //   ⇒ 下一遍：base 那条命中空串 ⇒ JSON.parse 抛 ⇒ **站方自己换到下一条线路** ✅
+              //   ⇒ 而且换到的那条在缓存里有值 ⇒ 一次成功。
+              //   ⚠️ 单候选（没有备选）时**不能**写空串 ——
+              //     否则「命中缓存就不录了」⇒ 这一遍被当成「真的」⇒ **一次抖动就死定**
+              //     （就是上面注释里记的那个「时好时坏」老坑）⇒ 那种情况保持不写、可重试 ✅
+              if (g.total > 1) {
+                out[u] = '';
+                try {
+                  QR.java.log('[ajax异常状态] ' + String(u).slice(0, 160) + '  状态=' + code
+                    + '  ⇒ 同组还有 ' + (g.total - 1) + ' 条备选线路 ⇒ 写空串让站方自己换线');
+                } catch (e3) {}
+              }
             } else {
               out[u] = bodyText;
+              // ⭐ 这组有可用线路了 ⇒ 同组后面的候选不用再抓
+              if (bodyText) g.done = true;
             }
             // ⚠️⚠️ **失败/异常必须喊出来**（2026-10-21）：
             //   以前这里是 `.catch(function(){ out[u] = ''; })` —— 失败被**静默吞掉**，
@@ -494,6 +602,14 @@
             // ⚠️⚠️ **请求异常（超时 / 网络错）同样不写缓存** ⇒ 下一遍能重试
             //    （原来是 `out[u] = ''` ⇒ 空串进缓存 ⇒ 再也不重试 ⇒ 一次抖动就死）
             delete out[u];
+            // ⭐ 同组还有备选线路 ⇒ 写空串，让站方下一遍 JSON.parse 抛 ⇒ 自己换线
+            if (g && g.total > 1) {
+              out[u] = '';
+              try {
+                QR.java.log('[ajax失败] ' + String(u).slice(0, 160)
+                  + '  ⇒ 同组还有 ' + (g.total - 1) + ' 条备选 ⇒ 写空串让站方自己换线');
+              } catch (e4) {}
+            }
             try {
               QR.__qrLastAjax = {
                 url: String(u || ''), code: 0, body: '',

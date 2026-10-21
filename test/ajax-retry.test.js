@@ -66,8 +66,15 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   const codeOnly = fetchBlock
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
-  ok(!/out\[u\]\s*=\s*''/.test(codeOnly),
-     `fetchRecorded 里不再有「out[u] = ''」（失败不写缓存）`);
+  // ⚠️⚠️ 2026-10-21 更新：**允许**在「同组还有备选线路」时写空串 ——
+  //   那是为了让站方的 catch 循环能换线（见 ajax-candidate-group.test.js）。
+  //   但**单候选**时写空串 = 一次抖动就死定 ⇒ 必须禁止。
+  //   ⇒ 断言收紧成：写空串必须**受条件约束**（同组有备选才写）。
+  const hasBlankWrite = /out\[u\]\s*=\s*''/.test(codeOnly);
+  const hasGuard = /g\.total\s*>\s*1/.test(codeOnly);
+  ok(!hasBlankWrite || hasGuard,
+     `写空串必须受「同组还有备选线路」约束（单候选失败要能重试）`
+     + `（有写空串=${hasBlankWrite} 有条件=${hasGuard}）`);
   ok(/delete out\[u\]/.test(codeOnly),
      '失败时用 delete out[u] 把这条缓存清掉（让下一遍能重试）');
 

@@ -162,5 +162,27 @@ eq(LegadoCompat.parseLoginHeader("").count, 0, "空串 → 没有头")
 eq(LegadoCompat.parseLoginHeader("没有冒号").count, 0, "没有冒号的行 → 跳过")
 eq(LegadoCompat.parseLoginHeader("  Cookie : x  ").first?.0, "Cookie", "名字两边空格会去掉")
 
+print("\n=== 8. 番茄 sessionid 别名（站方老正则只认 sessionid=）===")
+// 2026-10-21 真机：番茄登了，发现页还是「已过期」
+//   站方：var match = rawCookie.match(/sessionid=[^;]+/);  ← 只认 sessionid=
+//   番茄新版发的键是 `sessionid_ss` ⇒ 匹配失败 ⇒ 一直 toast「未登陆番茄账号」
+eq(LegadoCompat.fanqieSessionAlias("sessionid_ss=ABC123"), "sessionid_ss=ABC123; sessionid=ABC123",
+   "只有 sessionid_ss ⇒ 补一条 sessionid 别名")
+eq(LegadoCompat.fanqieSessionAlias("sessionid_ss=ABC123; other=1"), "sessionid_ss=ABC123; other=1; sessionid=ABC123",
+   "夹在中间的 sessionid_ss 也能抠出来")
+eq(LegadoCompat.fanqieSessionAlias("sessionid=REAL"), "sessionid=REAL",
+   "已有标准 sessionid ⇒ 不动（别覆盖站方真正认的那个）")
+eq(LegadoCompat.fanqieSessionAlias("sessionid_ss=A; sessionid=B"), "sessionid_ss=A; sessionid=B",
+   "两个都有 ⇒ 不动")
+eq(LegadoCompat.fanqieSessionAlias("qttoken=XYZ"), "qttoken=XYZ",
+   "没有 sessionid 系 ⇒ 不动")
+eq(LegadoCompat.fanqieSessionAlias(""), "", "空串 → 空串")
+eq(LegadoCompat.fanqieSessionAlias("sessionid_ss="), "sessionid_ss=",
+   "值为空 ⇒ 不补")
+ok(LegadoCompat.isFanqieHost("fanqienovel.com"), "fanqienovel.com 是番茄域")
+ok(LegadoCompat.isFanqieHost(".fanqienovel.com"), "带前导点的也是")
+ok(LegadoCompat.isFanqieHost("api5-normal-sinfonlinec.fqnovel.com"), "fqnovel.com 也是番茄域")
+ok(!LegadoCompat.isFanqieHost("v5.langge.uk"), "大灰狼自己的域不是番茄域")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

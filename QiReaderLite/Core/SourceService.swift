@@ -282,7 +282,63 @@ final class SourceService {
     }
     struct KindsDTO: Codable {
         var kinds: [KindDTO] = []
+        /// **发现页筛选栏**（站方 exploreUrl 的 `type:"select"` 契约）
+        ///
+        /// ⚠️ 2026-10-21 补：站方（🍅大灰狼）的 exploreUrl 返回
+        ///    `qtsj.concat(infoData, groupDatas, style_list)`，
+        ///    其中 `qtsj` 是**筛选栏**（平台 / 模式 / 频道 / 字数 / 状态 / 排序 / 线路），
+        ///    **不是分类**。它们没有 url 字段 ⇒ 以前混在分类列表里，点不动 ⇒
+        ///    用户看到的「平台」那几项「没有 api」。
+        var filters: [FilterDTO] = []
         var error: String? = nil
+    }
+
+    /// 发现页的一个筛选项（栖阅契约）
+    ///
+    /// 站方写法（jsLib 的 `createFilter`）：
+    /// ```js
+    /// createFilter("平台", ["番茄","七猫","书旗",…], sources, "find_source", 1)
+    /// //  → { title:"平台", type:"select", chars:[…], default:sources,
+    /// //      action:"show(infoMap['平台'],'find_source')", style:{…} }
+    /// ```
+    struct FilterDTO: Codable, Identifiable {
+        var title: String = ""
+        var type: String = "select"
+        /// 可选值（「平台」有 42 个）
+        var chars: [String] = []
+        /// 站方给的默认值
+        var `default`: String = ""
+        /// **源级变量名**（引擎侧从 action 里抠出来的，如 `find_source`）
+        ///
+        /// ⚠️ 选中后要写的是**这个源级变量** ⇒ 站方 exploreUrl 重跑时
+        ///    `getArguments(open_argument,'find_source')` 就能读到新的平台 ✅
+        var paramKey: String = ""
+        var action: String = ""
+        var id: String { title + "|" + paramKey }
+
+        /// 该筛选项**当前生效的值**
+        ///
+        /// ⚠️ 优先读**源级变量**（用户改过的），没有才用站方的 default。
+        static func currentValue(_ f: FilterDTO, sourceUrl: String) -> String {
+            if !f.paramKey.isEmpty {
+                let raw = SourceVariables.effectiveVars(for: sourceUrl)
+                if let d = raw.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                   let v = obj[f.paramKey] as? String, !v.isEmpty {
+                    return v
+                }
+            }
+            return f.default
+        }
+
+        /// 全部筛选项的当前值（paramKey → 值）
+        static func currentValues(filters: [FilterDTO], sourceUrl: String) -> [String: String] {
+            var out: [String: String] = [:]
+            for f in filters where !f.paramKey.isEmpty {
+                out[f.paramKey] = currentValue(f, sourceUrl: sourceUrl)
+            }
+            return out
+        }
     }
 
     // MARK: 对外方法
@@ -444,10 +500,14 @@ final class SourceService {
         return (dict["hosts"] as? [String]) ?? []
     }
 
-    func exploreKinds(source: BookSource) async throws -> [KindDTO] {
+    /// 拿发现页的**分类 + 筛选栏**
+    ///
+    /// ⚠️ 2026-10-21：返回整个 `KindsDTO`（多了 `filters`）——
+    ///    分类和筛选栏是**两回事**，别再混在一起。
+    func exploreKinds(source: BookSource) async throws -> KindsDTO {
         let dto: KindsDTO = try await call("exploreKinds", json([:]), as: KindsDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
-        return dto.kinds
+        return dto
     }
 
     func explore(source: BookSource, kindUrl: String, page: Int = 1) async throws -> [Book] {

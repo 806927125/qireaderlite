@@ -1227,6 +1227,19 @@ enum CookieJar {
                 out[host] = pair
             }
         }
+        // ⚠️⚠️ **番茄 sessionid 别名**（2026-10-21 真机「番茄登了还是说过期」）：
+        //   番茄新版登录的 cookie 键是 `sessionid_ss`，
+        //   而站方（🍅大灰狼）有一行老正则 `rawCookie.match(/sessionid=[^;]+/)` **只认 `sessionid=`**
+        //   ⇒ 站方抠不到 sessionid ⇒ 发现页一直 toast「您还未登陆番茄账号」
+        //   ⇒ `ssionid` 参数空 ⇒ 大灰狼服务器回「番茄登录过期」
+        //   ⇒ 这里补一条 `sessionid=<同值>` 别名（不覆盖已有的）⇒ 站方立刻能用 ✅
+        //   （逻辑在 LegadoCompat（纯 Foundation）→ 沙盒 swiftc 能真编真跑）
+        for (host, value) in out {
+            if LegadoCompat.isFanqieHost(host) {
+                let fixed = LegadoCompat.fanqieSessionAlias(value)
+                if fixed != value { out[host] = fixed }
+            }
+        }
         return out
     }
     static func set(_ cookie: String, for url: String) {

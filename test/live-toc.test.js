@@ -36,6 +36,11 @@ const src = (Array.isArray(list) ? list : [list])
 const UA = 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36 Edg/138.0.0.0';
 
+// ⚠️⚠️ **win 必须声明在模块顶层** —— nativeMock 定义在模块作用域，
+//   引用不到下面 async IIFE 里的 `const { win }`（块级作用域）
+//   ⇒ 以前会抛「win is not defined」⇒ 目录请求全失败
+//   ⇒ 门禁每次都「因站方限流跳过」⇒ **这个断言其实一直没验过** ⭐
+let win = null;
 const jar = {};
 const toasts = [];
 const logs = [];
@@ -93,7 +98,7 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
 
 (async () => {
-  const { win } = createSandbox({ nativeMock });
+  win = createSandbox({ nativeMock }).win;
   const source = Object.assign({}, src, { __variables: '', __loginInfo: {} });
 
   console.log('=== ① 先找一本书 ===');
