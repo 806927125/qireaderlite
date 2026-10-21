@@ -332,6 +332,15 @@ struct SourceLoginSheet: View {
         if fqToken != sid { fqToken = sid }
         SourceVariables.setLoginInfoValue("手动填写番茄token(可不填)", sid, for: source.bookSourceUrl)
         SourceVariables.setLoginHeader("Cookie: sessionid=" + sid, for: source.bookSourceUrl)
+        // ③ **再写一份成真 cookie**（站方主路径就是 cookie.getCookie('fanqienovel.com')）
+        //    ⇒ 拿不到 cookie 时还能靠 loginInfo / loginHeader 兜底（三条路都通）
+        if let c = HTTPCookie(properties: [
+            .domain: "fanqienovel.com", .path: "/",
+            .name: "sessionid", .value: sid,
+            .expires: Date().addingTimeInterval(60 * 60 * 24 * 30)
+        ]) {
+            HTTPCookieStorage.shared.setCookie(c)
+        }
         fqTokenSaved = true
     }
 

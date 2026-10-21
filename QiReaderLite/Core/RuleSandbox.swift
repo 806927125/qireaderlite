@@ -148,7 +148,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     func diagnose() -> String {
         var lines: [String] = []
         lines.append("引擎版本：\(Self.engineVersion)")
-        lines.append("App 版本：\(AppPaths.appVersion)")
+        lines.append("App 版本：\(AppPaths.appVersionLine)")
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))
@@ -191,7 +191,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         var lines: [String] = []
         lines.append("======== 轻阅 引擎日志 ========")
         lines.append("时间：\(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium))")
-        lines.append("App 版本：\(AppPaths.appVersion)　引擎版本：\(Self.engineVersion)")
+        lines.append("App 版本：\(AppPaths.appVersionLine)　引擎版本：\(Self.engineVersion)")
         lines.append("引擎状态：\(ready ? "已就绪" : "未就绪")")
         if let e = lastError { lines.append("错误：\(e)") }
         lines.append("")

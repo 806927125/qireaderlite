@@ -221,7 +221,13 @@ struct ExploreView: View {
             // ⚠️ 先记住用户上次选的分类。`.task` 在页面重新出现时（从详情页返回）会重跑，
             //    之前这里无条件 `selected = kinds.first` → 每返回一次就跳回「全部小说」。
             let prevUrl = selected?.url
-            kinds = try await SourceService.shared.exploreKinds(source: s)
+            // ⚠️ 加超时（2026-10-21 用户报「一直提示分组正在加载中」）：
+            //    exploreKinds 要跑站方的 exploreUrl JS（里面还有 ajax + 8 条线路兜底）
+            //    ⇒ op 层超时 360 秒 → 页面就永远转圈 ❗
+            //    20 秒没出来就报错，让用户看到原因（多半是线路不通）。
+            kinds = try await Self.withTimeout(seconds: 20) {
+                try await SourceService.shared.exploreKinds(source: s)
+            }
             if kinds.isEmpty {
                 statusText = "这个书源没解析出分类"
                 selected = nil
@@ -240,6 +246,27 @@ struct ExploreView: View {
     }
 
     /// 重新从头加载（切分类、下拉刷新都走这里）
+    /// 给 async 操作加 UI 级超时（超时组里，谁先回来用谁）
+    private static func withTimeout<T>(seconds: Double,
+                                       _ work: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await work() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw ExploreTimeout()
+            }
+            guard let first = try await group.next() else { throw ExploreTimeout() }
+            group.cancelAll()
+            return first
+        }
+    }
+
+    struct ExploreTimeout: LocalizedError {
+        var errorDescription: String? {
+            "加载分类超过 20 秒（多半是线路不通：这个源的服务器有几条线路会逐条兜底）"
+        }
+    }
+
     private func loadBooks() async {
         guard let s = current, let k = selected else { return }
         busy = true
