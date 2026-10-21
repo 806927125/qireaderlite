@@ -1234,12 +1234,17 @@ enum CookieJar {
         //   ⇒ `ssionid` 参数空 ⇒ 大灰狼服务器回「番茄登录过期」
         //   ⇒ 这里补一条 `sessionid=<同值>` 别名（不覆盖已有的）⇒ 站方立刻能用 ✅
         //   （逻辑在 LegadoCompat（纯 Foundation）→ 沙盒 swiftc 能真编真跑）
+        // ⚠️⚠️ **不能一边遍历一边改字典** ⇒ Swift 会崩
+        //   （Fatal error: Collection was mutated while being enumerated）
+        //   ⇒ 先收集要改的，再统一改
+        var updates: [String: String] = [:]
         for (host, value) in out {
             if LegadoCompat.isFanqieHost(host) {
                 let fixed = LegadoCompat.fanqieSessionAlias(value)
-                if fixed != value { out[host] = fixed }
+                if fixed != value { updates[host] = fixed }
             }
         }
+        for (host, value) in updates { out[host] = value }
         return out
     }
     static func set(_ cookie: String, for url: String) {

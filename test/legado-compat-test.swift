@@ -179,6 +179,9 @@ eq(LegadoCompat.fanqieSessionAlias("qttoken=XYZ"), "qttoken=XYZ",
 eq(LegadoCompat.fanqieSessionAlias(""), "", "空串 → 空串")
 eq(LegadoCompat.fanqieSessionAlias("sessionid_ss="), "sessionid_ss=",
    "值为空 ⇒ 不补")
+eq(LegadoCompat.fanqieSessionAlias("sessionid_ss=YWJjZA=="),
+   "sessionid_ss=YWJjZA==; sessionid=YWJjZA==",
+   "base64 结尾的 = padding 不能被截断")
 ok(LegadoCompat.isFanqieHost("fanqienovel.com"), "fanqienovel.com 是番茄域")
 ok(LegadoCompat.isFanqieHost(".fanqienovel.com"), "带前导点的也是")
 ok(LegadoCompat.isFanqieHost("api5-normal-sinfonlinec.fqnovel.com"), "fqnovel.com 也是番茄域")

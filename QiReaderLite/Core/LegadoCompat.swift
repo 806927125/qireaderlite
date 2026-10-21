@@ -227,9 +227,12 @@ enum LegadoCompat {
             return s
         }
         let matched = String(s[r])
+        // ⚠️⚠️ **别用 `.last` 取值** —— sessionid 是 base64，**结尾可能有 `=` padding**
+        //   ⇒ "sessionid_ss=abc==" 会被截成 "abc" ⇒ 别名是错的 ⇒ 服务器不认 ❗
+        //   ⇒ 取**第一个 `=` 之后的全部**
         let value = matched
-            .components(separatedBy: "=").last?
-            .trimmingCharacters(in: .whitespaces) ?? ""
+            .components(separatedBy: "=").dropFirst().joined(separator: "=")
+            .trimmingCharacters(in: .whitespaces)
         guard !value.isEmpty else { return s }
         return s + "; sessionid=" + value
     }

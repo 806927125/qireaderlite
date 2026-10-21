@@ -38,6 +38,16 @@ struct ExploreView: View {
     /// 当前书源的 URL（闭包里要用 ⇒ 不能用局部变量）
     private var currentSourceUrl: String { current?.bookSourceUrl ?? "" }
 
+    /// 筛选栏里「平台」这一项的**当前值**（显示在顶栏按钮上）
+    ///
+    /// ⚠️ 别写成 `if let cur = ...currentValue(...)` ——
+    ///    `currentValue` 返回的是**非可选 String** ⇒ 那样编不过
+    ///    （2026-10-22 CI 报错：initializer for conditional binding must have Optional type）
+    private var currentPlatformText: String {
+        guard let pf = filters.first(where: { $0.paramKey == "find_source" }) else { return "" }
+        return SourceService.FilterDTO.currentValue(pf, sourceUrl: currentSourceUrl)
+    }
+
     private var current: BookSource? {
         if let pid = pinnedSourceId, let s = sources.source(id: pid) { return s }
         guard let id = sourceId, let s = sources.source(id: id) else { return sources.enabled.first }
@@ -69,11 +79,8 @@ struct ExploreView: View {
                                 Image(systemName: "line.3.horizontal.decrease")
                                     .font(.system(size: 11, weight: .semibold))
                                 // 有筛选项时显示**当前平台**（一眼知道自己在哪）
-                                if let pf = filters.first(where: { $0.paramKey == "find_source" }),
-                                   let cur = SourceService.FilterDTO.currentValue(
-                                    pf, sourceUrl: current?.bookSourceUrl ?? ""),
-                                   !cur.isEmpty {
-                                    Text(cur)
+                                if !currentPlatformText.isEmpty {
+                                    Text(currentPlatformText)
                                         .font(.system(size: 13, weight: .medium))
                                         .lineLimit(1)
                                 }
