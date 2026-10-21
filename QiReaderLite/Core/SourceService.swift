@@ -298,6 +298,7 @@ final class SourceService {
 
     /// 一次启动里已经测过的源（避免每次都测）
     private static var probedSources: Set<String> = []
+    private static let probedLock = NSLock()
 
     /// **自动选线**：测速站方所有线路 → 把最快的一条写进书源变量的 `server`
     ///
@@ -313,10 +314,25 @@ final class SourceService {
     /// - Returns: 选中的线路（没换就是原来的）
     @discardableResult
     func autoPickFastestLine(source: BookSource) async -> String? {
+        // ⚠️⚠️ **这里绝不能抛、绝不能卡**（2026-10-21 闪退事故）：
+        //    整个函数包在 do/catch 里 ⇒ 任何异常都静默跳过 ❗
+        //    （它只是「锦上添花」的选线功能，不值得为它崩整个 App）
+        do {
+            return try await autoPickFastestLineImpl(source: source)
+        } catch {
+            NSLog("[选线] 失败，忽略：%@", String(describing: error))
+            return nil
+        }
+    }
+
+    private func autoPickFastestLineImpl(source: BookSource) async throws -> String? {
         let url = source.bookSourceUrl
         guard !url.isEmpty else { return nil }
-        if Self.probedSources.contains(url) { return nil }
-        Self.probedSources.insert(url)
+        Self.probedLock.lock()
+        let alreadyProbed = Self.probedSources.contains(url)
+        if !alreadyProbed { Self.probedSources.insert(url) }
+        Self.probedLock.unlock()
+        if alreadyProbed { return nil }
 
         // ① 站方的全部线路（jsLib 的 host 数组）+ 当前线路
         var hosts = (try? await sourceHosts(source: source)) ?? []
@@ -327,8 +343,8 @@ final class SourceService {
         if !current.isEmpty && !hosts.contains(current) { hosts.insert(current, at: 0) }
         guard hosts.count > 1 else { return current.isEmpty ? nil : current }
 
-        // ② 并发测速（5 秒超时，够短不干等）
-        let results = LegadoCompat.pingHosts(hosts, timeout: 5)
+        // ② 并发测速（5 秒超时）—— **async，不占主线程**（主线程被阻塞会被 watchdog 杀 ❗）
+        let results = await LegadoCompat.pingHosts(hosts, timeout: 5)
         let okList = results.filter { ($0["ok"] as? Bool) == true }
         guard let best = okList.first, let bestHost = best["host"] as? String else {
             // 全都不通 → 保持原样（让站方自己逐条兜底）

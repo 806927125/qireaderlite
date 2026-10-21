@@ -198,49 +198,46 @@ enum LegadoCompat {
     ///   - hosts: 线路地址数组
     ///   - timeout: 每条线路的超时秒数（默认 6 秒，够短才不会干等）
     /// - Returns: `[{host, ms, ok}]`，ok=false 的排最后
-    public static func pingHosts(_ hosts: [String], timeout: Double = 6) -> [[String: Any]] {
-        let sem = DispatchSemaphore(value: 0)
-        var results = [[String: Any]]()
-        let lock = NSLock()
-
-        for host in hosts {
-            guard let u = URL(string: host) else { continue }
-            var req = URLRequest(url: u)
-            req.httpMethod = "GET"
-            req.timeoutInterval = timeout
-            req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-            let cfg = URLSessionConfiguration.ephemeral
-            cfg.timeoutIntervalForRequest = timeout
-            cfg.timeoutIntervalForResource = timeout
-            let session = URLSession(configuration: cfg)
-            let t0 = Date()
-            let group = DispatchGroup()
-            group.enter()
-            var entry: [String: Any] = ["host": host, "ms": -1, "ok": false]
-            session.dataTask(with: req) { _, resp, err in
-                let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-                entry["ms"] = ms
-                // ⚠️ **有响应就算通**（不管状态码）—— 服务器返回 4xx/5xx 也说明网络是通的
-                entry["ok"] = (err == nil) && (code > 0)
-                lock.lock(); results.append(entry); lock.unlock()
-                group.leave()
-            }.resume()
-            group.leave()
-        }
-        // 等所有（或超时）
-        let deadline = Date().addingTimeInterval(timeout + 2)
-        while Date() < deadline {
-            if results.count >= hosts.count { break }
-            usleep(120_000)
-        }
-        _ = sem
-        // 通的排前面，按耗时升序
-        return results.sorted { a, b in
-            let ao = (a["ok"] as? Bool) ?? false
-            let bo = (b["ok"] as? Bool) ?? false
-            if ao != bo { return ao }
-            return ((a["ms"] as? Int) ?? 999999) < ((b["ms"] as? Int) ?? 999999)
+    public static func pingHosts(_ hosts: [String], timeout: Double = 6) async -> [[String: Any]] {
+        // ⚠️⚠️ **必须 async，不能在主线程上阻塞**（2026-10-21 闪退事故）：
+        //    原来这个函数是同步的（URLSession 回调 + usleep 轮询等结果），
+        //    而调用方在**主 actor**上 → 主线程被阻塞 5~7 秒
+        //    ⇒ iOS watchdog 判定「主线程无响应」→ **直接杀进程闪退** ❗
+        //    而且它在**每次进任何书源的发现页**时都会跑 ⇒ 别的源也崩 ✅
+        // ⇒ 现在用 URLSession 的 async API + TaskGroup：**完全不占主线程** ✅
+        await withTaskGroup(of: (String, Int, Bool).self, returning: [[String: Any]].self) { group in
+            for host in hosts {
+                group.addTask {
+                    guard let u = URL(string: host) else { return (host, -1, false) }
+                    var req = URLRequest(url: u)
+                    req.httpMethod = "GET"
+                    req.timeoutInterval = timeout
+                    req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+                    let cfg = URLSessionConfiguration.ephemeral
+                    cfg.timeoutIntervalForRequest = timeout
+                    cfg.timeoutIntervalForResource = timeout
+                    let session = URLSession(configuration: cfg)
+                    let t0 = Date()
+                    var ok = false
+                    if let (_, resp) = try? await session.data(for: req) {
+                        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                        // ⚠️ **有响应就算通**（不管状态码）—— 服务器回 4xx/5xx 也说明网络是通的
+                        ok = code > 0
+                    }
+                    return (host, Int(Date().timeIntervalSince(t0) * 1000), ok)
+                }
+            }
+            var out: [[String: Any]] = []
+            for await (host, ms, ok) in group {
+                out.append(["host": host, "ms": ms, "ok": ok])
+            }
+            // 通的排前面，按耗时升序
+            return out.sorted { a, b in
+                let ao = (a["ok"] as? Bool) ?? false
+                let bo = (b["ok"] as? Bool) ?? false
+                if ao != bo { return ao }
+                return ((a["ms"] as? Int) ?? 999999) < ((b["ms"] as? Int) ?? 999999)
+            }
         }
     }
 
