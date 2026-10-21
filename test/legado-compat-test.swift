@@ -107,7 +107,6 @@ eq(LegadoCompat.handle(fn: "cacheGet", args: ["key": "k1"])["value"] as? String,
 let r3 = LegadoCompat.handle(fn: "没这能力", args: [:])
 eq(r3["ok"] as? Bool, false, "未知能力 → ok=false（不是崩）")
 
-print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 
 print("\n=== 6. 登录检测的响应分类（三档必须分清）===")
 // ⚠️ 真机踩过：服务器 502 + <!DOCTYPE html> → 以前被报成「未登录」
@@ -151,6 +150,17 @@ if case .serverError = LegadoCompat.classify(code: 200, data: html) {
 } else {
     ok(false, "200 但不是 JSON → 判为服务器异常")
 }
+
+print("\n=== 7. loginHeader 解析（栖阅机制）===")
+// 格式：`名称: 值`，一行一个 → 注入到每次请求头
+eq(LegadoCompat.parseLoginHeader("Cookie: sessionid=ABC").count, 1, "解析出 1 个头")
+eq(LegadoCompat.parseLoginHeader("Cookie: sessionid=ABC").first?.0, "Cookie", "头名是 Cookie")
+eq(LegadoCompat.parseLoginHeader("Cookie: sessionid=ABC").first?.1, "sessionid=ABC", "头值是 sessionid")
+eq(LegadoCompat.parseLoginHeader("X-A: 1\nX-B: 2").count, 2, "多行能解析出 2 个头")
+eq(LegadoCompat.parseLoginHeader("X-A: 1\nX-B: 2").last?.1, "2", "第二个头的值")
+eq(LegadoCompat.parseLoginHeader("").count, 0, "空串 → 没有头")
+eq(LegadoCompat.parseLoginHeader("没有冒号").count, 0, "没有冒号的行 → 跳过")
+eq(LegadoCompat.parseLoginHeader("  Cookie : x  ").first?.0, "Cookie", "名字两边空格会去掉")
 
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

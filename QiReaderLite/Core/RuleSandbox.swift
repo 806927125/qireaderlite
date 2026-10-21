@@ -805,19 +805,16 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         // 用途：番茄 sessionid 这类「不来自 cookie 罐、但每个请求都要带」的凭据
         //      （🍅大灰狼要 sessionid 才能同步番茄数据；
         //        而它只能从 cookie 罐里翻 → 在 Safari 登录的读不到 → 一直提示「未登录番茄」）
-        if let src = currentSource,
-           let lh = SourceVariables.loginHeader(for: src.bookSourceUrl),
-           !lh.isEmpty {
-            for line in lh.components(separatedBy: .newlines) {
-                let t = line.trimmingCharacters(in: .whitespaces)
-                if t.isEmpty { continue }
-                guard let colon = t.firstIndex(of: ":") else { continue }
-                let name = String(t[t.startIndex..<colon]).trimmingCharacters(in: .whitespaces)
-                let value = String(t[t.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-                if name.isEmpty { continue }
-                // 已有同名头就不覆盖（站方自己指定的优先）
-                if req.value(forHTTPHeaderField: name) == nil {
-                    req.setValue(value, forHTTPHeaderField: name)
+        //
+        // ⚠️ 解析逻辑放在 LegadoCompat（纯 Foundation）→ 沙盒 swiftc 能真编 ✅
+        if let src = currentSource {
+            let lh = SourceVariables.loginHeader(for: src.bookSourceUrl)
+            if !lh.isEmpty {
+                for (name, value) in LegadoCompat.parseLoginHeader(lh) {
+                    // 已有同名头就不覆盖（站方自己指定的优先）
+                    if req.value(forHTTPHeaderField: name) == nil {
+                        req.setValue(value, forHTTPHeaderField: name)
+                    }
                 }
             }
         }

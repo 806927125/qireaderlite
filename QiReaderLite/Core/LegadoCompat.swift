@@ -152,6 +152,29 @@ enum LegadoCompat {
         return .serverError("HTTP \(code) 返回的不是 JSON（服务器异常）：\(head)")
     }
 
+    // MARK: - loginHeader（栖阅机制）
+
+    /// 解析 loginHeader 字符串 → [(头名, 头值)]
+    ///
+    /// 格式：`名称: 值`，一行一个（最常用 `Cookie: sessionid=xxx`）。
+    /// 栖阅《书源制作文档》§9.2：loginHeader「存的是纯字符串，**会自动注入到每次请求头**」。
+    ///
+    /// ⚠️ 放在这里（纯 Foundation 层）→ **沙盒 swiftc 能真编真跑**，
+    ///    语法错当场发现，不用等 CI。
+    static func parseLoginHeader(_ raw: String) -> [(String, String)] {
+        var out: [(String, String)] = []
+        for line in raw.components(separatedBy: .newlines) {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty { continue }
+            guard let colon = t.firstIndex(of: ":") else { continue }
+            let name = String(t[t.startIndex..<colon]).trimmingCharacters(in: .whitespaces)
+            let value = String(t[t.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            if name.isEmpty { continue }
+            out.append((name, value))
+        }
+        return out
+    }
+
     // MARK: - 同步通道分发
 
     /// 同步通道的**唯一**入口：JS 通过 `window.prompt` 把 {fn, args} 送过来，
