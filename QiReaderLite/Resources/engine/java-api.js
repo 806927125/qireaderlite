@@ -323,13 +323,26 @@
     // ⚠️ 超时必须**显式**传给 nativeCall（默认 40s ❗）——
     //    站方（🍅大灰狼）有 8 个 host 的失败兜底，一个卡住就等满 40s × 7 = 几分钟。
     var __t = timeout ? timeout / 1000 : 12;
+    // ⚠️⚠️⚠️ **JS 侧的等待时间必须覆盖原生侧的最坏耗时**（2026-10-21 真机实测）：
+    //   原生侧 `nativeRequest` 会重试 3 次，且每次的超时是
+    //     `per = max(3, timeout / (attempts - i))`  ⇒ **分母递减**
+    //   ⇒ 三次的实际耗时 = timeout×(1/3 + 1/2 + 1) ≈ **1.83 × timeout**
+    //     （12s ⇒ 4 + 6 + 12 = 22s，再加 2 次 0.3s 退避 ≈ **22.6 秒**）
+    //   而这里原来只等 `__t + 3` = **15 秒** ⇒
+    //   **原生侧还在跑第 3 次，JS 侧已经超时** ⇒ 报「原生调用超时: request」
+    //   ⇒ 那个第 3 次其实**成功了，但已经没人要了**（真机日志实测：
+    //      「第 1 次失败 / 第 2 次失败 / ⏱ op 23s 超时 / 重试成功（第 3 次）」）
+    //   ⇒ 线路一慢，op 必挂 ⇒ 这就是「时好时坏」的另一半机制 ⭐
+    //
+    //   ⇒ 现在 JS 侧等 `__t × 2 + 5`（12s ⇒ 29 秒）⇒ **稳稳盖住原生侧的 22.6 秒** ✅
+    var __waitMs = (__t * 2 + 5) * 1000;
     return nativeCall('request', {
       url: String(url || ''),
       method: String(method || 'GET').toUpperCase(),
       headers: headers || {},
       body: data == null ? '' : String(data),
       timeout: __t
-    }, (__t + 3) * 1000).then(function (r) {
+    }, __waitMs).then(function (r) {
       if (!r || r.ok === false) throw new Error((r && r.error) || '请求失败');
       // ⚠️ 记住**最后一次响应** —— 站方 JS 崩的时候，日志里要能看出
       //    「它拿到的到底是啥」。否则只看到一句 `abstract.split` 这种天书，

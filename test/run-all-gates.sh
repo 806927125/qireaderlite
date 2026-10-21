@@ -32,6 +32,7 @@ declare -a GATES=(
   "ajax-retry:test/ajax-retry.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
+  "timeout-budget:test/request-timeout-budget.test.js"
   "qiyue-parity:test/qiyue-parity.test.js"
   "analyze-url-parity:test/analyze-url-parity.test.js"
   "source-vars:test/source-vars.test.js"
