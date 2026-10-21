@@ -27,6 +27,8 @@ declare -a GATES=(
   "engine-lint:test/engine-lint.test.js"
   "engine-smoke:test/engine-smoke.test.js"
   "login-card:test/live-login-card.test.js"
+  "toc-diag-truth:test/toc-diag-truth.test.js"
+  "b64-url-mangle:test/b64-url-mangle.test.js"
   "fq-login:test/live-fq-login.test.js"
   "live-explore:test/live-explore.test.js"
   "live-toc:test/live-toc.test.js"

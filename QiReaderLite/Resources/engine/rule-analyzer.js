@@ -413,13 +413,37 @@
         return QR.java.rawRequest(url, method, headers, body)
           .then(function (resp) {
             out[u] = (resp && resp._body) || '';
+            // ⚠️⚠️ **失败/异常必须喊出来**（2026-10-21）：
+            //   以前这里是 `.catch(function(){ out[u] = ''; })` —— 失败被**静默吞掉**，
+            //   站方 JS 拿到空串 → 报出 `abstract.split` / `Unable to parse JSON string`
+            //   这种**天书错**，谁也看不出是「服务器挂了」。
+            //   ⇒ 现在把 URL / 状态 / 响应开头都打进引擎日志，一眼定位。
+            var code = resp && resp._code;
+            if (resp && resp._body === '') {
+              QR.java.log('[ajax空响应] ' + String(u).slice(0, 160)
+                + '  状态=' + code);
+            } else if (code && (code < 200 || code >= 400)) {
+              QR.java.log('[ajax异常状态] ' + String(u).slice(0, 160)
+                + '  状态=' + code + '  响应开头='
+                + String((resp && resp._body) || '').slice(0, 200));
+            }
             // 缓存别无限长（URL 带随机码的请求会一直加新键）
             var keys = Object.keys(out);
             if (keys.length > 40) {
               keys.slice(0, keys.length - 40).forEach(function (k) { delete out[k]; });
             }
           })
-          .catch(function () { out[u] = ''; });
+          .catch(function (e) {
+            out[u] = '';
+            try {
+              QR.__qrLastAjax = {
+                url: String(u || ''), code: 0, body: '',
+                error: String(e && e.message || e)
+              };
+            } catch (e2) { /* 忽略 */ }
+            QR.java.log('[ajax失败] ' + String(u).slice(0, 160) + '  '
+              + String(e && e.message || e));
+          });
       });
     });
     return chain.then(function () { return out; });
@@ -506,7 +530,7 @@
       return runJs(jt.code, makeScope(jsScope(base, base, ctx, body)))
         .then(function (res) { return selectFromJsResult(res, jt.sel, ctx, base); })
         .catch(function (e) {
-          QR.java.log('[列表规则出错]', String(body).slice(0, 100), e && e.message);
+          QR.java.log('[列表规则出错]', String(body).slice(0, 100), e && e.message, lastAjaxNote(), baseNote(base));
           return [];
         });
     } catch (e) {
@@ -647,9 +671,42 @@
       if (tail) list = applyTail(list, tail, ctx, base);
       return list;
     }).catch(function (e) {
-      QR.java.log('[规则出错]', String(body).slice(0, 120), e && e.message);
+      QR.java.log('[规则出错]', String(body).slice(0, 120), e && e.message, lastAjaxNote(), baseNote(base));
       return [];
     });
+  }
+
+  /**
+   * 规则报错时补一句「最后一次响应是什么」
+   *
+   * ⚠️ 没有这句，日志只有 `abstract.split` 这种天书，
+   *    根本看不出服务器到底返回了啥（502？「会员已过期」？空？）。
+   */
+  function lastAjaxNote() {
+    try {
+      var a = QR.__qrLastAjax;
+      if (!a) return '';
+      var s = '[最后响应] ' + String(a.url || '').slice(0, 160);
+      if (a.error) s += '  错误=' + a.error;
+      else s += '  状态=' + a.code;
+      if (a.body) s += '  开头=' + String(a.body).slice(0, 200);
+      return s;
+    } catch (e) { return ''; }
+  }
+
+  /**
+   * 规则报错时补一句「喂给规则的原文开头」
+   *
+   * ⚠️ 真机 2026-10-21：`init` 规则挂在 `JSON.parse(java.hexDecodeToString(result))`
+   *    上，抛的是「Unable to parse JSON string」→ 不知道 result 到底是什么。
+   *    把原文头 200 字打出来，一眼看出是「空」还是「被截断」还是「不是 base64」。
+   */
+  function baseNote(base) {
+    try {
+      var t = baseToText(base);
+      if (!t) return '[基准] (空)';
+      return '[基准] ' + String(t).slice(0, 200);
+    } catch (e) { return ''; }
   }
 
   /** {{$.id}} 里的 $ 应该是「上一条规则的结果」；结果是 JSON 字符串就解析掉 */

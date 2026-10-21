@@ -213,8 +213,41 @@
            ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
 
+  /**
+   * base64 载荷归一化 —— **URL 里被转义/换过字符的载荷也得能解**
+   *
+   * ⚠️⚠️ 真机 2026-10-21 踩到的：
+   *   大灰狼的 bookUrl 是 `data:;base64,<载荷>`，载荷里**有 + 和 /**（中文摘要 base64 出来的）。
+   *   这个字符串当 URL 走一圈，'+' 可能被 URL 解码成**空格**、或被转义成 **%2B**。
+   *   而老的 b64decode：空格直接**删掉**、非法字符**静默跳过** →
+   *   解出来是**乱码**（不报错！）→ 站方 `JSON.parse(...)` 抛
+   *   「Unable to parse JSON string」→ 详情页整条规则静默失效。
+   *   ⇒ 静默跳过是最坏的失败方式：看起来像服务器返回了坏数据。
+   */
+  function b64normalize(s) {
+    s = String(s == null ? '' : s);
+    // ① 百分号转义还原（只还原成 base64 合法字符的那些）
+    try {
+      s = s.replace(/%([0-9A-Fa-f]{2})/g, function (m, h) {
+        var c = String.fromCharCode(parseInt(h, 16));
+        return /[A-Za-z0-9+\/=_-]/.test(c) ? c : m;
+      });
+    } catch (e) { /* 忽略 */ }
+    // ② URL 安全字符 → 标准 base64
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    // ③ 空格还原成 '+'（URL 解码把 '+' 变成空格的经典坑）
+    s = s.replace(/ /g, '+');
+    return s;
+  }
+
+  /** 解出来的东西「像不像人话」——有控制字符就是解歪了 */
+  function looksLikeText(s) {
+    if (!s) return false;
+    return !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(String(s));
+  }
+
   function b64decode(s) {
-    s = String(s == null ? '' : s).replace(/\s/g, '');
+    s = b64normalize(s).replace(/\s/g, '');
     // 1) 原生
     if (QR.java && QR.java._b64Dec) {
       try { var r = QR.java._b64Dec(s); if (r != null) return r; } catch (e) {}
@@ -295,6 +328,16 @@
       timeout: timeout ? timeout / 1000 : 20
     }).then(function (r) {
       if (!r || r.ok === false) throw new Error((r && r.error) || '请求失败');
+      // ⚠️ 记住**最后一次响应** —— 站方 JS 崩的时候，日志里要能看出
+      //    「它拿到的到底是啥」。否则只看到一句 `abstract.split` 这种天书，
+      //    根本不知道服务器返回的是 502 还是「您的会员已过期」。
+      try {
+        QR.__qrLastAjax = {
+          url: String(url || ''),
+          code: r.code,
+          body: String(r.body || '').slice(0, 600)
+        };
+      } catch (e) { /* 忽略 */ }
       return {
         _code: r.code,
         _url: r.url,
@@ -527,10 +570,21 @@
       //    所以：**不是合法 hex 就按 base64 再试一次**。
       var isHex = /^[0-9a-fA-F]*$/.test(s) && s.length % 2 === 0;
       if (!isHex) {
-        try {
-          var b64 = b64decode(s);
-          if (b64) return b64;
-        } catch (e) { /* 落回 hex */ }
+        // ⚠️ 多试几种还原方式（真机 2026-10-21）：
+        //   载荷当 URL 走一圈可能被转义（%2B）/加号变空格 → 直接解会得到乱码，
+        //   而乱码**不会报错**，只会在站方 JSON.parse 时炸出天书错。
+        //   ⇒ 归一化后再解一次，挑**像人话**的那个。
+        var cands = [s, b64normalize(s)];
+        var last = null;
+        for (var ci = 0; ci < cands.length; ci++) {
+          try {
+            var b64 = b64decode(cands[ci]);
+            if (b64 == null) continue;
+            if (looksLikeText(b64)) return b64;
+            last = b64;
+          } catch (e) { /* 落回 hex */ }
+        }
+        if (last != null) return last;
       }
       var h = s.replace(/[^0-9a-fA-F]/g, '');
       var out = '';
