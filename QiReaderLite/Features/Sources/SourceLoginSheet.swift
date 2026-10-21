@@ -290,7 +290,7 @@ struct SourceLoginSheet: View {
             probeResult = "没拿到站方的线路列表（jsLib 里没有 host 数组？）"
             return
         }
-        let results = LegadoCompat.pingHosts(hosts, timeout: 6)
+        let results = await LegadoCompat.pingHosts(hosts, timeout: 6)
         let ok = results.filter { ($0["ok"] as? Bool) == true }
         guard let best = ok.first, let host = best["host"] as? String else {
             // ⚠️ 不用嵌套引号的字符串插值（Swift 里 `\(r["host"])` 这种写法很容易被转义搞坏）
