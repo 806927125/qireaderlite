@@ -36,6 +36,9 @@ struct SourceLoginSheet: View {
     @State private var probing = false
     /// 番茄 sessionid（手动兜底）
     @State private var fqToken = ""
+    /// 书源变量（JSON）—— 聚合源把「服务器地址 / 线路」存在这儿
+    @State private var varsText = ""
+    @State private var varsSaved = false
     @State private var fqTokenSaved = false
 
     struct Field: Identifiable {
@@ -117,6 +120,7 @@ struct SourceLoginSheet: View {
 
                     // ── 番茄 sessionid（手动兜底）──────────
                     fqTokenBox
+                    varsBox
 
                     // ── 登录状态检测 ──────────────────────────
                     detectBox
@@ -192,6 +196,55 @@ struct SourceLoginSheet: View {
         }
         .padding(12)
         .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+    }
+
+    // MARK: - 书源变量（线路/服务器）
+
+    /// **书源变量**编辑（JSON）
+    ///
+    /// ⚠️ 为什么需要：🍅大灰狼把**服务器地址（线路）**存在书源变量里
+    ///    （`source.getVariable()` → `getArguments(..., "server")`）。
+    ///    它的 jsLib 里列了 **8 条线路**，不通就**逐条兜底**（每条等满请求超时）
+    ///    ⇒ 设备上如果默认那条不通，详情页会**一直转圈一两分钟** ❗
+    /// ⇒ 轻阅以前**没有变量编辑入口** ⇒ 用户没法手动换一条通的路。
+    ///    现在给了：把 JSON 里的 `"server"` 改成线路地址即可 ✅
+    private var varsBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("书源变量（线路 / 服务器）")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+            Text("聚合源把服务器地址存在这里。默认线路不通时，详情页会逐条试 8 条（很慢）。把 server 改成一条通的线路即可。")
+                .font(.caption2).foregroundStyle(Theme.sub)
+                .fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $varsText)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(minHeight: 90)
+                .padding(8)
+                .background(Theme.sub.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: 10))
+            HStack(spacing: 10) {
+                Button {
+                    let raw = varsText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // 空 = 恢复默认（让站方用自己的兜底）
+                    SourceVariables.setVars(raw, for: source.bookSourceUrl)
+                    varsSaved = true
+                } label: {
+                    Label(varsSaved ? "已保存" : "保存", systemImage: varsSaved ? "checkmark" : "square.and.arrow.down")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                if !varsText.isEmpty {
+                    Button {
+                        varsText = ""
+                        SourceVariables.setVars("", for: source.bookSourceUrl)
+                        varsSaved = true
+                    } label: {
+                        Text("清空（用默认线路）").font(.system(size: 13))
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
     }
 
     // MARK: - 番茄 sessionid（手动兜底）
@@ -301,6 +354,7 @@ struct SourceLoginSheet: View {
         fqTokenSaved = !fqToken.isEmpty
         // ⚠️ 存的没有 → 从 cookie 罐自动抓（内置浏览器登录过的就抓得到）
         if fqToken.isEmpty { autoFillFQSessionId() }
+        varsText = SourceVariables.vars(for: source.bookSourceUrl)
         guard let raw = source.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]

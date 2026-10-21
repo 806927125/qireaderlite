@@ -258,6 +258,32 @@ struct BookDetailView: View {
 
     // MARK: 加载
 
+    /// 详情加载超时
+    struct DetailTimeout: LocalizedError {
+        var errorDescription: String? {
+            "加载超过 25 秒还没出来（可能是线路不通，详情页有 8 条线路的失败兜底）"
+        }
+    }
+
+    /// 给一个 async 操作加 UI 级超时
+    ///
+    /// ⚠️ 为什么不能靠 op 的 360 秒超时：那是**兜底**，UI 会一直转圈。
+    ///    站方（🍅大灰狼）的详情流程在一条线路不通时会**逐条试 8 条**，
+    ///    每条等满请求超时 ⇒ 1~2 分钟起步 ⇒ 用户看到的就是「一直在转圈」。
+    private static func withTimeout<T>(seconds: Double,
+                                       _ work: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await work() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw DetailTimeout()
+            }
+            guard let first = try await group.next() else { throw DetailTimeout() }
+            group.cancelAll()
+            return first
+        }
+    }
+
     private func loadDetail() async {
         guard let s = source else {
             statusText = "找不到这本书对应的书源了（可能导入时覆盖过）"
@@ -275,8 +301,14 @@ struct BookDetailView: View {
         //    这种"静默地错"最难查，必须把错误说出来。
         var problems: [String] = []
         do {
-            let fresh = try await SourceService.shared.bookInfo(
-                source: s, bookUrl: book.cleanBookUrl, fallback: book)
+            // ⚠️ UI 层超时 25 秒（op 本身的超时是 360 秒 ❗）
+            //    站方详情有 **8 条线路的失败兜底**，一条不通就等满请求超时
+            //    ⇒ 设备上线路不通时，页面会**一直转圈一两分钟**（用户原话「一直在转圈」）
+            //    ⇒ 这里先给 UI 一个明确的上限，超了就报错 + 提示换线路。
+            let fresh = try await Self.withTimeout(seconds: 25) {
+                try await SourceService.shared.bookInfo(
+                    source: s, bookUrl: book.cleanBookUrl, fallback: book)
+            }
             book = book.merged(with: fresh)
             if inShelf { library.add(book) }
             if book.tocUrl.isEmpty {
