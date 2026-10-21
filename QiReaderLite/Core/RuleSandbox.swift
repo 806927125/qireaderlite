@@ -372,10 +372,59 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     }
 
     /// 往引擎日志里追加一条（宿主侧用，比如自动选线的结果）
+    ///
+    /// ⭐ **格式：`[时间戳] [步骤] 内容`**（2026-10-21 对齐栖阅的诊断体系）
+    ///   栖阅的日志是**分步事件链**（`component=… event=…` + 一堆计数器），
+    ///   轻阅原来只有一坨字符串流水 ⇒ 排查「时好时坏」时**看不出哪一步断的**。
+    ///   ⇒ 现在每行都带：① 毫秒时间戳 ② 步骤归属 ③ 原始内容
+    ///   ⇒ 面板再按步骤分组成「诊断时间线」，一眼看出断在哪。
     func appendLog(_ line: String) {
-        recentLogs.append(line)
+        let stamped = "[\(Self.logTimeFormatter.string(from: Date()))] "
+            + "[\(Self.stepFor(line, fallback: currentStep))] " + line
+        recentLogs.append(stamped)
         if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
-        NSLog("%@", line)
+        NSLog("%@", stamped)
+    }
+
+    /// 日志行的时间戳（`HH:mm:ss.SSS`）
+    private static let logTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    /// **当前正在跑的 op 属于哪一步** —— 给日志归类用
+    /// （`[两遍跑]…` 这种没有自己步骤名的日志，会归到当前 op 那一步）
+    private var currentStep: String = ""
+
+    /// op 名 → 步骤名（面板上分组的依据）
+    static func stepNameForOp(_ op: String) -> String {
+        switch op {
+        case "toc": return "目录"
+        case "bookInfo": return "详情"
+        case "content": return "正文"
+        case "search": return "搜索"
+        case "explore", "exploreKinds": return "发现"
+        case "login", "probeLogin": return "登录"
+        case "explainToc", "explain": return "诊断"
+        default: return "引擎"
+        }
+    }
+
+    /// 日志行 → 步骤名
+    static func stepFor(_ line: String, fallback: String) -> String {
+        if line.hasPrefix("[目录]") { return "目录" }
+        if line.hasPrefix("[详情]") { return "详情" }
+        if line.hasPrefix("[正文]") { return "正文" }
+        if line.hasPrefix("[发现]") { return "发现" }
+        if line.hasPrefix("[搜索]") { return "搜索" }
+        if line.hasPrefix("[登录]") { return "登录" }
+        if line.hasPrefix("[ajax") { return "网络" }
+        if line.hasPrefix("[Swift·") { return "宿主" }
+        if line.hasPrefix("[选线]") { return "选线" }
+        // ⚠️ 两遍跑 / 引擎内部消息 ⇒ 属于当前这一步
+        return fallback.isEmpty ? "引擎" : fallback
     }
 
     private func markReady() {
@@ -486,6 +535,22 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         let prev = currentSource
         if let s = source { currentSource = s }
         defer { currentSource = prev }
+        // ⭐ **步骤归属 + 耗时**（2026-10-21 对齐栖阅的诊断体系）
+        //   栖阅的测试面板会给每一步单独计时（目录 2.32s / 正文 1.38s），
+        //   轻阅原来完全没有 ⇒ 排查「时好时坏」时既不知道断在哪步，也不知道慢在哪步。
+        // ⚠️ 必须设在**这里**（真正执行时），不能在 `invoke` 里 ——
+        //    `invoke` 只是排队，前面还有 op 时 currentStep 就被改掉了 ⇒ 归类会串。
+        let step = Self.stepNameForOp(op)
+        let prevStep = currentStep
+        currentStep = step
+        let t0 = Date()
+        defer {
+            let ms = Int(Date().timeIntervalSince(t0) * 1000)
+            // ⚠️ 消息本身**不要**再写 `[步骤]` 前缀 —— appendLog 会自动加，
+            //    否则会变成 `[目录] [目录] ⏱ …`。
+            appendLog("⏱ op「\(op)」耗时 \(ms)ms")
+            currentStep = prevStep
+        }
 
         let argJSON = Self.jsonString(payload)
         // ⚠️⚠️ 必须 JSON.stringify 成字符串再返回，**不能**把 JS 对象直接过桥。
@@ -620,9 +685,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
 
         case "log":
             let m = args["msg"] as? String ?? ""
-            NSLog("[engine] %@", m)
-            recentLogs.append(m)
-            if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+            appendLog(m)
             return ok()
 
         case "toast":

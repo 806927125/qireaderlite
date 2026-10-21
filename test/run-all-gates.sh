@@ -64,6 +64,7 @@ TOTAL_FAIL=0
 CRASHED=()
 NOSUMMARY=()
 FAILED=()
+SKIPPED=()
 
 printf "%-24s %-22s %s\n" "门禁" "结果" "备注"
 printf "%s\n" "────────────────────────────────────────────────────"
@@ -119,7 +120,8 @@ for entry in "${GATES[@]}"; do
     # ③ 没有汇总行 → 可疑，不算通过
     skipped="$(printf '%s' "$out" | grep -c '跳过\|skip' || true)"
     if [ "$skipped" -gt 0 ]; then
-      printf "%-24s %-22s %s\n" "$name" "⏭ 跳过" "缺本机依赖文件"
+      printf "%-24s %-22s %s\n" "$name" "⏭ 跳过" "没有汇总行（站方抖动/缺本机依赖）"
+      SKIPPED+=("$name")
     else
       printf "%-24s %-22s %s\n" "$name" "⚠️ 无汇总" "疑似提前退出"
       TOTAL_FAIL=$((TOTAL_FAIL+1))
@@ -143,25 +145,34 @@ printf "%s\n" "─────────────────────�
 # ── Swift 原生层：swiftc 真编真跑（Core/ 是纯 Foundation → 沙盒里能跑）──
 # ⚠️ 这一步是「引擎能力用 Swift 写」能落地的**前提**：
 #    能力写在 Swift 里，就得能在沙盒里验（3 秒出结果，不用等 CI）。
-if [ -x "/tmp/swift/usr/bin/swiftc" ] || command -v swiftc >/dev/null 2>&1; then
-  if bash test/run-swift-tests.sh > /tmp/swift-tests.out 2>&1; then
+# ⚠️⚠️ **别在这里判断 swiftc 在不在**（2026-10-21 踩过）：
+#    外层只认 `/tmp/swift/usr/bin/swiftc`，而沙盒**会把 /tmp 清掉**；
+#    toolchain 装在 `<repo>/../.toolchain/swift` 时 ⇒ 外层判「没装」⇒ **直接跳过**
+#    ⇒ run-swift-tests.sh 根本没被调用 ⇒ 报「全绿」但一行 Swift 都没编 ⭐
+#    ⇒ 判断逻辑必须**只有一份** ⇒ 统一交给 run-swift-tests.sh，它自己会明确打印原因。
+if bash test/run-swift-tests.sh > /tmp/swift-tests.out 2>&1; then
+  if grep -q '没找到 swiftc' /tmp/swift-tests.out; then
+    printf "%-24s %-22s %s\n" "swift 原生层" "⚠️ 跳过" "没装 swiftc（见 test/run-swift-tests.sh 里的安装提示）"
+    SKIPPED+=("swift-原生层")
+  else
     printf "%-24s %-22s %s\n" "swift 原生层" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/swift-tests.out | tail -1)"
     SWIFT_PASS="$(grep -oE '通过 [0-9]+' /tmp/swift-tests.out | tail -1 | grep -oE '[0-9]+')"
     TOTAL_PASS=$((TOTAL_PASS + ${SWIFT_PASS:-0}))
-  else
-    printf "%-24s %-22s %s\n" "swift 原生层" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/swift-tests.out | tail -1)"
-    grep -E "✗|error:" /tmp/swift-tests.out | head -5
-    TOTAL_FAIL=$((TOTAL_FAIL+1))
-    FAILED+=("swift-原生层")
   fi
 else
-  printf "%-24s %-22s %s\n" "swift 原生层" "⚠️ 跳过" "没装 swiftc"
+  printf "%-24s %-22s %s\n" "swift 原生层" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/swift-tests.out | tail -1)"
+  grep -E "✗|error:" /tmp/swift-tests.out | head -5
+  TOTAL_FAIL=$((TOTAL_FAIL+1))
+  FAILED+=("swift-原生层")
 fi
 
 printf "%s\n" "────────────────────────────────────────────────────"
 printf "合计通过 %d 项 / 失败 %d 个门禁\n" "$TOTAL_PASS" "$TOTAL_FAIL"
 
 
+if [ ${#SKIPPED[@]} -gt 0 ]; then
+  printf "⏭ 跳过的门禁（**没验到，不算通过**）：%s\n" "${SKIPPED[*]}"
+fi
 if [ ${#CRASHED[@]} -gt 0 ]; then
   printf "💥 崩了：%s\n" "${CRASHED[*]}"
 fi
@@ -173,8 +184,15 @@ if [ ${#FAILED[@]} -gt 0 ]; then
 fi
 
 # 门禁全绿 → 才算全绿
+# ⚠️⚠️ **有门禁被跳过时不能叫「全绿」**（2026-10-21）：
+#    跳过的门禁**根本没跑**（站方抖动 / 缺本机依赖 / 没装 swiftc），
+#    说「全绿」= 假绿 ⇒ 必须把跳过数量标出来。
 if [ "$TOTAL_FAIL" -eq 0 ]; then
-  echo "✅ 门禁全绿"
+  if [ ${#SKIPPED[@]} -gt 0 ]; then
+    echo "✅ 无失败（⚠️ 但有 ${#SKIPPED[@]} 个门禁被跳过 ⇒ 那部分**没验到**）"
+  else
+    echo "✅ 门禁全绿"
+  fi
   exit 0
 else
   echo "❌ 门禁没过"

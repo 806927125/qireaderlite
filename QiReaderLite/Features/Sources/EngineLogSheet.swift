@@ -19,6 +19,62 @@ struct EngineLogSheet: View {
     private var summary: String { RuleSandbox.shared.diagnose() }
     private var logs: [String] { RuleSandbox.shared.recentLogs }
 
+    // MARK: - 诊断时间线（对齐栖阅：分步 + 计时 + 出错一眼看见）
+
+    /// 一个步骤的日志组
+    private struct StepGroup: Identifiable {
+        let id: String
+        var lines: [String] = []
+        var errors: Int = 0
+    }
+
+    /// 日志行 → 步骤名。格式是 `[HH:mm:ss.SSS] [步骤] 内容`
+    private static func stepOf(_ line: String) -> String {
+        let parts = line.split(separator: "]", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count >= 2 else { return "其它" }
+        let s = parts[1].trimmingCharacters(in: .whitespaces)
+        return s.isEmpty ? "其它" : s
+    }
+
+    /// 出错？—— 这些词出现就当错误（栖阅用 ⚠️ 标，我们用关键词）
+    private static func isError(_ line: String) -> Bool {
+        let marks = ["失败", "异常", "错误", "轮数用尽", "不可用", "超时", "崩"]
+        return marks.contains { line.contains($0) }
+    }
+
+    /// 按步骤分组（保持首次出现的顺序 = 时间顺序）
+    private var groups: [StepGroup] {
+        var order: [String] = []
+        var map: [String: StepGroup] = [:]
+        for line in logs {
+            let step = Self.stepOf(line)
+            if map[step] == nil {
+                order.append(step)
+                map[step] = StepGroup(id: step)
+            }
+            map[step]?.lines.append(line)
+            if Self.isError(line) { map[step]?.errors += 1 }
+        }
+        return order.compactMap { map[$0] }
+    }
+
+    /// 每一步的耗时（从 `⏱ op「x」耗时 Nms` 里解析）—— 栖阅就是这种「目录 2.32s」
+    private var timings: [(step: String, ms: Int)] {
+        var out: [(String, Int)] = []
+        for line in logs {
+            guard let r = line.range(of: "op「"),
+                  let t = line.range(of: "」耗时 ") else { continue }
+            let op = String(line[r.upperBound..<t.lowerBound])
+            let rest = line[t.upperBound...]
+            let digits = rest.prefix { $0.isNumber }
+            if let ms = Int(digits) {
+                let step = RuleSandbox.stepNameForOp(op)
+                out.append((step, ms))
+            }
+        }
+        return out
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -70,6 +126,64 @@ struct EngineLogSheet: View {
 
                     section("自检摘要", summary)
 
+                    // ── 诊断时间线：分步 + 耗时（栖阅同款）──────────────────
+                    if !timings.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("分步耗时")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.ink)
+                            let recent = Array(timings.reversed().prefix(8))
+                            ForEach(recent.indices, id: \.self) { i in
+                                HStack {
+                                    Text(recent[i].step)
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.ink)
+                                        .frame(width: 52, alignment: .leading)
+                                    Text(Self.fmtMS(recent[i].ms))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(recent[i].ms >= 3000 ? .orange : Theme.sub)
+                                    Spacer()
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+                    }
+
+                    // ── 诊断时间线：按步骤分组 ──────────────────────────────
+                    if !groups.isEmpty {
+                        Text("诊断时间线（\(groups.count) 步 / \(logs.count) 条）")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.ink)
+                        ForEach(groups) { g in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(g.id)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(Theme.accent)
+                                    Text("\(g.lines.count) 条")
+                                        .font(.caption2)
+                                        .foregroundStyle(Theme.sub)
+                                    if g.errors > 0 {
+                                        Text("⚠️ \(g.errors)")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.red)
+                                    }
+                                    Spacer()
+                                }
+                                ForEach(Array(g.lines.enumerated()), id: \.offset) { _, line in
+                                    Text(line)
+                                        .font(.caption2.monospaced())
+                                        .foregroundStyle(Self.isError(line) ? .red : Theme.ink)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .padding(10)
+                            .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+                        }
+                    }
+
                     HStack {
                         Text("引擎日志（\(logs.count) 条）")
                             .font(.subheadline.weight(.semibold))
@@ -95,7 +209,7 @@ struct EngineLogSheet: View {
                                     .frame(width: 30, alignment: .trailing)
                                 Text(line)
                                     .font(.caption.monospaced())
-                                    .foregroundStyle(Theme.ink)
+                                    .foregroundStyle(Self.isError(line) ? .red : Theme.ink)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -121,6 +235,11 @@ struct EngineLogSheet: View {
                 }
             }
         }
+    }
+
+    /// 毫秒 → 人话（栖阅那种「2.32s」）
+    private static func fmtMS(_ ms: Int) -> String {
+        ms < 1000 ? "\(ms)ms" : String(format: "%.2fs", Double(ms) / 1000.0)
     }
 
     @ViewBuilder
