@@ -39,7 +39,7 @@ struct SourceLoginSheet: View {
     /// 书源变量（JSON）—— 聚合源把「服务器地址 / 线路」存在这儿
     @State private var varsText = ""
     @State private var varsSaved = false
-    @State private var probing = false
+    @State private var probingHosts = false
     @State private var probeResult: String = ""
     @State private var bestHost: String = ""
     @State private var fqTokenSaved = false
@@ -249,15 +249,15 @@ struct SourceLoginSheet: View {
             }
             // ── 线路测速：并发试所有站方线路，挑最快的一条写进变量 ──
             Button {
-                probing = true
+                probingHosts = true
                 probeResult = ""
                 Task { await probeLines() }
             } label: {
-                Label(probing ? "测速中…" : "测速并选最快线路", systemImage: "speedometer")
+                Label(probingHosts ? "测速中…" : "测速并选最快线路", systemImage: "speedometer")
                     .font(.system(size: 13, weight: .medium))
             }
             .buttonStyle(.bordered)
-            .disabled(probing)
+            .disabled(probingHosts)
             if !probeResult.isEmpty {
                 Text(probeResult)
                     .font(.caption2)
@@ -273,11 +273,8 @@ struct SourceLoginSheet: View {
     ///    ⇒ 站方详情页会**逐条试 8 条线路** ⇒ 详情页转圈一两分钟 ❗
     ///    ⇒ 一次并发测速（6 秒超时）→ 挑通的写进去 ⇒ 立刻恢复 ✅
     private func probeLines() async {
-        defer { probing = false }
-        var hosts: [String] = []
-        if let s = source {
-            hosts = (try? await SourceService.shared.sourceHosts(source: s)) ?? []
-        }
+        defer { probingHosts = false }
+        var hosts: [String] = (try? await SourceService.shared.sourceHosts(source: source)) ?? []
         // 兜底：当前变量里的 server 也一起测
         if let m = try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any],
            let sv = m["server"] as? String, !sv.isEmpty, !hosts.contains(sv) {
