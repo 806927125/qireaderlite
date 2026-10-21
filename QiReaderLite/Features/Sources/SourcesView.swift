@@ -15,6 +15,7 @@ struct SourcesView: View {
     @State private var loginTarget: BookSource?
     /// 要检测登录状态的书源（长按书源行）
     @State private var probeTarget: BookSource?
+    @State private var testTarget: BookSource?
 
     var shown: [BookSource] {
         filter.isEmpty ? store.sources : store.sources.filter {
@@ -47,6 +48,11 @@ struct SourcesView: View {
         // 登录状态检测：长按书源行
         .sheet(item: $probeTarget) { src in
             LoginStatusSheet(source: src)
+        }
+        // ⭐ 测书源：长按书源行 → 测书源…
+        //    单独挑一个源跑完整链路（发现→详情→目录→正文），每步计时。
+        .sheet(item: $testTarget) { src in
+            SourceTestView(source: src)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -230,6 +236,12 @@ struct SourcesView: View {
                     probeTarget = s
                 } label: { Label("检测登录状态", systemImage: "checkmark.shield") }
             }
+            // ⭐ 测书源：单独挑一个源跑完整链路（发现→详情→目录→正文），
+            //    每步计时 ⇒ 一次就知道「这个源能不能用、断在哪一步」。
+            //    对齐栖阅的「测书源」测试器。
+            Button {
+                testTarget = s
+            } label: { Label("测书源…", systemImage: "testtube.2") }
             Button {
                 store.setEnabled(!s.enabled, for: s.bookSourceUrl)
             } label: {
