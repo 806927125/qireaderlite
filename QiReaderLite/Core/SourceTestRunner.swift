@@ -111,7 +111,21 @@ enum SourceTestRunner {
             var books: [Book] = []
             var how = ""
             let kinds = try await service.exploreKinds(source: source)
-            if let k = kinds.first(where: { !$0.url.isEmpty }) {
+            // ⚠️⚠️ **必须跳过「个人中心/登录/书架」这类动作项**（2026-10-21 真机实测）：
+            //   🍅大灰狼的 kinds 前面几个是 infoData（站方塞的「个人中心」「登录番茄」
+            //   「个性推荐」「历史阅读」「大灰狼个人中心」）⇒ 它们是**个人书架**，
+            //   拿到的书 **`tab` 是「漫画」**（实测《斗罗大陆》tab=漫画）
+            //   ⇒ 漫画本来就没正文 ⇒ **正文阶段必然是空的**（不是引擎的锅！）
+            // ⇒ 优先选**真正的分类**（排行榜/分类/书库…）⇒ 拿到的书是小说 ⇒ 正文能测
+            let actionWords = ["个人中心", "登录", "书架", "历史", "推荐", "番茄"]
+            func isAction(_ t: String) -> Bool {
+                let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                if s.isEmpty { return true }
+                return actionWords.contains { s.contains($0) }
+            }
+            let realKinds = kinds.filter { !$0.url.isEmpty && !isAction($0.title) }
+            let pick = realKinds.first ?? kinds.first(where: { !$0.url.isEmpty })
+            if let k = pick {
                 books = try await service.explore(source: source, kindUrl: k.url, page: 1)
                 how = "发现页「\(k.title.isEmpty ? k.url : k.title)」"
             }
