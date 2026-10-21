@@ -894,7 +894,35 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         cfg.httpShouldSetCookies = true
         let session = Self.sharedSession(headers: sessionHeaders, timeout: timeout)
 
-        var result = await Self.perform(req: req, session: session)
+        // ⚠️⚠️ **重试**（2026-10-21 真机定位，照抄栖阅的 HttpTransport）
+        //
+        //   栖阅（URLSession + 跳证书 + DNS覆写 + 代理 + **重试**）在用户手机上检测
+        //   `v5.langge.uk` 是「**网络环境优良 / 延迟低 / 解析时间 0s**」⇒
+        //   **那台服务器在用户网络里是通的**！
+        //   而轻阅同一个 URL 报「请求超时」⇒ **不是网络问题，是轻阅一次不成就放弃** ❗
+        //   （聚合源详情有 8 条线路逐条兜底 ⇒ 一次超时就把详情页拖成一两分钟的转圈）
+        //
+        //   ⇒ 现在：失败/超时**重试 2 次**（每次超时砍半 ⇒ 总耗时可控），并把每次尝试记进日志 ✅
+        var result: [String: Any] = [:]
+        let attempts = 3
+        for i in 0..<attempts {
+            let per = max(3.0, timeout / Double(attempts - i))   // 越重试越短，别把总时长吃光
+            var r1 = req
+            r1.timeoutInterval = per
+            result = await Self.perform(req: r1, session: session)
+            let code = result["code"] as? Int ?? 0
+            let failed = (result["error"] != nil) || code == 0
+            if !failed {
+                if i > 0 {
+                    NSLog("[request] 重试成功（第 %d 次）%@", i + 1, raw)
+                    recentLogs.append("[request] 重试成功（第 \(i + 1) 次）" + raw)
+                }
+                break
+            }
+            NSLog("[request] 第 %d 次失败 %@：%@", i + 1, raw, String(describing: result["error"] ?? "无响应"))
+            recentLogs.append("[request] 第 \(i + 1) 次失败：" + raw)
+            if i < attempts - 1 { usleep(300_000) }   // 0.3s 退避
+        }
 
         // ATS 兜底：明文被系统拦了，就改用 https 再试一次。
         // 有些站 http 挂在 CDN 后面，https 反而是通的。

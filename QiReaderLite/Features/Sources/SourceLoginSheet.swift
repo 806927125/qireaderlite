@@ -307,7 +307,12 @@ struct SourceLoginSheet: View {
         SourceVariables.setVars(varsText, for: source.bookSourceUrl)
         varsSaved = true
         bestHost = host
-        probeResult = "已选：\(host)（\(ms)ms）。共试了 \(results.count) 条，通 \(ok.count) 条。"
+        // ⚠️ 文案照抄栖阅的「检测当前服务器」卡片（用户点名喜欢这个 UX ✅）
+        //   栖阅原文：【网络环境优良】<服务器> 解析时间：0s / 延迟低，推荐使用此接口
+        let grade = ms <= 1500 ? "网络环境优良" : (ms <= 4000 ? "网络环境一般" : "网络环境较差")
+        let tip = ms <= 1500 ? "延迟低，推荐使用此接口" : "延迟偏高，可点「测速」换一条"
+        probeResult = "💗【\(grade)】\n\(host)\n解析时间：\(max(ms, 0))ms\n\(tip)"
+        Toast.show("✅ 正在检测：\(host) 请稍等~")
     }
 
     // MARK: - 番茄 sessionid（手动兜底）
