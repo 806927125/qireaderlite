@@ -399,17 +399,12 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     private var currentStep: String = ""
 
     /// op 名 → 步骤名（面板上分组的依据）
+    ///
+    /// ⚠️ 实现放在 `EngineLogTimeline`（nonisolated 静态）——
+    ///    这个类是 `@MainActor`，方法放在这儿就只有 MainActor 上能调，
+    ///    而日志解析在**同步**上下文里做 ⇒ 编译不过。
     static func stepNameForOp(_ op: String) -> String {
-        switch op {
-        case "toc": return "目录"
-        case "bookInfo": return "详情"
-        case "content": return "正文"
-        case "search": return "搜索"
-        case "explore", "exploreKinds": return "发现"
-        case "login", "probeLogin": return "登录"
-        case "explainToc", "explain": return "诊断"
-        default: return "引擎"
-        }
+        EngineLogTimeline.stepNameForOp(op)
     }
 
     /// 日志行 → 步骤名

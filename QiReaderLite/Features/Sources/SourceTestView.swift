@@ -42,7 +42,7 @@ struct SourceTestView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        UIPasteboard.general.string = report?.reportText
+                        UIPasteboard.general.string = report?.reportText()
                             ?? RuleSandbox.shared.fullLogText()
                         copied = true
                     } label: {
@@ -263,6 +263,10 @@ struct SourceTestView: View {
 
     // MARK: - 跑
 
+    /// ⚠️ 标 `@MainActor`：`SourceService` 是 `@MainActor` class，
+    ///    `SourceTestRunner.run` 的默认参数 `service: .shared` 要在
+    ///    MainActor 上求值 ⇒ 显式标上更稳（CI 踩过 actor 隔离的坑）
+    @MainActor
     private func run() async {
         running = true
         report = nil

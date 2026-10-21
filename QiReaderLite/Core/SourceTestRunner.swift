@@ -60,14 +60,20 @@ struct SourceTestReport {
     var failed: Int { stages.filter { !$0.ok }.count }
     var totalMS: Int { stages.reduce(0) { $0 + $1.ms } }
     /// 「通过 4 · 失败 0」——栖阅那个顶部摘要
-    var headLine: String { "通过 \(passed) · 失败 \(failed) · 耗时 \(fmtMS(totalMS))" }
+    var headLine: String { "通过 \(passed) · 失败 \(failed) · 耗时 \(SourceTestReport.fmtMS(totalMS))" }
 
     static func fmtMS(_ ms: Int) -> String {
         ms < 1000 ? "\(ms)ms" : String(format: "%.2fs", Double(ms) / 1000.0)
     }
 
     /// **复制测试报告**（栖阅面板的「复制测试报告」）
-    var reportText: String {
+    ///
+    /// ⚠️ 必须标 `@MainActor`：`RuleSandbox` 整个类是 @MainActor，
+    ///    而 `fullLogText()` 是**同步**方法 ⇒ 在 nonisolated 的计算属性里调它
+    ///    会编译报「call to main actor-isolated instance method in a
+    ///    synchronous nonisolated context」❗（2026-10-21 CI 踩过）
+    @MainActor
+    func reportText() -> String {
         var lines: [String] = []
         lines.append("======== 轻阅 测书源报告 ========")
         lines.append("书源：\(sourceName)")

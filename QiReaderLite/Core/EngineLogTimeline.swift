@@ -19,6 +19,25 @@ enum EngineLogTimeline {
         var errors: Int = 0
     }
 
+    /// **op 名 → 步骤名**（面板上分组的依据）
+    ///
+    /// ⚠️ **不能放在 `RuleSandbox` 里** —— 那个类整体是 `@MainActor`，
+    ///    而这里是**同步**的 nonisolated 上下文 ⇒ 调它会编译报
+    ///    「call to main actor-isolated static method … in a synchronous
+    ///    nonisolated context」❗（2026-10-21 CI 踩过）
+    static func stepNameForOp(_ op: String) -> String {
+        switch op {
+        case "toc": return "目录"
+        case "bookInfo": return "详情"
+        case "content": return "正文"
+        case "search": return "搜索"
+        case "explore", "exploreKinds": return "发现"
+        case "login", "probeLogin": return "登录"
+        case "explainToc", "explain": return "诊断"
+        default: return "引擎"
+        }
+    }
+
     /// 一条日志 → 步骤名
     ///
     /// - Parameter fallback: 当前 op 的步骤名（`[两遍跑]…` 这种没有自己步骤名的日志用它）
@@ -69,7 +88,7 @@ enum EngineLogTimeline {
             let rest = line[t.upperBound...]
             let digits = rest.prefix { $0.isNumber }
             if let ms = Int(digits) {
-                out.append((RuleSandbox.stepNameForOp(op), ms))
+                out.append((stepNameForOp(op), ms))
             }
         }
         return out
