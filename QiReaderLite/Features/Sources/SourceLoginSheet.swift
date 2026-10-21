@@ -381,7 +381,11 @@ struct SourceLoginSheet: View {
     private func binding(_ key: String) -> Binding<String> {
         Binding(
             get: { values[key] ?? "" },
-            set: { values[key] = $0 }
+            set: { newValue in
+                values[key] = newValue
+                // ⚠️ 落盘（按源）—— 重进面板/重启 App 都还在 ✅
+                SourceVariables.setLoginFormValues(values, for: source.bookSourceUrl)
+            }
         )
     }
 
@@ -426,6 +430,12 @@ struct SourceLoginSheet: View {
 
     /// 解析 loginUi（字段名 / 类型 / 按钮动作）
     private func load() {
+        // ⚠️ 已存的**表单值**回填（邮箱/密码等）—— 以前只在内存里，
+        //    关掉面板就没了 ❗（2026-10-21 用户反馈）
+        let saved = SourceVariables.loginFormValues(for: source.bookSourceUrl)
+        if !saved.isEmpty {
+            for (k, v) in saved { values[k] = v }
+        }
         // 已存的番茄 token 回填
         fqToken = SourceVariables.loginInfo(for: source.bookSourceUrl)["手动填写番茄token(可不填)"] ?? ""
         fqTokenSaved = !fqToken.isEmpty

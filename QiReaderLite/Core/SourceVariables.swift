@@ -37,6 +37,33 @@ enum SourceVariables {
         UserDefaults.standard.removeObject(forKey: loginPrefix + sourceUrl)
     }
 
+    // MARK: 登录表单值（loginUi 的输入框）
+
+    /// 登录面板填的值（邮箱/密码等）—— **按源存 UserDefaults**
+    ///
+    /// ⚠️ 为什么必须存（2026-10-21 用户反馈「账号密码重进登录页就没了」）：
+    ///    登录面板的输入框原来只存在内存（@State）⇒ 关掉面板就没了 ❗
+    ///    而登录动作要靠这些值（`result['邮箱']`）⇒ 用户每次都得重填。
+    ///    ⚠️ 另外：**自签换了 bundle ID 就等于换了个 App** ⇒ UserDefaults 整个换容器
+    ///    ⇒ 「覆盖更新后显示未登录」多半是这个，不是代码的锅 ✅
+    private static let loginFormPrefix = "sourceform."
+
+    static func loginFormValues(for sourceUrl: String) -> [String: String] {
+        guard !sourceUrl.isEmpty else { return [:] }
+        let raw = UserDefaults.standard.string(forKey: loginFormPrefix + sourceUrl) ?? ""
+        guard let d = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [:] }
+        return obj
+    }
+
+    static func setLoginFormValues(_ values: [String: String], for sourceUrl: String) {
+        guard !sourceUrl.isEmpty else { return }
+        let keep = values.filter { !$0.key.isEmpty && !$0.value.isEmpty }
+        guard let d = try? JSONSerialization.data(withJSONObject: keep),
+              let s = String(data: d, encoding: .utf8) else { return }
+        UserDefaults.standard.set(s, forKey: loginFormPrefix + sourceUrl)
+    }
+
     // MARK: 登录信息
 
     /// 读某个源的登录信息（map）
