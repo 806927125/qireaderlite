@@ -29,6 +29,9 @@ if [ -z "$SWIFTC" ]; then
   exit 0
 fi
 
+# 门禁 ⑤ 要读仓库里的源码（断言原生请求层真的调了 AnalyzeUrl）
+export QR_REPO_DIR="$(pwd)"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -94,6 +97,25 @@ echo
 rc3=${PIPESTATUS[0]}
 [ $rc3 -ne 0 ] && rc=$rc3
 _sum "$TMP/out3.txt"
+
+# ── 第四组：书源变量合并（Core/SourceVariables.swift）────────
+# ⭐ 站方的 `getArguments` 只在变量串为空时才给默认表 ⇒ 只写一项就把
+#    server/tab/sources/proxy 全丢掉 ⇒ 真机「目录 0 章」的根因之一。
+echo
+echo "=== 编译 Core/SourceVariables.swift（swiftc 真编）==="
+mkdir -p "$TMP/vars"
+cp test/vars-merge-test.swift "$TMP/vars/main.swift"
+if ! "$SWIFTC" -O "$TMP/vars/main.swift" QiReaderLite/Core/SourceVariables.swift -o "$TMP/vars-test" 2>"$TMP/err4.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/vars-test" | tee "$TMP/out4.txt"
+rc4=${PIPESTATUS[0]}
+[ $rc4 -ne 0 ] && rc=$rc4
+_sum "$TMP/out4.txt"
 
 # ⚠️ 汇总行必须**只有一行**、且是**合并后的总数** ——
 #    跑器的汇总解析取「最后一行」⇒ 三组各打一行会把总数算错。

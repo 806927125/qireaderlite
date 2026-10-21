@@ -51,6 +51,7 @@ async function nativeMock(fn, args) {
       if (!headers.cookie && jar[h]) {
         headers.cookie = Object.entries(jar[h]).map(([k, v]) => `${k}=${v}`).join('; ');
       }
+      (win.__reqs = win.__reqs || []).push({ url, method });
       try {
         const res = await fetch(url, {
           method, headers,
@@ -124,6 +125,8 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
 
   const chs = t.chapters || [];
   console.log('  error   :', t.error || '(无)');
+  // 真实发出的目录请求 URL（下面断言用）
+  win.__lastCatalogUrl = (win.__reqs || []).filter(r => /\/catalog/.test(r.url)).map(r => r.url)[0] || '';
   console.log('  章节数  :', chs.length);
   for (const c of chs.slice(0, 3)) {
     console.log(`    · ${c.title}  url=${String(c.url || '').slice(0, 46)}`);
@@ -149,6 +152,11 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
 
   console.log('\n=== 判定 ===');
   ok(!t.error, 'toc 没报错' + (t.error ? '：' + t.error : ''));
+  // ⭐ 变量只写一半 ⇒ server 没了 ⇒ URL 变成 `undefined/catalog` ⇒ 0 章
+  //   （2026-10-21 真机「目录 0 章」的根因之一）⇒ 盯着真实请求 URL
+  const catUrl = String(win.__lastCatalogUrl || '');
+  ok(/^https?:\/\//.test(catUrl),
+     '目录请求 URL 是个真地址（不是 undefined/…）' + (catUrl ? '：' + catUrl.slice(0, 60) : ''));
   ok(chs.length > 0, `目录出章节了（现在 ${chs.length} 条）`);
   // ⚠️ 章节对象是 {title, url, index, ...} —— 字段叫 **title** 不是 name
   ok(chs.every(c => c.title), '每章都有标题');

@@ -829,14 +829,37 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     private func nativeRequest(_ args: [String: Any]) async -> [String: Any] {
         // ⚠️ 别写 URLRequest(url: URL(string: "")!) —— Apple 平台上 URL(string: "") 返回 nil，
         // 强解包会**每次发请求都崩**。Kotlin 的 URL("") 是合法空 URL，Swift 不是。
-        guard let raw = args["url"] as? String,
-              let u = Self.parseURL(raw) else {
+        guard let raw = args["url"] as? String else {
+            return ["ok": false, "error": "URL 非法: \(args["url"] as? String ?? "nil")"]
+        }
+        // ⭐⭐⭐ **必须走 Core/AnalyzeUrl.swift**（2026-10-21 真机「目录 0 章」的根因之二）：
+        //   以前这里只用 `parseURL`（纯 Foundation 的百分号编码）⇒
+        //   **query 里的 `+` 原样保留** ⇒ 服务器按 form 解码时 `'+'` 变**空格**
+        //   ⇒ 🍅大灰狼的 book_id 是 **base64**（base64 字母表里就有 `+` 和 `/`）
+        //   ⇒ **book_id 被损坏** ⇒ 「有的书能开、有的书开不了」 ⇒ 目录 0 章 ❗
+        //   （build166/167 写好的 `analyzeFields` —— `+`→`%2B`、`/`→`%2F`、中文/花括号
+        //     百分号编码 —— **在 App 里一次都没被调用过**，是死代码 ⚠️）
+        //   ⇒ 现在原生请求层跟沙盒（JS 的 analyzeUrl）**用同一套语义** ✅
+        //   ⇒ 沙盒全绿、真机炸的那一类问题，从根上没了。
+        //
+        // ⚠️ method/body 的来源要分清：
+        //   ① 引擎 URL 规则那条链：JS 已经解析过选项了（method/body 在参数里）⇒ 保留参数
+        //   ② 站方 `java.ajax(url)` 那条链：**没**解析过 ⇒ 这里用 AnalyzeUrl 解析出来的
+        let parsed = AnalyzeUrl.parse(raw, baseUrl: "")
+        let hasOption = AnalyzeUrl.hasOptionSuffix(raw)
+        let methodFromOptions = hasOption ? parsed.method : (args["method"] as? String ?? "GET")
+        let bodyFromOptions = hasOption ? parsed.body : (args["body"] as? String ?? "")
+        guard let u = Self.parseURL(parsed.url) else {
             return ["ok": false, "error": "URL 非法: \(args["url"] as? String ?? "nil")"]
         }
         var req = URLRequest(url: u)
 
         // 站方书源的 header 里有 UA / Referer / Cookie，很多站不加就 403
         var header: [String: String] = [:]
+        // ⚠️ 站方 `url,{"headers":{…}}` 选项里的头（**替换**源级头）⇒ 先铺它
+        if hasOption {
+            for (k, v) in parsed.headers { header[k] = v }
+        }
         if let h = args["headers"] as? [String: String] { header.merge(h) { _, new in new } }
         if let srcHeader = currentSource?.header, !srcHeader.isEmpty,
            let parsed = HeaderCodec.decode(srcHeader) {
@@ -870,9 +893,11 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             }
         }
 
-        let method = (args["method"] as? String ?? "GET").uppercased()
+        let method = methodFromOptions.uppercased()
         req.httpMethod = method
-        if let body = args["body"] as? String, !body.isEmpty {
+        if !bodyFromOptions.isEmpty {
+            req.httpBody = bodyFromOptions.data(using: .utf8)
+        } else if let body = args["body"] as? String, !body.isEmpty {
             req.httpBody = body.data(using: .utf8)
         } else if let b64 = args["bodyBase64"] as? String, let d = Data(base64Encoded: b64) {
             req.httpBody = d

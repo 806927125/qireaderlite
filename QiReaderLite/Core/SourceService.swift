@@ -36,7 +36,7 @@ final class SourceService {
         var p: [String: Any] = ["action": action, "formValues": formValues]
         let srcData = try AppEncoder.encode(source)
         var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
-        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -72,7 +72,7 @@ final class SourceService {
         -> (baseUrl: String, messages: [String], stationCheck: Bool) {
         let srcData = try AppEncoder.encode(source)
         var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
-        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -104,7 +104,7 @@ final class SourceService {
         // 书籍变量 / 登录信息：Legado 的 source.getVariable() 是**同步** API，
         // 我们的原生桥是异步的（只能 postMessage）→ 只能原生侧读出来塞进去，
         // 引擎侧同步读。改完由引擎回传（见下面 __sourceVars）。
-        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -366,7 +366,13 @@ final class SourceService {
         m["server"] = bestHost
         if let d = try? JSONSerialization.data(withJSONObject: m),
            let t = String(data: d, encoding: .utf8) {
-            SourceVariables.setVars(t, for: url)
+            // ⚠️⚠️ **必须合并站方默认变量**（2026-10-21 真机「目录 0 章」的根因之一）：
+            //   站方的 `getArguments` 只在变量串**解析失败**时才给默认表；
+            //   只写 `{"server":…}` 这种**只含一项**的合法 JSON ⇒ 它不再给默认
+            //   ⇒ `tab / sources / source_type / proxy …` 全变 undefined ⇒ 源被改坏。
+            let defaults = SourceVariables.defaultVars(for: url)
+            SourceVariables.setVars(
+                SourceVariables.mergeVars(userJSON: t, defaults: defaults), for: url)
         }
         let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
         NSLog("%@", msg)
@@ -374,11 +380,41 @@ final class SourceService {
         return bestHost
     }
 
+    /// 该源**最终生效**的变量串（站方默认 + 用户的改动）
+    ///
+    /// ⭐ 用户从没打开过登录面板时，本地没有站方的默认变量表 ⇒
+    ///    这里**顺手向站方要一份并缓存**（每个源只问一次）⇒
+    ///    之后每次请求都带完整变量（站方 JS 才拿得到 server/tab/sources/proxy）✅
+    func effectiveVars(for source: BookSource) async -> String {
+        if SourceVariables.defaultVars(for: source.bookSourceUrl).isEmpty {
+            _ = await sourceDefaultVars(source: source)
+        }
+        return SourceVariables.effectiveVars(for: source.bookSourceUrl)
+    }
+
+    /// **站方的默认变量表**（jsLib 的 `getArguments('', '')`）—— 写变量时拿它做底
+    ///
+    /// ⭐ 缓存起来（站方的默认值不会变，除非书源更新）⇒ 不给每次请求加开销。
+    func sourceDefaultVars(source: BookSource) async -> [String: Any] {
+        let cached = SourceVariables.defaultVars(for: source.bookSourceUrl)
+        if !cached.isEmpty { return cached }
+        let srcData = try? AppEncoder.encode(source)
+        var srcDict = (try? JSONSerialization.jsonObject(with: srcData ?? Data()) as? [String: Any]) ?? [:]
+        // ⚠️ 这里不能用 effectiveVars(for:)（会递归）⇒ 用原始变量
+        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        guard let raw = try? await RuleSandbox.shared.invoke("sourceVars", ["source": srcDict], source: source),
+              let dict = raw as? [String: Any],
+              let vars = dict["vars"] as? [String: Any], !vars.isEmpty else { return [:] }
+        SourceVariables.setDefaultVars(vars, for: source.bookSourceUrl)
+        return vars
+    }
+
     /// **站方的全部线路**（jsLib 里的 `host` 数组）—— 用来测速挑一条通的
     func sourceHosts(source: BookSource) async throws -> [String] {
         let srcData = try AppEncoder.encode(source)
         var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
-        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
         let dict = raw as? [String: Any] ?? [:]

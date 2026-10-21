@@ -30,6 +30,57 @@ enum SourceVariables {
         UserDefaults.standard.set(value, forKey: varsPrefix + sourceUrl)
     }
 
+    // MARK: - 站方默认变量（jsLib 的 getArguments 兜底）
+
+    /// 站方的**默认变量表**（从 jsLib 的 `getArguments('', '')` 取）—— 缓存在本地
+    ///
+    /// ⭐ 为什么要有它：站方的 `getArguments` 只在变量串**解析失败**（空串）时
+    /// 才给默认值；只要我们写入任何一项，��方就不再给默认 ⇒
+    /// `tab / sources / source_type / proxy …` 全变 undefined ⇒ 源被改坏。
+    /// ⇒ 写变量时用这张表**做底**，用户的改动盖在上面 ✅
+    private static let defaultVarsPrefix = "sourcevars.default."
+
+    static func defaultVars(for sourceUrl: String) -> [String: Any] {
+        guard !sourceUrl.isEmpty else { return [:] }
+        guard let raw = UserDefaults.standard.string(forKey: defaultVarsPrefix + sourceUrl),
+              let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        return obj
+    }
+
+    static func setDefaultVars(_ value: [String: Any], for sourceUrl: String) {
+        guard !sourceUrl.isEmpty else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: value),
+              let s = String(data: data, encoding: .utf8) else { return }
+        UserDefaults.standard.set(s, forKey: defaultVarsPrefix + sourceUrl)
+    }
+
+    /// **合并**：站方默认值（底）＋ 用户的改动（盖）
+    ///
+    /// - Parameters:
+    ///   - userJSON: 用户/引擎存下来的变量串（可能是空串或非法 JSON）
+    ///   - defaults: 站方默认变量表
+    /// - Returns: 合并后的 JSON 串（可直接喂给 `source.getVariable()`）
+    static func mergeVars(userJSON: String, defaults: [String: Any]) -> String {
+        var merged = defaults
+        if let data = userJSON.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for (k, v) in obj { merged[k] = v }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: merged),
+              let s = String(data: data, encoding: .utf8) else { return userJSON }
+        return s
+    }
+
+    /// 该源**最终生效**的变量串（站方默认值 + 用户的改动）
+    ///
+    /// ⚠️ 这一串才是喂给引擎的 `__variables` —— 少了它，
+    ///    站方 JS 拿不到 `server / tab / sources / proxy` ⇒ 行为跟安卓/栖阅不一致。
+    static func effectiveVars(for sourceUrl: String) -> String {
+        mergeVars(userJSON: vars(for: sourceUrl), defaults: defaultVars(for: sourceUrl))
+    }
+
     /// 清掉某个源的书籍变量（删源时用）
     static func clear(for sourceUrl: String) {
         guard !sourceUrl.isEmpty else { return }

@@ -147,7 +147,16 @@ struct SourceLoginSheet: View {
                     Button("好") { dismiss() }
                 }
             }
-            .task { load() }
+            .task {
+                load()
+                // ⭐ 拉一次站方默认变量（jsLib 的 getArguments 兜底表）——
+                //    没有它，面板里看不到 server/tab/sources/proxy 这些默认值，
+                //    而且「改任意一项」就会把它们全丢掉（2026-10-21 真机目录 0 章的根因）。
+                let defaults = await SourceService.shared.sourceDefaultVars(source: source)
+                if !defaults.isEmpty {
+                    varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+                }
+            }
         }
     }
 
@@ -217,6 +226,41 @@ struct SourceLoginSheet: View {
     ///    ⇒ 设备上如果默认那条不通，详情页会**一直转圈一两分钟** ❗
     /// ⇒ 轻阅以前**没有变量编辑入口** ⇒ 用户没法手动换一条通的路。
     ///    现在给了：把 JSON 里的 `"server"` 改成线路地址即可 ✅
+    /// 「本地 / 云端」开关 —— 写进站方变量的 `proxy` 键
+    private var proxyBinding: Binding<String> {
+        Binding(
+            get: {
+                if let m = try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any],
+                   let v = m["proxy"] as? String, !v.isEmpty { return v }
+                return "云端"
+            },
+            set: { newValue in
+                var m = (try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any]) ?? [:]
+                m["proxy"] = newValue
+                if let d = try? JSONSerialization.data(withJSONObject: m),
+                   let t = String(data: d, encoding: .utf8) {
+                    varsText = t
+                }
+                SourceVariables.setVars(
+                    SourceVariables.mergeVars(
+                        userJSON: varsText,
+                        defaults: SourceVariables.defaultVars(for: source.bookSourceUrl)),
+                    for: source.bookSourceUrl)
+                varsSaved = true
+            })
+    }
+
+    private var proxyHint: String {
+        let hasSid = fqToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            || CookieJar.cookieString(for: "https://fanqienovel.com").contains("sessionid")
+        if proxyBinding.wrappedValue == "本地" {
+            return hasSid
+                ? "✅ 已填番茄 sessionid → 本地模式能自己抓番茄详情页，目录最稳"
+                : "⚠️ 本地模式要我们自己抓番茄详情页 → **需要番茄 sessionid**（上面填一个）"
+        }
+        return "云端 = 交给大灰狼服务器抓（它有缓存 ⇒ 缓存里没有的书会 0 章）"
+    }
+
     private var varsBox: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("书源变量（线路 / 服务器）")
@@ -234,8 +278,19 @@ struct SourceLoginSheet: View {
             HStack(spacing: 10) {
                 Button {
                     let raw = varsText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // 空 = 恢复默认（让站方用自己的兜底）
-                    SourceVariables.setVars(raw, for: source.bookSourceUrl)
+                    // ⚠️ 空 = 恢复默认（让站方用自己的兜底）
+                    //    非空 = **合并站方默认变量**再存（只存一项会把
+                    //    server/tab/sources/proxy 全丢掉 ⇒ 源被改坏）
+                    if raw.isEmpty {
+                        SourceVariables.setVars("", for: source.bookSourceUrl)
+                    } else {
+                        SourceVariables.setVars(
+                            SourceVariables.mergeVars(
+                                userJSON: raw,
+                                defaults: SourceVariables.defaultVars(for: source.bookSourceUrl)),
+                            for: source.bookSourceUrl)
+                    }
+                    varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
                     varsSaved = true
                 } label: {
                     Label(varsSaved ? "已保存" : "保存", systemImage: varsSaved ? "checkmark" : "square.and.arrow.down")
@@ -253,6 +308,24 @@ struct SourceLoginSheet: View {
                     .buttonStyle(.bordered)
                 }
             }
+            // ── 本地 / 云端（站方的 proxy 变量）────────────────
+            //  ⭐ 站方 JS 里 `if (url != "" && proxy == "本地")` 才会**自己去抓番茄详情页**，
+            //    把 html 交给大灰狼服务器解析章节；
+            //    「云端」= 让服务器自己抓（它有缓存 ⇒ 缓存没有的书就 0 章）。
+            //  ⇒ 填了番茄 sessionid 就选「本地」，目录最稳 ✅
+            HStack(spacing: 10) {
+                Text("抓取方式").font(.system(size: 13))
+                Picker("", selection: proxyBinding) {
+                    Text("本地（我们自己抓番茄）").tag("本地")
+                    Text("云端（服务器抓，有缓存）").tag("云端")
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                Spacer()
+            }
+            Text(proxyHint)
+                .font(.caption2).foregroundStyle(Theme.sub)
+                .fixedSize(horizontal: false, vertical: true)
             // ── 线路测速：并发试所有站方线路，挑最快的一条写进变量 ──
             Button {
                 probingHosts = true
@@ -310,7 +383,12 @@ struct SourceLoginSheet: View {
            let t = String(data: d, encoding: .utf8) {
             varsText = t
         }
-        SourceVariables.setVars(varsText, for: source.bookSourceUrl)
+        SourceVariables.setVars(
+            SourceVariables.mergeVars(
+                userJSON: varsText,
+                defaults: SourceVariables.defaultVars(for: source.bookSourceUrl)),
+            for: source.bookSourceUrl)
+        varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
         varsSaved = true
         bestHost = host
         // ⚠️ 文案照抄栖阅的「检测当前服务器」卡片（用户点名喜欢这个 UX ✅）
@@ -362,8 +440,12 @@ struct SourceLoginSheet: View {
                         SourceVariables.setLoginHeader("Cookie: " + v, for: source.bookSourceUrl)
                     }
                     // ② 站方自己也读这个键（双保险，两边都能用）
+                    //    ⚠️ 站方取值用正则 `/sessionid=[^;]+/` ⇒ **必须带 `sessionid=` 前缀**
+                    //    只填裸值的话正则匹配不上 ⇒ fqssionid 为空 ⇒ 白填 ❗
+                    let stationSide = raw.isEmpty ? "" :
+                        (raw.contains("sessionid=") ? raw : "sessionid=" + raw)
                     SourceVariables.setLoginInfoValue(
-                        "手动填写番茄token(可不填)", raw,
+                        "手动填写番茄token(可不填)", stationSide,
                         for: source.bookSourceUrl)
                     fqTokenSaved = true
                 } label: {
@@ -447,7 +529,10 @@ struct SourceLoginSheet: View {
         fqTokenSaved = !fqToken.isEmpty
         // ⚠️ 存的没有 → 从 cookie 罐自动抓（内置浏览器登录过的就抓得到）
         if fqToken.isEmpty { autoFillFQSessionId() }
-        varsText = SourceVariables.vars(for: source.bookSourceUrl)
+        // ⚠️ 显示**合并后**的变量（站方默认 + 你的改动）
+        //    站方的 `getArguments` 只在变量串为空时才给默认表 ⇒ 只显示用户那几项
+        //    会让人以为「只有 server 一项」，也不知道 proxy/tab 这些默认值去哪了。
+        varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
         guard let raw = source.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]

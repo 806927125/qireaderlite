@@ -132,8 +132,33 @@ public enum AnalyzeUrl {
         return (s, [:])
     }
 
+    /// **这条 URL 后面有没有带站方的选项后缀 `,{json}`**
+    ///
+    /// ⚠️ 为什么单独暴露：原生请求层要区分两种来源 ——
+    ///   ① 引擎的 URL 规则那条链：**已经**自己解析过选项了（method/body 在参数里）
+    ///   ② 站方 `java.ajax(url)` 那条链：**没**解析过 ⇒ 得在这儿解析
+    ///   ⇒ ② 才用解析出来的 method/body；① 保留参数里传来的 ✅
+    public static func hasOptionSuffix(_ raw: String) -> Bool {
+        let s = String(raw)
+        guard let idx = s.firstIndex(of: ",") else { return false }
+        let rest = s[s.index(after: idx)...].trimmingCharacters(in: .whitespaces)
+        guard rest.hasPrefix("{") else { return false }
+        guard let data = rest.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return obj["method"] != nil || obj["body"] != nil || obj["headers"] != nil
+    }
+
     /// **解析一条 URL 规则**（Legado `AnalyzeUrl` 语义）
     public static func parse(_ raw: String, baseUrl: String) -> AnalyzedURL {
+        // ⚠️⚠️ **data: / blob: / 自定义 scheme 必须原样返回**（2026-10-21 真机栽在这）：
+        //   聚合源（🍅大灰狼）的书籍/目录 URL 是 `data:;base64,<载荷>,{"type":"qingtian"}`，
+        //   载荷是 base64（**没有 `&`**）⇒ 百分号编码会把载荷里的 `+` `/` 改掉 ⇒ 站方解不出 JSON。
+        //   （`Book.normalizeURL` 早就处理过书籍 URL；这里补上 URL 规则这条链。）
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("data:") || lower.hasPrefix("blob:") || lower.hasPrefix("qireaderlite:") {
+            return AnalyzedURL(url: trimmed, method: "GET", headers: [:], body: "", baseUrl: trimmed)
+        }
         let (urlPart, opt) = splitOptions(raw)
 
         let method = String((opt["method"] as? String) ?? "GET").uppercased()

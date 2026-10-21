@@ -913,6 +913,40 @@
       return { hosts: arr };
     },
 
+    /**
+     * **站方的默认书籍变量**（jsLib 里 `getArguments` 的兜底默认值）
+     *
+     * ⭐⭐⭐ 为什么必须有这个 op（2026-10-21 真机「目录 0 章」查出来的根因）：
+     *   站方的 `getArguments(open_argument, key)` **只有变量串解析失败时**
+     *   （也就是空串）才返回它的默认变量表；一旦你写入**任何一项**
+     *   （比如「测速选最快线路」写 `{"server":"…"}`），
+     *   它就**不再给默认** ⇒ `tab / sources / source_type / proxy …` 全变 undefined
+     *   ⇒ 源被改坏（实测：只写 `{"proxy":"本地"}` ⇒ `server` 没了 ⇒
+     *     请求 URL 变成 `undefined/catalog` ⇒ 4 本书全部 0 章 ❗）
+     *
+     *   而且那份兜底默认表里**没有 `proxy`** ⇒ 站方 JS 里的
+     *   `if (url != "" && proxy == "本地")` 永远不成立 ⇒
+     *   **它不去抓番茄详情页** ⇒ 目录请求的 body 里 `html` 恒为空
+     *   ⇒ 大灰狼服务器只能靠自己的缓存（响应 `"cache":true`）
+     *   ⇒ **缓存里有的书能出目录，没有的就是 0 章** ⭐
+     *
+     * ⇒ 所以 App 写变量时必须**拿站方自己的默认值做底**，再盖上用户的改动 ✅
+     */
+    sourceVars: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var out = {};
+        try {
+          if (typeof g !== 'undefined' && typeof g.getArguments === 'function') {
+            var d = g.getArguments('', '');
+            if (d && typeof d === 'object') out = d;
+          }
+        } catch (e) { out = {}; }
+        return { vars: out };
+      });
+    },
+
     exploreKinds: function (p) {
       var src = p.source || {};
       runtime.source = src;
