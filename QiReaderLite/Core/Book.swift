@@ -47,7 +47,22 @@ struct Book: Codable, Identifiable, Hashable {
 
     static func normalizeURL(_ raw: String) -> String {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !s.isEmpty, let u = URL(string: s) else { return "" }
+        guard !s.isEmpty else { return "" }
+        // ⚠️⚠️ **data: / blob: / 自定义 scheme 必须原样返回**（2026-10-21 真机栽在这）
+        //   聚合源（🍅大灰狼）的书籍 URL 是 `data:;base64,<载荷>,{"type":"qingtian"}`，
+        //   而 `URL(string:).absoluteString` 会把那个 `{"type":…}` **百分号编码**成
+        //   `%7B%22type%22%3A%22qingtian%22%7D` ⇒ 引擎的 `,{` 后缀剥离**失效**
+        //   ⇒ 载荷被污染 → 站方 `JSON.parse(java.hexDecodeToString(result))` 炸
+        //   → 「JSON Parse error: Unable to parse JSON string」→ 详情页整条规则静默失效。
+        //
+        //   ⚠️ 沙盒测不到：我的活体测试传的是**原始** bookUrl，
+        //      而 App 传的是 `cleanBookUrl`（规范化后的）—— 两边走的不是同一条路！
+        //   ⇒ 引擎侧还有一道防御（dataUrlContent 也能剥百分号编码的后缀）。
+        let lower = s.lowercased()
+        if lower.hasPrefix("data:") || lower.hasPrefix("blob:") || lower.hasPrefix("qireaderlite:") {
+            return s
+        }
+        guard let u = URL(string: s) else { return s }
         return u.absoluteString
     }
 }

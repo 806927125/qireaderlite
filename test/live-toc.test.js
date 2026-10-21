@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require('./harness');
+const { looksServerSide, skipServerSide } = require('./live-helpers');
 
 const SRC = process.env.SRC_OUT ||
   '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json';
@@ -104,6 +105,9 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   const books = ex.books || [];
   console.log('  探索到书:', books.length);
   const book = books[0];
+  if (!book && looksServerSide(logs, toasts)) {
+    skipServerSide('限流/未登录', logs.concat(toasts).join(' | ').slice(0, 160));
+  }
   if (!book) { console.log('❌ 连书都没有，后面的没法测'); process.exit(1); }
   console.log('  用这本:', book.name);
   console.log('  bookUrl:', String(book.bookUrl).slice(0, 70));

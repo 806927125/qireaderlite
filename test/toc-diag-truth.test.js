@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require('./harness');
+const { looksServerSide, skipServerSide } = require('./live-helpers');
 
 const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
 const SRC = process.env.SRC_OUT ||
@@ -30,6 +31,7 @@ const UA = 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/5
 
 const jar = {};
 const toasts = [];
+const logs = [];
 function hostOf(u) { try { return new URL(u).host; } catch (e) { return ''; } }
 
 async function nativeMock(fn, args) {
@@ -116,6 +118,11 @@ async function nativeMock(fn, args) {
       source, kindUrl: picked.url, page: 1,
     })})`);
     const books = ex.books || [];
+    // ⚠️ 站方限流（番茄免登录上限/未登录/线路故障）→ **跳过**，不是引擎的锅。
+    //   只认**明确的站方措辞**，不认「0 本」本身（那个是真 bug，build160 修过）。
+    if (!books.length && looksServerSide(logs, toasts)) {
+      skipServerSide('限流/未登录', logs.concat(toasts).join(' | ').slice(0, 160));
+    }
     ok(books.length > 0, '探索到书了（' + books.length + ' 本）');
     if (books.length) {
       const book = books[0];

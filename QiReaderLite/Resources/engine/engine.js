@@ -414,7 +414,13 @@
     //    bookInfo/toc 这条链**没有**先过 analyzeUrl，逗号后缀还粘在载荷后面，
     //    解出来就是 `{"a":1}{"type":"x"}` → JSON.parse 报
     //    "Unexpected non-whitespace character after JSON"。
-    var m = /,\s*(?=\{)/.exec(data);
+    //
+    // ⚠️⚠️ **后缀可能已经被百分号编码**（2026-10-21 真机栽在这）：
+    //   宿主侧用 `URL(string:).absoluteString` 规范化过 →
+    //   `,{"type":"x"}` 变成 `,%7B%22type%22%3A%22x%22%7D`
+    //   ⇒ 只认 `,{` 的正则**剥不掉** → 载荷被污染 → 站方 JSON.parse 炸。
+    //   ⇒ 这里**两种形态都认**（宿主侧已修，但引擎这边再兜一道）。
+    var m = /,\s*(?=\{|%7B)/i.exec(data);
     if (m) data = data.slice(0, m.index);
     return data;
   }

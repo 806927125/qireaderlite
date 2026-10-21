@@ -44,8 +44,16 @@ fi
 echo "✓ 编译通过"
 
 echo
-"$TMP/compat-test"
-rc=$?
+"$TMP/compat-test" | tee "$TMP/out1.txt"
+rc=${PIPESTATUS[0]}
+SP=0; SF=0
+_sum() {  # $1=输出文件 → 把「通过 N / 失败 M」加进 SP/SF
+  local n m
+  n=$(grep -oE '通过 [0-9]+' "$1" | tail -1 | grep -oE '[0-9]+' || echo 0)
+  m=$(grep -oE '失败 [0-9]+' "$1" | tail -1 | grep -oE '[0-9]+' || echo 0)
+  SP=$((SP + ${n:-0})); SF=$((SF + ${m:-0}))
+}
+_sum "$TMP/out1.txt"
 
 # ── 第二组：URL 规则（Core/AnalyzeUrl.swift）─────────────────
 # ⚠️ 栖阅的 URL 规则是**原生 Swift**；轻阅原来放 JS → 沙盒和真机两套实现 → 栽过两次。
@@ -62,7 +70,33 @@ if ! "$SWIFTC" -O "$TMP/url/main.swift" QiReaderLite/Core/AnalyzeUrl.swift -o "$
 fi
 echo "✓ 编译通过"
 echo
-"$TMP/url-test"
-rc2=$?
+"$TMP/url-test" | tee "$TMP/out2.txt"
+rc2=${PIPESTATUS[0]}
 [ $rc2 -ne 0 ] && rc=$rc2
+_sum "$TMP/out2.txt"
+
+# ── 第三组：书籍 URL 规范化（Core/Book.swift）───────────────
+# ⚠️ data:/blob:/ 自定义 scheme **必须原样返回** ——
+#    `URL(string:).absoluteString` 会把 `,{"type":"x"}` 百分号编码 →
+#    引擎的 `,{` 后缀剥离失效 → 聚合源详情页整条规则静默失效（真机专属的坑）。
+echo
+echo "=== 编译 Core/Book.swift（swiftc 真编）==="
+mkdir -p "$TMP/book"
+cp test/book-url-test.swift "$TMP/book/main.swift"
+if ! "$SWIFTC" -O "$TMP/book/main.swift" QiReaderLite/Core/Book.swift -o "$TMP/book-test" 2>"$TMP/err3.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err3.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/book-test" | tee "$TMP/out3.txt"
+rc3=${PIPESTATUS[0]}
+[ $rc3 -ne 0 ] && rc=$rc3
+_sum "$TMP/out3.txt"
+
+# ⚠️ 汇总行必须**只有一行**、且是**合并后的总数** ——
+#    跑器的汇总解析取「最后一行」⇒ 三组各打一行会把总数算错。
+echo
+echo "✅ 通过 $SP / 失败 $SF（swift 原生层合并）"
 exit $rc

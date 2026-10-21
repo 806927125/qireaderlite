@@ -26,6 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require('./harness');
+const { looksServerSide, skipServerSide } = require('./live-helpers');
 
 const SRC = process.env.SRC_OUT ||
   '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json';
@@ -111,6 +112,9 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   const books = ex.books || [];
   console.log('  探索到书:', books.length);
   const book = books[0];
+  if (!book && looksServerSide(logs, toasts)) {
+    skipServerSide('限流/未登录', logs.concat(toasts).join(' | ').slice(0, 160));
+  }
   ok(!!book, '探索到书了');
   if (!book) { console.log(`\n❌ 通过 ${pass} / 失败 ${fail}`); process.exit(1); }
   console.log('  用这本:', book.name);
@@ -135,6 +139,28 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   console.log('  简介长度:', (b.intro || '').length);
   console.log('  log     :', logs.slice(0, 2).join(' / ').slice(0, 160));
   console.log('  toast   :', toasts.slice(0, 2).join(' / ').slice(0, 120));
+
+  // ⚠️⚠️ **回归用例**：宿主侧曾用 `URL(string:).absoluteString` 规范化过书源 URL，
+  //   把 `,{"type":"x"}` 变成 `,%7B%22type%22%3A%22x%22%7D` ⇒ 引擎剥不掉后缀
+  //   ⇒ 载荷被污染 → 站方 JSON.parse 炸 → 详情页整条规则静默失效（**真机专属**）。
+  //   ⇒ 引擎这边要能扛住这个形态（Swift 侧已修，这里是第二道防线）。
+  console.log('\n=== ② 被 Foundation 规范化过的书源 URL（回归用例）===');
+  {
+    const raw = String(book.bookUrl || '');
+    const norm = raw.replace(/,\s*(?=\{)/, ',%7B');   // 模拟 URL(string:).absoluteString 的效果
+    console.log('  原始  :', raw.slice(0, 90));
+    console.log('  规范化:', norm.slice(0, 90));
+    const info2 = await win.eval("window.__qrInvoke('bookInfo', " + JSON.stringify({
+      source,
+      bookUrl: norm,
+      book: Object.assign({}, book, { variables: {} }),
+    }) + ")");
+    const b2 = info2.book || {};
+    console.log('  error :', info2.error || '(无)');
+    console.log('  名称  :', b2.name || '(空)');
+    ok(!info2.error, '规范化形态不报错' + (info2.error ? '：' + info2.error : ''));
+    ok(!!b2.name, '规范化形态也能拿到书名');
+  }
 
   console.log('\n=== 判定 ===');
   // ⚠️ 站方服务器会限流/抽风 → 活体门禁会偶发红。
