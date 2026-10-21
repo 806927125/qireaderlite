@@ -276,6 +276,9 @@ final class SourceService {
         var title: String = ""
         var url: String = ""
         var style: String = ""
+        /// **所属分组**（站方用装饰行当组标题，如「☆ 排行榜 ☆」）
+        /// ⇒ 照抄栖阅 `ExploreCategorySplit.groups()` ✅
+        var group: String = ""
     }
     struct KindsDTO: Codable {
         var kinds: [KindDTO] = []

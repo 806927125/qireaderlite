@@ -1460,17 +1460,40 @@
   };
 
   function normalizeKinds(arr, base) {
-    return (arr || []).map(function (k) {
+    // ⚠️⚠️ **分组**（照抄栖阅 `ExploreCategorySplit.groups()` / `_splitExploreCategories(_)`）
+    //
+    //   站方（🍅大灰狼）把分类分成组，组标题是**装饰行**，形如
+    //     `○ *。*☆ 排行榜 ☆*。* ○`  /  `○ *。*☆ 热门标签 ☆*。* ○`
+    //   真正的分类是 `标题::URL` 两段式。
+    //   ⇒ 栖阅：没有 "::" 的行 = **组标题**，后面的项归到这一组
+    //      （界面上就是那个「分类筛选」面板：分类 / ☆排行榜☆ / ☆热门标签☆）
+    //   ⇒ 轻阅原来把组标题也当成一个分类（URL 为空）→ 分组出不来、点不动 ❗
+    var out = [];
+    var group = '';
+    (arr || []).forEach(function (k) {
       if (typeof k === 'string') {
-        var p = k.split('::');
-        return { title: p[0], url: dom.absolutize((p[1] || '').trim(), base), style: '' };
+        var raw = String(k).trim();
+        if (!raw) return;
+        if (raw.indexOf('::') < 0) {
+          // 没有 "::" ⇒ 组标题（装饰符号剥掉，只留文字）
+          group = raw.replace(/[*☆○●•·　\s]+/g, '').trim() || raw;
+          return;
+        }
+        var p = raw.split('::');
+        var title = p[0].trim();
+        var url = dom.absolutize((p[1] || '').trim(), base);
+        if (!title || !url) return;
+        out.push({ title: title, url: url, style: '', group: group });
+        return;
       }
-      return {
+      out.push({
         title: String(k.title || k.name || k.text || ''),
         url: dom.absolutize(String(k.url || k.link || ''), base),
-        style: (k.style && typeof k.style === 'object') ? JSON.stringify(k.style) : String(k.style || '')
-      };
-    }).filter(function (k) { return k.title; });
+        style: (k.style && typeof k.style === 'object') ? JSON.stringify(k.style) : String(k.style || ''),
+        group: String(k.group || '')
+      });
+    });
+    return out.filter(function (k) { return k.title; });
   }
 
   /* 正文清洗：去广告行、去首尾空行 */
