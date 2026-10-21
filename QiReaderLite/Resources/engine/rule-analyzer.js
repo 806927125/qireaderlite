@@ -373,7 +373,24 @@
       return once().then(function (r) {
         var real = (recorded.length === 0);
         if (holding) QR.__qrHoldEnd(real);
-        if (!recorded.length || depth >= MAX_PASS) { restore(); return r; }
+        if (!recorded.length) {
+          try { QR.java.log('[两遍跑] 第' + depth + ' 遍：没有 ajax 调用 ⇒ 这一遍的结果是真的'); } catch (e) {}
+          restore(); return r;
+        }
+        if (depth >= MAX_PASS) {
+          // ⚠️⚠️ **轮数用尽 = 这一遍拿到的是空结果**（2026-10-21 真机「时好时坏」）：
+          //   站方 `JSON.parse(java.ajax(url))` 会炸 → 整条规则静默失效。
+          //   ⇒ 必须**喊出来**，否则日志里什么都看不出来。
+          try {
+            QR.java.log('[两遍跑] ⚠️ 轮数用尽（上限 ' + MAX_PASS + '）仍有 ' + recorded.length
+              + ' 个调用没命中缓存 ⇒ **这一遍是空结果，详情/目录大概率失败**');
+          } catch (e) {}
+          restore(); return r;
+        }
+        try {
+          QR.java.log('[两遍跑] 第' + depth + ' 遍录到 ' + recorded.length
+            + ' 个调用 → 抓回来，下一遍重试（上限 ' + MAX_PASS + ' 遍）');
+        } catch (e) {}
         return fetchRecorded(recorded, cache).then(function () { return loop(); });
       });
     }
@@ -418,7 +435,12 @@
                 }
               } catch (e) { /* 忽略 */ }
             })
-            .catch(function () { out[u] = ''; });
+            .catch(function () {
+              // ⚠️⚠️ 同上：浏览器打不开**不写缓存** ⇒ 下一遍会重试
+              //   （原来写空串 ⇒ 下一遍命中空页面 ⇒ 站方从空页面抠 token
+              //     ⇒ 交接 URL 本身就是错的 ⇒ 必然失败）
+              delete out[u];
+            });
         }
         var t = null;
         try { t = (QR.analyzeUrl) ? QR.analyzeUrl(u, { baseUrl: '' }) : null; } catch (e) { t = null; }
@@ -428,20 +450,39 @@
         var body = (t && t.body) || '';
         return QR.java.rawRequest(url, method, headers, body)
           .then(function (resp) {
-            out[u] = (resp && resp._body) || '';
+            var bodyText = (resp && resp._body) || '';
+            var code = resp && resp._code;
+            // ⚠️⚠️⚠️ **临时性故障不写缓存**（2026-10-21 真机「详情页时好时坏」的根因）：
+            //   以前这里是 `out[u] = (resp && resp._body) || ''` —— **失败也写缓存**。
+            //   ⇒ 网络抖一下（超时 / 502）⇒ 缓存里躺了个**空串**
+            //   ⇒ 第 2 遍 `java.ajax` **命中了这个空串** ⇒ 返回 ''
+            //   ⇒ 而且「命中缓存就不录了」⇒ `recorded.length === 0`
+            //   ⇒ 被判定成「这一遍是真的」⇒ **直接返回空串，不再重试** ❗
+            //   ⇒ 站方 `JSON.parse('')` 炸 ⇒ 详情页加载失败
+            //   ⇒ **一次网络抖动 = 整条详情规则死定** ⭐ 这就是「时好时坏」
+            //
+            //   ⇒ 现在：**异常状态码不写缓存** ⇒ 下一遍会重新录、重新请求
+            //      ⇒ 两遍跑天然带上了重试能力（MAX_PASS 5 轮兜底）✅
+            //   ⇒ 而「200 + 正常响应」照常写缓存（服务器明确答了，重试也没用）
+            var bad = !!(code && (code < 200 || code >= 400));
+            if (bad) {
+              delete out[u];
+            } else {
+              out[u] = bodyText;
+            }
             // ⚠️⚠️ **失败/异常必须喊出来**（2026-10-21）：
             //   以前这里是 `.catch(function(){ out[u] = ''; })` —— 失败被**静默吞掉**，
             //   站方 JS 拿到空串 → 报出 `abstract.split` / `Unable to parse JSON string`
             //   这种**天书错**，谁也看不出是「服务器挂了」。
             //   ⇒ 现在把 URL / 状态 / 响应开头都打进引擎日志，一眼定位。
-            var code = resp && resp._code;
             if (resp && resp._body === '') {
               QR.java.log('[ajax空响应] ' + String(u).slice(0, 160)
                 + '  状态=' + code);
-            } else if (code && (code < 200 || code >= 400)) {
+            } else if (bad) {
               QR.java.log('[ajax异常状态] ' + String(u).slice(0, 160)
                 + '  状态=' + code + '  响应开头='
-                + String((resp && resp._body) || '').slice(0, 200));
+                + String(bodyText).slice(0, 200)
+                + '  ⇒ 不写缓存，下一遍重试');
             }
             // 缓存别无限长（URL 带随机码的请求会一直加新键）
             var keys = Object.keys(out);
@@ -450,7 +491,9 @@
             }
           })
           .catch(function (e) {
-            out[u] = '';
+            // ⚠️⚠️ **请求异常（超时 / 网络错）同样不写缓存** ⇒ 下一遍能重试
+            //    （原来是 `out[u] = ''` ⇒ 空串进缓存 ⇒ 再也不重试 ⇒ 一次抖动就死）
+            delete out[u];
             try {
               QR.__qrLastAjax = {
                 url: String(u || ''), code: 0, body: '',
@@ -458,7 +501,8 @@
               };
             } catch (e2) { /* 忽略 */ }
             QR.java.log('[ajax失败] ' + String(u).slice(0, 160) + '  '
-              + String(e && e.message || e));
+              + String(e && e.message || e)
+              + '  ⇒ 不写缓存，下一遍重试');
           });
       });
     });

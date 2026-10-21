@@ -29,6 +29,7 @@ declare -a GATES=(
   "login-card:test/live-login-card.test.js"
   "toc-diag-truth:test/toc-diag-truth.test.js"
   "b64-url-mangle:test/b64-url-mangle.test.js"
+  "ajax-retry:test/ajax-retry.test.js"
   "qiyue-parity:test/qiyue-parity.test.js"
   "analyze-url-parity:test/analyze-url-parity.test.js"
   "source-vars:test/source-vars.test.js"
