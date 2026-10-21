@@ -39,6 +39,9 @@ struct SourceLoginSheet: View {
     /// 书源变量（JSON）—— 聚合源把「服务器地址 / 线路」存在这儿
     @State private var varsText = ""
     @State private var varsSaved = false
+    @State private var probing = false
+    @State private var probeResult: String = ""
+    @State private var bestHost: String = ""
     @State private var fqTokenSaved = false
 
     struct Field: Identifiable {
@@ -244,7 +247,67 @@ struct SourceLoginSheet: View {
                     .buttonStyle(.bordered)
                 }
             }
+            // ── 线路测速：并发试所有站方线路，挑最快的一条写进变量 ──
+            Button {
+                probing = true
+                probeResult = ""
+                Task { await probeLines() }
+            } label: {
+                Label(probing ? "测速中…" : "测速并选最快线路", systemImage: "speedometer")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.bordered)
+            .disabled(probing)
+            if !probeResult.isEmpty {
+                Text(probeResult)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    /// 并发测速站方的所有线路 → 把最快的一条写进书源变量的 `server`
+    ///
+    /// ⚠️ 为什么需要（2026-10-21 真机）：`v5.langge.uk` 在用户网络里**直接超时**
+    ///    ⇒ 站方详情页会**逐条试 8 条线路** ⇒ 详情页转圈一两分钟 ❗
+    ///    ⇒ 一次并发测速（6 秒超时）→ 挑通的写进去 ⇒ 立刻恢复 ✅
+    private func probeLines() async {
+        defer { probing = false }
+        var hosts: [String] = []
+        if let s = source {
+            hosts = (try? await SourceService.shared.sourceHosts(source: s)) ?? []
+        }
+        // 兜底：当前变量里的 server 也一起测
+        if let m = try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any],
+           let sv = m["server"] as? String, !sv.isEmpty, !hosts.contains(sv) {
+            hosts.insert(sv, at: 0)
+        }
+        guard !hosts.isEmpty else {
+            probeResult = "没拿到站方的线路列表（jsLib 里没有 host 数组？）"
+            return
+        }
+        let results = LegadoCompat.pingHosts(hosts, timeout: 6)
+        let ok = results.filter { ($0["ok"] as? Bool) == true }
+        guard let best = ok.first, let host = best["host"] as? String else {
+            let detail = results.map { r in
+                "\(r["host"] as? String ?? "") \(($0["ok"] as? Bool) == true ? "通" : "不通")"
+            }.joined(separator: "、")
+            probeResult = "全部线路都不通：\(detail)"
+            return
+        }
+        let ms = (best["ms"] as? Int) ?? -1
+        // 写进书源变量的 server
+        var m = (try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any]) ?? [:]
+        m["server"] = host
+        if let d = try? JSONSerialization.data(withJSONObject: m),
+           let t = String(data: d, encoding: .utf8) {
+            varsText = t
+        }
+        SourceVariables.setVars(varsText, for: source.bookSourceUrl)
+        varsSaved = true
+        bestHost = host
+        probeResult = "已选：\(host)（\(ms)ms）。共试了 \(results.count) 条，通 \(ok.count) 条。"
     }
 
     // MARK: - 番茄 sessionid（手动兜底）

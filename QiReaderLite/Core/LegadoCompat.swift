@@ -179,6 +179,71 @@ enum LegadoCompat {
 
     /// 同步通道的**唯一**入口：JS 通过 `window.prompt` 把 {fn, args} 送过来，
     /// 这里回一个 JSON 串（`{"ok":true,"value":...}` 或 `{"ok":false,"error":...}`）。
+    // MARK: - 线路测速
+
+    /// **并发测速一组线路**，返回「地址 + 毫秒」列表（快的在前）
+    ///
+    /// ⚠️ 为什么需要：🍅大灰狼把线路放在站方 jsLib 的 `host` 数组里，
+    ///    默认那台（v5.langge.uk）**在某些网络下直接超时** ⇒
+    ///    详情页逐条兜底 → 转圈一两分钟 ❗
+    /// ⇒ 一次并发测速 → 自动选一条通的写进书源变量 ✅
+    ///
+    /// - Parameters:
+    ///   - hosts: 线路地址数组
+    ///   - timeout: 每条线路的超时秒数（默认 6 秒，够短才不会干等）
+    /// - Returns: `[{host, ms, ok}]`，ok=false 的排最后
+    public static func pingHosts(_ hosts: [String], timeout: Double = 6) -> [[String: Any]] {
+        let sem = DispatchSemaphore(value: 0)
+        var results = [[String: Any]]()
+        let lock = NSLock()
+
+        for host in hosts {
+            guard let u = URL(string: host) else { continue }
+            var req = URLRequest(url: u)
+            req.httpMethod = "GET"
+            req.timeoutInterval = timeout
+            req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+            let cfg = URLSessionConfiguration.ephemeral
+            cfg.timeoutIntervalForRequest = timeout
+            cfg.timeoutIntervalForResource = timeout
+            let session = URLSession(configuration: cfg)
+            let t0 = Date()
+            let group = DispatchGroup()
+            group.enter()
+            var entry: [String: Any] = ["host": host, "ms": -1, "ok": false]
+            session.dataTask(with: req) { _, resp, err in
+                let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                entry["ms"] = ms
+                // ⚠️ **有响应就算通**（不管状态码）—— 服务器返回 4xx/5xx 也说明网络是通的
+                entry["ok"] = (err == nil) && (code > 0)
+                lock.lock(); results.append(entry); lock.unlock()
+                group.leave()
+            }.resume()
+            group.leave()
+        }
+        // 等所有（或超时）
+        let deadline = Date().addingTimeInterval(timeout + 2)
+        while Date() < deadline {
+            if results.count >= hosts.count { break }
+            usleep(120_000)
+        }
+        _ = sem
+        // 通的排前面，按耗时升序
+        return results.sorted { a, b in
+            let ao = (a["ok"] as? Bool) ?? false
+            let bo = (b["ok"] as? Bool) ?? false
+            if ao != bo { return ao }
+            return ((a["ms"] as? Int) ?? 999999) < ((b["ms"] as? Int) ?? 999999)
+        }
+    }
+
+    /// 引擎/请求用的 UA（和书源请求一致）
+    static var userAgent: String {
+        "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 "
+        + "(KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36 Edg/138.0.0.0"
+    }
+
     static func handle(fn: String, args: [String: Any]) -> [String: Any] {
         switch fn {
         case "timeFormat":

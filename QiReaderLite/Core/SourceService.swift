@@ -291,6 +291,17 @@ final class SourceService {
         return dto.books.map { $0.toBook(origin: source.bookSourceUrl, sourceName: source.name) }
     }
 
+    /// **站方的全部线路**（jsLib 里的 `host` 数组）—— 用来测速挑一条通的
+    func sourceHosts(source: BookSource) async throws -> [String] {
+        let srcData = try AppEncoder.encode(source)
+        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
+        let dict = raw as? [String: Any] ?? [:]
+        return (dict["hosts"] as? [String]) ?? []
+    }
+
     func exploreKinds(source: BookSource) async throws -> [KindDTO] {
         let dto: KindsDTO = try await call("exploreKinds", json([:]), as: KindsDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }

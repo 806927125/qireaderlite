@@ -893,6 +893,26 @@
     },
 
     /** 发现页的分类列表 */
+    /**
+     * **站方的全部线路**（jsLib 里的 `host` 数组）
+     *
+     * 为什么要这个 op：🍅大灰狼把线路列表放在**站方 jsLib 的全局 `host`** 里
+     *   （`['https://v5.langge.uk', 'http://219.154.201.122:5006', 'https://v4…', …]`），
+     *   轻阅自己不知道有哪些线路 ⇒ 用户只能一个个手试。
+     *   ⇒ 读出来交给 App **并发测速**，自动选一条通的写进书源变量 ✅
+     */
+    sourceHosts: function (p) {
+      var h = (typeof g !== 'undefined') ? g.host : null;
+      var arr = [];
+      if (Array.isArray(h)) {
+        for (var i = 0; i < h.length; i++) {
+          var s = String(h[i] || '').trim();
+          if (s && arr.indexOf(s) < 0) arr.push(s);
+        }
+      }
+      return { hosts: arr };
+    },
+
     exploreKinds: function (p) {
       var src = p.source || {};
       runtime.source = src;
