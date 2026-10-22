@@ -255,9 +255,15 @@
     var names = Object.keys(scope);
     var args = names.map(function (k) { return scope[k]; });
     var key = names.join(',') + '\u0001' + code;
-    var fn = evalCache[key];
-    var fnExpr = null;
-    if (!fn) {
+    // ⚠️⚠️ **三种形态要一起缓存**（2026-10-22 真机栽在这）
+    //   以前只缓存主函数 ⇒ 缓存命中时**兜底形态没了** ⇒
+    //   同一条规则第二次跑（站方的「两遍跑」机制、翻页…）就废
+    //   ⇒ 表现是「第一次能出、第二次就空」⇒ 极难查 ⭐
+    var entry = evalCache[key];
+    var fn = entry ? entry.fn : null;
+    var fnExpr = entry ? entry.fnExpr : null;
+    var fnBody = entry ? entry.fnBody : null;
+    if (!entry) {
       try {
         /* jshint evil:true */
         fn = new Function(names.concat(['__qrCode']).join(','),
@@ -269,10 +275,19 @@
         //     第二次就能拿到值。轻阅原来直接失败 ❌
         fnExpr = new Function(names.concat(['__qrCode']).join(','),
           'return eval("(" + __qrCode + ")");');
+        // ⚠️⭐⭐ **第三种形态：整段当「函数体」**（2026-10-22 真机查出来的）
+        //   直接 eval 出来的代码是 **Script**（不是 FunctionBody）
+        //   ⇒ 顶层 `return` 是语法错（"Illegal return statement"）
+        //   ⇒ 站方凡是写 `return xxx;` 的 @js: 规则**全废**
+        //     （前两种形态都救不了：脚本形态语法错、表达式形态更语法错）
+        //   ⇒ 再包一层函数体试一次：此时顶层 return 合法，函数返回值就是结果 ✅
+        //   ⚠️ 末尾补一个换行 ⇒ 代码里最后一行是 `//` 注释也不会把 `})()` 吃掉
+        fnBody = new Function(names.concat(['__qrCode']).join(','),
+          'return eval("(function(){" + __qrCode + "\\n})()");');
       } catch (e) {
         return Promise.reject(new Error('JS 作用域非法: ' + e.message));
       }
-      evalCache[key] = fn;
+      evalCache[key] = { fn: fn, fnExpr: fnExpr, fnBody: fnBody };
     }
     var fixed = fixRhinoLenient(code);
 
@@ -280,12 +295,30 @@
       try {
         return Promise.resolve(fn.apply(scope, args.concat([fixed])));
       } catch (e) {
-        // 语法错 → 整段当表达式再试一次（栖阅语义）
-        if (e && e.name === 'SyntaxError' && fnExpr) {
-          try {
-            return Promise.resolve(fnExpr.apply(scope, args.concat([fixed])));
-          } catch (e2) {
-            return Promise.reject(new Error('JS 执行失败: ' + (e2 && e2.message)));
+        // 语法错 → 换一种形态再试（栖阅语义）
+        if (e && e.name === 'SyntaxError') {
+          // ① 整段当**表达式**（`@js:{a:1}` 这种对象字面量规则）
+          if (fnExpr) {
+            try {
+              return Promise.resolve(fnExpr.apply(scope, args.concat([fixed])));
+            } catch (e2) {
+              // ② 整段当**函数体**（支持顶层 `return`）
+              if (fnBody) {
+                try {
+                  return Promise.resolve(fnBody.apply(scope, args.concat([fixed])));
+                } catch (e3) {
+                  return Promise.reject(new Error('JS 执行失败: ' + (e3 && e3.message)));
+                }
+              }
+              return Promise.reject(new Error('JS 执行失败: ' + (e2 && e2.message)));
+            }
+          }
+          if (fnBody) {
+            try {
+              return Promise.resolve(fnBody.apply(scope, args.concat([fixed])));
+            } catch (e3) {
+              return Promise.reject(new Error('JS 执行失败: ' + (e3 && e3.message)));
+            }
           }
         }
         return Promise.reject(new Error('JS 执行失败: ' + (e && e.message)));
@@ -834,17 +867,25 @@
       case T.JS: {
         var jt = splitJsWithTail(body);
         var jsRunScope = makeScope(jsScope(base, base, ctx, body));
-        // ⚠️⚠️⚠️ **JS 规则的 `result` 要是「当前页原文」**（Legado 语义，2026-10-22 真机查出来的）
+        // ⚠️⚠️⚠️ **`result` 的语义由【基准】决定**（别在这里一刀切）（2026-10-22 真机栽在这）
         //
-        //   站方（🍒NovelHub 整合源）大量这么取当前页：
-        //       try { var raw = (typeof result !== "undefined" && result != null) ? result : ""; }
-        //       var s = String(raw);
-        //       var mb = s.match(/<div class="book-like">([\s\S]*?)<\/div>/);
-        //   ⇒ 轻阅给的 result 是 `dom.textOf(node)`（**纯文本**）⇒
-        //      正则拿到的是「[object HTMLDocument]」或纯文本 ⇒ **永远匹配不上** ⇒ 列表 0 本 ⭐
+        //   · 页面级规则（bookList / chapterList / init / content）⇒ result = **当前页原文**
+        //     站方（🍒NovelHub 整合源）大量这么取当前页：
+        //         try { var raw = (typeof result !== "undefined" && result != null) ? result : ""; }
+        //         var s = String(raw);
+        //         var mb = s.match(/<div class="book-like">([\s\S]*?)<\/div>/);
+        //     ⇒ 必须是 HTML **源码**，不能是 `dom.textOf(node)` 的纯文本 ⇒ 否则列表 0 本 ⭐
         //
-        //   ⚠️ 只在 **JS 规则**上改 ⇒ DOM / JSONPath 规则的 result 语义不变（零回归面）
-        if (ctx && ctx.raw != null) { jsRunScope.result = ctx.raw; }
+        //   · 条目级规则（name / author / **bookUrl** / coverUrl / chapterName / chapterUrl…）
+        //     ⇒ result = **那一条记录**（列表项 / init 的输出）
+        //     站方（🍅大灰狼）的 bookUrl / tocUrl 规则就是这么写的：
+        //         let book_id = result.book_id;   let sources = result.source;
+        //     ⇒ 一刀切成「当前页原文」⇒ result.book_id 恒 undefined
+        //        ⇒ 站方只生成了 `{"tab":"小说","url":""}` ⇒ book_id=undefined
+        //           ⇒ 服务器回「illegal base64 data at input byte 9」⇒ 整本书崩 ⭐
+        //
+        //   ⇒ 判据在 `jsResultOf()` 里（按基准分流）⇒ **这里不要再覆盖**
+        //      （一刀切覆盖就是 build206 那个回归的根因 ⭐）
         p = runJs(jt.code, jsRunScope)
           .then(function (r) {
             // 复合规则 `<js>代码</js>选择器`：JS 算出个值，再从里面取字段
@@ -982,20 +1023,42 @@
     return j;
   }
 
+  /**
+   * `result` 该给什么 —— **按【基准】分流**（Legado 语义）
+   *
+   * ⚠️⚠️⚠️ 2026-10-22 真机栽在这（build206 的回归）：
+   *   我把 `result` **一律**换成了「当前页原文」（ctx.raw）⇒ 把**条目级**规则也一起换了
+   *   ⇒ 🍅大灰狼的 `ruleExplore.bookUrl` / `ruleBookInfo.tocUrl` 都是
+   *      `let book_id = result.book_id;` ⇒ result.book_id 恒 undefined
+   *      ⇒ 站方只生成了 `{"tab":"小说","url":""}` ⇒ 详情/目录请求全是 book_id=undefined
+   *         ⇒ 服务器回「illegal base64 data at input byte 9」⇒ 整本书崩 ⭐
+   *
+   * ⇒ 现在的规则（**基准决定 result**）：
+   *   · 基准是**对象**（列表项 / init 的输出）⇒ result = **那个对象本身**
+   *     （条目级规则：name / author / bookUrl / coverUrl / chapterName / chapterUrl…）
+   *   · 基准是**文档**（页面级规则：bookList / chapterList / init / content）⇒
+   *     result = **当前页的原始内容**（HTML 源码，不是 `dom.textOf` 的纯文本）
+   *   · 基准是**元素**（DOM 列表项）⇒ result = 元素的纯文本（旧行为）
+   *   · 基准是**字符串 / 数组** ⇒ 原样（旧行为）
+   */
+  function jsResultOf(base, ctx) {
+    if (base == null) return (ctx && ctx.raw != null) ? ctx.raw : '';
+    if (typeof base === 'object' && !Array.isArray(base) && !base.nodeType) {
+      return base;                                  // ← 条目级：列表项 / init 输出
+    }
+    if (base.nodeType === 9) {                      // ← 页面级：当前页原文
+      if (ctx && ctx.raw != null) return ctx.raw;
+      return dom.textOf(base);
+    }
+    if (base.nodeType) return dom.textOf(base);    // ← DOM 元素
+    return base;                                    // ← 字符串 / 数组
+  }
+
   function jsScope(result, base, ctx, code) {
     return {
-      // ⚠️⚠️⚠️ **`result` 优先用 `ctx.raw`（当前页的【原始内容】）**（2026-10-22 轻阅实证）
-      //   Legado/栖阅的语义：`result` = 当前内容页的原始内容（HTML 源码），
-      //   站方常这么用它：`var s = String(result); s.match(/<div class="book-like">…/)`
-      //   轻阅以前给的是 `dom.textOf(node)`（**纯文本**）⇒ 站方正则永远匹配不上
-      //   ⇒ 🍒NovelHub 的**目录/正文全平台 0**（详情能通是因为 bookInfo 走了 markContent）
-      //
-      //   ⚠️ 这一处必须放在 jsScope 里（不能只改 evalOne）——
-      //   **复合规则 `<js>…</js>$.data` 走的是 getJsonList**，它也用 jsScope ⇒
-      //   只改 evalOne ⇒ 复合规则漏掉 ⇒ 目录照样 0 ⭐
-      result: (ctx && ctx.raw != null) ? ctx.raw
-             : (Array.isArray(result) ? result
-             : (result && result.nodeType ? dom.textOf(result) : result)),
+      // ⚠️⚠️⚠️ **`result` 按【基准】分流**（页面级 = 当前页原文 / 条目级 = 那条记录）
+      //   详细判据见上面的 `jsResultOf()`（2026-10-22 真机栽在这：一刀切 = 回归）⭐
+      result: jsResultOf(result, ctx),
       $: asJsonish(result),
       resultNode: result,
       // 覆盖 makeScope 的默认 java：让 get/getString 能回退到「当前结果」

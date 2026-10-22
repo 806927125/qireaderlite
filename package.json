@@ -13,8 +13,8 @@
     "test:login": "node test/login-status.test.js"
   },
   "devDependencies": {
-    "jsdom": "^29.1.1",
+    "eslint": "^9.0.0",
     "js-sha1": "^0.7.0",
-    "eslint": "^9.0.0"
+    "jsdom": "^29.1.1"
   }
 }

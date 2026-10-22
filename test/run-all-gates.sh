@@ -46,6 +46,7 @@ declare -a GATES=(
   "book-raw:test/book-raw.test.js"
   "js-no-tail:test/js-no-tail.test.js"
   "data-url-bookid:test/data-url-bookid.test.js"
+  "result-semantics:test/result-semantics.test.js"
   "filter-action:test/filter-action.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
