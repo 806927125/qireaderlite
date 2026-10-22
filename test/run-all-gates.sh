@@ -37,6 +37,7 @@ declare -a GATES=(
   "global-isolation:test/global-isolation.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "explore-groups:test/explore-groups.test.js"
+  "js-no-interpolate:test/js-no-interpolate.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
   "timeout-budget:test/request-timeout-budget.test.js"

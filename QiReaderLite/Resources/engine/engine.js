@@ -1051,8 +1051,19 @@
         // exploreUrl 常是 @js:，可能返回数组，也可能返回 JSON 字符串
         if (rule.classify(spec) === rule.T.JS) {
           var scope = rule.makeScope({ baseUrl: ctx.baseUrl, source: src });
-          // JS 里常内嵌 {{$.xxx}} / {{page}}，要先展开再跑
-          var jsCode = rule.interpolate(rule.stripJsWrapper(spec), scope);
+          // ⚠️⚠️⚠️ **@js: 规则里不要做 `{{}}` 插值**（2026-10-22 实测 NovelHub 聚合源炸在这）
+          //   Legado / 栖阅的语义：**`@js:` 是 JS 源码，里面的 `{{}}` 原样保留**
+          //   （插值只发生在「URL 模板」规则上，比如 searchUrl 的 `https://x?q={{keyword}}`）
+          //
+          //   以前这里插值 ⇒ 踩了两个坑：
+          //   ① `{{...}}`（**JS 对象展开语法**）被 evalExpr 求值失败 → 吃成空串
+          //      ⇒ **整个 JS 语法坏掉** ⇒ 「Invalid or unexpected token」⭐
+          //   ② `{{page+1}}` / `{{(page-1)*30}}` 被算成**固定数字**
+          //      ⇒ 站方 JS 拼出来的分类 URL 的 page 写死 ⇒ **发现页翻页失效** ⭐
+          //
+          //   ⇒ 不插值的话：站方 JS 拼出的 URL 模板里 `{{page}}` 原样留着
+          //      ⇒ 后面 `explore` op 的 buildUrl 才插值 ⇒ **翻页正常** ✅
+          var jsCode = rule.stripJsWrapper(spec);
           return rule.runJs(jsCode, scope).then(function (r) {
             var arr = r;
             if (typeof arr === 'string') {
