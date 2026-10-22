@@ -531,7 +531,45 @@
     return s.slice(0, n) + '…[全长' + s.length + ']';
   }
 
-  function dataUrlContent(u) {
+  /* ⚠️ 纯 JS 的 base64 编解码（**必须按 UTF-8**）
+   *   atob/btoa 是 **Latin-1** ⇒ 「小说」会变「å°è¯´」（我自己的诊断日志就栽在这 ⭐）
+   *   ⇒ 自己查表 + TextDecoder/TextEncoder
+   */
+  var B64TBL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  function b64DecodeUtf8(str) {
+    try {
+      var s = String(str || '').replace(/[^A-Za-z0-9+/=]/g, '');
+      var bin = atob(s);
+      var arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(arr);
+      return decodeURIComponent(escape(bin));
+    } catch (e) { return ''; }
+  }
+  function b64EncodeUtf8(str) {
+    try {
+      var s = String(str == null ? '' : str);
+      var bytes;
+      if (typeof TextEncoder !== 'undefined') {
+        bytes = new TextEncoder().encode(s);
+      } else {
+        var bin = unescape(encodeURIComponent(s));
+        bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      }
+      var out = '';
+      for (var j = 0; j < bytes.length; j += 3) {
+        var b0 = bytes[j], b1 = bytes[j + 1], b2 = bytes[j + 2];
+        out += B64TBL[b0 >> 2];
+        out += B64TBL[((b0 & 3) << 4) | ((b1 === undefined ? 0 : b1) >> 4)];
+        out += (b1 === undefined) ? '=' : B64TBL[((b1 & 15) << 2) | ((b2 === undefined ? 0 : b2) >> 6)];
+        out += (b2 === undefined) ? '=' : B64TBL[b2 & 63];
+      }
+      return out;
+    } catch (e) { return ''; }
+  }
+
+  function dataUrlContent(u, book) {
     var s = String(u == null ? '' : u);
     var i = s.indexOf(',');
     if (i < 0) return '';
@@ -548,6 +586,34 @@
     //   ⇒ 这里**两种形态都认**（宿主侧已修，但引擎这边再兜一道）。
     var m = /,\s*(?=\{|%7B)/i.exec(data);
     if (m) data = data.slice(0, m.index);
+    // ⭐⭐⭐ **把【书对象的原始字段】补进 data: 载荷**（2026-10-22 真机「book_id=undefined」）
+    //   聚合源（🍅大灰狼）的 bookUrl / tocUrl 是 `data:;base64,<载荷>,{…}`，
+    //   载荷里本来应该有 book_id / source / tab，站方的 init 规则直接从**载荷**里解构：
+    //       let { book_id, source: sources, tab, … } = JSON.parse(java.hexDecodeToString(result));
+    //   但载荷里**只有 tab 和 url** ⇒ book_id=undefined ⇒ 详情/目录请求全废
+    //   ⇒ 而宿主手里**有** book_id（列表接口返回的原始字段）⇒
+    //      **在这里把书对象的字段合并进载荷再重新编码**，站方就能解出来 ✅
+    //   ⚠️ 站方用 `hexDecodeToString` 解（不是 hex 就按 base64 试）⇒ 我们重编成 base64 没问题
+    if (book && typeof book === 'object') {
+      try {
+        var _dec = b64DecodeUtf8(data);
+        if (_dec && _dec.indexOf('{') >= 0) {
+          var _obj = JSON.parse(_dec);
+          var _added = [];
+          for (var _bk in book) {
+            if (_bk === 'variables' || _bk === 'bookUrl' || _bk === 'tocUrl') continue;
+            if (!(_bk in _obj)) { _obj[_bk] = book[_bk]; _added.push(_bk); }
+          }
+          if (_added.length) {
+            data = b64EncodeUtf8(JSON.stringify(_obj));
+            try {
+              QR.java.log('[data:载荷] 已补上书对象的字段: ' + _added.join(',') +
+                          '（新载荷长 ' + data.length + '）');
+            } catch (e3) {}
+          }
+        }
+      } catch (e) { /* 载荷不是 JSON 就别动 */ }
+    }
     // 👁️ **只观测，不改行为**（2026-10-21 真机 0 章排查）：
     //   之前这里加过「在第一个 `&` 处截断」⇒ 实测是回归（2566 章 → 0 章）⇒ 已撤。
     //   现在只把载荷的真实形状打出来，让真机数据说话：
@@ -564,11 +630,14 @@
       //   而宿主这边只看到一串 base64 ⇒ 根本看不出缺了哪个字段 ⭐
       //   ⇒ 这里**只观测不改行为**：解一次（解不开就说解不开）并打出内容
       var _dec = null, _why = '';
+      // ⚠️⚠️ **必须用宿主自己的解码器**（java.hexDecodeToString ⇒ 内含 UTF-8 修正）
+      //   我以前直接用 `atob` ⇒ 返回 **Latin-1** ⇒ 「小说」变「å°è¯´」
+      //   ⇒ **我自己的诊断日志骗了我两轮**（真机其实解出的是正确的「小说」）⭐
       try {
-        if (typeof g.atob !== 'function') { throw new Error('无 atob'); }
-        _dec = g.atob(data.replace(/\s/g, ''));
+        _dec = b64DecodeUtf8(data);
+        if (!_dec) { throw new Error('解不开'); }
       } catch (e2) {
-        _why = '（标准 base64 解不开：' + String(e2 && e2.message || e2).slice(0, 60) + '）';
+        _why = '（解不开：' + String(e2 && e2.message || e2).slice(0, 60) + '）';
       }
       if (_dec !== null) {
         // ⭐ 站方载荷常是 **URL 编码过的** ⇒ 先还原再解
@@ -587,7 +656,8 @@
     //    聚合源用它把参数塞进「URL」里（data:;base64,<载荷>,{选项}）。
     //    载荷直接当**页面内容**交给后面的规则（init 规则会自己解）。
     if (u.indexOf('data:') === 0) {
-      var content = dataUrlContent(u);
+      // ⚠️ 传 ctx.book ⇒ 好把书对象的原始字段（book_id 等）补进载荷
+      var content = dataUrlContent(u, ctx && ctx.book);
       runtime.baseUrl = u;
       return Promise.resolve({
         resp: { ok: true, code: 200, url: u, _body: content },
