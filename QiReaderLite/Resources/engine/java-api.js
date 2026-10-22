@@ -268,6 +268,10 @@
       try {
         var bin = g.atob(s), arr = new Uint8Array(bin.length);
         for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        // ⚠️⚠️⚠️ **必须按 UTF-8 解**（2026-10-22 真机回归，我自己踩的）
+        //   `atob` 返回的是 **Latin-1**（每个字节一个字符）⇒ 直接返回就是乱码：
+        //   「小说」⇒「å°è¯´」⇒ 站方解出 tab 乱码、书名乱码 ⇒ 全线崩 ⭐
+        //   ⇒ 必须走 `utf8Decode` 把字节按 UTF-8 重新解 ⭐
         return utf8Decode(arr);
       } catch (e) {}
     }

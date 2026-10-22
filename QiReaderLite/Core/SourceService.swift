@@ -181,6 +181,13 @@ final class SourceService {
         /// 解码时直接丢掉、toBook 再硬传 `tocUrl: ""`，于是**每本书的 tocUrl 都是空的**
         /// → 目录永远退回书籍页 → 0 章且不报错。
         var tocUrl: String = ""
+        /// ⭐⭐⭐ **列表项的【原始字段】**（2026-10-22 真机栽在这）
+        ///   站方 jsLib 生成 `data:;base64,<载荷>` 时要用 **book_id / bid / item_id** 之类，
+        ///   而宿主原先只把 name/author/… 九个字段送给站方 ⇒ **book_id 压根没传过去**
+        ///   ⇒ 站方只生成了 `{"tab":"小说","url":""}` ⇒ 详情/目录请求全是 book_id=undefined
+        ///      ⇒ 服务器回「illegal base64 data at input byte 9」⇒ 整本书崩 ⭐
+        ///   ⇒ 这里把**原始 item 的所有键**留一份 ⇒ 往下传（见 Book.rawJSON）
+        var raw: [String: String]? = nil
 
         init() {}
 
@@ -195,9 +202,10 @@ final class SourceService {
             lastChapter = g(.lastChapter); coverUrl = g(.coverUrl)
             bookUrl = g(.bookUrl);     wordCount = g(.wordCount)
             tocUrl = g(.tocUrl)
+            raw = (try? c.decodeIfPresent([String: String].self, forKey: .raw)) as? [String: String]
         }
         private enum K: String, CodingKey {
-            case name, author, intro, kind, lastChapter, coverUrl, bookUrl, wordCount, tocUrl
+            case name, author, intro, kind, lastChapter, coverUrl, bookUrl, wordCount, tocUrl, raw
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: K.self)
@@ -206,6 +214,7 @@ final class SourceService {
             try c.encode(lastChapter, forKey: .lastChapter); try c.encode(coverUrl, forKey: .coverUrl)
             try c.encode(bookUrl, forKey: .bookUrl);   try c.encode(wordCount, forKey: .wordCount)
             try c.encode(tocUrl, forKey: .tocUrl)
+            try c.encodeIfPresent(raw, forKey: .raw)
         }
     }
     struct BookListDTO: Codable {
@@ -242,8 +251,16 @@ final class SourceService {
                 for item in arr {
                     guard let one = item as? [String: Any],
                           let data = try? JSONSerialization.data(withJSONObject: one),
-                          let b = try? AppDecoder.decode(BookDTO.self, from: data)
+                          var b = try? AppDecoder.decode(BookDTO.self, from: data)
                     else { continue }
+                    // ⭐⭐⭐ **原始 item 的所有键都留一份**（站方 jsLib 生成 data: 载荷时要用
+                    //   book_id 之类；宿主原先只送九���字段 ⇒ 站方拿不到 ⇒ 载荷缺 book_id ⇒ 全崩）
+                    var rawMap: [String: String] = [:]
+                    for (rk, rv) in one {
+                        if rv is NSNull { continue }
+                        rawMap[rk] = (rv as? String) ?? String(describing: rv)
+                    }
+                    b.raw = rawMap
                     list.append(b)
                 }
             }
@@ -759,20 +776,26 @@ extension SourceService.BookDTO {
     func toBook(origin: String, sourceName: String) -> Book {
         Book(origin: origin, bookUrl: bookUrl, name: name, author: author, intro: intro,
              kind: kind, lastChapter: lastChapter, coverUrl: coverUrl, wordCount: wordCount,
-             tocUrl: tocUrl, sourceName: sourceName, detailLoaded: false)
+             tocUrl: tocUrl, sourceName: sourceName, raw: raw ?? [:], detailLoaded: false)
     }
 }
 
 extension Book {
     /// 送进沙盒的原始字典（引擎不认识 Swift 的 Book 类型）
     var rawJSON: [String: Any] {
-        ["bookUrl": bookUrl, "name": name, "author": author, "intro": intro,
+        // ⭐⭐⭐ **把列表项的原始字段平铺进来**（2026-10-22 真机）
+        //   站方 jsLib 生成 `data:;base64,<载荷>` 时要读 **book.book_id** 之类
+        //   ⇒ 宿主原先只送九个字段 ⇒ 站方拿不到 ⇒ 载荷只有 {tab,url} ⇒ book_id=undefined
+        //      ⇒ 服务器回「illegal base64 data at input byte 9」⇒ 详情/目录全空 ⭐
+        var out: [String: Any] = ["bookUrl": bookUrl, "name": name, "author": author, "intro": intro,
          "kind": kind, "lastChapter": lastChapter, "coverUrl": coverUrl, "wordCount": wordCount,
          "tocUrl": tocUrl,
          // ⚠️ 必须有 variables —— 站方会调 `book.getVariable('custom')`
          //    （🍅大灰狼的 ruleToc.chapterList / ruleContent.content 都调）
          //    → 没有这个键，wrapBook 的 vars 是空的 → 取不到 → 规则照常跑（返回 ''）
          "variables": [String: String]()]
+        for (rk, rv) in raw { if out[rk] == nil { out[rk] = rv } }
+        return out
     }
 }
 

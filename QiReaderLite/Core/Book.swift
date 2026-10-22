@@ -19,6 +19,11 @@ struct Book: Codable, Identifiable, Hashable {
     var wordCount: String = ""
     var tocUrl: String = ""
     var sourceName: String = ""
+    /// ⭐⭐⭐ **列表项的【原始字段】**（2026-10-22 真机）
+    ///   站方 jsLib 生成 `data:;base64,<载荷>` 时要读 **book.book_id** 之类
+    ///   ⇒ 宿主原先只送 name/author/… ⇒ 站方拿不到 ⇒ 载荷缺 book_id
+    ///      ⇒ 详情/目录请求全是 book_id=undefined ⇒ 服务器回「illegal base64」⇒ 整本书崩 ⭐
+    var raw: [String: String] = [:]
 
     /// 搜索结果还没跑过详情页时为 true，点进书架后补齐
     var detailLoaded: Bool = false

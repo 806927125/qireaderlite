@@ -823,7 +823,22 @@
       var jchain = items.reduce(function (acc, item) {
         return acc.then(function (list) {
           return extractOneBook(item, listRule, ctx, page.url, {}).then(function (b) {
-            if (b && b.name) list.push(b);
+            if (b && b.name) {
+              // ⭐⭐⭐ **把列表项的【原始字段】并进 book 对象**（2026-10-22 真机栽在这）
+              //   站方 jsLib 生成 `data:;base64,<载荷>` 时要用 **book_id / bid / item_id** 之类
+              //   ⇒ 宿主原先只把 name/author/… 九个字段送给站方 ⇒ **book_id 压根没传过去**
+              //   ⇒ 站方只生成了 `{"tab":"小说","url":""}` ⇒ 详情/目录请求全是 book_id=undefined
+              //      ⇒ 服务器回「illegal base64 data at input byte 9」⇒ 整本书崩 ⭐
+              //   ⇒ 这里把**原始 item 的所有键**都带上（站方要什么有什么）
+              try {
+                if (item && typeof item === 'object') {
+                  for (var rk in item) {
+                    if (!(rk in b)) b[rk] = item[rk];
+                  }
+                }
+              } catch (e) {}
+              list.push(b);
+            }
             return list;
           });
         });
@@ -1642,18 +1657,26 @@
                 ' ‖ 实际tocUrl=' + brief(absolutizeMaybe(v[6] || url, page.url)) +
                 ' ‖ 书名=' + brief(v[0], 40));
             } catch (e) {}
-            return {
-              book: {
-                name: v[0] || (p.book && p.book.name) || '',
-                author: v[1] || '',
-                intro: v[2] || '',
-                kind: v[3] || '',
-                lastChapter: v[4] || '',
-                coverUrl: absolutizeMaybe(v[5], page.url),
-                tocUrl: absolutizeMaybe(v[6] || url, page.url),
-                wordCount: v[7] || ''
-              }
+            var _bk = {
+              name: v[0] || (p.book && p.book.name) || '',
+              author: v[1] || '',
+              intro: v[2] || '',
+              kind: v[3] || '',
+              lastChapter: v[4] || '',
+              coverUrl: absolutizeMaybe(v[5], page.url),
+              tocUrl: absolutizeMaybe(v[6] || url, page.url),
+              wordCount: v[7] || ''
             };
+            // ⭐⭐⭐ **把 p.book 的【原始字段】也带上**（同上）
+            //   站方 jsLib 拿 book_id 生成 data: 载荷 ⇒ 缺了就只有 {tab,url} ⇒ 全线崩
+            try {
+              if (p.book && typeof p.book === 'object') {
+                for (var pk in p.book) {
+                  if (!(pk in _bk) && pk !== 'variables') _bk[pk] = p.book[pk];
+                }
+              }
+            } catch (e2) {}
+            return { book: _bk };
           });
             });
         });
