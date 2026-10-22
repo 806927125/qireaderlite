@@ -56,21 +56,16 @@ ok(chipBlock.length > 0, '找到 filterChip');
 ok(chipBlock.indexOf('.background(') < 0, '筛选胶囊没有再叠 .background（玻璃套玻璃 = 一坨灰糊）');
 
 console.log('');
-console.log('=== 5. 分类页全平铺（栖阅同款，不自己造分组）===');
+console.log('=== 5. 分类页分组：组名用装饰行原文，空的叫「分类」（别用原始 JSON）===');
 const picker = fs.readFileSync(
   path.join(root, 'QiReaderLite', 'Features', 'Explore', 'CategoryPickerView.swift'), 'utf8');
 const pickerCode = stripComments(picker);
-ok(pickerCode.indexOf('private var groups') < 0,
-   '分类页不再有 groups 分组（站方 group 字段本来就是空的，那是我们自己造的）');
-ok(/private var shown:\s*\[SourceService\.KindDTO\]/.test(pickerCode),
-   'shown 是扁平的 KindDTO 数组（一个网格全平铺）');
-ok(!/dict\[name, default: \[\]\]/.test(pickerCode),
-   '不再用「按名字分字典」的方式造分组');
-ok(/t == "未分组" \|\| t == "全部分类"/.test(pickerCode),
-   '「未分组 / 全部分类」这两个自造名改为**过滤掉**（不是当分组名用）');
-ok(/func isActionItem/.test(pickerCode), '有动作项过滤（个人中心/登录/书架那类不是分类）');
-ok(!/actionWords[^\n]*推荐榜/.test(pickerCode),
-   '「推荐榜」是**真分类**（栖阅那页第一个就是它）⇒ 不能被当动作项过滤掉');
+ok(/private var groups/.test(pickerCode),
+   '分类页保留分组（栖阅同款：分类 / ○ *。☆ 排行榜 ☆*。* ○ / …）');
+ok(/let key = k\.group/.test(pickerCode), '组名优先用 group（引擎从装饰行解析的）');
+ok(!/key = k\.style/.test(pickerCode),
+   '组名**不再回落到 style**（那会显示成 `{"layout_flexGrow":1,...}` 这种原始 JSON）');
+ok(/\? "分类" :/.test(pickerCode), '没有组名时叫「分类」（跟栖阅那页一致）');
 
 console.log('');
 console.log('=== 6. 登录页接入液态玻璃（按钮也要玻璃，栖阅同款）===');
