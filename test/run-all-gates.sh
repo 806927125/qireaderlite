@@ -48,6 +48,7 @@ declare -a GATES=(
   "data-url-bookid:test/data-url-bookid.test.js"
   "result-semantics:test/result-semantics.test.js"
   "rule-syntax-compat:test/rule-syntax-compat.test.js"
+  "swift-dto-tolerant:test/swift-dto-tolerant.test.js"
   "filter-action:test/filter-action.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"

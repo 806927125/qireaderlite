@@ -1887,7 +1887,35 @@
             ' ‖ 实际用=' + brief(url));
         } catch (e) {}
         var ctx = { baseUrl: url, source: src, book: p.book };
-        var maxPages = Math.max(1, p.maxPages || 3);
+        var maxPages = Math.max(1, p.maxPages || 10);
+
+        /**
+         * 算出「下一跳」：站方的 nextTocUrl 可能给
+         *   ① 一个 URL（字符串）② **一组 URL（数组）**（红薯小说一次给全所有剩余页）
+         *   ③ 空 ⇒ 自己找「下一页」链接
+         */
+        function finishNext(list, u, v, page) {
+          var explicit = '';
+          var explicitList = [];
+          if (Array.isArray(v)) {
+            explicitList = v.map(function (x) { return String(x || '').trim(); })
+                           .filter(Boolean);
+            explicit = explicitList[0] || '';
+          } else if (v != null && typeof v === 'object') {
+            explicit = '';
+          } else {
+            explicit = String(v == null ? '' : v).trim();
+          }
+          var nextUrl = absolutizeMaybe(explicit || findNextPage(page.doc, page.url), page.url);
+          // 下一跳 URL 必须真的变了，否则会死循环
+          if (nextUrl && nextUrl === u) nextUrl = '';
+          try {
+            QR.java.log('[目录] 本页命中=' + (list ? list.length : 0) +
+              ' 条 ‖ nextUrl=' + brief(nextUrl, 160) +
+              (explicitList.length > 1 ? (' ‖ 站方一次给了 ' + explicitList.length + ' 页') : ''));
+          } catch (e) {}
+          return { list: list, nextUrl: nextUrl, nextUrls: explicitList };
+        }
 
         /** 抓一页目录，返回 { list, nextUrl } */
         function one(u, offset) {
@@ -1948,32 +1976,57 @@
             }).then(function (list) {
               // 站方给了 nextTocUrl 就用它，否则自己找「下一页」链接
               var explicit = '';
-              if (tr.nextTocUrl && ruleText(tr.nextTocUrl).trim()) {
-                try { explicit = dom.value(page.doc, ruleText(tr.nextTocUrl), page.url); } catch (e) {}
+              var explicitList = [];
+              var ntxt = tr.nextTocUrl ? ruleText(tr.nextTocUrl).trim() : '';
+              if (ntxt) {
+                // ⚠️⚠️ **JSON 页面的 nextTocUrl 要拿【JSON 原文】**（2026-10-23 真机踩到）
+                //   站方写法（🍅红薯小说）：
+                //     nextTocUrl = '@js:\nvar n=JSON.parse(result); n=n.totalpage; …list'
+                //   ⇒ 它要 `result` 是**JSON 字符串** ⇒ 以前在 HTML 文档上求值
+                //      ⇒ `JSON.parse(result)` 炸 ⇒ nextUrl 空 ⇒ **不翻页 ⇒ 目录只有 50 章** ⭐
+                //   ⇒ JSON 页面时用 `ctx.raw`（= page.text）作 result
+                if (ctx && ctx.isJSON && rule.classify(ntxt) === rule.T.JS) {
+                  try {
+                    var ns = rule.makeScope(rule.jsScope(page.doc, page.doc, ctx, ntxt));
+                    ns.result = (ctx.raw != null) ? ctx.raw : page.text;
+                    return rule.runJs(rule.stripJsWrapper(ntxt), ns).then(function (v) {
+                      return finishNext(list, u, v, page);
+                    }).catch(function () { return finishNext(list, u, '', page); });
+                  } catch (e) { /* 落回 HTML 路径 */ }
+                }
+                try { explicit = dom.value(page.doc, ntxt, page.url); } catch (e) {}
               }
-              var nextUrl = absolutizeMaybe(explicit || findNextPage(page.doc, page.url), page.url);
-              // 下一跳 URL 必须真的变了，否则会死循环
-              if (nextUrl && nextUrl === u) nextUrl = '';
-              try {
-                QR.java.log('[目录] 本页命中=' + (list ? list.length : 0) +
-                  ' 条 ‖ nextUrl=' + brief(nextUrl, 160));
-              } catch (e) {}
-              return { list: list, nextUrl: nextUrl };
+              return finishNext(list, u, explicit, page);
             });
           });
         }
 
         // 部分站目录要串行翻多页；下标跨页累计，别每页都从 0 开始
-        function loop(u, n, acc) {
-          if (!u || n >= maxPages) return Promise.resolve(acc);
+        //
+        // ⚠️⚠️ **队列 + 去重**（2026-10-23 真机「红薯目录只有 50 章」）
+        //   站方（🍅红薯小说）的 nextTocUrl **一次返回所有剩余页的数组**：
+        //     '@js: var n=JSON.parse(result); … for(i=2;i<=n;i++) list.push(baseUrl+i); list'
+        //   ⇒ 以前只认**一个** URL ⇒ 只翻一页 ⇒ **目录只有 50 章**（一页 50 条）⭐
+        //   ⇒ 现在：nextTocUrl 给数组 ⇒ **当队列** ⇒ 逐页抓
+        //   ⇒ 且**去重**（站方每页都会再给一次同样的数组 ⇒ 不去重会重复抓 + 章节重复）
+        var seen = {};
+        function loop(queue, n, acc) {
+          if (!queue || !queue.length || n >= maxPages) return Promise.resolve(acc);
+          // 跳过已经抓过的页（站方每页都给全量数组 ⇒ 不去重会死循环 + 章节重复）
+          while (queue.length && seen[queue[0]]) queue.shift();
+          if (!queue.length || n >= maxPages) return Promise.resolve(acc);
+          var u = queue.shift();
+          seen[u] = 1;
           return one(u, acc.length).then(function (r) {
             var merged = acc.concat(r.list);
-            if (!r.list.length || !r.nextUrl) return merged;
-            return loop(r.nextUrl, n + 1, merged);
+            if (!r.list.length) return merged;
+            var q = (r.nextUrls && r.nextUrls.length) ? r.nextUrls.slice()
+                    : (r.nextUrl ? [r.nextUrl] : []);
+            return loop(q, n + 1, merged);
           });
         }
 
-        return loop(url, 0, []).then(function (chapters) {
+        return loop([url], 0, []).then(function (chapters) {
           var rawCount = chapters ? chapters.length : 0;
           // ⚠️⚠️⚠️ **过滤「书自己」那条占位**（2026-10-22 真机「QQ 阅读目录出不来」查出来的）
           //   大灰狼服务器的 `/catalog` 对**它没抓到章节的书**会返回**一条占位**：

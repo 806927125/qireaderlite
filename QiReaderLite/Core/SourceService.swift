@@ -278,6 +278,20 @@ final class SourceService {
         var index: Int = 0
         var isVolume: Bool = false
         var tag: String = ""
+
+        /// ⚠️⚠️ **容错解码**（2026-10-23 真机踩到）
+        ///   Swift 的 `Codable` **不会用属性默认值兜底** ⇒ 引擎少给一个键
+        ///   ⇒ `keyNotFound` ⇒ **整个 op 的结果全废**（目录页整页报错）
+        ///   ⇒ 一律 `decodeIfPresent ?? 默认值`（跟 BookDTO 一样）
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            func g(_ k: K) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? "" }
+            url = g(.url); title = g(.title)
+            index = (try? c.decodeIfPresent(Int.self, forKey: .index)) ?? 0
+            isVolume = (try? c.decodeIfPresent(Bool.self, forKey: .isVolume)) ?? false
+            tag = g(.tag)
+        }
+        private enum K: String, CodingKey { case url, title, index, isVolume, tag }
     }
     struct TocDTO: Codable {
         var chapters: [ChapterDTO] = []
@@ -303,6 +317,15 @@ final class SourceService {
         var content: String = ""
         var nextUrl: String = ""
         var error: String? = nil
+
+        /// ⚠️ **容错解码**（同 KindDTO：Swift 不用属性默认值兜底）
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            func g(_ k: K) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? "" }
+            title = g(.title); content = g(.content); nextUrl = g(.nextUrl)
+            error = try? c.decodeIfPresent(String.self, forKey: .error)
+        }
+        private enum K: String, CodingKey { case title, content, nextUrl, error }
     }
     struct KindDTO: Codable {
         var title: String = ""
@@ -311,6 +334,18 @@ final class SourceService {
         /// **所属分组**（站方用装饰行当组标题，如「☆ 排行榜 ☆」）
         /// ⇒ 照抄栖阅 `ExploreCategorySplit.groups()` ✅
         var group: String = ""
+
+        /// ⚠️⚠️ **容错解码**（2026-10-23 真机踩到）
+        ///   老式静态分类（`标题::URL`）的 kind **没有 group 字段**
+        ///   ⇒ Swift 的 `Codable` **不会用属性默认值兜底** ⇒ `keyNotFound(group)`
+        ///   ⇒ **整个发现页报错**（「解析 KindsDTO 失败 —— 缺字段 group」）
+        ///   ⇒ 一律 `decodeIfPresent ?? 默认值`
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            func g(_ k: K) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? "" }
+            title = g(.title); url = g(.url); style = g(.style); group = g(.group)
+        }
+        private enum K: String, CodingKey { case title, url, style, group }
     }
     struct KindsDTO: Codable {
         var kinds: [KindDTO] = []
@@ -347,6 +382,21 @@ final class SourceService {
         var paramKey: String = ""
         var action: String = ""
         var id: String { title + "|" + paramKey }
+
+        /// ⚠️⚠️ **容错解码**（2026-10-23 真机踩到，同 KindDTO）
+        ///   站方给的筛选项可能没有 `paramKey` / `action` / `default`
+        ///   ⇒ 缺一个键就**整个发现页**报错 ⇒ 一律兜底
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            func g(_ k: K) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? "" }
+            title = g(.title); type = g(.type)
+            chars = (try? c.decodeIfPresent([String].self, forKey: .chars)) ?? []
+            `default` = g(.default)
+            paramKey = g(.paramKey); action = g(.action)
+        }
+        private enum K: String, CodingKey {
+            case title, type, chars, `default`, paramKey, action
+        }
 
         /// 该筛选项**当前生效的值**
         ///
@@ -733,7 +783,7 @@ final class SourceService {
     ///   ⇒ 以前被当成 1 个章节、或被报成「chapterList 规则没命中」⇒ **提示是误导的**
     ///   ⇒ 现在把原始条数带回来 ⇒ UI 能说清楚到底是「服务器没数据」还是「规则没命中」
     func tocDetailed(source: BookSource, tocUrl: String, bookUrl: String, book: Book? = nil) async throws -> TocResult {
-        var p = json(["tocUrl": tocUrl, "bookUrl": bookUrl, "maxPages": 5])
+        var p = json(["tocUrl": tocUrl, "bookUrl": bookUrl, "maxPages": 20])
         // ⚠️⚠️ **必须传 book**！
         //    站方目录 JS（🍅大灰狼的 ruleToc.chapterList）会调
         //    `book.getVariable('custom')` → 没有 book → 站方 JS 直接抛
