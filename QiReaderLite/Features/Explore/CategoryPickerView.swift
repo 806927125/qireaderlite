@@ -23,21 +23,35 @@ struct CategoryPickerView: View {
     ///    ⇒ 不按 group 分组的话，所有分类会挤成一个「全部分类」，
     ///       栖阅那种「分类 / ☆排行榜☆ / ☆热门标签☆」的分组就出不来 ❗
     ///    （style 仍作兜底：有些站的 exploreUrl 走 style 字段）
+    /// 按**站方给的顺序**分组（栖阅同款，2026-10-22 对照栖阅截图）
+    ///
+    /// 站方 style_list 的原始数据里，**url 为空的行就是「组标题行」**：
+    ///     [2] 当前为: QQ阅读 [小说]频道：男频   ← 组标题
+    ///     [3..7] 今日必读/会员榜/…              ← 归它
+    ///     [8] 分类                              ← 又一个组标题
+    ///     [9..22] 玄幻/奇幻/…                   ← 归它
+    /// 引擎已经把这些行解析进 `kind.group` 了 ⇒ 这里按 group 变化切组。
+    ///
+    /// ⚠️⚠️ **必须按站方出现顺序，不能按名字排序！**
+    ///   栖阅那页是「分类 → 当前为: XX → 分类 → 图书」这种顺序（站方给的）
+    ///   ⇒ 按名字排会把「当前为: XX」和「图书」打乱 ⇒ 顺序不对 ❗
+    ///
+    /// ⚠️ 组标题行之前的那些项（infoData 的「大灰狼个人中心」等）⇒ 落在兜底的「分类」组
+    ///   ⇒ 跟栖阅一模一样（栖阅第一张卡片就叫「分类」，里面只有「大灰狼个人中心」）⭐
     private var groups: [(String, [SourceService.KindDTO])] {
-        var dict: [String: [SourceService.KindDTO]] = [:]
+        var out: [(String, [SourceService.KindDTO])] = []
+        var current = "分类"          // 兜底组名（栖阅第一组就叫「分类」）
         for k in kinds {
-            // ⚠️⚠️ **组名优先用 `group`（引擎从站方装饰行解析的），空了就叫「分类」**
-            //   以前空的时候回落到 `style` ⇒ 界面上出现
-            //   `{"layout_flexGrow":1,"layout_flexBasisPercent":0.25}` 这种**原始 JSON 标题** ❗
-            //   （栖阅那页第一组就叫「分类」⇒ 这里跟它对齐）
-            let key = k.group.trimmingCharacters(in: .whitespacesAndNewlines)
-            let name = key.isEmpty ? "分类" : key
-            dict[name, default: []].append(k)
+            let g = k.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !g.isEmpty && g != current {
+                current = g
+                out.append((current, []))
+            }
+            if out.isEmpty { out.append((current, [])) }
+            out[out.count - 1].1.append(k)
         }
-        // 排序：「分类」排第一，其余按名字
-        return dict
-            .map { (name: $0.key, items: $0.value) }
-            .sorted { $0.name == "分类" ? true : ($1.name == "分类" ? false : $0.name < $1.name) }
+        // ⚠️ 空组不显示（「--」这种垃圾组标题后面没内容 ⇒ 不该出一个空卡片）
+        return out.filter { !$0.1.isEmpty }
     }
 
     private var shown: [(String, [SourceService.KindDTO])] {

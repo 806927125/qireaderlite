@@ -62,10 +62,15 @@ const picker = fs.readFileSync(
 const pickerCode = stripComments(picker);
 ok(/private var groups/.test(pickerCode),
    '分类页保留分组（栖阅同款：分类 / ○ *。☆ 排行榜 ☆*。* ○ / …）');
-ok(/let key = k\.group/.test(pickerCode), '组名优先用 group（引擎从装饰行解析的）');
-ok(!/key = k\.style/.test(pickerCode),
+ok(/let g = k\.group/.test(pickerCode), '组名优先用 group（引擎从站方组标题行解析的）');
+ok(!/k\.style/.test(pickerCode),
    '组名**不再回落到 style**（那会显示成 `{"layout_flexGrow":1,...}` 这种原始 JSON）');
-ok(/\? "分类" :/.test(pickerCode), '没有组名时叫「分类」（跟栖阅那页一致）');
+ok(/var current = "分类"/.test(pickerCode),
+   '没有组标题时兜底叫「分类」（跟栖阅那页一致：栖阅第一张卡片就叫「分类」）');
+ok(/out\.filter \{ !\$0\.1\.isEmpty \}/.test(pickerCode),
+   '空组不显示（站方数据里的「--」那类空组标题）');
+ok(!/\.sorted/.test(pickerCode),
+   '**不按名字排序** ⇒ 按站方给的顺序（栖阅是「分类 → 当前为: XX → 分类 → 图书」）');
 
 console.log('');
 console.log('=== 6. 登录页接入液态玻璃（按钮也要玻璃，栖阅同款）===');

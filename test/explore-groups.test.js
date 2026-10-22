@@ -91,9 +91,13 @@ async function nativeMock(fn, args) {
   ok(deco.length === 0, '装饰行不该作为分类项出现（实际 ' + deco.length + ' 个）');
 
   console.log('');
-  console.log('=== 2. 信息行被丢掉 ===');
+  console.log('=== 2. 「当前为: XX」这类行是【组标题】，不是分类项（栖阅同款）===');
+  // 栖阅的 QQ阅读 页有卡片「当前为: QQ阅读 [小说]频道：男频」⇒ 它是**组标题**
+  // ⇒ 站方数据里 url 为空的行 = 组标题行（引擎把它解析进 kind.group）
   ok(!kinds.some(k => (k.title || '').indexOf('当前为') >= 0),
-     '「当前为: 番茄 [小说] 频道: 男频」这种信息行不该出现');
+     '「当前为: XX」不作为分类项出现（它是组标题）');
+  ok(kinds.every(k => (k.title || '').indexOf('当前为') < 0),
+     '组标题行本身不会混进分类列表');
 
   console.log('');
   console.log('=== 3. 分类项带上正确的组名 ===');
@@ -106,14 +110,21 @@ async function nativeMock(fn, args) {
      '「都市」带上了「热门标签」组名（实际 ' + JSON.stringify(city && city.group) + '）');
 
   console.log('');
-  console.log('=== 4. url 为空的分类项（站方数据里的「--」）要过滤掉 ===');
+  console.log('=== 4. 组标题行的 title 直接当组名（栖阅同款）===');
+  // 站方原始数据：[8] 的 title 就叫「分类」⇒ 栖阅那一组的组名就是「分类」
+  const cityKind = kinds.find(k => k.title === '都市');
+  ok(cityKind && /热门标签/.test(cityKind.group || ''),
+     '组标题行的 title 原文当组名（不是 style 的原始 JSON）');
+
+  console.log('');
+  console.log('=== 5. url 为空的分类项（站方数据里的「--」）要过滤掉 ===');
   ok(!kinds.some(k => (k.title || '').trim() === '--'),
      '站方那个 title="--"、url 为空的项不该显示');
   ok(kinds.every(k => String(k.url || '').trim().length > 0),
      '所有显示出来的分类都有 url（空 url 没法请求）');
 
   console.log('');
-  console.log('=== 5. 组名不是原始 JSON ===');
+  console.log('=== 6. 组名不是原始 JSON ===');
   ok(kinds.every(k => !/^\{.*\}$/.test((k.group || '').trim())),
      '组名不能是站方 style 的原始 JSON（那正是这次的 bug 症状）');
 

@@ -1743,13 +1743,30 @@
       //    ⇒ 不是组也不是分类 ⇒ 丢掉
       var pct = objStyle ? Number(objStyle.layout_flexBasisPercent) : NaN;
       if (pct === 1) return;
-      // ⚠️⚠️ **url 为空 ⇒ 不是可请求的分类 ⇒ 丢掉**（2026-10-22 用户截图对照）
-      //   站方（🍅大灰狼）style_list 里混着一堆 `title:"--"`、**url 为空串**的项
-      //   （番茄 14 个 / QQ阅读 1 个 / 七猫 0 个）⇒ 界面上就是一排没意义的「--」❗
-      //   ⇒ 跟 Legado 行为一致：**空 url 的 kind 不能请求，直接不显示**
-      //   （站方把 `java.startBrowser(...)` 写在 url 模板里的「登录番茄」也一样 ⇒ 解析后为空 ⇒ 一起滤掉）
+      // ⚠️⚠️⚠️ **url 为空 ⇒ 这是站方的「组标题行」（栖阅同款）**（2026-10-22 对照栖阅截图）
+      //   站方 style_list 的原始数据长这样（QQ阅读 实测 24 条）：
+      //     [0] 点击登录可切换来源        url空 style=1   ← 站方自己 exclude 掉了
+      //     [1] 切换后长按刷新即可        url空 style=1   ← 同上
+      //     [2] 当前为: QQ阅读 [小说]频道：男频  url空  ← ⭐ **组标题**
+      //     [3..7] 今日必读/会员榜/…      有 url         ← 归到 [2] 那组
+      //     [8] 分类                      url空         ← ⭐ **组标题**（title 就叫「分类」）
+      //     [9..22] 玄幻/奇幻/武侠…        有 url         ← 归到 [8] 那组
+      //     [23] --                      url空         ← 垃圾行
+      //   ⇒ **规则就一句：url 为空的项 = 组标题行，它自己成为一个组的标题，
+      //      后面有 url 的项都归到最近的那个组标题下** ⭐
+      //   ⇒ 番茄那边同样成立（装饰行「°・*.☆ 排行榜 ☆.*・°」的 url 也是空的）
+      //   ⇒ 栖阅的界面就是这样：分类 / 当前为: XX / 分类 / 图书 …（几个组）
+      //
+      //   ⚠️ 之前我把它「丢掉」了 ⇒ 七猫/QQ阅读 的分组全没了 ⇒ **糊成一块**（用户反馈）
       var objUrl = dom.absolutize(String(k.url || k.link || ''), base);
-      if (!objTitle || !objUrl) return;
+      if (!objTitle) return;
+      if (!objUrl) {
+        // 「--」这种垃圾行不当组标题（它后面没内容 ⇒ 空组 ⇒ UI 也不显示）
+        if (objTitle !== '--' && !/^[\s\-–—_]+$/.test(objTitle)) {
+          group = objTitle;
+        }
+        return;   // 组标题行**不作为分类项输出**
+      }
       out.push({
         title: objTitle,
         url: objUrl,
