@@ -70,7 +70,7 @@
    * ------------------------------------------------------- */
 
   // 把 :contains(...) :matches(...) 之类从选择器里摘出来，变成后置过滤条件
-  var PSEUDO_RE = /:(containsOwn(?:Text)?|contains|matchesOwn|matches|hasText)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/gi;
+  var PSEUDO_RE = /:(containsOwn(?:Text)?|contains|matchesOwn|matches|hasText|textEquals)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/gi;
 
   function splitPseudos(selector) {
     var pseudos = [];
@@ -115,6 +115,8 @@
       case 'matches': try { return new RegExp(a).test(textOf(el)); } catch (e) { return false; }
       case 'matchesown': try { return new RegExp(a).test(ownTextOf(el)); } catch (e) { return false; }
       case 'hastext': return textOf(el).indexOf(a) >= 0;
+      // ⚠️ `text.` 前缀：**文本完全相等**（不是包含）—— 见 KW.text 的注释
+      case 'textequals': return String(textOf(el)).trim() === a.trim();
       default: return true;
     }
   }
@@ -149,10 +151,27 @@
    * ------------------------------------------------------- */
 
   var KW = {
-    class: function (v) { return '.' + v; },
+    // ⚠️⚠️ **class 的值可以带空格**（2026-10-22 适配 125 源时挖出来的）
+    //   站方写法：`class.clearfix chapter-list@tag.li`
+    //   页面里是 `<ul class="clearfix chapter-list">` ⇒ **同一个元素上的两个 class**
+    //   ⇒ 轻阅以前把空格当成了**后代选择器**（`.clearfix chapter-list`）⇒ **0 命中** ⭐
+    //     （实测 125 源里有 **40 处**这种写法：啃书阁 / 安之原创 / 梧桐中文 / 神马小说…）
+    //   ⇒ 空格一律当**并列的 class**（`.a.b`）
+    //   ⚠️ 站方要写后代的话会用 `class.a@tag.b`（@ 链）⇒ 零误伤
+    class: function (v) {
+      return '.' + String(v).trim().split(/\s+/).filter(Boolean).join('.');
+    },
     id: function (v) { return '#' + v; },
     tag: function (v) { return v; },
-    text: function (v) { return ':contains(' + v + ')'; },
+    // ⚠️⚠️ **`text.` 是【文本完全相等】，不是「包含」**（2026-10-22 适配 125 源时挖出来的）
+    //   站方拿它挑**某一个确定的链接**：
+    //     'text.查看目录@tag.a@href'   （啃书阁）
+    //     'text.点击阅读@href'         （去读书）
+    //     'text.目录@href'             （QQ 阅读）
+    //   ⇒ 以前用 `:contains` ⇒ 连 `<title>`（标题里也含这四个字）都匹配上
+    //      ⇒ 11 个元素 ⇒ `@tag.a` 挑到「首页」⇒ 目录页抓错 ⇒ **目录只有 1 章** ⭐
+    //   ⇒ 改成「相等」⇒ 只匹配那一个 `<a>` ✔
+    text: function (v) { return ':textEquals(' + v + ')'; },
     owntext: function (v) { return ':containsOwn(' + v + ')'; },
     children: function () { return '*'; }
   };
@@ -181,13 +200,28 @@
       var kw = (dot >= 0 ? p.slice(0, dot) : p).toLowerCase();
       var val = dot >= 0 ? p.slice(dot + 1) : '';
 
+      // ⚠️⚠️ **Legado 的 `!N` 排除语法**（链尾这一段也能带）
+      //   `id.list@tag.dd!0:1:2` ⇒ 取 dd，但**排除第 0/1/2 个**
+      //   ⚠️ 轻阅以前完全不支持 ⇒ 这类规则一律 0 命中（125 源里 18 处 `!0`）
+      var exMark = '';
+      var exM = /!(.*)$/.exec(val);
+      if (exM) {
+        val = val.slice(0, exM.index).trim();
+        var ids = [];
+        exM[1].split(':').forEach(function (n) {
+          var k = parseInt(n, 10);
+          if (!isNaN(k)) ids.push(k);
+        });
+        if (ids.length) exMark = '__EXCL__' + ids.join(',') + '__';
+      }
+
       if (dot >= 0 && (KW[kw] || isHtmlTag(kw))) {
         // tag.span.0 / a.1 / class.item.2 / dd.-1 → 选完之后再取第 N 个（负数从末尾算）
         var idx = -1, hasIndex = false;
         var im = /^(.*?)\.(-?\d+)$/.exec(val);
         if (im) { val = im[1]; idx = parseInt(im[2], 10); hasIndex = true; }
-        if (KW[kw]) chain.push({ kind: 'sub', selector: KW[kw](val), child: true, index: idx, hasIndex: hasIndex });
-        else chain.push({ kind: 'sub', selector: kw, child: true, index: idx, hasIndex: hasIndex });
+        if (KW[kw]) chain.push({ kind: 'sub', selector: exMark + KW[kw](val), child: true, index: idx, hasIndex: hasIndex });
+        else chain.push({ kind: 'sub', selector: exMark + kw, child: true, index: idx, hasIndex: hasIndex });
       } else {
         // 光秃秃的 @tag / @text / @href 是取属性后缀，不是子选择器
         chain.push({ kind: 'attr', name: val || p });
@@ -198,6 +232,20 @@
 
   function prefixToCss(head) {
     var h = String(head == null ? '' : head).trim();
+    // ⚠️⚠️ **Legado 的 `!N` 排除语法**（2026-10-22 适配 125 源时挖出来的）
+    //   `span!0` / `span!0:1` ⇒ 选完之后**排除第 0（/1）个**
+    //   ⚠️ 头部**没有 `kw.` 前缀时**（如 `span!0`）也要处理
+    //     ⇒ 以前完全不支持 ⇒ 这类规则一律 0 命中（125 源里 18 处 `!0`）
+    var gExcl = [];
+    var gExM = /!(.*)$/.exec(h);
+    if (gExM) {
+      h = h.slice(0, gExM.index).trim();
+      gExM[1].split(':').forEach(function (n) {
+        var k = parseInt(n, 10);
+        if (!isNaN(k)) gExcl.push(k);
+      });
+    }
+    var excl = gExcl.slice();
     if (!h) return '';
     // 找 `kw.` 的出现位置；值可以到下一个 kw. 或结尾为止 —— 这样中文类名不会被切碎
     var kwRe = /([a-zA-Z_][\w-]*)\./g, marks = [], m;
@@ -210,13 +258,29 @@
       // 也被当成一个新前缀，切出一堆垃圾标记。值里带点由下面的 val 整体切分负责。
       if (marks.length > 8) break;     // 防御畸形规则
     }
-    if (!marks.length) return h;       // 没前缀简写，原样（div / .x / #y 都对）
-    var out = [], lastIndex = 0, hasIdx = false;
+    if (!marks.length) {
+      // 没前缀简写，原样（div / .x / #y 都对）——但 `!N` 排除仍要生效
+      return excl.length ? ('__EXCL__' + excl.join(',') + '__' + h) : h;
+    }
+    var out = [], lastIndex = 0, hasIdx = false, excl = [];
     var lead = h.slice(0, marks[0].start).trim();
     if (lead) out.push(lead);          // `div.class.a` 的 div 部分
     for (var i = 0; i < marks.length; i++) {
       var vEnd = i + 1 < marks.length ? marks[i + 1].start : h.length;
       var val = h.slice(marks[i].vStart, vEnd).trim();
+      // ⚠️⚠️ **Legado 的 `!N` 排除语法**（2026-10-22 适配 125 源时挖出来的）
+      //   `span!0` / `tag.dd!0:1:2:3` ⇒ 选完之后**排除第 0/1/2/3 个**
+      //   （站方用它剔掉导航位 / 推荐位 / 表头行）
+      //   ⚠️ 轻阅以前**完全不支持** ⇒ 这类规则一律 0 命中
+      //   （实测 125 源里有 **18 处 `!0`** + 2 处 `!255`）
+      var exM = /!(.*)$/.exec(val);
+      if (exM) {
+        val = val.slice(0, exM.index).trim();
+        exM[1].split(':').forEach(function (n) {
+          var k = parseInt(n, 10);
+          if (!isNaN(k)) excl.push(k);
+        });
+      }
       // `p.1` / `li.-1`：值就是个下标，标签名自己当选择器
       var pure = /^(-?\d+)$/.exec(val);
       if (pure && marks[i].raw) {
@@ -239,6 +303,7 @@
       }
     }
     var r = out.join('');
+    if (excl.length) r = '__EXCL__' + excl.join(',') + '__' + r;
     return hasIdx ? '__IDX__' + lastIndex + '__' + r : r;
   }
 
@@ -326,10 +391,24 @@
   }
 
   function queryOne(root, selector) {
-    // prefixToCss 可能给选择器带上 __IDX__N__ 尾巴（tag.span.0 这种索引语法）
-    var idx = -1, idxSet = false;
-    var idxM = /^__IDX__(-?\d+)__(.*)$/.exec(String(selector || '').trim());
-    if (idxM) { idx = parseInt(idxM[1], 10); idxSet = true; selector = idxM[2]; }
+    // prefixToCss 可能给选择器带上标记：
+    //   __IDX__N__   （tag.span.0 这种索引语法）
+    //   __EXCL__a,b__（Legado 的 `!N` 排除语法：排除第 a/b 个）
+    var idx = -1, idxSet = false, excl = null;
+    var sel0 = String(selector || '').trim();
+    for (var mk = 0; mk < 3; mk++) {
+      var em = /^__EXCL__([\d,\-]*)__(.*)$/.exec(sel0);
+      if (em) {
+        excl = em[1] ? em[1].split(',').map(function (n) { return parseInt(n, 10); })
+                     .filter(function (n) { return !isNaN(n); }) : [];
+        sel0 = em[2];
+        continue;
+      }
+      var idxM = /^__IDX__(-?\d+)__(.*)$/.exec(sel0);
+      if (idxM) { idx = parseInt(idxM[1], 10); idxSet = true; sel0 = idxM[2]; continue; }
+      break;
+    }
+    selector = sel0;
 
     var s = splitPseudos(selector);
     var n = applyNegatedOps(s.selector);
@@ -367,6 +446,10 @@
     if (idxSet) {
       var pick = idx < 0 ? nodes[nodes.length + idx] : nodes[idx];
       nodes = pick ? [pick] : [];
+    }
+    // ⚠️ **Legado 的 `!N` 排除**（在索引之前应用：排除的是「原始列表」里的位置）
+    if (excl && excl.length) {
+      nodes = nodes.filter(function (_, i) { return excl.indexOf(i) < 0; });
     }
     return nodes;
   }

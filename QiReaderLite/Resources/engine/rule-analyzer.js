@@ -87,6 +87,9 @@
     //    实测「免费追书」书源整个详情页字段全空，就是这一条引起的。
     if (ctx && ctx.isJSON && /^\s*\$/.test(s)) return T.JSONPATH;
     if (/^\$\s*[.\[]/.test(s)) return T.JSONPATH;
+    // ⚠️⭐⭐ **`result.xxx` 也是 Legado 的 JSONPath 写法**（相对当前结果）
+    //   轻阅以前不认 ⇒ 落进「选择器」分支 ⇒ **0 命中**（125 源里 130 处）
+    if (/^\s*result\s*[.\[]/.test(s)) return T.JSONPATH;
     // 规则以 / 开头 → XPath（Legado 原注释：XPath 特征很明显，无需识别标头）
     if (s.charAt(0) === '/') return T.XPATH;
     if (s.charAt(0) === '<') return T.HTML;
@@ -97,7 +100,8 @@
   function stripModePrefix(rule, kind) {
     var s = String(rule == null ? '' : rule);
     if (kind === T.XPATH) return s.replace(/^@XPath:/i, '');
-    if (kind === T.JSONPATH) return s.replace(/^@Json:/i, '');
+    // ⚠️ JSONPath 分支顺带把 `result.xxx` 改写成 `$xxx`（Legado 的相对写法）
+    if (kind === T.JSONPATH) return rewriteResultPath(s.replace(/^@Json:/i, ''));
     if (kind === T.SELECTOR) return s.replace(/^@CSS:/i, '').replace(/^@@/, '');
     return s;
   }
@@ -846,6 +850,14 @@
     var rgIdx = findRegexTail(body);
     if (rgIdx > 0) { tail = body.slice(rgIdx) + (tail || ''); body = body.slice(0, rgIdx).trim(); }
     kind = classify(body);
+    // ⚠️⭐⭐ **`result.xxx` 是 Legado 允许的 JSONPath 写法**（意思是「相对当前结果」）
+    //   轻阅以前**不认** ⇒ 它落进「选择器」分支 ⇒ 0 命中
+    //   （实测 125 源里 **130 处**这种写法：纵横中文 / 绾书文学网 / 悦读小说 / 神魔…）
+    //   ⇒ 统一改写成 `$` 开头，再走 JSONPath 求值 ✅
+    if (/^\s*result\s*[.\[]/.test(body)) {
+      kind = T.JSONPATH;
+      body = rewriteResultPath(body);
+    }
     if (!body && kind === T.EMPTY) return Promise.resolve([]);
 
     // ⚠️ 切掉 ##尾部## 之后必须**再判一次字面量**。
@@ -859,6 +871,19 @@
     // 不能再当选择器去查 —— 否则带换行、带 `>`（<br>）、带 `.`（105.3万字）
     // 的简介/分类模板都会落到 CSS 解析路径上返回空。
     var headIsValue = (rule !== rawRule && kind === T.SELECTOR && !!body);
+
+    // ⭐⭐⭐ **规则本身就是一个字面 URL ⇒ 原样返回**（Legado 语义，2026-10-22 适配 125 源时挖出来的）
+    //   站方大量这么写：
+    //     ruleToc.chapterUrl   = 'https://xs.zzxsa.com/read/@get:{xid}/{{$.num}}?app_name=…'
+    //     ruleBookInfo.tocUrl  = 'https://n.cmread.com/nap/p/catalogForWap.jsp?bid=@get:{bid}&order=0'
+    //   ⇒ 轻阅以前把它当**选择器**去查 ⇒ 0 命中 ⇒ 章节 URL / 目录 URL 全空 ⭐
+    //     （实测 125 源里有 4 个源这么写：猪猪小说 / 咪咕阅读 / 宜搜小说 / …）
+    //   ⇒ 判据：整条规则（去掉空白后）就是一个 http(s) URL ⇒ 直接当值返回
+    //   ⚠️ CSS 选择器不可能以 http 开头 ⇒ 零误伤面
+    var urlLit = String(body == null ? '' : body).trim();
+    if (/^https?:\/\/\S+$/i.test(urlLit) && !/\s/.test(urlLit)) {
+      return Promise.resolve([urlLit]);
+    }
 
     var p;
     if (headIsValue) {
@@ -1133,6 +1158,9 @@
     var s = String(sel || '').trim();
     if (!s) return res;
     var baseUrl = ctx.baseUrl || '';
+    // ⚠️ 尾部**可能带模式前缀**：`@json:$..bookinfo[*]`（红薯小说）
+    //   不剥的话 `@` 开头 ⇒ 既不是 JSONPath 也不是 CSS ⇒ 当 HTML 解析 ⇒ 0 条 ⭐
+    s = s.replace(/^@(json|css|xpath|html)\s*:/i, '');
     // JSONPath（$.xxx / $[0]）—— 聚合源最常见的尾部形态
     if (s.charAt(0) === '$') {
       // ⚠️ 用 evalJsonPathList（不 stringify 对象、摊平一层数组）
@@ -1393,18 +1421,123 @@
   }
 
   /** `@get:{var}` / `@put:{var}` —— 读写前面规则存下来的变量 */
+  /**
+   * `@put:{key:value}` / `@get:{key}` —— **可以出现在规则 / URL 的任意位置**
+   *
+   * Legado 语义：
+   *   · `@put:{key:expr}` ⇒ 把 **expr 相对当前基准求值**的结果存进变量 key
+   *   · `@get:{key}`      ⇒ 取变量 key 的值替换进去
+   *
+   * ⚠️⚠️ 轻阅以前**只认「整条规则就是这个形式」**
+   *   （`/^@(get|put|getString|getInt):\{(.*)\}$/`）⇒ 下面这些**内嵌**写法全废：
+   *     '$.bookName@put:{xid:x_id}'                    （猪猪小说）
+   *     'https://xs.zzxsa.com/read/@get:{xid}/{{$.num}}'（猪猪小说）
+   *     'title@put:{bid:id}'                            （七猫小说）
+   *     'https://n.cmread.com/...&bid=@get:{bid}'       （咪咕阅读）
+   *   ⇒ 站方拿不到变量 ⇒ 后续规则（详情/目录）全废 ⭐
+   *   （实测 125 源里有 11 处这种内嵌写法，分布在 7 个源）
+   */
   function applyGetPut(ruleStr, scope) {
-    var m = /^@(get|put|getString|getInt):\{(.*)\}$/i.exec(String(ruleStr).trim());
-    if (!m) return ruleStr;
-    var op = m[1].toLowerCase(), key = m[2].trim();
+    var s = String(ruleStr == null ? '' : ruleStr);
     var vars = QR.runtime && QR.runtime.vars ? QR.runtime.vars : (QR.runtime.vars = {});
-    if (op === 'put') {
-      vars[key] = (scope && scope.result != null) ? scope.result : '';
-      return '';
+    // ① 整条规则就是 @get:{k} / @put:{k:v}（旧形态，保留）
+    var whole = /^@(get|put|getString|getInt):\{(.*)\}$/i.exec(s.trim());
+    if (whole) {
+      var op = whole[1].toLowerCase();
+      var body = whole[2].trim();
+      if (op === 'put') {
+        var kk = body, vv = '';
+        var ci = body.indexOf(':');
+        if (ci >= 0) { kk = body.slice(0, ci).trim(); vv = body.slice(ci + 1).trim(); }
+        vars[kk] = vv ? evalVarExpr(vv, scope)
+                      : (scope && scope.result != null ? scope.result : '');
+        return '';
+      }
+      var gv = vars[body];
+      if (gv == null) return '';
+      return op === 'getint' ? String(parseInt(gv, 10) || 0) : String(gv);
     }
-    var v = vars[key];
-    if (v == null) return '';
-    return op === 'getint' ? String(parseInt(v, 10) || 0) : String(v);
+    // ② 内嵌形式：先执行 put（存变量），再把 get 替换成变量值
+    if (!/@(get|put|getString|getInt):\{/i.test(s)) return s;
+    s = s.replace(/@put:\{([^}]*)\}/gi, function (_, b) {
+      var t = String(b).trim();
+      var k = t, v = '';
+      var i2 = t.indexOf(':');
+      if (i2 >= 0) { k = t.slice(0, i2).trim(); v = t.slice(i2 + 1).trim(); }
+      vars[k] = v ? evalVarExpr(v, scope)
+                   : (scope && scope.result != null ? scope.result : '');
+      return '';                                   // 指令本身不产生内容
+    });
+    s = s.replace(/@(get|getString|getInt):\{([^}]*)\}/gi, function (_, o, key) {
+      var val = vars[String(key).trim()];
+      if (val == null) return '';
+      return o.toLowerCase() === 'getint' ? String(parseInt(val, 10) || 0) : String(val);
+    });
+    return s;
+  }
+
+  /**
+   * `@put:{key:expr}` 里 expr 的求值
+   *  · `$.a.b` / `$..x` ⇒ JSONPath
+   *  · `a.b.c`（裸路径）⇒ 对象基准上按字段取（**栖阅/Sextant 的路径语义**）
+   *  · `x||y` ⇒ 取第一个非空
+   */
+  function evalVarExpr(expr, scope) {
+    var e = String(expr == null ? '' : expr).trim();
+    if (!e) return '';
+    var root = (scope && scope.result != null) ? scope.result
+              : (scope ? scope.base : null);
+    var parts = e.split('||');
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].trim();
+      if (!p) continue;
+      var v = lookupPath(p, root);
+      if (v != null && String(v) !== '') return v;
+    }
+    return '';
+  }
+
+  function lookupPath(path, root) {
+    if (root == null) return '';
+    var p = String(path).trim();
+    // ⚠️ `@put:{xid:result.x_id}` 这种值也可能是 `result.` 开头 ⇒ 一样改成 `$`
+    if (/^result\s*[.\[]/.test(p)) p = p.replace(/^result\b/, '$');
+    var data = root;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (e) { return ''; }
+    }
+    if (data == null || typeof data !== 'object') return '';
+    if (p.charAt(0) === '$') {
+      try {
+        var r = QR.jsonpath.select(data, p);
+        if (Array.isArray(r)) return r.length ? r[0] : '';
+        return r == null ? '' : r;
+      } catch (e) { return ''; }
+    }
+    // 裸路径：按字段逐级取
+    var cur = data, segs = p.replace(/^\$\.?/, '').split('.');
+    for (var i = 0; i < segs.length; i++) {
+      if (cur == null || typeof cur !== 'object') return '';
+      cur = cur[segs[i]];
+    }
+    return cur == null ? '' : cur;
+  }
+
+  /**
+   * JSONPath 规则写成 `result.xxx`（Legado 允许，意思是「相对当前结果」）
+   *
+   * ⚠️⚠️ 轻阅以前**不认** ⇒ 130 处这种写法全部落进「选择器」分支 ⇒ 0 命中 ⭐
+   *   （实测 125 源里有 130 处，纵横中文 / 绾书文学网 / 悦读小说 / 神魔…）
+   * ⇒ 统一改写成 `$` 开头再走 JSONPath 求值
+   */
+  function rewriteResultPath(rule) {
+    var s = String(rule == null ? '' : rule);
+    // ⚠️ `a||b` 兜底写法里**每一段**都要改（纵横中文：'result.resultList||result.bookList'）
+    return s.split('||').map(function (seg) {
+      var t = seg.trim();
+      if (/^result\s*[.\[]/.test(t)) t = t.replace(/^result\b/, '$');
+      return t;
+    }).join('||');
   }
 
   /**
@@ -1587,6 +1720,11 @@
     //   ⇒ 少一样就表现为「站方 JS 抛 undefined.slice」这类看不懂的错 ⭐
     jsScope: jsScope,
     stripJsWrapper: stripJsWrapper,
+    // ⚠️ 2026-10-22：**导出复合规则的拆解器**（适配 125 源时挖出来的）
+    //   站方的列表规则常写成 `<js>…</js>$.data.books`
+    //   ⇒ 引擎的 bookList 分支要靠它把「JS 体」和「尾部选择器」分开
+    splitJsWithTail: splitJsWithTail,
+    selectFromJsResult: selectFromJsResult,
     parseRegexRule: parseRegexRule,
     stringMatchAll: stringMatchAll,
     flatten: flatten

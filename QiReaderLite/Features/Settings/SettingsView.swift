@@ -209,5 +209,5 @@ struct SettingsView: View {
 
 /// 引擎版本号（RuleSandbox 那边也有一份，这里只读）
 enum EngineInfo {
-    static let version = "2026.10.22-r26 · result 语义分层（页面级/条目级）· @js: 支持顶层 return"
+    static let version = "2026.10.22-r27 · Legado 语法兼容八项（result. / @put@get / ,{json} / 复合规则 / !N / text.）"
 }

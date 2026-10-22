@@ -372,9 +372,15 @@ console.log('\n=== 14. JSON 列表摊平（发现页/搜索页出书）===');
 {
   ok(/function jsonListOf\(result\)/.test(engine),
      '有 jsonListOf（把命中的数组摊平成元素）');
-  ok(/items = jsonListOf\(QR\.jsonpath\.select/.test(engine),
-     'extractBooks 用 jsonListOf 取列表（发现页/搜索页）');
-  ok(/jItems = jsonListOf\(QR\.jsonpath\.select/.test(engine),
+  // ⚠️ 2026-10-22：extractBooks / 目录改走 `jsonPathListOf`（**摊平 + `a||b` 兜底**）
+  //   ⇒ 断言改成「行为」而不是「实现字符串」⭐
+  ok(/function jsonPathListOf\(text, path\)/.test(engine),
+     '有 jsonPathListOf（JSONPath 取列表：摊平 + `||` 兜底）');
+  ok(/jsonListOf\(QR\.jsonpath\.select/.test(engine),
+     '**jsonPathListOf 内部用 jsonListOf 摊平**（摊平行为没丢）');
+  ok(/items = jsonPathListOf\(page\.text/.test(engine),
+     'extractBooks 用 jsonPathListOf 取列表（发现页/搜索页）');
+  ok(/jItems = jsonPathListOf\(page\.text/.test(engine),
      '目录（JSON 章节）也摊平');
   ok(/result\.length === 1 && Array\.isArray\(result\[0\]\)/.test(engine),
      '只摊平一层（数组的元素），不深摊');

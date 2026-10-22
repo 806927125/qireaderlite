@@ -237,6 +237,31 @@
     return Promise.resolve(analyzeUrl(s, ctx));
   }
 
+  /**
+   * **规则产出的 URL**（bookUrl / tocUrl / chapterUrl）也要走 analyzeUrl ⭐
+   *
+   * ⚠️⚠️⚠️ 2026-10-22 适配 125 源时挖出来的（**目录 0 章的大头**）：
+   *   站方规则常把「本次请求的 method / body / headers」写在 URL 后面：
+   *     ruleBookInfo.tocUrl = 'https://chuangshi.qq.com/chapter/26150754,{"headers":{"User-Agent":"…"}}'
+   *     ruleToc.chapterList = '<js>…java.ajax(url + "," + JSON.stringify(op))…'
+   *   ⇒ Legado 语义：**逗号后那段 JSON = 本次请求的选项**（不是 URL 的一部分）
+   *   ⇒ 轻阅以前**详情/目录/正文三个 op 都没走 analyzeUrl**（只有 explore/search 走了）
+   *      ⇒ 后缀**原样发出去** ⇒ 服务端 404 / 拿到错页面 ⇒ **目录 0 章 / 详情空** ⭐
+   *
+   * ⚠️⚠️ **`data:` 伪 URL 不能走这条路**（聚合源用它塞载荷）：
+   *   `data:;base64,<载荷>,{"type":"qingtian"}` ⇒ 那个 `,{"type":…}` 是
+   *   **站方的类型标记**，不是请求选项 ⇒ 由 dataUrlContent 自己剥 ⭐
+   *   ⇒ 所以这里对非 http(s) 的 scheme **原样返回**
+   */
+  function analyzeRuleUrl(raw, ctx) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s) return Promise.resolve({ url: '', method: 'GET', body: '', headers: {} });
+    if (!/^https?:\/\//i.test(s)) {
+      return Promise.resolve({ url: s, method: 'GET', body: '', headers: {} });
+    }
+    return buildUrl(s, ctx);
+  }
+
   /** URL 里的 JS 作用域：key=搜索词，page=页码，baseUrl，source */
   function urlJsScope(ctx, result) {
     var scope = rule.makeScope({
@@ -479,10 +504,8 @@
     var idx = offset;
     return bases.reduce(function (acc, base) {
       return acc.then(function (out) {
-        return Promise.all([
-          rule.getValue(ruleText(tocRule.chapterName), base, tocCtx),
-          rule.getValue(ruleText(tocRule.chapterUrl), base, tocCtx)
-        ]).then(function (v) {
+        // ⚠️ 按顺序求值（@put/@get 场景：chapterName 存变量、chapterUrl 取变量）
+        return evalFields([tocRule.chapterName, tocRule.chapterUrl], base, tocCtx).then(function (v) {
           var title = (v[0] || '').trim();
           // 标题和 URL 都必须有才算一章。
           // 原来只查 title：站方在 <li> 里插纯文本（没 <a>）时 chapterUrl 是空串，
@@ -814,6 +837,30 @@
     return result;
   }
 
+  /**
+   * JSONPath 取列表，**支持 `a||b` 兜底**（Legado 语义）
+   *
+   * ⚠️⚠️ 站方很爱这么写（纵横中文）：
+   *     ruleExplore.bookList = 'result.resultList||result.bookList'
+   *   ⇒ 轻阅以前**整条当一个路径**去查 ⇒ 第一段没命中就是 0 本 ⭐
+   *   ⇒ 这里逐段试，**第一个非空的赢**
+   */
+  function jsonPathListOf(text, path) {
+    var data;
+    try { data = typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return []; }
+    if (data == null) return [];
+    var parts = String(path == null ? '' : path).split('||');
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].trim();
+      if (!p) continue;
+      try {
+        var items = jsonListOf(QR.jsonpath.select(data, p));
+        if (items && items.length) return items;
+      } catch (e) { /* 试下一段 */ }
+    }
+    return [];
+  }
+
   function extractBooks(page, listRule, ctx, opts) {
     opts = opts || {};
     var listRuleStr = ruleText(listRule.bookList);
@@ -847,10 +894,25 @@
       // ⚠️ `result` = **当前页原文**（站方的 `var s = String(raw)` 就是从 result 取的）
       //   轻阅默认给的是 dom.textOf(node)（纯文本）⇒ 正则匹配不上 ⇒ 0 本
       jsScope.result = page.text;
-      return rule.runJs(rule.stripJsWrapper(listRuleStr), jsScope)
+      // ⭐⭐⭐ **复合规则 `<js>代码</js>尾部选择器`**（2026-10-22 适配 125 源时挖出来的）
+      //   站方的**列表规则**很常这么写：
+      //     bookList = '<js>\n …自己抓数据… \n</js>$.data.books'
+      //   ⇒ 以前**整串 eval**（stripJsWrapper 只在整串以 </js> 结尾时才剥）
+      //      ⇒ eval("<js>…</js>$.data.books") ⇒ **"Unexpected token '<'"** ⇒ **列表 0 本** ⭐
+      //      ⇒ 而**目录**那条路（getJsonList）早就支持复合规则了
+      //         ⇒ 所以现象是「**目录能出、发现出不来**」⭐
+      var jt = rule.splitJsWithTail(listRuleStr);
+      var jsScope2 = rule.makeScope(rule.jsScope(page.doc, page.doc, ctx, jt.code));
+      jsScope2.result = page.text;
+      return rule.runJs(jt.code, jsScope2)
         .then(function (r) {
           var items = [];
-          if (Array.isArray(r)) {
+          if (jt.sel) {
+            // 复合规则：JS 算出个值，再用尾部选择器取字段
+            var picked = rule.selectFromJsResult(r, jt.sel, ctx, page.doc);
+            items = Array.isArray(picked) ? picked
+                  : (picked == null ? [] : [picked]);
+          } else if (Array.isArray(r)) {
             items = r.map(function (x) {
               return (x && typeof x === 'object') ? x : String(x == null ? '' : x);
             });
@@ -885,7 +947,7 @@
       var body = rule.stripModePrefix(listRuleStr, kind);
       var items = [];
       if (kind === 'jsonpath') {
-        try { items = jsonListOf(QR.jsonpath.select(JSON.parse(page.text), body)); } catch (e) { items = []; }
+        try { items = jsonPathListOf(page.text, body); } catch (e) { items = []; }
       } else {
         try { items = rule.getElements(listRuleStr, page.doc, ctx).values || []; } catch (e) { items = []; }
       }
@@ -952,6 +1014,36 @@
     });
   }
 
+  /**
+   * 求一组字段规则
+   *
+   * ⭐⭐⭐ **有 `@put:` / `@get:` 时必须【按顺序】求值**（Legado 语义，2026-10-22 适配 125 源时挖出来的）
+   *   站方常这么串：
+   *     name   = '$.catename@put:{bid:bid}'            ← 这里把 bid 存进变量
+   *     tocUrl = 'https://x/chapterlist/bid/@get:{bid}' ← 这里再取出来
+   *   ⇒ 以前**并行**求值 ⇒ tocUrl 可能在 name 之前跑 ⇒ 变量还没存 ⇒ 取到空串
+   *      ⇒ 站方拿到的 URL 是 `.../bid//version/...` ⇒ **目录 0 章** ⭐
+   *   （实测：红薯阅读 / 猪猪小说 / 七猫小说 / 咪咕阅读 / 宜搜小说…）
+   *   ⇒ 没有 @put/@get 时仍走**并行**（保持性能）
+   */
+  function evalFields(rules, base, ctx) {
+    var list = rules || [];
+    var hasGetPut = list.some(function (rv) {
+      return /@(get|put|getString|getInt):\{/i.test(ruleText(rv));
+    });
+    if (!hasGetPut) {
+      return Promise.all(list.map(function (rv) { return rule.getValue(ruleText(rv), base, ctx); }));
+    }
+    var out = [];
+    var chain = Promise.resolve();
+    list.forEach(function (rv) {
+      chain = chain.then(function () {
+        return rule.getValue(ruleText(rv), base, ctx).then(function (v) { out.push(v); });
+      });
+    });
+    return chain.then(function () { return out; });
+  }
+
   function extractOneBook(base, listRule, ctx, pageUrl, opts) {
     opts = opts || {};
     function f(rv) {
@@ -964,16 +1056,28 @@
       }
       return rule.getValue(t, base, ctx);
     }
-    return Promise.all([
-      f(listRule.name),
-      f(listRule.author),
-      f(listRule.intro),
-      f(listRule.kind),
-      f(listRule.lastChapter),
-      f(listRule.coverUrl),
-      f(listRule.bookUrl),
-      f(listRule.wordCount)
-    ]).then(function (v) {
+    var FIELDS = [
+      ['name', listRule.name], ['author', listRule.author], ['intro', listRule.intro],
+      ['kind', listRule.kind], ['lastChapter', listRule.lastChapter],
+      ['coverUrl', listRule.coverUrl], ['bookUrl', listRule.bookUrl],
+      ['wordCount', listRule.wordCount]
+    ];
+    var hasGetPut = FIELDS.some(function (x) {
+      return /@(get|put|getString|getInt):\{/i.test(ruleText(x[1]));
+    });
+    if (hasGetPut) {
+      var out = [];
+      var chain = Promise.resolve();
+      FIELDS.forEach(function (x) {
+        chain = chain.then(function () {
+          return f(x[1]).then(function (v) { out.push(v); });
+        });
+      });
+      return chain.then(function () { return buildBook(out); });
+    }
+    return Promise.all(FIELDS.map(function (x) { return f(x[1]); })).then(buildBook);
+
+    function buildBook(v) {
       var name = (v[0] || '').trim();
       if (!name && !(opts.requireUrl)) return null;
       var bookUrl = (v[6] || '').trim();
@@ -989,7 +1093,7 @@
         bookUrl: absolutizeMaybe(bookUrl, pageUrl),
         wordCount: v[7] || ''
       };
-    });
+    }
   }
 
   function absolutizeMaybe(u, base) {
@@ -1677,9 +1781,13 @@
       runtime.source = src;
       return ensureJsLib(src).then(function () {
         var bi = src.ruleBookInfo || {};
-        var url = absolutizeMaybe(p.bookUrl, baseUrlOf(src));
+        // ⚠️ 走 analyzeRuleUrl：站方 URL 后面可能带 `,{json}` 请求选项
+        return analyzeRuleUrl(p.bookUrl, { baseUrl: baseUrlOf(src), page: 1, source: src })
+        .then(function (tgt) {
+        var url = tgt.url;
         if (!url) return { book: null, error: '书籍 URL 为空' };
-        return fetchPage({ url: url, headers: {} }, { baseUrl: url }).then(function (page) {
+        return fetchPage({ url: url, method: tgt.method, headers: tgt.headers || {}, body: tgt.body },
+                         { baseUrl: url }).then(function (page) {
           var ctx = { baseUrl: page.url, source: src, book: p.book };
           markContent(ctx, page);
           // Legado 的 `ruleBookInfo.init`：在详情页结果上跑一次，
@@ -1712,12 +1820,14 @@
             })
             .catch(function () { return page.doc; })
             .then(function (initBase) {
-          function f(rv) { return rule.getValue(ruleText(rv), initBase, ctx); }
+          // ⚠️ 用 evalFields：有 @put/@get 时**按顺序**求值
+          //   （站方常写 name='$.catename@put:{bid:bid}' + tocUrl='…/@get:{bid}'）
+          //   ⇒ 并行的话 tocUrl 先跑 ⇒ 变量还没存 ⇒ 目录 URL 里是空的 ⭐
           // tocUrl 缺失时默认就是书籍页本身
-          return Promise.all([
-            f(bi.name), f(bi.author), f(bi.intro), f(bi.kind),
-            f(bi.lastChapter), f(bi.coverUrl), f(bi.tocUrl), f(bi.wordCount)
-          ]).then(function (v) {
+          return evalFields([
+            bi.name, bi.author, bi.intro, bi.kind,
+            bi.lastChapter, bi.coverUrl, bi.tocUrl, bi.wordCount
+          ], initBase, ctx).then(function (v) {
             // 👁️ 观测：详情页最终给出的 tocUrl 是什么形状（2026-10-21 真机 0 章排查）
             //   站方 ruleBookInfo.tocUrl 为空时回退成 `url`（书籍页），
             //   而 🍅大灰狼的 tocUrl 应该是 `data:;base64,…` ⇒ 两者行为完全不同。
@@ -1750,6 +1860,7 @@
           });
             });
         });
+        });
       }).catch(function (e) {
         return { book: null, error: String(e && e.message || e) };
       });
@@ -1761,7 +1872,12 @@
       runtime.source = src;
       return ensureJsLib(src).then(function () {
         var tr = src.ruleToc || {};
-        var url = absolutizeMaybe(p.tocUrl || p.bookUrl, baseUrlOf(src));
+        // ⚠️ 走 analyzeRuleUrl：站方 URL 后面可能带 `,{json}` 请求选项
+        //   （创世中文网：'https://chuangshi.qq.com/chapter/26150754,{"headers":{…}}'
+        //    ⇒ 以前后缀原样发出去 ⇒ 404 ⇒ **目录 0 章** ⭐）
+        return analyzeRuleUrl(p.tocUrl || p.bookUrl, { baseUrl: baseUrlOf(src), page: 1, source: src })
+        .then(function (tgt) {
+        var url = tgt.url;
         if (!url) return { chapters: [], error: '目录 URL 为空' };
         // 👁️ 观测：目录 URL 是怎么算出来的（2026-10-21 真机 0 章排查）
         try {
@@ -1776,7 +1892,12 @@
         /** 抓一页目录，返回 { list, nextUrl } */
         function one(u, offset) {
           try { QR.java.log('[目录] 请求 url=' + brief(u)); } catch (e) {}
-          return fetchPage({ url: u, headers: {} }, ctx).then(function (page) {
+          return fetchPage({
+            url: u,
+            method: (offset === 0 ? tgt.method : 'GET'),
+            headers: (offset === 0 ? (tgt.headers || {}) : {}),
+            body: (offset === 0 ? (tgt.body || '') : '')
+          }, ctx).then(function (page) {
             try {
               QR.java.log('[目录] 返回 最终url=' + brief(page.url) +
                 ' 状态=' + (page.resp && page.resp.code) +
@@ -1807,8 +1928,7 @@
                 try {
                   var jKind = rule.classify(spec, ctx);
                   if (rule.T && rule.T.JSONPATH === jKind || jKind === 'jsonpath') {
-                    jItems = jsonListOf(QR.jsonpath.select(JSON.parse(page.text),
-                      rule.stripModePrefix(spec, jKind)));
+                    jItems = jsonPathListOf(page.text, rule.stripModePrefix(spec, jKind));
                   }
                 } catch (e) { jItems = []; }
                 if (!jItems.length) {
@@ -1897,6 +2017,7 @@
             bookName: bookName
           };
         });
+        });
       }).catch(function (e) {
         try { QR.java.log('[目录] 抛错 ' + String(e && e.message || e)); } catch (e2) {}
         return { chapters: [], error: String(e && e.message || e) };
@@ -1909,7 +2030,10 @@
       runtime.source = src;
       return ensureJsLib(src).then(function () {
         var cr = src.ruleContent || {};
-        var url = absolutizeMaybe(p.chapterUrl, baseUrlOf(src));
+        // ⚠️ 走 analyzeRuleUrl：站方 URL 后面可能带 `,{json}` 请求选项
+        return analyzeRuleUrl(p.chapterUrl, { baseUrl: baseUrlOf(src), page: 1, source: src })
+        .then(function (tgt) {
+        var url = tgt.url;
         if (!url) return { content: '', error: '章节 URL 为空' };
         // ⚠️⚠️ **必须带 book**！
         //    站方正文 JS 会调 `book.getVariable('custom')`（🍅大灰狼的 ruleContent.content）
@@ -1917,7 +2041,8 @@
         //    「Cannot read properties of undefined (reading 'getVariable')」
         //    → 整条规则静默失效 → **正文是空的**（标题倒是对的，因为那条规则不用 book）
         var ctx = { baseUrl: url, source: src, chapter: p.chapter, book: p.book };
-        return fetchPage({ url: url, headers: {} }, ctx).then(function (page) {
+        return fetchPage({ url: url, method: tgt.method, headers: tgt.headers || {}, body: tgt.body },
+                         ctx).then(function (page) {
           markContent(ctx, page);
           // webJs：给站方解密/改写正文用，跑完拿它吐出的 HTML
           var htmlP = Promise.resolve(page.text);
@@ -1955,6 +2080,7 @@
               };
             });
           });
+        });
         });
       }).catch(function (e) {
         return { content: '', error: String(e && e.message || e) };
