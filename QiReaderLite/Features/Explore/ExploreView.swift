@@ -171,7 +171,10 @@ struct ExploreView: View {
             .foregroundStyle(Theme.ink)
             .padding(.horizontal, 12)
             .frame(height: 32)
-            .background(Capsule().fill(Color.white.opacity(0.6)))
+            // ⭐ **液态玻璃**（2026-10-22 用户要求「筛选键接入液态玻璃」）
+            //   ⚠️ `glassCapsule()` 内部已经走系统 `.glassEffect(.capsule)`（或手搓 999 圆角）
+            //   ⇒ **别再叠 `.background` / `.glassEffectShape`** ⇒ 玻璃套玻璃 = 一坨灰糊
+            .glassCapsule()
         }
     }
 
@@ -282,16 +285,34 @@ struct ExploreView: View {
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                 }
-                // 列表底部这一行就是「上拉加载」的触发器：
-                // 它出现在屏幕里就自动加载下一页，加完把 id 一改，.task 就会再跑一次；
-                // 页面不满屏时会连着翻，直到填满或者站方没数据了。
+                // 列表底部这一行 = **「上拉加载」的触发器 + 看得见的「加载更多」按钮**
+                //
+                // ⚠️⚠️ **翻页成功时不要再自增 `loadMoreID`**（2026-10-22 真机「发现页没有翻页功能」）：
+                //   原来 `loadMore()` 成功后 `loadMoreID += 1` ⇒ `.task(id:)` 立刻重跑
+                //   ⇒ **一路连翻到站方没数据为止**（番茄 355 个分类、每页 30 本 ⇒ 一次拉几十页，手机发烫）
+                //   ⇒ 现在：**只有「换分类 / 重新加载」才动 loadMoreID**
+                //      ⇒ 滚动到底 ⇒ 翻**一页** ⇒ 内容变多把这一行推走 ⇒ 再滚到底 ⇒ 再翻一页 ✅
+                //   ⇒ 再配一个**显式按钮**（用户说「没有翻页功能」⇒ 看不到按钮就以为没有）
                 if !reachedEnd {
-                    HStack {
+                    HStack(spacing: 10) {
                         Spacer()
-                        ProgressView()
+                        if loadingMore {
+                            ProgressView()
+                        } else {
+                            Button {
+                                Task { await loadMore() }
+                            } label: {
+                                Label("加载更多", systemImage: "arrow.down.circle")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Theme.accent)
+                            }
+                            .buttonStyle(.plain)
+                        }
                         Spacer()
                     }
                     .listRowSeparator(.hidden)
+                    // ⚠️ 挂 id（换分类时 loadMoreID 变 ⇒ task 重跑 ⇒ 翻新分类的第一页）
+                    //   但 **loadMore() 成功后不再自增** ⇒ 不会自动连翻 ✅
                     .task(id: loadMoreID) { await loadMore() }
                 } else {
                     Text("没有更多了")
@@ -345,8 +366,16 @@ struct ExploreView: View {
             //    ⇒ **整个发现页打不开**（2026-10-21 真机实测）
             //    ⇒ 它仍然显示在列表里（用户可以点它去登录），但**默认选中第一个有 url 的**。
             let withURL = kinds.filter { !$0.url.isEmpty }
+            // ⭐⭐ **优先选「带 `{{page}}`」的分类**（2026-10-22 真机「发现页没有翻页功能」）
+            //   🍅大灰狼的分类列表**第一个是「大灰狼个人中心」**（站方塞进来的个人书架入口），
+            //   它的 url = `get_book_shelf` —— **没有 `{{page}}`** ⇒ 每次都返回同一页
+            //   ⇒ `addedNew == 0` ⇒ 判定「没有更多了」⇒ **看起来像没有翻页功能** ❗
+            //   ⇒ 真正能翻页的分类（`get_discover` / `discovedata`）都带 `{{page}}` ⇒ 优先选它们 ✅
+            let pageable = withURL.filter { $0.url.contains("{{page}}") }
             selected = kinds.first { $0.url == prevUrl && !$0.url.isEmpty }
-                ?? (withURL.isEmpty ? kinds.first : withURL.first)
+                ?? (pageable.isEmpty
+                    ? (withURL.isEmpty ? kinds.first : withURL.first)
+                    : pageable.first)
             }
             if selected != nil {
                 await loadBooks()
@@ -428,7 +457,8 @@ struct ExploreView: View {
             } else {
                 page += 1
                 books = merged
-                loadMoreID += 1
+                // ⚠️ **不要** `loadMoreID += 1`（那会让 `.task(id:)` 立刻重跑 ⇒ 自动连翻到死）
+                //   ⇒ 无 id 的 `.task` 只在这一行**出现**时跑 ⇒ 滚到底才翻一页 ✅
             }
         } catch {
             // 翻页失败就停在这儿，别无限重试（站方 403/超时很常见）

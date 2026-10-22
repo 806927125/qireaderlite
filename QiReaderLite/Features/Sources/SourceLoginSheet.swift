@@ -125,7 +125,7 @@ struct SourceLoginSheet: View {
                             .foregroundStyle(Theme.sub)
                     }
                     .padding(12)
-                    .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+                    .glassCard(cornerRadius: 12, variant: .regular)
 
                     // ── 番茄 sessionid（手动兜底）──────────
                     fqTokenBox
@@ -189,7 +189,7 @@ struct SourceLoginSheet: View {
                 .foregroundStyle(Theme.sub)
         }
         .padding(12)
-        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+        .glassCard(cornerRadius: 12, variant: .regular)
     }
 
     private func outputBox(title: String, text: String) -> some View {
@@ -213,7 +213,7 @@ struct SourceLoginSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
-        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+        .glassCard(cornerRadius: 12, variant: .regular)
     }
 
     // MARK: - 书源变量（线路/服务器）
@@ -461,7 +461,7 @@ struct SourceLoginSheet: View {
             }
         }
         .padding(12)
-        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+        .glassCard(cornerRadius: 12, variant: .regular)
     }
 
     // MARK: - 动作
