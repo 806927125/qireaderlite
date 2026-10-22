@@ -1489,11 +1489,48 @@
         }
 
         return loop(url, 0, []).then(function (chapters) {
+          var rawCount = chapters ? chapters.length : 0;
+          // ⚠️⚠️⚠️ **过滤「书自己」那条占位**（2026-10-22 真机「QQ 阅读目录出不来」查出来的）
+          //   大灰狼服务器的 `/catalog` 对**它没抓到章节的书**会返回**一条占位**：
+          //     {"data":[{"title":"放开那个女巫",       ← 书名！不是章节名
+          //                 "item_id":"7414308239…",  ← 等于 book_id
+          //                 "first_pass_time":"第一卷：默认 | 2024-09-14 09:45:27",
+          //                 "url":"", "toc_url":"", "is_volume":false}]}
+          //   ⇒ 这**不是章节**（点进去必然失败）⇒ 以前被当成 1 个章节 ⇒ 用户看到「目录只有 1 章」
+          //   ⇒ 现在按「title == 书名 && url 是 data: 载荷」判掉 ⭐
+          var bookName = '';
+          try { bookName = String((p.book && p.book.name) || '').trim(); } catch (e) {}
+          var placeholder = false;
+          var out = chapters || [];
+          if (bookName && out.length) {
+            // ⚠️⚠️ **零误伤**：只判「title == 书名」会误伤**第一章标题恰好等于书名**的书
+            //   （很常见：很多书第一章就叫书名）⇒
+            //   ⇒ **只有「滤完整个列表就空了」才真的滤掉** ⇒
+            //   · 服务器只回了「书自己」那条 ⇒ 滤掉 ⇒ 0 章 + 明确提示 ✅
+            //   · 正常章节里有一章叫书名 ⇒ 列表不空 ⇒ **一根都不动** ✅
+            var kept = out.filter(function (c) {
+              var t = String((c && c.title) || '').trim();
+              var isPh = (t === bookName) && String((c && c.url) || '').indexOf('data:') === 0;
+              return !isPh;
+            });
+            if (kept.length === 0) {
+              placeholder = true;
+              out = kept;
+            }
+          }
           try {
-            QR.java.log('[目录] 完成 总章节=' + (chapters ? chapters.length : 0) +
-              ' ‖ 抓了 ' + maxPages + ' 页上限');
+            QR.java.log('[目录] 完成 总章节=' + out.length + '（原始 ' + rawCount + ' 条）' +
+              ' ‖ 抓了 ' + maxPages + ' 页上限'
+              + (placeholder ? ' ‖ ⚠️ 过滤掉了「书自己」那条占位（站方服务器没这本书的章节）' : ''));
           } catch (e) {}
-          return { chapters: chapters };
+          // ⚠️ 把「原始条数 / 是否是占位」带回去 ⇒ Swift 侧能给出**准确**的提示
+          //   （以前一律说「chapterList 规则没命中」⇒ 误导：规则命中了，是服务器没数据）
+          return {
+            chapters: out,
+            rawCount: rawCount,
+            placeholderFiltered: placeholder,
+            bookName: bookName
+          };
         });
       }).catch(function (e) {
         try { QR.java.log('[目录] 抛错 ' + String(e && e.message || e)); } catch (e2) {}

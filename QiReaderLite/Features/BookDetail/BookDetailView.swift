@@ -342,11 +342,22 @@ struct BookDetailView: View {
             var errs: [String] = []
             let tocURL = book.tocUrl.isEmpty ? book.cleanBookUrl : book.tocUrl
             do {
-                let list = try await SourceService.shared.toc(
+                let res = try await SourceService.shared.tocDetailed(
                     source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl, book: book)
+                let list = res.chapters
                 chapters = list
                 if list.isEmpty {
-                    errs.append("目录接口通了但一条章节都没解析出来（chapterList 规则没命中）")
+                    // ⚠️⚠️ **提示要说人话**（2026-10-22 真机「QQ 阅读目录出不来」）：
+                    //   以前一律报「chapterList 规则没命中」⇒ **误导** ——
+                    //   大灰狼服务器对**它没抓到章节的书**会返回**一条占位**（title = 书名），
+                    //   规则其实命中了，是**服务器没有这本书的章节** ⭐
+                    if res.placeholderFiltered {
+                        errs.append("站方服务器只回了这本书的卷信息、**没有章节**（它没抓到这本书）——换个书试试")
+                    } else if res.rawCount == 0 {
+                        errs.append("站方服务器**没有这本书的章节**（/catalog 返回空）——换个书试试")
+                    } else {
+                        errs.append("目录接口通了但一条章节都没解析出来（chapterList 规则没命中）")
+                    }
                 }
                 if let last = library.item(for: book.id)?.lastChapterIndex,
                    last > 0, last < list.count {

@@ -265,6 +265,21 @@ final class SourceService {
     struct TocDTO: Codable {
         var chapters: [ChapterDTO] = []
         var error: String? = nil
+        /// 站方返回的**原始**条数（过滤「书自己」那条占位之前）
+        /// ⚠️ 用来区分「服务器没这本书的章节」和「chapterList 规则没命中」——
+        ///    以前一律报「规则没命中」⇒ **误导**（规则其实命中了）
+        var rawCount: Int? = nil
+        /// 是否过滤掉了「书自己」那条占位（= 站方服务器没抓到这本书的章节）
+        var placeholderFiltered: Bool? = nil
+        var bookName: String? = nil
+    }
+
+    /// 目录结果 + 诊断信息
+    struct TocResult {
+        var chapters: [Chapter] = []
+        var rawCount: Int = 0
+        var placeholderFiltered: Bool = false
+        var bookName: String = ""
     }
     struct ContentDTO: Codable {
         var title: String = ""
@@ -644,7 +659,18 @@ final class SourceService {
         return b
     }
 
+    /// 目录（只要章节）
     func toc(source: BookSource, tocUrl: String, bookUrl: String, book: Book? = nil) async throws -> [Chapter] {
+        try await tocDetailed(source: source, tocUrl: tocUrl, bookUrl: bookUrl, book: book).chapters
+    }
+
+    /// 目录 + **诊断信息**（原始条数 / 有没有「书自己」那条占位）
+    ///
+    /// ⚠️ 2026-10-22 真机「QQ 阅读目录出不来」查出来的：
+    ///   大灰狼服务器对**它没抓到章节的书**，`/catalog` 会返回**一条占位**（title = 书名）
+    ///   ⇒ 以前被当成 1 个章节、或被报成「chapterList 规则没命中」⇒ **提示是误导的**
+    ///   ⇒ 现在把原始条数带回来 ⇒ UI 能说清楚到底是「服务器没数据」还是「规则没命中」
+    func tocDetailed(source: BookSource, tocUrl: String, bookUrl: String, book: Book? = nil) async throws -> TocResult {
         var p = json(["tocUrl": tocUrl, "bookUrl": bookUrl, "maxPages": 5])
         // ⚠️⚠️ **必须传 book**！
         //    站方目录 JS（🍅大灰狼的 ruleToc.chapterList）会调
@@ -660,9 +686,14 @@ final class SourceService {
         let dto: TocDTO = try await call("toc", p, as: TocDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
         RuleSandbox.shared.appendLog("[目录出参] 章节数=\(dto.chapters.count)")
-        return dto.chapters.map {
-            Chapter(url: $0.url, title: $0.title, index: $0.index, isVolume: $0.isVolume, tag: $0.tag)
-        }
+        return TocResult(
+            chapters: dto.chapters.map {
+                Chapter(url: $0.url, title: $0.title, index: $0.index, isVolume: $0.isVolume, tag: $0.tag)
+            },
+            rawCount: dto.rawCount ?? dto.chapters.count,
+            placeholderFiltered: dto.placeholderFiltered ?? false,
+            bookName: dto.bookName ?? (book?.name ?? "")
+        )
     }
 
     func content(source: BookSource, chapter: Chapter, book: Book? = nil) async throws -> ContentDTO {
