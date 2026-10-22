@@ -844,6 +844,20 @@
      * ⚠️ 表单值挂在 **result** 上 —— Legado 就是这么给的，
      *    站方 login() 里读的是 `result['邮箱']` / `result['密码']`。
      */
+    /**
+     * ⚠️⚠️⚠️ **表单值必须合并进 `__loginInfo`**（2026-10-22 真机「解锁整个源」点了没反应）
+     *
+     *   站方（🍒NovelHub 聚合源）是从 **`source.getLoginInfoMap()`** 读**当前输入框的值**的：
+     *     function nhAuthUiMap() { return source.getLoginInfoMap ? source.getLoginInfoMap() : {}; }
+     *   ⇒ 轻阅以前**只把 formValues 挂到 `result`** ⇒ 站方读到的 `getLoginInfoMap()` 是**空的**
+     *   ⇒ 站方提示「请在下面「整源解锁密码」输入框里填密码」⭐（用户明明填了！）
+     *
+     *   ⇒ **Legado / 栖阅的语义**：点 action 按钮时，**先把当前输入框的值写进 loginInfo**，
+     *     再执行 action（站方的 `login(true)` 第一步也是 `putLoginInfo(JSON.stringify(result))`）
+     *   ⇒ 这里照做：已存的 loginInfo + 当前输入框的值（**当前输入框优先**）
+     *   ⚠️ 只是**内存里**合并 ⇒ 不会因为这个而把密码写进书源 JSON
+     *      （轻阅的 loginInfo 存在 UserDefaults，不在书源文件里）
+     */
     login: function (p) {
       var src = p.source || {};
       runtime.source = src;
@@ -851,6 +865,11 @@
         var action = String(p.action || '').trim();
         if (!action) return { ok: false, error: '没有登录动作' };
         var formValues = (p.formValues && typeof p.formValues === 'object') ? p.formValues : {};
+        // ⚠️ 表单值要先合并进 __loginInfo（长注释见本 op 上方）
+        if (src && Object.keys(formValues).length) {
+          var __li = (src.__loginInfo && typeof src.__loginInfo === 'object') ? src.__loginInfo : {};
+          src.__loginInfo = Object.assign({}, __li, formValues);
+        }
         var scope = rule.makeScope({
           result: formValues,
           source: src,

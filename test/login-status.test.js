@@ -78,7 +78,8 @@ ok(/holdingAll = !!\(QR\.__qrMsgSink && QR\.__qrHoldBegin\)/.test(analyzer),
 
 // ───────── ② 引擎：login op 回传原文 ─────────
 console.log('\n=== 2. login op 回传站方原文 ===');
-const loginOp = engine.match(/login:\s*function\s*\(p\)\s*\{[\s\S]{0,2000}?\n    \},/);
+// ⚠️ 长度上限放宽（2000 → 6000）：op 里多写几行注释就会匹配不上 ⇒ 假红
+const loginOp = engine.match(/login:\s*function\s*\(p\)\s*\{[\s\S]{0,6000}?\n    \},/);
 ok(!!loginOp, 'engine.js 里有 login op');
 if (loginOp) {
   ok(/QR\.__qrMsgSink\s*=\s*msgs/.test(loginOp[0]),
