@@ -30,6 +30,15 @@
   //      新书源会自己再定义一遍（它要的就是自己的值），
   //      切回旧书源时 jsLib 会重新加载 ⇒ 也会重新定义 ⇒ 无残留 ✅
   var libGlobals = {};
+  // ⚠️⚠️⚠️ **被站方 jsLib 改写的全局的【原值】**（2026-10-22 真机「导入另一个源后大灰狼目录 0 章」）
+  //   站方 jsLib 是**间接 eval** ⇒ `var host = [...]` / `function getArguments(){}` 会**覆盖**
+  //   **同名**的全局 ⇒ 两个源的 jsLib 都有 `host` / `getArguments` 时 ⇒ **后加载的赢**
+  //   ⇒ 大灰狼的 `host`（线路数组）/ `getArguments`（取 server）被换成别的源的
+  //   ⇒ `base_url` 取错 ⇒ `/catalog` 打到错的服务器 ⇒ **返回空 ⇒ 目录 0 章** ⭐
+  //
+  //   ⇒ 光「删掉新增的」**不够**（同名覆盖是**改值**不是新增）⇒ 必须**把原值还原** ✅
+  //   （这就是栖阅的 `restoreMutatedBaseGlobals`）
+  var libChanged = {};
   var libOwner = '';   // 当前全局属于哪个书源
 
   function globalNames() {
@@ -37,12 +46,22 @@
   }
 
   function purgeLibGlobals(key) {
+    // ① 站方**新增**的全局 ⇒ 删掉
     var names = libGlobals[key] || [];
     for (var i = 0; i < names.length; i++) {
       var n = names[i];
       try { delete g[n]; } catch (e) { try { g[n] = undefined; } catch (e2) {} }
     }
     libGlobals[key] = [];
+    // ② 站方**改写**的全局 ⇒ **把原值还原**（同名覆盖的真相）
+    var ch = libChanged[key] || {};
+    for (var cn in ch) {
+      try { g[cn] = ch[cn]; } catch (e) { /* 忽略 */ }
+    }
+    libChanged[key] = {};
+    // ③ ★ **删掉 libLoaded** ⇒ 切回这个源时 **jsLib 一定会重新加载**
+    //   ⇒ 站方自己的 `var host = [...]` / `function getArguments(){}` 会**重新定义**
+    //   ⇒ **同名污染一定被覆盖回去**（哪怕中途还有别的源插进来）✅
     delete libLoaded[key];
   }
 
@@ -72,6 +91,11 @@
     libLoaded[key] = true;
     var code = String(source.jsLib);
     var namesBefore = globalNames();
+    // ⚠️ 基线快照（名字 → 值）⇒ 站方改写了谁，切源时把谁还原回去
+    var snapshotBefore = {};
+    for (var sb = 0; sb < namesBefore.length; sb++) {
+      try { snapshotBefore[namesBefore[sb]] = g[namesBefore[sb]]; } catch (e) {}
+    }
     try {
       /* jshint evil:true */
       // ⚠️ 这里原来用的是
@@ -114,25 +138,40 @@
           QR.__qrStationHosts = host.slice();
         }
       } catch (e) { /* 忽略 */ }
-      // ⚠️ 记下本次 jsLib **新增**的全局 ⇒ 切书源时删掉
-      try {
-        var after = globalNames();
-        var added = [];
-        for (var gi = 0; gi < after.length; gi++) {
-          if (namesBefore.indexOf(after[gi]) < 0) added.push(after[gi]);
-        }
-        libGlobals[key] = added;
-        libOwner = key;
-        try {
-          if (added.length) {
-            QR.java.log('[全局治理] 载入「' + (source.bookSourceName || key) + '」新增 ' +
-              added.length + ' 个全局变量（切书源时会清掉）');
-          }
-        } catch (e) {}
-      } catch (e) { /* 忽略 */ }
     } catch (e) {
       QR.java.log('[jsLib 出错] ' + (source.bookSourceName || key) + ': ' + e.message);
     }
+    // ⚠️⚠️⚠️ **记账要放在 try/catch【外面】**（2026-10-22 真机栽在这）：
+    //   以前记账在 try 里 ⇒ **站方 jsLib 一旦抛异常** ⇒ 已定义的全局**没被记账**
+    //   ⇒ 切书源时清不掉 ⇒ **污染永久留下** ⇒ 别的源一直坏 ⭐
+    //   ⇒ 现在：无论成功失败都记账 ✅
+    try {
+      var after = globalNames();
+      var added = [];
+      var changed = {};
+      for (var gi = 0; gi < after.length; gi++) {
+        var gn = after[gi];
+        if (namesBefore.indexOf(gn) < 0) {
+          added.push(gn);
+        } else {
+          // ⚠️ 同名但**值变了** ⇒ 记下原值，切源时还原
+          try {
+            if (g[gn] !== snapshotBefore[gn]) changed[gn] = snapshotBefore[gn];
+          } catch (e2) {}
+        }
+      }
+      libGlobals[key] = added;
+      libChanged[key] = changed;
+      libOwner = key;
+      try {
+        if (added.length || Object.keys(changed).length) {
+          QR.java.log('[全局治理] 载入「' + (source.bookSourceName || key) + '」新增 ' +
+            added.length + ' 个全局变量' +
+            (Object.keys(changed).length ? ('、改写 ' + Object.keys(changed).length + ' 个（切书源时会还原）') : '') +
+            '（切书源时会清掉）');
+        }
+      } catch (e3) {}
+    } catch (e4) { /* 忽略 */ }
     return Promise.resolve();
   }
 
