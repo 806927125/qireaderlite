@@ -558,6 +558,25 @@
       QR.java.log('[data:载荷] 原始长=' + s.length + ' 剥后长=' + data.length +
         ' 含&=' + (data.indexOf('&') >= 0 ? '有' : '无') +
         ' 前120=' + brief(data, 120));
+      // ⭐⭐⭐ **把载荷「解出来」看一眼**（2026-10-22 真机栽在这）
+      //   症状：站方 init 规则解出 `book_id=undefined` ⇒ 请求 /detail?book_id=undefined
+      //        ⇒ **服务器**回「illegal base64 data at input byte 9」⇒ 详情/目录全空
+      //   而宿主这边只看到一串 base64 ⇒ 根本看不出缺了哪个字段 ⭐
+      //   ⇒ 这里**只观测不改行为**：解一次（解不开就说解不开）并打出内容
+      var _dec = null, _why = '';
+      try {
+        if (typeof g.atob !== 'function') { throw new Error('无 atob'); }
+        _dec = g.atob(data.replace(/\s/g, ''));
+      } catch (e2) {
+        _why = '（标准 base64 解不开：' + String(e2 && e2.message || e2).slice(0, 60) + '）';
+      }
+      if (_dec !== null) {
+        // ⭐ 站方载荷常是 **URL 编码过的** ⇒ 先还原再解
+        try { _dec = decodeURIComponent(_dec); } catch (e3) {}
+        QR.java.log('[data:载荷] 解出来 = ' + brief(_dec, 300) + _why);
+      } else {
+        QR.java.log('[data:载荷] 解不出来' + _why + '（载荷前 60 = ' + brief(data, 60) + '）');
+      }
     } catch (e) {}
     return data;
   }
