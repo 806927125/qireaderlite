@@ -706,9 +706,28 @@
       if (kind !== T.JS) return Promise.resolve([]);
       var body = stripModePrefix(r, kind);
       var jt = splitJsWithTail(body);
-      if (!jt.sel) return Promise.resolve([]);
-      return runJs(jt.code, makeScope(jsScope(base, base, ctx, body)))
-        .then(function (res) { return selectFromJsResult(res, jt.sel, ctx, base); })
+      // ⚠️⚠️⚠️ **没有尾部选择器也要跑 JS**（2026-10-22 轻阅实证，NovelHub 适配的关键）
+      //   站方（🍒NovelHub 整合源）的 `ruleToc.chapterList` 是**纯 `<js>…</js>`**（结尾 `})()`，
+      //   **没有 `$.data` 之类尾部**），返回的是 `["url|||name|||", …]` 这样的**字符串数组**
+      //   ⇒ 以前这里 `if (!jt.sel) return Promise.resolve([]);` ⇒ **目录直接空**
+      //      ⇒ 全部平台 0 章 ⭐
+      //   ⇒ Legado 语义：JS 自己返回列表 ⇒ **结果就是列表本身**（下面 .then 里按 !jt.sel 处理）
+      var _dbgScope = makeScope(jsScope(base, base, ctx, body));
+      return runJs(jt.code, _dbgScope)
+        .then(function (res) {
+
+          // ⚠️⚠️⚠️ **没有尾部选择器 ⇒ 返回 JS 的原始结果**（2026-10-22 轻阅实证）
+          //   站方（🍒NovelHub 整合源）的 `ruleToc.chapterList` 是**纯 `<js>…</js>`**（结尾 `})()`，
+          //   **没有 `$.data` 之类尾部**），返回的是 `["url|||name|||", …]` 这样的**字符串数组**
+          //   ⇒ 以前 `if (!jt.sel) return Promise.resolve([]);` ⇒ **目录直接空**
+          //      ⇒ 全部平台 0 章 ⭐
+          //   ⇒ Legado 语义：JS 自己返回列表 ⇒ **结果就是列表本身** ✅
+          //   ⇒ 有尾部选择器（`<js>…</js>$.data`）时照旧走 selectFromJsResult
+          if (!jt.sel) {
+            return Array.isArray(res) ? res : (res == null ? [] : [res]);
+          }
+          return selectFromJsResult(res, jt.sel, ctx, base);
+        })
         .catch(function (e) {
           QR.java.log('[列表规则出错]', String(body).slice(0, 100), e && e.message, lastAjaxNote(), baseNote(base));
           return [];
@@ -965,9 +984,18 @@
 
   function jsScope(result, base, ctx, code) {
     return {
-      // 多值规则的 result 必须是数组，书源里会写 result.length / result[0] / result.map
-      result: Array.isArray(result) ? result
-             : (result && result.nodeType ? dom.textOf(result) : result),
+      // ⚠️⚠️⚠️ **`result` 优先用 `ctx.raw`（当前页的【原始内容】）**（2026-10-22 轻阅实证）
+      //   Legado/栖阅的语义：`result` = 当前内容页的原始内容（HTML 源码），
+      //   站方常这么用它：`var s = String(result); s.match(/<div class="book-like">…/)`
+      //   轻阅以前给的是 `dom.textOf(node)`（**纯文本**）⇒ 站方正则永远匹配不上
+      //   ⇒ 🍒NovelHub 的**目录/正文全平台 0**（详情能通是因为 bookInfo 走了 markContent）
+      //
+      //   ⚠️ 这一处必须放在 jsScope 里（不能只改 evalOne）——
+      //   **复合规则 `<js>…</js>$.data` 走的是 getJsonList**，它也用 jsScope ⇒
+      //   只改 evalOne ⇒ 复合规则漏掉 ⇒ 目录照样 0 ⭐
+      result: (ctx && ctx.raw != null) ? ctx.raw
+             : (Array.isArray(result) ? result
+             : (result && result.nodeType ? dom.textOf(result) : result)),
       $: asJsonish(result),
       resultNode: result,
       // 覆盖 makeScope 的默认 java：让 get/getString 能回退到「当前结果」

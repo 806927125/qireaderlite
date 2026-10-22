@@ -44,6 +44,7 @@ declare -a GATES=(
   "data-url-guard:test/data-url-guard.test.js"
   "global-restore:test/global-restore.test.js"
   "book-raw:test/book-raw.test.js"
+  "js-no-tail:test/js-no-tail.test.js"
   "filter-action:test/filter-action.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
