@@ -686,6 +686,61 @@
     var listRuleStr = ruleText(listRule.bookList);
     if (!listRuleStr) return Promise.resolve({ books: [], nextUrl: '' });
 
+    // ⚠️⚠️⚠️ **bookList 是 `@js:`**（2026-10-22 真机「一个平台都出不了书」的根因）
+    //
+    //   站方（用户自己整合十几个源的那个聚合源）的 `ruleExplore.bookList` 是 **83KB 的 `@js:`**：
+    //   站方 JS 自己抓列表页、把十几个平台的 HTML 统一成**同一行**的格式：
+    //       url|||name|||author|||coverUrl|||intro|||kind|||tag
+    //   然后 `name` / `author` / `bookUrl` / `coverUrl` / `intro` 这些**子规则**
+    //   用 `##正则##` 从每一行里抠字段：
+    //       name: ##^[^|]*\|\|\|([\s\S]*?)\|\|\|[\s\S]*$##$1
+    //   ⇒ **Legado 的语义**：`bookList` 求值结果 = **字符串列表**（getStringList）：
+    //     JS 返回数组 ⇒ 每项就是一行；JS 返回字符串 ⇒ **按行切**；
+    //     然后**每一行**再各自套 name/author/… 子规则 ⇒ 一行一本书。
+    //
+    //   ⇒ 以前宿主**没有这条路**（只有 JSON / 正则 / DOM 选择器三条）
+    //      ⇒ 站方那 83KB 的 JS 被当成 DOM 规则 ⇒ 整页文档当一本书
+    //      ⇒ `name` 子规则抠不出来 ⇒ 全被 `if (b && b.name)` 过滤掉
+    //      ⇒ **一个平台都出不了书**（分类是有的，所以现象是「能进列表、点进去空的」）⭐
+    //
+    //   ⚠️ 对象数组也能吃：baseToText 会把对象 JSON.stringify ⇒ JSONPath 子规则照常生效
+    if (rule.classify(listRuleStr) === rule.T.JS) {
+      // ⚠️⚠️ **scope 必须用引擎内部那套**（`rule.jsScope`）：
+      //   自己造 scope ⇒ 漏掉 document / 包过 API 的 source ⇒ 站方 JS 抛
+      //   「undefined.slice」这类看不懂的错 ⭐
+      //   ⇒ base 传 page.doc ⇒ document 指向**当前列表页**（站方 @js: 里
+      //      用 document.querySelectorAll 解析列表结构）
+      var jsScope = rule.makeScope(rule.jsScope(page.doc, page.doc, ctx, listRuleStr));
+      return rule.runJs(rule.stripJsWrapper(listRuleStr), jsScope)
+        .then(function (r) {
+          var items = [];
+          if (Array.isArray(r)) {
+            items = r.map(function (x) {
+              return (x && typeof x === 'object') ? x : String(x == null ? '' : x);
+            });
+          } else if (r != null && typeof r === 'object') {
+            items = [r];
+          } else if (typeof r === 'string') {
+            // Legado 的 getStringList：**按行切**（站方特意把字段里的 CR/LF 洗掉了）
+            items = r.split(/\r?\n/).map(function (l) { return l.trim(); })
+              .filter(function (l) { return !!l; });
+          }
+          var chain = items.reduce(function (acc, item) {
+            return acc.then(function (list) {
+              return extractOneBook(item, listRule, ctx, page.url, opts)
+                .then(function (b) { if (b && b.name) list.push(b); return list; });
+            });
+          }, Promise.resolve([]));
+          return chain.then(function (list) {
+            return { books: list, nextUrl: extractNextUrl(page, listRule, page.url) };
+          });
+        })
+        .catch(function (e) {
+          QR.java.log('[发现页 bookList(JS) 出错]', String(e && e.message || e));
+          return { books: [], nextUrl: '' };
+        });
+    }
+
     // ★ JSON 响应：列表项是 JSON 对象，字段规则要针对每个对象单独求值
     if (ctx && ctx.isJSON) {
       var kind = rule.classify(listRuleStr, ctx);

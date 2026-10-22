@@ -40,6 +40,7 @@ declare -a GATES=(
   "js-no-interpolate:test/js-no-interpolate.test.js"
   "login-formvalues:test/login-formvalues.test.js"
   "source-getput:test/source-getput.test.js"
+  "js-booklist:test/js-booklist.test.js"
   "filter-action:test/filter-action.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"

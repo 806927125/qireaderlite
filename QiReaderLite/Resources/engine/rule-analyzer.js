@@ -1464,6 +1464,13 @@
     evalOne: evalOne,
     runJs: runJs,
     makeScope: makeScope,
+    // ⚠️ 2026-10-22：**导出 jsScope**（引擎内部的标准 JS 作用域构造器）
+    //   「bookList 是 @js:」这条通路要用它 —— 自己造 scope 会漏掉：
+    //     · document（站方 JS 里的 querySelectorAll 要指向**当前页**的文档）
+    //     · source / book（必须是**包过 API 的对象**，否则站方一调就 TypeError）
+    //     · result / $ / java（java 要能回退到「当前结果」）
+    //   ⇒ 少一样就表现为「站方 JS 抛 undefined.slice」这类看不懂的错 ⭐
+    jsScope: jsScope,
     stripJsWrapper: stripJsWrapper,
     parseRegexRule: parseRegexRule,
     stringMatchAll: stringMatchAll,

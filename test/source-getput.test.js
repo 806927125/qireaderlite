@@ -149,6 +149,33 @@ if (!fs.existsSync(NH)) {
   ok(afterKinds.length > 0,
      '**解锁后能解析出分类**（之前是 0 —— nhAuth 恒 false ⇒ 规则字段全 return ""）');
   ok(afterFilters.length > 0, '筛选栏项也能出来');
+
+  // ④ ⭐⭐⭐ **发现页要能出书**（这条以前**完全没有断言** ⇒
+  //      「分类有了但一个平台都出不了书」才能一路溜到真机才发现）
+  //
+  //   根因：站方的 `ruleExplore.bookList` 是 **83KB 的 `@js:`**，
+  //   站方 JS 把十几个平台的列表统一成 `url|||name|||author|||cover|||intro…` 一行，
+  //   再用 `name`/`bookUrl` 等 `##正则##` 子规则从每行里抠字段
+  //   ⇒ 宿主必须有「bookList 是 @js: ⇒ 字符串列表 ⇒ 逐项套子规则」这条通路
+  const firstKind = afterKinds.find(k => k.url);
+  if (!firstKind) {
+    ok(false, '有可请求的分类（才能测出书）');
+  } else {
+    const ex = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+      source: Object.assign({}, src, { __variables: dirtyVars, __loginInfo: {} }),
+      kindUrl: firstKind.url, page: 1,
+    }) + ")");
+    const books = (ex && ex.books) || [];
+    console.log('  explore 出书 =', books.length, '| error:', (ex && ex.error) || '(无)');
+    ok(books.length > 0,
+       '**发现页能出书**（分类有但书出不来 ⇒ bookList 是 @js: 的通路断了）',
+       '分类「' + firstKind.title + '」出 0 本');
+    ok(!!(books[0] && books[0].name), '书名非空');
+    ok(!!(books[0] && books[0].author), '作者非空（子规则从 ||| 串里抠的）');
+    ok(!!(books[0] && books[0].bookUrl), '详情 URL 非空');
+    ok(!/undefined|NaN/.test(JSON.stringify(books[0] || {})), '第一条没有 undefined/NaN 污染',
+       JSON.stringify(books[0] || {}).slice(0, 160));
+  }
 }
 
 console.log('\n' + (fail === 0 ? '✅' : '❌') + ' 通过 ' + pass + ' / 失败 ' + fail);
