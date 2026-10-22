@@ -56,7 +56,16 @@ ok(chipBlock.length > 0, '找到 filterChip');
 ok(chipBlock.indexOf('.background(') < 0, '筛选胶囊没有再叠 .background（玻璃套玻璃 = 一坨灰糊）');
 
 console.log('');
-console.log('=== 5. 登录页接入液态玻璃 ===');
+console.log('=== 5. 登录页接入液态玻璃（按钮也要玻璃，栖阅同款）===');
+ok(/struct GlassActionButtonStyle/.test(login), '有专用的玻璃按钮样式');
+const bordered = (login.match(/buttonStyle\(\.bordered\)/g) || []).length;
+ok(bordered === 0, '登录页不该还有 .buttonStyle(.bordered)（那是描边实心，不是玻璃；实际 ' + bordered + ' 处）');
+const glassBtns = (login.match(/buttonStyle\(GlassActionButtonStyle\(\)\)/g) || []).length;
+ok(glassBtns >= 7, '登录页按钮改成玻璃（实际 ' + glassBtns + ' 处）');
+ok(/func glassField\(\)/.test(login), '有玻璃输入框');
+ok(/glassField\(\)/.test(login), '站方的邮箱/密码框用了玻璃输入框');
+ok(/PageBackdrop\(\)/.test(login),
+   '登录页接上了 PageBackdrop（玻璃后面要有高对比内容才有折射效果）');
 const n = (login.match(/\.glassCard\(cornerRadius: 12, variant: \.regular\)/g) || []).length;
 ok(n >= 3, '登录页至少 3 处玻璃卡片（实际 ' + n + ' 处）');
 ok(login.indexOf('Color.white.opacity(0.55), in: .rect(cornerRadius: 12)') < 0,

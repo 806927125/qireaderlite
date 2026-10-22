@@ -44,6 +44,36 @@ struct SourceLoginSheet: View {
     @State private var bestHost: String = ""
     @State private var fqTokenSaved = false
 
+    /// ⭐ **玻璃输入框**（栖阅登录页同款：通透，能看到底下的插画）
+    ///
+    /// ⚠️ 必须 `textFieldStyle(.plain)` —— `.roundedBorder` 会画自己的边框+底色
+    ///    ⇒ 玻璃套边框 = 一坨糊（同「按钮那个 .bordered」的坑）
+    private func glassField() -> some View {
+        self
+            .textFieldStyle(.plain)
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .glassCard(cornerRadius: 12, variant: .clear)
+    }
+
+    /// ⭐ **栖阅登录页那种「浅色玻璃 + 蓝字」的按钮**（2026-10-22 用户截图对照）
+    ///
+    /// 栖阅那页：19 个站方按钮**全是玻璃块**，底下的插画直接透上来 ⇒ `.clear` 档
+    /// ⚠️ 必须同时做两件事，少一个就露馅：
+    ///   ① `buttonStyle(.plain)` —— `.bordered` 会画自己的边框+底色 ⇒ **玻璃套边框 = 一坨糊**
+    ///   ② 文字显式 `foregroundStyle` —— `.plain` 下 `.tint()` 不生效 ⇒ 蓝字要自己给
+    private struct GlassActionButtonStyle: ButtonStyle {
+        var tint: Color = Theme.accent
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .foregroundStyle(tint)
+                .glassCapsule()
+                // 按压反馈（`.plain` 没有系统反馈 ⇒ 自己给一个轻微透明）
+                .opacity(configuration.isPressed ? 0.55 : 1.0)
+        }
+    }
+
     struct Field: Identifiable {
         let id = UUID()
         let name: String
@@ -52,9 +82,15 @@ struct SourceLoginSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
+        // ⭐⭐ **接上 PageBackdrop**（2026-10-22 用户截图对照栖阅）
+        //   栖阅那页的玻璃能透出**底下的插画** ⇒ 后面必须有高对比内容
+        //   轻阅的 `PageBackdrop` 就是干这个的（渐变 + 彩色光斑 + GlassBackdrop）
+        //   ⇒ 登录 sheet 之前**没有背景** ⇒ 玻璃后面只有系统材质 ⇒ 玻璃等于白做 ❗
+        ZStack {
+            PageBackdrop()
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 12) {
                     // ── 按钮排成**两列**（栖阅登录页同款：站方那 19 个按钮两列排）──
                     //    文本/密码框仍整行 ✅
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
@@ -74,10 +110,11 @@ struct SourceLoginSheet: View {
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 11)
+                                .padding(.horizontal, 10)
                             }
                             // ⚠️ 栖阅登录页的按钮是**浅色玻璃 + 蓝字**（不是实心蓝块）
-                            .buttonStyle(.bordered)
-                            .tint(Theme.accent)
+                            //    ⇒ 2026-10-22 改：`.bordered` → 玻璃按钮（`.plain` + `.glassCapsule()`）
+                            .buttonStyle(GlassActionButtonStyle())
                             .disabled(runningAction != nil)
                         }
                     }
@@ -85,10 +122,10 @@ struct SourceLoginSheet: View {
                         switch f.type {
                         case "password":
                             SecureField(f.name, text: binding(f.name))
-                                .textFieldStyle(.roundedBorder)
+                                .glassField()
                         default:
                             TextField(f.name, text: binding(f.name))
-                                .textFieldStyle(.roundedBorder)
+                                .glassField()
                         }
                     }
 
@@ -117,8 +154,10 @@ struct SourceLoginSheet: View {
                         } label: {
                             Label("重置引擎", systemImage: "arrow.clockwise")
                                 .font(.system(size: 13, weight: .medium))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(GlassActionButtonStyle())
                         .tint(Theme.accent)
                         Text("点不动/没反应 = 引擎卡住了 → 点这个换掉它")
                             .font(.caption2)
@@ -157,6 +196,7 @@ struct SourceLoginSheet: View {
                     varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
                 }
             }
+            }
         }
     }
 
@@ -179,8 +219,9 @@ struct SourceLoginSheet: View {
                 .font(.system(size: 14, weight: .medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
+                .padding(.horizontal, 10)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(GlassActionButtonStyle())
             .tint(Theme.accent)
             .disabled(probing || busy)
 
@@ -204,6 +245,8 @@ struct SourceLoginSheet: View {
                 } label: {
                     Label("复制", systemImage: "doc.on.clipboard")
                         .font(.caption)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
                 }
             }
             Text(text)
@@ -272,9 +315,11 @@ struct SourceLoginSheet: View {
             TextEditor(text: $varsText)
                 .font(.system(size: 12, design: .monospaced))
                 .frame(minHeight: 90)
+                .scrollContentBackground(.hidden)
                 .padding(8)
-                .background(Theme.sub.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 10))
+                // ⚠️ 这里用 `.regular` 磨砂档（等宽小字要看得清）；
+                //    站方的邮箱/密码框用 `.clear` 通透档（栖阅同款）
+                .glassCard(cornerRadius: 10, variant: .regular)
             HStack(spacing: 10) {
                 Button {
                     let raw = varsText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -295,17 +340,22 @@ struct SourceLoginSheet: View {
                 } label: {
                     Label(varsSaved ? "已保存" : "保存", systemImage: varsSaved ? "checkmark" : "square.and.arrow.down")
                         .font(.system(size: 13, weight: .medium))
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(GlassActionButtonStyle())
                 if !varsText.isEmpty {
                     Button {
                         varsText = ""
                         SourceVariables.setVars("", for: source.bookSourceUrl)
                         varsSaved = true
                     } label: {
-                        Text("清空（用默认线路）").font(.system(size: 13))
+                        Text("清空（用默认线路）")
+                            .font(.system(size: 13))
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(GlassActionButtonStyle())
                 }
             }
             // ── 本地 / 云端（站方的 proxy 变量）────────────────
@@ -335,7 +385,7 @@ struct SourceLoginSheet: View {
                 Label(probingHosts ? "测速中…" : "测速并选最快线路", systemImage: "speedometer")
                     .font(.system(size: 13, weight: .medium))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(GlassActionButtonStyle())
             .disabled(probingHosts)
             if !probeResult.isEmpty {
                 Text(probeResult)
@@ -415,6 +465,7 @@ struct SourceLoginSheet: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.ink)
             TextField("从 fanqienovel.com 复制 sessionid", text: $fqToken)
+                .glassField()
                 .font(.system(size: 13))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -452,7 +503,7 @@ struct SourceLoginSheet: View {
                     Label(fqTokenSaved ? "已保存" : "保存", systemImage: fqTokenSaved ? "checkmark" : "square.and.arrow.down")
                         .font(.system(size: 13, weight: .medium))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(GlassActionButtonStyle())
                 .tint(Theme.accent)
                 Text("App 读不到 Safari 的 cookie；在 App 内置浏览器登录番茄最省事，这个是兜底")
                     .font(.caption2)
