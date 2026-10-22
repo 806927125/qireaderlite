@@ -115,6 +115,31 @@ enum SourceVariables {
         UserDefaults.standard.set(s, forKey: loginFormPrefix + sourceUrl)
     }
 
+    // MARK: 发现页筛选项的「当前值」
+
+    /// ⭐⭐ **用户选过的筛选项值**（2026-10-22）
+    ///
+    /// 站方（🍒NovelHub 聚合源）的筛选 action **自己写源级变量**（键名是站方定的 `src`/`kind`/…），
+    /// 宿主抠不出 paramKey ⇒ 读不到「当前值」⇒ 胶囊上永远显示站方给的 `default`
+    /// （而站方的 default 恒为 `chars[0]` ⇒ 切了番茄还显示书旗 ⇒ **用户以为没生效**）❗
+    ///
+    /// ⇒ 宿主自己记一份「用户选过什么」⇒ 胶囊显示它 ✅
+    /// （站方那边的真实状态由站方自己维护，宿主这份只是**显示**用的）
+    private static let filterChoicePrefix = "sourcefilter."
+
+    /// 读某个源、某个筛选项的当前值（没选过 = 空串）
+    static func filterChoice(for sourceUrl: String, title: String) -> String {
+        guard !sourceUrl.isEmpty, !title.isEmpty else { return "" }
+        return UserDefaults.standard.string(
+            forKey: filterChoicePrefix + sourceUrl + "|" + title) ?? ""
+    }
+
+    /// 记下用户选了哪个
+    static func setFilterChoice(_ value: String, for sourceUrl: String, title: String) {
+        guard !sourceUrl.isEmpty, !title.isEmpty else { return }
+        UserDefaults.standard.set(value, forKey: filterChoicePrefix + sourceUrl + "|" + title)
+    }
+
     // MARK: 登录信息
 
     /// 读某个源的登录信息（map）

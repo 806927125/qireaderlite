@@ -152,7 +152,7 @@ struct ExploreView: View {
             } else {
                 ForEach(f.chars, id: \.self) { c in
                     Button {
-                        applyFilter(f.paramKey, c)
+                        applyFilter(f, c)
                     } label: {
                         Text(c)
                     }
@@ -180,11 +180,36 @@ struct ExploreView: View {
 
     /// 选中一个筛选项 ⇒ **写源级变量** ⇒ 重新跑站方 exploreUrl
     ///
+    /// ⚠️⚠️ 两条路（2026-10-22）：
+    ///   ① `paramKey` 有值（🍅大灰狼：`show(infoMap['平台'],'find_source')`）
+    ///      ⇒ 轻阅自己写这个源级变量
+    ///   ② `paramKey` 为空但**有 action**（🍒NovelHub：action 自己写变量 + 刷新）
+    ///      ⇒ **执行站方 action**（栖阅同款）—— 宿主自己写不了那个变量 ⭐
+    ///
     /// ⚠️⚠️ 写变量**必须合并站方默认表**（`mergeVars`）—— 只写一项会把源改坏：
     ///   站方 `getArguments` **只在变量串为空时才给默认表** ⇒ 只写一项 ⇒
     ///   `server / tab / sources / source_type / proxy` 全变 undefined ❗
-    private func applyFilter(_ key: String, _ value: String) {
-        guard !key.isEmpty else { return }
+    private func applyFilter(_ f: SourceService.FilterDTO, _ value: String) {
+        // ⚠️ 先记下「用户选了什么」—— paramKey 为空的筛选项（站方自己管变量）
+        //   读不到源级变量 ⇒ 胶囊会一直显示站方的 default ⇒ 用户以为没生效
+        SourceVariables.setFilterChoice(value, for: currentSourceUrl, title: f.title)
+        if f.paramKey.isEmpty {
+            // ── ② 站方自己管变量 ⇒ 执行它的 action ──
+            guard !f.action.isEmpty, let s = current else { return }
+            Task {
+                _ = try? await SourceService.shared.applySourceFilter(
+                    source: s, action: f.action, title: f.title, value: value)
+                // 站方写完变量 ⇒ 分类/筛选栏都要重跑
+                //（胶囊上的当前值来自站方重跑后给的 default）
+                kindsLoaded = false
+                selected = nil
+                books = []
+                await loadKinds(force: true)
+            }
+            return
+        }
+        // ── ① 轻阅自己写源级变量 ──
+        let key = f.paramKey
         let merged = SourceVariables.mergeVars(
             userJSON: SourceVariables.vars(for: currentSourceUrl),
             defaults: SourceVariables.defaultVars(for: currentSourceUrl))

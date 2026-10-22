@@ -1059,6 +1059,63 @@
       });
     },
 
+    /**
+     * 发现页筛选栏：**执行站方的 action**（栖阅同款，2026-10-22）
+     *
+     * 站方（🍅大灰狼）的筛选 action 是「把值写进某个源级变量」那种简单形式：
+     *     show(infoMap['平台'],'find_source')
+     * ⇒ 轻阅从 action 里抠出 paramKey（`find_source`）⇒ 自己写这个变量 ✅
+     *
+     * ⚠️ 但站方（🍒NovelHub 聚合源）**不是这么写的** —— 它的 action
+     * **自己读写源级变量、自己刷新发现页**：
+     *     (function(){var c={};try{c=JSON.parse(source.getVariable()||'{}');}catch(e){}
+     *       var v=infoMap['平台']; if(v!==null&&v!==undefined){c['src']=v;
+     *       try{source.setVariable(JSON.stringify(c));}catch(e1){}}
+     *       try{java.refreshExplore();}catch(e2){}})()
+     * ⇒ 抠不出 paramKey（空）⇒ 轻阅原来**直接 return** ⇒ **点了没反应** ⭐
+     *
+     * ⇒ 照栖阅的做法：**把 `infoMap[标题] = 值` 喂给站方，让站方自己写变量**
+     *   （站方写完 `source.setVariable` ⇒ 标 dirty ⇒ 引擎回传 `__sourceVars` ⇒ 原生落盘）
+     */
+    filterAction: function (p) {
+      var src = p.source || {};
+      runtime.source = src;
+      return ensureJsLib(src).then(function () {
+        var action = String(p.action || '').trim();
+        if (!action) return { ok: false, error: '没有筛选动作' };
+        var title = String(p.title || '');
+        var value = String(p.value == null ? '' : p.value);
+        // 站方 action 里读的是 `infoMap['平台']` ⇒ 这里按【标题】塞进去
+        var infoMap = {};
+        if (title) infoMap[title] = value;
+        var scope = rule.makeScope({
+          result: {},
+          source: src,
+          book: p.book,
+          baseUrl: baseUrlOf(src),
+          key: p.key || '',
+          infoMap: infoMap
+        });
+        // ⚠️ jsLib 里的函数在**全局作用域** ⇒ op 期间要把 g.source 挂上
+        var prevSource = g.source;
+        g.source = QR.wrapSource ? QR.wrapSource(src) : src;
+        var msgs = [];
+        var prevSink = QR.__qrMsgSink;
+        QR.__qrMsgSink = msgs;
+        return rule.runJs(action, scope)
+          .then(function (r) {
+            g.source = prevSource;
+            QR.__qrMsgSink = prevSink;
+            return { ok: true, result: (r == null ? '' : String(r)), messages: msgs };
+          })
+          .catch(function (e) {
+            g.source = prevSource;
+            QR.__qrMsgSink = prevSink;
+            return { ok: false, error: String(e && e.message || e), messages: msgs };
+          });
+      });
+    },
+
     exploreKinds: function (p) {
       var src = p.source || {};
       runtime.source = src;

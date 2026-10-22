@@ -189,6 +189,50 @@
       return '';
     };
 
+    /* ────────────────────────────────────────────────────────────
+     * ⚠️⚠️⚠️ **Legado 风格：`source.get(key)` / `source.put(key, value)`**（2026-10-22 真机查出来的）
+     *
+     *   站方（🍒NovelHub 聚合源）**大量**用这两个 API（实测 jsLib+loginUrl 共 71 处 get / 58 处 put）：
+     *     source.get("nhAuthed")   source.put("nhAuthed", hash)
+     *     source.get("nhSafeMode") source.put("nhUaaToken", …)
+     *
+     *   轻阅以前**只实现了 `getVariable` / `setVariable`**（整份 JSON 串）
+     *   ⇒ `source.get(...)` ⇒ **TypeError: not a function**
+     *   ⇒ 站方把它包在 try/catch 里 ⇒ **静默失败**：
+     *      ① `nhAuth()` 里 `source.get("nhAuthed")` 抛 ⇒ catch ⇒ return false
+     *         ⇒ **所有规则字段都直接 return ""** ⇒ 发现页空白 / 搜索没结果 ⭐
+     *      ② `unlockAll()` 里 `source.put("nhAuthed", hash)` 抛 ⇒ 被吞
+     *         ⇒ **解锁状态压根没存下来** ⇒ 但站方照样弹「🔓 已解锁」⇒ **假成功** ⭐
+     *
+     *   ⇒ 语义：**读/写「书籍变量」里的某一项**（跟 getVariable/setVariable 同一份 `vars`）
+     *      `get` 没有该项 ⇒ 返回空串（站方都按「空串 = 没设置」处理）
+     *      `put` 改一项 ⇒ 标 dirty（`QR.__qrDirtyVars`）⇒ 引擎回传 `__sourceVars` ⇒ 原生落盘 ✅
+     *
+     *   ⚠️ **不能把 `get` 实现成「返回整份 vars」** —— 站方是
+     *      `String(source.get("nhAuthed") || "")` 这样比对的，
+     *      拿到整份 JSON 的话哈希对不上 ⇒ 还是不解锁。
+     * ──────────────────────────────────────────────────────────── */
+    function varsMap() {
+      var m = {};
+      try { m = JSON.parse(vars || '{}') || {}; } catch (e) { m = {}; }
+      if (!m || typeof m !== 'object') m = {};
+      return m;
+    }
+    /** 读书籍变量的某一项（没有 ⇒ 空串） */
+    wrapped.get = function (key) {
+      var m = varsMap();
+      var v = m[String(key)];
+      return (v === undefined || v === null) ? '' : String(v);
+    };
+    /** 写书籍变量的某一项 */
+    wrapped.put = function (key, value) {
+      var m = varsMap();
+      m[String(key)] = String(value == null ? '' : value);
+      vars = JSON.stringify(m);
+      QR.__qrDirtyVars = vars;
+      return '';
+    };
+
     /** 登录信息（map） */
     wrapped.getLoginInfoMap = function () { return loginInfo; };
 

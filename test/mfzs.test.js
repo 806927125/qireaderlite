@@ -95,7 +95,8 @@ function realRequest({ url, method, body, headers }) {
   // 直接看引擎算出来的 baseUrl 会不会带 @遇知
   {
     const sb = createSandbox({ nativeMock: async () => ({ ok: true, value: '' }) });
-    const r = await sb.win.__qrInvoke('explainExplore', { source: SOURCE, url: null }).catch(() => null);
+    // ⚠️ op 名是 `explain`（`explainExplore` 这个 op **根本不存在** ⇒ 以前这条一直在测空气）
+    const r = await sb.win.__qrInvoke('explain', { source: SOURCE, url: null }).catch(() => null);
     const u = r && (r['请求URL'] || r.requestUrl || '');
     ok(!/@/.test(String(u || '')), '请求 URL 里不含 @遇知', JSON.stringify(u));
   }
@@ -105,7 +106,7 @@ function realRequest({ url, method, body, headers }) {
   const ex = await invoke('exploreKinds', { source: SOURCE, url: null });
   const kinds = (ex && ex.kinds) || (Array.isArray(ex) ? ex : []);
   if (!kinds.length) {
-    const diag = await invoke('explainExplore', { source: SOURCE, url: null }).catch(e => String(e));
+    const diag = await invoke('explain', { source: SOURCE, url: null }).catch(e => String(e));
     skip('exploreKinds', '返回空 —— ' + JSON.stringify(diag).slice(0, 300));
   } else {
     ok(kinds.length > 20, `分类数合理（书源写了 ~80 个）`, `实际 ${kinds.length}`);
@@ -113,9 +114,28 @@ function realRequest({ url, method, body, headers }) {
     ok(withUrl.length > 20, '绝大多数分类有 url', `${withUrl.length}/${kinds.length}`);
     const p1 = withUrl[0];
     ok(!!p1 && p1.url.indexOf('cread.com') > 0, 'url 是 cread 接口地址', p1 && p1.url);
-    ok(!!p1 && p1.url.indexOf('{{page}}') < 0, 'url 里 {{page}} 已插值成具体页码', p1 && p1.url);
-    // 分组标题（url 为 null 的那些）应该保留
-    ok(kinds.some(k => !k.url), '保留了「❤男频榜单❤」这类分组标题行');
+    // ⚠️ 2026-10-22：**@js: 里的 `{{}}` 原样保留**（Legado / 栖阅语义，build202）
+    //   ⇒ 分类 url 里的 `{{page}}` **不该**在 exploreKinds 阶段被插成固定页码
+    //   （插了就永远是第一页 ⇒ 发现页翻页失效 ⭐）
+    const paged = withUrl.filter(k => String(k.url).indexOf('{{page}}') >= 0);
+    ok(paged.length > 0, '分类 url 里的 {{page}} 原样保留（到 explore 阶段才插值）',
+       `${paged.length} 个`);
+    // ⚠️ 2026-10-22：**分组契约**（栖阅同款，build200/201）
+    //   站方里 **url 为空的行 = 组标题行** ⇒ 它变成**组名**，
+    //   后面的分类项归到它 ⇒ 它**不再**作为一个点不动的分类项混在 kinds 里
+    ok(kinds.every(k => !!k.url), '分类项都有 url（组标题行不再混进分类列表）',
+       `${kinds.filter(k => !k.url).length} 个空 url`);
+    ok(kinds.some(k => String(k.group || '').indexOf('男频榜单') >= 0),
+       '「❤男频榜单❤」这类组标题行变成了组名');
+    // 翻页活检：分类 url 里的 {{page}} 到 explore 阶段要真的插成当前页
+    if (paged.length) {
+      const ex2 = await invoke('explain', {
+        source: SOURCE, kindUrl: paged[0].url, page: 2
+      }).catch(e => String(e));
+      const u2 = String((ex2 && (ex2['请求URL'] || ex2.requestUrl)) || '');
+      ok(/curpage=2/.test(u2), 'explore 阶段把 {{page}} 插成了当前页（翻页不写死）',
+         u2.slice(0, 160));
+    }
   }
 
   /* ── 3. explore 取书 ── */

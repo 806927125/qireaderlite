@@ -39,6 +39,8 @@ declare -a GATES=(
   "explore-groups:test/explore-groups.test.js"
   "js-no-interpolate:test/js-no-interpolate.test.js"
   "login-formvalues:test/login-formvalues.test.js"
+  "source-getput:test/source-getput.test.js"
+  "filter-action:test/filter-action.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
   "timeout-budget:test/request-timeout-budget.test.js"

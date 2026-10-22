@@ -334,7 +334,14 @@ final class SourceService {
         /// 该筛选项**当前生效的值**
         ///
         /// ⚠️ 优先读**源级变量**（用户改过的），没有才用站方的 default。
+        ///
+        /// ⚠️⚠️ **再往前一步：先看「用户刚选过什么」**（2026-10-22）
+        ///   站方（🍒NovelHub）的 action 自己写源级变量（键名是站方定的）⇒
+        ///   宿主抠不出 paramKey ⇒ 读不到当前值 ⇒ 只能显示站方的 `default`
+        ///   （而站方的 default 恒为 `chars[0]` ⇒ 切了番茄还显示书旗 ⇒ 用户以为没生效）❗
         static func currentValue(_ f: FilterDTO, sourceUrl: String) -> String {
+            let chosen = SourceVariables.filterChoice(for: sourceUrl, title: f.title)
+            if !chosen.isEmpty { return chosen }
             if !f.paramKey.isEmpty {
                 let raw = SourceVariables.effectiveVars(for: sourceUrl)
                 if let d = raw.data(using: .utf8),
@@ -577,6 +584,37 @@ final class SourceService {
             }
         }
         return dto
+    }
+
+    /// 发现页筛选栏：**执行站方的 action**（栖阅同款，2026-10-22）
+    ///
+    /// ⚠️ 为什么要单独一条路（不能一律「自己写 paramKey」）：
+    ///   站方（🍅大灰狼）的 action 是 `show(infoMap['平台'],'find_source')`
+    ///   ⇒ 引擎能抠出 paramKey ⇒ 宿主自己写变量就行；
+    ///   但站方（🍒NovelHub 聚合源）的 action **自己写变量、自己刷新**：
+    ///     (function(){ … var v=infoMap['平台']; c['src']=v;
+    ///       source.setVariable(JSON.stringify(c)); java.refreshExplore(); })()
+    ///   ⇒ 抠不出 paramKey ⇒ 宿主自己写不了 ⇒ **只能让站方自己执行** ✅
+    ///
+    /// - Returns: 站方 action 有没有跑成功
+    func applySourceFilter(source: BookSource, action: String,
+                           title: String, value: String) async throws -> Bool {
+        var p: [String: Any] = ["action": action, "title": title, "value": value]
+        let srcData = try AppEncoder.encode(source)
+        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        srcDict["__variables"] = await effectiveVars(for: source)
+        srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
+        srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
+        p["source"] = srcDict
+        p["cookieSnapshot"] = CookieJar.snapshot()
+        let raw = try await RuleSandbox.shared.invoke("filterAction", p, source: source)
+        // 站方自己写的源级变量 → 落盘（下次 exploreKinds 直接生效）
+        if let obj = raw as? [String: Any],
+           let v = obj["__sourceVars"] as? String {
+            SourceVariables.setVars(v, for: source.bookSourceUrl)
+        }
+        let dict = raw as? [String: Any] ?? [:]
+        return dict["ok"] as? Bool ?? false
     }
 
     func explore(source: BookSource, kindUrl: String, page: Int = 1) async throws -> [Book] {
