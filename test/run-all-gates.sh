@@ -36,6 +36,7 @@ declare -a GATES=(
   "toc-placeholder:test/toc-placeholder.test.js"
   "global-isolation:test/global-isolation.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
+  "explore-groups:test/explore-groups.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
   "timeout-budget:test/request-timeout-budget.test.js"

@@ -15,37 +15,38 @@ struct CategoryPickerView: View {
 
     @State private var search = ""
 
-    /// ⚠️⚠️ **全平铺，不分组**（2026-10-22 用户对照栖阅截图）
+    /// 按**分组**归类（栖阅同款：`ExploreCategorySplit.groups()`）
     ///
-    /// 栖阅的「分类筛选」页是**一个卡片 + 全部分类平铺**（326 个一起），
-    /// 而轻阅原来分成「分类 / 排行榜 / 热门标签 / 主题」四张卡片
-    /// ⇒ 用户反馈「**分类排版不对**」
-    ///
-    /// 站方（🍅大灰狼）返回的分类里 **`group` 字段是空的**，
-    /// 那些「排行榜 / 热门标签 / 主题」是引擎从 exploreUrl 的**装饰行**推出来的
-    /// ⇒ 也就是说**分组是我们自己加的**，站方并没有这层结构 ⭐
-    /// ⇒ 按栖阅：**一个网格，全平铺**
-    ///
-    /// ⚠️ 装饰行（`○ *。☆ 排行榜 ☆*。* ○` 那种）**不显示** ——
-    ///    引擎已经把它们当组标题、不放进 kinds 了 ⇒ 这里天然不会出现。
-    private var shown: [SourceService.KindDTO] {
-        let list = kinds.filter { !isActionItem($0) }
-        guard !search.isEmpty else { return list }
-        let kw = search.lowercased()
-        return list.filter { $0.title.lowercased().contains(kw) }
+    /// ⚠️ 2026-10-21 修：原来按 `style` 分组 ❗
+    ///    但 🍅大灰狼的组标题是 exploreUrl 里那些**装饰行**
+    ///    （`○ *。*☆ 排行榜 ☆*。* ○`）⇒ 引擎解析成 `group` 字段 ✅
+    ///    ⇒ 不按 group 分组的话，所有分类会挤成一个「全部分类」，
+    ///       栖阅那种「分类 / ☆排行榜☆ / ☆热门标签☆」的分组就出不来 ❗
+    ///    （style 仍作兜底：有些站的 exploreUrl 走 style 字段）
+    private var groups: [(String, [SourceService.KindDTO])] {
+        var dict: [String: [SourceService.KindDTO]] = [:]
+        for k in kinds {
+            // ⚠️⚠️ **组名优先用 `group`（引擎从站方装饰行解析的），空了就叫「分类」**
+            //   以前空的时候回落到 `style` ⇒ 界面上出现
+            //   `{"layout_flexGrow":1,"layout_flexBasisPercent":0.25}` 这种**原始 JSON 标题** ❗
+            //   （栖阅那页第一组就叫「分类」⇒ 这里跟它对齐）
+            let key = k.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = key.isEmpty ? "分类" : key
+            dict[name, default: []].append(k)
+        }
+        // 排序：「分类」排第一，其余按名字
+        return dict
+            .map { (name: $0.key, items: $0.value) }
+            .sorted { $0.name == "分类" ? true : ($1.name == "分类" ? false : $0.name < $1.name) }
     }
 
-    /// **动作项**（不是分类）—— 站方塞进来的个人书架/登录入口
-    ///
-    /// ⚠️ 栖阅那页也**没有**这些（第一个就是「推荐榜」）⇒ 同样过滤掉 ⭐
-    /// ⚠️ 「未分组」是轻阅自己造的分组名，也一并去掉
-    private func isActionItem(_ k: SourceService.KindDTO) -> Bool {
-        let t = k.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.isEmpty { return true }
-        if t == "未分组" || t == "全部分类" { return true }
-        // ⚠️ 「推荐榜」是**真分类**（栖阅那页第一个就是它）⇒ 绝不能过滤
-        let actionWords = ["个人中心", "登录", "书架", "历史阅读", "个性推荐"]
-        return actionWords.contains { t.contains($0) }
+    private var shown: [(String, [SourceService.KindDTO])] {
+        guard !search.isEmpty else { return groups }
+        let kw = search.lowercased()
+        return groups.compactMap { name, items in
+            let hit = items.filter { $0.title.lowercased().contains(kw) }
+            return hit.isEmpty ? nil : (name, hit)
+        }
     }
 
     var body: some View {
@@ -73,41 +74,46 @@ struct CategoryPickerView: View {
                                   subtitle: "")
                             .padding(.top, 40)
                     } else {
-                        // ⭐ **一个卡片 + 全部分类平铺**（栖阅同款，2026-10-22）
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("分类")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Theme.sub)
-                                .padding(.leading, 4)
+                        // ⚠️ ForEach 的元素是元组，元组没有 .name 成员属性，
+                        //    得先解构成局部常量再用（下面 groupTitle / groupItems）。
+                        ForEach(Array(shown.enumerated()), id: \.offset) { _, entry in
+                            let groupTitle = entry.0
+                            let groupItems = entry.1
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(groupTitle)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Theme.sub)
+                                    .padding(.leading, 4)
 
-                            // 网格：栖阅是每行 4 个的那种排布
-                            LazyVGrid(
-                                columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
-                                spacing: 8
-                            ) {
-                                ForEach(Array(shown.enumerated()), id: \.offset) { _, k in
-                                    let on = current?.url == k.url
-                                    Button {
-                                        // 父页负责 pop 回榜单（onPick 里置 showCategoryPicker = false）
-                                        onPick(k)
-                                    } label: {
-                                        Text(k.title)
-                                            .font(.system(size: 13))
-                                            .lineLimit(1)
-                                            .foregroundStyle(on ? .white : Theme.ink)
-                                            .frame(maxWidth: .infinity)
-                                            .frame(height: 38)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                                    .fill(on ? Theme.accent : Color.white.opacity(0.5))
-                                            )
+                                // 网格：栖阅是每行 4 个的那种排布
+                                LazyVGrid(
+                                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
+                                    spacing: 8
+                                ) {
+                                    ForEach(Array(groupItems.enumerated()), id: \.offset) { _, k in
+                                        let on = current?.url == k.url
+                                        Button {
+                                            // 父页负责 pop 回榜单（onPick 里置 showCategoryPicker = false）
+                                            onPick(k)
+                                        } label: {
+                                            Text(k.title)
+                                                .font(.system(size: 13))
+                                                .lineLimit(1)
+                                                .foregroundStyle(on ? .white : Theme.ink)
+                                                .frame(maxWidth: .infinity)
+                                                .frame(height: 38)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                                        .fill(on ? Theme.accent : Color.white.opacity(0.5))
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
+                            .padding(14)
+                            .glassCard(cornerRadius: 18)
                         }
-                        .padding(14)
-                        .glassCard(cornerRadius: 18)
                     }
                 }
                 .padding(.horizontal, 14)

@@ -1720,11 +1720,36 @@
         }
         return;
       }
+      // ⚠️⚠️⚠️ **对象项也要认「装饰行」**（2026-10-22 对照栖阅截图才发现）
+      //   站方（🍅大灰狼）的 `style_list = result.data || []` 是**对象数组**：
+      //     { title:"°・*.☆ 排行榜 ☆.*・°", style:{layout_flexGrow:1, layout_flexBasisPercent:1} }
+      //     { title:"推荐榜", url:"…", style:{…, layout_flexBasisPercent:0.25} }
+      //   ⇒ 上面那段「无 `::` ⇒ 组标题」的解析**只对字符串项生效**（那是 `标题::URL` 两段式站源）
+      //   ⇒ 对象项的**装饰行被当成了普通分类项** ⇒ `group` 全空
+      //   ⇒ 宿主只好拿 `style`（原始 JSON）当组名 ⇒ 界面上出现
+      //      `{"layout_flexGrow":1,"layout_flexBasisPercent":0.25}` 这种标题 ❗
+      //   （栖阅那边是**正确分 4 组**的：分类 / ○ *。☆ 排行榜 ☆*。* ○ / …）
+      var objTitle = String(k.title || k.name || k.text || '');
+      var objStyle = (k.style && typeof k.style === 'object') ? k.style : null;
+      var styleStr = objStyle ? JSON.stringify(objStyle) : String(k.style || '');
+      // ① **装饰行**（title 带 ☆ / ° / ○）⇒ **组标题**（栖阅同款：组标题用装饰行原文）
+      //    ⚠️ 必须**先判这个** —— 装饰行的 style 也是 flexBasisPercent=1，
+      //    先判信息行的话它会被丢掉 ⇒ group 永远设不上 ❗
+      if (/[☆°○]/.test(objTitle)) {
+        group = objTitle;
+        return;
+      }
+      // ② **信息行**（style 的 flexBasisPercent == 1）：站方的「当前为: 番茄 [小说] 频道: 男频」
+      //    ⇒ 不是组也不是分类 ⇒ 丢掉
+      var pct = objStyle ? Number(objStyle.layout_flexBasisPercent) : NaN;
+      if (pct === 1) return;
       out.push({
-        title: String(k.title || k.name || k.text || ''),
+        title: objTitle,
         url: dom.absolutize(String(k.url || k.link || ''), base),
-        style: (k.style && typeof k.style === 'object') ? JSON.stringify(k.style) : String(k.style || ''),
-        group: String(k.group || '')
+        style: styleStr,
+        // ⚠️ 用**累积的 `group`**（装饰行设的），不是 `k.group`
+        //    （站方对象数组里没有 group 字段 ⇒ 用 k.group 永远是空 ⇒ 宿主只能拿 style 当组名 ❗）
+        group: String(k.group || '') || group
       });
     });
     return { kinds: out.filter(function (k) { return k.title; }), filters: filters };

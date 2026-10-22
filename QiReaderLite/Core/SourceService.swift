@@ -559,8 +559,15 @@ final class SourceService {
         }
         let dto: KindsDTO = try await call("exploreKinds", json([:]), as: KindsDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
-        Self.kindsCache[key] = dto
-        Self.kindsCacheAt[key] = Date()
+        // ⚠️⚠️ **站方挂了的时候别把坏结果缓存住**（2026-10-22 实测）：
+        //   `discovestyle` 接口会返 503（`DNS cache overflow` / Cloudflare 522）
+        //   ⇒ 分类只剩「个人中心 / 登录番茄」**2 个**（正常是 365 个）
+        //   ⇒ 要是把这个坏结果缓存 30 分钟 ⇒ 用户切平台再切回来还是 2 个 ⇒ 分类像「消失了」
+        // ⇒ **只有分类数看着正常才写缓存**（≤4 个的一律不缓存 ⇒ 下次自动重试）
+        if dto.kinds.count >= 5 {
+            Self.kindsCache[key] = dto
+            Self.kindsCacheAt[key] = Date()
+        }
         // 缓存别无限长（换很多平台会攒一堆）
         if Self.kindsCache.count > 24 {
             let old = Self.kindsCacheAt.min { ($0.value ?? .distantPast) < ($1.value ?? .distantPast) }
