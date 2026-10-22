@@ -175,6 +175,24 @@ if (!fs.existsSync(NH)) {
     ok(!!(books[0] && books[0].bookUrl), '详情 URL 非空');
     ok(!/undefined|NaN/.test(JSON.stringify(books[0] || {})), '第一条没有 undefined/NaN 污染',
        JSON.stringify(books[0] || {}).slice(0, 160));
+
+    // ⑤ ⭐⭐ **站方多平台分支也要能出书**（真机用户点的是「都市」= www.aaccoo.com 那条线）
+    //   这一条单独挑一个**别的平台**的分类 ⇒ 验「baseUrl 判断平台 + result 取当前页原文」都成立
+    const acKind = afterKinds.find(k => /aaccoo/.test(k.url || ''));
+    if (!acKind) {
+      console.log('  (跳过：没有 aaccoo 分类)');
+    } else {
+      const ex2 = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+        source: Object.assign({}, src, { __variables: dirtyVars, __loginInfo: {} }),
+        kindUrl: acKind.url, page: 1,
+      }) + ")");
+      const acBooks = (ex2 && ex2.books) || [];
+      console.log('  aaccoo 分类「' + acKind.title + '」出书 =', acBooks.length);
+      ok(acBooks.length > 0,
+         '**别的平台分支也能出书**（站方靠 baseUrl 判断平台 + 从 result 取当前页原文）',
+         '0 本 ⇒ 要么 baseUrl 不是当前页 URL，要么 result 不是原文');
+      ok(!!(acBooks[0] && acBooks[0].name), 'aaccoo 那条线的书名非空');
+    }
   }
 }
 

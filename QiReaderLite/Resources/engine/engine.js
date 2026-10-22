@@ -412,6 +412,11 @@
     if (ctx) {
       ctx.isJSON = QR.rule.isJSONText(page.text);
       ctx.baseUrl = page.url;
+      // ⚠️⚠️ **raw = 当前页原始内容**（Legado 语义）
+      //   站方规则里 `var s = String(raw)` 就是指它
+      //   （🍒NovelHub 的列表规则就靠它拿 HTML 再用正则解析）
+      //   ⇒ 以前没给 ⇒ String(undefined) = "undefined" ⇒ 列表页永远 0 本 ⭐
+      ctx.raw = page.text;
     }
     return ctx;
   }
@@ -711,6 +716,9 @@
       //   ⇒ base 传 page.doc ⇒ document 指向**当前列表页**（站方 @js: 里
       //      用 document.querySelectorAll 解析列表结构）
       var jsScope = rule.makeScope(rule.jsScope(page.doc, page.doc, ctx, listRuleStr));
+      // ⚠️ `result` = **当前页原文**（站方的 `var s = String(raw)` 就是从 result 取的）
+      //   轻阅默认给的是 dom.textOf(node)（纯文本）⇒ 正则匹配不上 ⇒ 0 本
+      jsScope.result = page.text;
       return rule.runJs(rule.stripJsWrapper(listRuleStr), jsScope)
         .then(function (r) {
           var items = [];
@@ -725,6 +733,7 @@
             items = r.split(/\r?\n/).map(function (l) { return l.trim(); })
               .filter(function (l) { return !!l; });
           }
+
           var chain = items.reduce(function (acc, item) {
             return acc.then(function (list) {
               return extractOneBook(item, listRule, ctx, page.url, opts)
@@ -736,6 +745,7 @@
           });
         })
         .catch(function (e) {
+
           QR.java.log('[发现页 bookList(JS) 出错]', String(e && e.message || e));
           return { books: [], nextUrl: '' };
         });

@@ -53,7 +53,8 @@ function fakeSource(bookListJs) {
   };
 }
 
-const HTML = '<html><body><div class="list">ok</div></body></html>';
+const HTML = '<html><body><div class="book-like"><a href="/book/1/" title="x">'
+  + '<img src="https://x/c1.jpg"><h4>书名一</h4><span>作者一</span></a></div></body></html>';
 const nativeMock = async (fn, args) => {
   if (fn === 'request') {
     return { ok: true, code: 200, url: String(args.url || ''), headers: {}, body: HTML };
@@ -109,6 +110,30 @@ console.log('\n=== 3. 活体（离线）：@js: 返回字符串 ⇒ 按行切（
   ok(books.length === 2, '**按行切成两本书**', '实际 ' + books.length);
   ok(books[0] && books[0].name === '行一', '第一行的书名对', books[0] && books[0].name);
   ok(books[1] && books[1].name === '行二', '第二行的书名对', books[1] && books[1].name);
+}
+
+console.log('\n=== 3b. 活体（离线）：JS 规则的 `result` 要是【当前页原文】 ===');
+{
+  // 站方（🍒NovelHub 整合源）是从 `result` 取当前页内容的：
+  //     try { var raw = (typeof result !== "undefined" && result != null) ? result : ""; }
+  //     var s = String(raw);
+  //     var mb = s.match(/<div class="book-like">([\s\S]*?)<\/div>/);
+  // ⇒ 轻阅以前给的 result 是 `dom.textOf(node)`（**纯文本**）⇒ 正则匹配不上 ⇒ 0 本 ⭐
+  // ⇒ 这条门禁：站方 JS 里直接查 result 里有沒有 HTML 标记
+  // 判据用「result 里有没有 `<`」：HTML 原文有、dom.textOf 的纯文本没有 ⇒ 能区分
+  const src = fakeSource(
+    '@js: (function(){ var s = String(result || "");' +
+    '  if (s.indexOf("<") < 0) { return []; }' +
+    '  return ["https://x.example/1|||书名一|||作者一|||https://x.example/c1.jpg|||简介一"]; })()');
+  const r = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+    source: src, kindUrl: 'https://fake.example.com/list', page: 1
+  }) + ")");
+  const books = (r && r.books) || [];
+  console.log('  出书 =', books.length);
+  ok(books.length === 1,
+     '**result 是当前页原文**（站方 JS 能在 result 里查到 HTML 标记）',
+     'result 里没有 HTML ⇒ 站方正则永远匹配不上');
+  ok(books[0] && books[0].name === '书名一', '书名抠对了');
 }
 
 console.log('\n=== 4. 活体（离线）：@js: 返回空 ⇒ 0 本（不是崩） ===');

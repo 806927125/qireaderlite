@@ -814,7 +814,19 @@
     } else switch (kind) {
       case T.JS: {
         var jt = splitJsWithTail(body);
-        p = runJs(jt.code, makeScope(jsScope(base, base, ctx, body)))
+        var jsRunScope = makeScope(jsScope(base, base, ctx, body));
+        // ⚠️⚠️⚠️ **JS 规则的 `result` 要是「当前页原文」**（Legado 语义，2026-10-22 真机查出来的）
+        //
+        //   站方（🍒NovelHub 整合源）大量这么取当前页：
+        //       try { var raw = (typeof result !== "undefined" && result != null) ? result : ""; }
+        //       var s = String(raw);
+        //       var mb = s.match(/<div class="book-like">([\s\S]*?)<\/div>/);
+        //   ⇒ 轻阅给的 result 是 `dom.textOf(node)`（**纯文本**）⇒
+        //      正则拿到的是「[object HTMLDocument]」或纯文本 ⇒ **永远匹配不上** ⇒ 列表 0 本 ⭐
+        //
+        //   ⚠️ 只在 **JS 规则**上改 ⇒ DOM / JSONPath 规则的 result 语义不变（零回归面）
+        if (ctx && ctx.raw != null) { jsRunScope.result = ctx.raw; }
+        p = runJs(jt.code, jsRunScope)
           .then(function (r) {
             // 复合规则 `<js>代码</js>选择器`：JS 算出个值，再从里面取字段
             return jt.sel ? selectFromJsResult(r, jt.sel, ctx, base) : r;
@@ -965,6 +977,18 @@
       // 得把它指向当前规则的基准文档，而不是引擎自己的空页面
       document: ownerDocOf(base),
       baseUrl: ctx.baseUrl || '',
+      // ⚠️⚠️⚠️ **`raw` = 当前内容页的原始文本**（Legado 语义，2026-10-22 真机查出来的）
+      //
+      //   站方（🍒NovelHub 整合源）大量这么用：
+      //       var s = String(raw);            // ← 当前页的 HTML
+      //       var mb = s.match(/<div class="book-like">([\s\S]*?)<\/div>/);
+      //   ⇒ 轻阅以前**根本没给 `raw`** ⇒ `String(undefined)` = "undefined"
+      //      ⇒ 所有基于 raw 的正则**永远匹配不上** ⇒ 列表页 0 本 ⭐
+      //
+      //   ⚠️ baseUrl 已经是「当前页 URL」（markContent 里 ctx.baseUrl = page.url）
+      //      ⇒ 站方靠 `baseUrl.indexOf("aaccoo.com")` 判断平台的写法也就成立了 ✅
+      raw: (ctx && ctx.raw != null) ? ctx.raw
+           : ((base && base.__raw != null) ? base.__raw : ''),
       // ⚠️ 必须包一层：站方 JS 直接调 source.getVariable()，
       //    裸对象上没这方法 → TypeError → 整条规则静默失效。
       source: QR.wrapSource ? QR.wrapSource(ctx.source) : ctx.source,
