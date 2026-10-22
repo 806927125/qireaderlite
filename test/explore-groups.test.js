@@ -46,6 +46,9 @@ const STYLE_RESPONSE = JSON.stringify({
     { title: '推荐榜', url: 'https://v5.langge.uk/get_discover?bdtype=推荐榜&page={{page}}', style: { layout_flexGrow: 1, layout_flexBasisPercent: 0.25 } },
     { title: '完本榜', url: 'https://v5.langge.uk/get_discover?bdtype=完本榜&page={{page}}', style: { layout_flexGrow: 1, layout_flexBasisPercent: 0.25 } },
     { title: '°・*.☆ 热门标签 ☆.*・°', style: { layout_flexGrow: 1, layout_flexBasisPercent: 1 } },
+    // ⚠️ 站方 style_list 里混着的一堆 `title:"--"`、**url 为空串**的项
+    //    （番茄 14 个 / QQ阅读 1 个 / 七猫 0 个）⇒ 界面上就是一排没意义的「--」❗
+    { title: '--', url: '', style: { layout_flexGrow: 1, layout_flexBasisPercent: 0.25 } },
     { title: '都市', url: 'https://v5.langge.uk/discovedata?category_id=203&page={{page}}', style: { layout_flexGrow: 1, layout_flexBasisPercent: 0.25 } },
   ],
 });
@@ -103,7 +106,14 @@ async function nativeMock(fn, args) {
      '「都市」带上了「热门标签」组名（实际 ' + JSON.stringify(city && city.group) + '）');
 
   console.log('');
-  console.log('=== 4. 组名不是原始 JSON ===');
+  console.log('=== 4. url 为空的分类项（站方数据里的「--」）要过滤掉 ===');
+  ok(!kinds.some(k => (k.title || '').trim() === '--'),
+     '站方那个 title="--"、url 为空的项不该显示');
+  ok(kinds.every(k => String(k.url || '').trim().length > 0),
+     '所有显示出来的分类都有 url（空 url 没法请求）');
+
+  console.log('');
+  console.log('=== 5. 组名不是原始 JSON ===');
   ok(kinds.every(k => !/^\{.*\}$/.test((k.group || '').trim())),
      '组名不能是站方 style 的原始 JSON（那正是这次的 bug 症状）');
 

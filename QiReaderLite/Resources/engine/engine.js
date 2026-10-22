@@ -1743,9 +1743,16 @@
       //    ⇒ 不是组也不是分类 ⇒ 丢掉
       var pct = objStyle ? Number(objStyle.layout_flexBasisPercent) : NaN;
       if (pct === 1) return;
+      // ⚠️⚠️ **url 为空 ⇒ 不是可请求的分类 ⇒ 丢掉**（2026-10-22 用户截图对照）
+      //   站方（🍅大灰狼）style_list 里混着一堆 `title:"--"`、**url 为空串**的项
+      //   （番茄 14 个 / QQ阅读 1 个 / 七猫 0 个）⇒ 界面上就是一排没意义的「--」❗
+      //   ⇒ 跟 Legado 行为一致：**空 url 的 kind 不能请求，直接不显示**
+      //   （站方把 `java.startBrowser(...)` 写在 url 模板里的「登录番茄」也一样 ⇒ 解析后为空 ⇒ 一起滤掉）
+      var objUrl = dom.absolutize(String(k.url || k.link || ''), base);
+      if (!objTitle || !objUrl) return;
       out.push({
         title: objTitle,
-        url: dom.absolutize(String(k.url || k.link || ''), base),
+        url: objUrl,
         style: styleStr,
         // ⚠️ 用**累积的 `group`**（装饰行设的），不是 `k.group`
         //    （站方对象数组里没有 group 字段 ⇒ 用 k.group 永远是空 ⇒ 宿主只能拿 style 当组名 ❗）

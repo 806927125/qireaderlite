@@ -62,14 +62,19 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   const mf = fs2.find(f => f.title === '模式');
   ok(mf && mf.paramKey === 'find_tab', `「模式」→ find_tab（实际 ${mf && mf.paramKey}）`);
 
-  console.log('\n=== ③ 没有 url 的普通项（不是 select）仍然留在 kinds 里 ===');
+  console.log('\n=== ③ url 为空的普通项（不是 select）要过滤掉 ===');
   const kinds2 = await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify({
     source: {
       bookSourceUrl: 'https://example.com',
       exploreUrl: JSON.stringify([{ title: '纯动作项' }])
     }
   })})`);
-  ok((kinds2.kinds || []).length === 1, '没有 url 的普通项还是进 kinds（历史行为不变）');
+  // ⚠️ 2026-10-22 改：**url 为空的项要过滤掉**
+  //   站方 style_list 里混着一堆 `title:"--"`、url 为空串的项
+  //   （番茄 14 个 / QQ阅读 1 个）⇒ 界面上就是一排没意义的「--」❗
+  //   （跟 Legado 行为一致：空 url 的 kind 不能请求，直接不显示）
+  ok((kinds2.kinds || []).length === 0,
+     'url 为空的普通项被过滤掉了（站方数据里的「--」不该显示）');
   ok((kinds2.filters || []).length === 0, '它不是 select ⇒ 不进 filters');
 
   console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
