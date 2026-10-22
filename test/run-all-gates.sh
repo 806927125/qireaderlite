@@ -34,6 +34,7 @@ declare -a GATES=(
   "explore-filter:test/explore-filter.test.js"
   "host-failover:test/host-failover.test.js"
   "toc-placeholder:test/toc-placeholder.test.js"
+  "global-isolation:test/global-isolation.test.js"
   "source-test:test/source-test.test.js"
   "browser-sync:test/browser-sync.test.js"
   "timeout-budget:test/request-timeout-budget.test.js"

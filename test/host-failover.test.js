@@ -44,9 +44,17 @@ const JSLIB = "var host = ['https://v5.example.com','https://v4.example.com','ht
       return { ok: true, value: '' };
     };
     const { win } = createSandbox({ nativeMock });
-    // ⚠️ 必须先加载站方 jsLib（间接 eval ⇒ `var host` 进全局），
-    //    否则引擎拿不到线路列表 ⇒ 换线不生效（真实流程里 ensureJsLib 会做这件事）
-    await win.eval(`(0, eval)(${JSON.stringify(JSLIB)})`);
+    // ⚠️ 必须**走 ensureJsLib** 加载站方 jsLib —— 换线用的线路列表
+    //    `QR.__qrStationHosts` 是 ensureJsLib 从 jsLib 里取的
+    //    （⚠️ 不再直接读全局 `host` —— 那是 jsLib 的全局变量，换书源会残留 ⇒ 会串台）
+    await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify({
+      source: {
+        bookSourceUrl: 'https://src.example.com',
+        bookSourceName: 'src',
+        jsLib: JSLIB,
+        exploreUrl: JSON.stringify([{ title: 'c1', url: 'https://src.example.com/c1' }]),
+      },
+    })})`);
     const r = await win.eval(`window.QR.rule.runJs(${JSON.stringify(
       "java.ajax('https://v5.example.com/catalog?x=1');"
     )}, {})`);
@@ -74,7 +82,12 @@ const JSLIB = "var host = ['https://v5.example.com','https://v4.example.com','ht
       return { ok: true, value: '' };
     };
     const { win } = createSandbox({ nativeMock });
-    await win.eval(`(0, eval)(${JSON.stringify(JSLIB)})`);
+    await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify({
+      source: {
+        bookSourceUrl: 'https://src.example.com', bookSourceName: 'src', jsLib: JSLIB,
+        exploreUrl: JSON.stringify([{ title: 'c1', url: 'https://src.example.com/c1' }]),
+      },
+    })})`);
     try {
       await win.eval(`window.QR.rule.runJs(${JSON.stringify(
         "java.ajax('https://v5.example.com/catalog?x=1');"
@@ -104,7 +117,12 @@ const JSLIB = "var host = ['https://v5.example.com','https://v4.example.com','ht
       return { ok: true, value: '' };
     };
     const { win } = createSandbox({ nativeMock });
-    await win.eval(`(0, eval)(${JSON.stringify(JSLIB)})`);
+    await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify({
+      source: {
+        bookSourceUrl: 'https://src.example.com', bookSourceName: 'src', jsLib: JSLIB,
+        exploreUrl: JSON.stringify([{ title: 'c1', url: 'https://src.example.com/c1' }]),
+      },
+    })})`);
     try {
       await win.eval(`window.QR.rule.runJs(${JSON.stringify(
         "java.ajax('https://v5.example.com/catalog,{\"method\":\"POST\",\"body\":\"{\\\\\"a\\\\\":1}\"}');"

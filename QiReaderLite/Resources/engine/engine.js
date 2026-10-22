@@ -19,13 +19,59 @@
    * ------------------------------------------------------- */
 
   var libLoaded = {};
+  // ⚠️⚠️⚠️ **全局态治理**（2026-10-22 用户反馈「用了大灰狼之后别的书源加载就有问题」）
+  //   jsLib 是**间接 eval** 加载的 ⇒ 它的 `var` / `function` **全部进全局作用域**
+  //   ⇒ 大灰狼的 `host` / `getArguments` / `getFanqieCookie` / `createFilter` / …
+  //   **全都留在全局** ⇒ 别的书源一用同名标识符就串 ⭐
+  //   （栖阅有 `restoreMutatedBaseGlobals` / `purgeUnexpectedGlobals` 防这个，轻阅以前没有）
+  //
+  //   ⇒ 记下「**本次 jsLib 新增了哪些全局**」⇒ 切书源时**删掉它们**
+  //   ⇒ ⚠️ 只删「新增的」就够：**同名被覆盖的**不用管 ——
+  //      新书源会自己再定义一遍（它要的就是自己的值），
+  //      切回旧书源时 jsLib 会重新加载 ⇒ 也会重新定义 ⇒ 无残留 ✅
+  var libGlobals = {};
+  var libOwner = '';   // 当前全局属于哪个书源
+
+  function globalNames() {
+    try { return Object.getOwnPropertyNames(g); } catch (e) { return []; }
+  }
+
+  function purgeLibGlobals(key) {
+    var names = libGlobals[key] || [];
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      try { delete g[n]; } catch (e) { try { g[n] = undefined; } catch (e2) {} }
+    }
+    libGlobals[key] = [];
+    delete libLoaded[key];
+  }
 
   function ensureJsLib(source) {
+    var key = (source && (source.bookSourceUrl || source.bookSourceName)) || 'anon';
+    // ⚠️⚠️ **切书源 ⇒ 清掉上一个书源留下的全局**（防串台）
+    if (libOwner && libOwner !== key) {
+      try {
+        QR.java.log('[全局治理] 切书源 ⇒ 清掉上一个源留下的 ' +
+          ((libGlobals[libOwner] || []).length) + ' 个全局变量');
+      } catch (e) {}
+      purgeLibGlobals(libOwner);
+      libOwner = '';
+    }
+    // ⚠️ 线路列表**每次重置**（换线兜底只能用**当次书源**的线路）
+    QR.__qrStationHosts = [];
     if (!source || !source.jsLib) return Promise.resolve();
-    var key = source.bookSourceUrl || source.bookSourceName || 'anon';
-    if (libLoaded[key]) return Promise.resolve();
+    if (libLoaded[key]) {
+      // 已加载过（同一书源连续用）⇒ 不重复 eval，但线路列表要从全局再取一次
+      try {
+        if (typeof host !== 'undefined' && Array.isArray(host) && host.length) {
+          QR.__qrStationHosts = host.slice();
+        }
+      } catch (e) {}
+      return Promise.resolve();
+    }
     libLoaded[key] = true;
     var code = String(source.jsLib);
+    var namesBefore = globalNames();
     try {
       /* jshint evil:true */
       // ⚠️ 这里原来用的是
@@ -62,11 +108,27 @@
       // ⚠️⚠️ **把站方的线路列表存一份**（2026-10-22 真机「QQ 阅读目录出不来」）：
       //   站方 jsLib 里的 `var host = [...]`（8 条线路）是**换线兜底的唯一依据**
       //   ⇒ 引擎侧在「这条线路 5xx 了」时要能拿到它 ⇒ 换一条重试
-      //   ⇒ 存一份到 `QR.__qrStationHosts`（比直接读全局 `host` 更稳）
+      //   ⇒ 存一份到 `QR.__qrStationHosts`（**只属于当次书源** ⇒ 不会串台）
       try {
         if (typeof host !== 'undefined' && Array.isArray(host) && host.length) {
           QR.__qrStationHosts = host.slice();
         }
+      } catch (e) { /* 忽略 */ }
+      // ⚠️ 记下本次 jsLib **新增**的全局 ⇒ 切书源时删掉
+      try {
+        var after = globalNames();
+        var added = [];
+        for (var gi = 0; gi < after.length; gi++) {
+          if (namesBefore.indexOf(after[gi]) < 0) added.push(after[gi]);
+        }
+        libGlobals[key] = added;
+        libOwner = key;
+        try {
+          if (added.length) {
+            QR.java.log('[全局治理] 载入「' + (source.bookSourceName || key) + '」新增 ' +
+              added.length + ' 个全局变量（切书源时会清掉）');
+          }
+        } catch (e) {}
       } catch (e) { /* 忽略 */ }
     } catch (e) {
       QR.java.log('[jsLib 出错] ' + (source.bookSourceName || key) + ': ' + e.message);

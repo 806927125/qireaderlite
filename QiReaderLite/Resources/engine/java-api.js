@@ -327,13 +327,12 @@
    *    不依赖站方规则里有没有写 catch 换线 ⭐
    */
   function stationHosts() {
-    // ① 优先用 ensureJsLib 存下来的那份（最稳）
+    // ⚠️⚠️ **只认 `QR.__qrStationHosts`**（由 ensureJsLib 从**当次书源**的 jsLib 里取）
+    //   ⛔ **绝不能回落到全局 `host`** —— 那是 jsLib 的全局变量，
+    //      换书源后**上一个源会残留** ⇒ 别的书源会被拿去做换线重试 ⇒ 串台 ❗
+    //      （2026-10-22 用户反馈「用了大灰狼之后别的书源加载就有问题」的另一半）
     try {
       if (QR.__qrStationHosts && QR.__qrStationHosts.length) return QR.__qrStationHosts.slice();
-    } catch (e) {}
-    // ② 回落到全局 `host`（站方 jsLib 是间接 eval ⇒ var host 进全局）
-    try {
-      if (typeof host !== 'undefined' && Array.isArray(host) && host.length) return host.slice();
     } catch (e) {}
     return null;
   }
