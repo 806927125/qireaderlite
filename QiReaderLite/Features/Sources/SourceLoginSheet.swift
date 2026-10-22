@@ -44,19 +44,6 @@ struct SourceLoginSheet: View {
     @State private var bestHost: String = ""
     @State private var fqTokenSaved = false
 
-    /// ⭐ **玻璃输入框**（栖阅登录页同款：通透，能看到底下的插画）
-    ///
-    /// ⚠️ 必须 `textFieldStyle(.plain)` —— `.roundedBorder` 会画自己的边框+底色
-    ///    ⇒ 玻璃套边框 = 一坨糊（同「按钮那个 .bordered」的坑）
-    private func glassField() -> some View {
-        self
-            .textFieldStyle(.plain)
-            .foregroundStyle(Theme.ink)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .glassCard(cornerRadius: 12, variant: .clear)
-    }
-
     /// ⭐ **栖阅登录页那种「浅色玻璃 + 蓝字」的按钮**（2026-10-22 用户截图对照）
     ///
     /// 栖阅那页：19 个站方按钮**全是玻璃块**，底下的插画直接透上来 ⇒ `.clear` 档
@@ -71,6 +58,50 @@ struct SourceLoginSheet: View {
                 .glassCapsule()
                 // 按压反馈（`.plain` 没有系统反馈 ⇒ 自己给一个轻微透明）
                 .opacity(configuration.isPressed ? 0.55 : 1.0)
+        }
+    }
+
+    /// 站方的文本/密码输入框（整行，玻璃通透）
+    private var loginFields: some View {
+        ForEach(fields.filter { $0.type != "button" }) { f in
+            if f.type == "password" {
+                SecureField(f.name, text: binding(f.name))
+                    .glassField()
+            } else {
+                TextField(f.name, text: binding(f.name))
+                    .glassField()
+            }
+        }
+    }
+
+    /// 站方那 19 个按钮（两列排，栖阅登录页同款）
+    ///
+    /// ⚠️ **必须独立成一个属性** —— 埋在 body 的四层嵌套里会让 Swift 类型推断超时
+    private var actionButtonsGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                            GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            ForEach(fields.filter { $0.type == "button" }) { f in
+                Button {
+                    run(f.action)
+                } label: {
+                    HStack(spacing: 6) {
+                        if runningAction == f.action {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(f.name)
+                            .font(.system(size: 15, weight: .medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .padding(.horizontal, 10)
+                }
+                // ⚠️ 栖阅登录页的按钮是**浅色玻璃 + 蓝字**（不是实心蓝块）
+                //    ⇒ 2026-10-22 改：`.bordered` → 玻璃按钮（`.plain` + `.glassCapsule()`）
+                .buttonStyle(GlassActionButtonStyle())
+                .disabled(runningAction != nil)
+            }
         }
     }
 
@@ -93,41 +124,13 @@ struct SourceLoginSheet: View {
                     VStack(spacing: 12) {
                     // ── 按钮排成**两列**（栖阅登录页同款：站方那 19 个按钮两列排）──
                     //    文本/密码框仍整行 ✅
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
-                                        GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                        ForEach(fields.filter { $0.type == "button" }) { f in
-                            Button {
-                                run(f.action)
-                            } label: {
-                                HStack(spacing: 6) {
-                                    if runningAction == f.action {
-                                        ProgressView().controlSize(.small)
-                                    }
-                                    Text(f.name)
-                                        .font(.system(size: 15, weight: .medium))
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.7)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 11)
-                                .padding(.horizontal, 10)
-                            }
-                            // ⚠️ 栖阅登录页的按钮是**浅色玻璃 + 蓝字**（不是实心蓝块）
-                            //    ⇒ 2026-10-22 改：`.bordered` → 玻璃按钮（`.plain` + `.glassCapsule()`）
-                            .buttonStyle(GlassActionButtonStyle())
-                            .disabled(runningAction != nil)
-                        }
-                    }
-                    ForEach(fields.filter { $0.type != "button" }) { f in
-                        switch f.type {
-                        case "password":
-                            SecureField(f.name, text: binding(f.name))
-                                .glassField()
-                        default:
-                            TextField(f.name, text: binding(f.name))
-                                .glassField()
-                        }
-                    }
+                    // ⚠️⚠️ **必须抽成独立属性**（2026-10-22 CI 报错）：
+                    //   `LazyVGrid` 埋在 `ZStack>NavigationStack>ScrollView>VStack` 四层里
+                    //   ⇒ Swift **类型推断超时**（the compiler is unable to type-check this expression）
+                    //   ⇒ 抽出来一层就没事了 ⭐
+                    actionButtonsGrid
+                    // ⚠️ 同样抽出去（嵌套里 ForEach + switch + 输入框 ⇒ 推断负担大）
+                    loginFields
 
                     if fields.isEmpty {
                         Text("这个书源没有登录界面（loginUi 是空的）")
@@ -682,5 +685,26 @@ struct SourceLoginSheet: View {
         RuleSandbox.shared.resetEngine()
         message = "引擎已重置，可以再试一次了"
         failed = false
+    }
+}
+
+// MARK: - 玻璃输入框
+
+extension View {
+    /// ⭐ **玻璃输入框**（栖阅登录页同款：通透，能看到底下的插画）
+    ///
+    /// ⚠️ 必须 `textFieldStyle(.plain)` —— `.roundedBorder` 会画自己的边框+底色
+    ///    ⇒ 玻璃套边框 = 一坨糊（同「按钮那个 .bordered」的坑）
+    ///
+    /// ⚠️ 2026-10-22：原来把它定义在 `SourceLoginSheet` **struct 里面**
+    ///    ⇒ 只有那个 struct 能用 ⇒ `TextField` 用不了（CI 报 no member 'glassField'）
+    ///    ⇒ 必须是 **View 的扩展** ⭐
+    func glassField() -> some View {
+        self
+            .textFieldStyle(.plain)
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .glassCard(cornerRadius: 12, variant: .clear)
     }
 }
