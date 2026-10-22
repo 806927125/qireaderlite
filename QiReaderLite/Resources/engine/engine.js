@@ -1732,17 +1732,10 @@
       var objTitle = String(k.title || k.name || k.text || '');
       var objStyle = (k.style && typeof k.style === 'object') ? k.style : null;
       var styleStr = objStyle ? JSON.stringify(objStyle) : String(k.style || '');
-      // ① **装饰行**（title 带 ☆ / ° / ○）⇒ **组标题**（栖阅同款：组标题用装饰行原文）
-      //    ⚠️ 必须**先判这个** —— 装饰行的 style 也是 flexBasisPercent=1，
-      //    先判信息行的话它会被丢掉 ⇒ group 永远设不上 ❗
-      if (/[☆°○]/.test(objTitle)) {
-        group = objTitle;
-        return;
-      }
-      // ② **信息行**（style 的 flexBasisPercent == 1）：站方的「当前为: 番茄 [小说] 频道: 男频」
-      //    ⇒ 不是组也不是分类 ⇒ 丢掉
-      var pct = objStyle ? Number(objStyle.layout_flexBasisPercent) : NaN;
-      if (pct === 1) return;
+      // ⚠️⚠️⚠️ **判据只能是「url 空不空」，不能看 style！**
+      //   站方的组标题行（不论是装饰行、「当前为: XX」还是「图书」）**style.pct 都是 1**
+      //   ⇒ 之前我按 `pct == 1` 判「信息行」⇒ 把「当前为: XX」「图书」**误杀**了
+      //   ⇒ 只剩装饰行（title 带 ☆）侥幸活下来 ⇒ 七猫/QQ阅读 看起来「还是一块」❗
       // ⚠️⚠️⚠️ **url 为空 ⇒ 这是站方的「组标题行」（栖阅同款）**（2026-10-22 对照栖阅截图）
       //   站方 style_list 的原始数据长这样（QQ阅读 实测 24 条）：
       //     [0] 点击登录可切换来源        url空 style=1   ← 站方自己 exclude 掉了
