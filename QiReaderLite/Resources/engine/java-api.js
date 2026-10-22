@@ -248,6 +248,17 @@
 
   function b64decode(s) {
     s = b64normalize(s).replace(/\s/g, '');
+    // ⚠️⚠️⚠️ **先校验字符合法性**（2026-10-22 真机栽在这）
+    //   以前非法字符被 `manualB64ToBytes` **静默跳过**（`if (v < 0) continue;`）
+    //   ⇒ 返回的是**乱码**（不是失败！）⇒ 站方拿乱码去 `JSON.parse`
+    //   ⇒ 炸出「天书错」⇒ 整条规则静默失效 ⇒ 🍅大灰狼**目录 0 章** ⭐
+    //
+    //   ⚠️ 关键：聚合源的 data: 伪 URL 里写着 `;base64,`，
+    //      但**载荷其实是 hex**（站方用 `java.hexDecodeToString` 解，
+    //      那个函数内部会「不是合法 hex 就按 base64 再试一次」）
+    //   ⇒ 宿主**不能盲解 base64** ⇒ 解不了就**明确失败**，
+    //      让上层（hexDecodeToString）改走 hex 分支 ✅
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s)) return '';
     // 1) 原生
     if (QR.java && QR.java._b64Dec) {
       try { var r = QR.java._b64Dec(s); if (r != null) return r; } catch (e) {}
@@ -379,6 +390,31 @@
   }
 
   function rawRequest(url, method, headers, data, timeout, _swapped) {
+    // ⚠️⚠️⚠️ **`data:` 伪 URL 绝不能真去 fetch**（2026-10-22 真机栽在这）
+    //   聚合源（🍅大灰狼）的 bookUrl / tocUrl / chapterUrl 全是这种：
+    //       data:;base64,<载荷>,{"type":"qingtian2"}
+    //   ⇒ 原生 URLSession 去 fetch 它 ⇒ Foundation 解 data: URL 的 base64
+    //      ⇒ 载荷不是合法 base64 ⇒ 抛「**illegal base64 data at input byte 9**」
+    //      ⇒ 还会**冒成一个 toast**（用户看到的就是这个）⇒ 规则整条挂掉 ⭐
+    //   ⇒ 这里**直接把载荷当响应体返回**（跟引擎 fetchPage 的处理一致）：
+    //      站方的语义就是「data: 伪 URL 的载荷 = 页面内容」✅
+    {
+      var __du = String(url == null ? '' : url);
+      if (__du.indexOf('data:') === 0) {
+        var __ci = __du.indexOf(',');
+        var __pay = __ci >= 0 ? __du.slice(__ci + 1) : '';
+        // 剥掉 Legado 的 URL 选项后缀 `,{"type":"x"}`（两种形态都认）
+        var __mm = /,\s*(?=\{|%7B)/i.exec(__pay);
+        if (__mm) __pay = __pay.slice(0, __mm.index);
+        try {
+          QR.java.log('[data:伪URL] 不发请求，直接把载荷当内容（长度 ' + __pay.length + '）');
+        } catch (e2) {}
+        return Promise.resolve({
+          ok: true, code: 200, url: __du, _body: __pay, body: __pay,
+          headers: {}, _code: 200, _url: __du
+        });
+      }
+    }
     // ⚠️ 超时必须**显式**传给 nativeCall（默认 40s ❗）——
     //    站方（🍅大灰狼）有 8 个 host 的失败兜底，一个卡住就等满 40s × 7 = 几分钟。
     var __t = timeout ? timeout / 1000 : 12;

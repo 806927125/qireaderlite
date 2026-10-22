@@ -898,6 +898,26 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         guard let raw = args["url"] as? String else {
             return ["ok": false, "error": "URL 非法: \(args["url"] as? String ?? "nil")"]
         }
+        // ⚠️⚠️⚠️ **`data:` 伪 URL 绝不能真去 fetch**（2026-10-22 真机栽在这）
+        //   聚合源（🍅大灰狼）的 bookUrl / tocUrl / chapterUrl 全是：
+        //       data:;base64,<载荷>,{"type":"qingtian2"}
+        //   ⇒ URLSession 去 fetch 它 ⇒ Foundation 解 data: URL 的 base64
+        //      ⇒ 载荷不是合法 base64 ⇒ 抛「**illegal base64 data at input byte 9**」
+        //      ⇒ 还会冒成一个 toast ⇒ 规则整条挂掉 ⭐
+        //   ⇒ 这里**直接把载荷当响应体返回**（跟引擎 fetchPage 的处理一致）。
+        //      站方的语义就是「data: 伪 URL 的载荷 = 页面内容」✅
+        if raw.lowercased().hasPrefix("data:") {
+            var payload = ""
+            if let comma = raw.firstIndex(of: ",") {
+                payload = String(raw[raw.index(after: comma)...])
+            }
+            // 剥掉 Legado 的 URL 选项后缀 `,{"type":"x"}`（百分号编码过的也认）
+            if let m = payload.range(of: #",\s*(\{|%7B)"#, options: [.regularExpression, .caseInsensitive]) {
+                payload = String(payload[..<m.lowerBound])
+            }
+            return ["ok": true, "code": 200, "url": raw, "headers": [:],
+                    "_body": payload, "body": payload, "_code": 200, "_url": raw]
+        }
         // ⭐⭐⭐ **必须走 Core/AnalyzeUrl.swift**（2026-10-21 真机「目录 0 章」的根因之二）：
         //   以前这里只用 `parseURL`（纯 Foundation 的百分号编码）⇒
         //   **query 里的 `+` 原样保留** ⇒ 服务器按 form 解码时 `'+'` 变**空格**
