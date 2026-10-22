@@ -500,13 +500,60 @@ final class SourceService {
         return (dict["hosts"] as? [String]) ?? []
     }
 
+    // MARK: - 发现页分类缓存
+
+    /// 分类 + 筛选栏的**内存缓存**
+    ///
+    /// ⚠️⚠️ **为什么**（2026-10-22 真机：「发现页加载就番茄很慢很慢，其他挺快的」）：
+    ///   实测各平台的 `exploreKinds` 耗时 / 数据量：
+    ///     · 番茄  → **2283ms / 74,750 字节 / 376 个分类**  🐌
+    ///     · 七猫  → 515ms  / 12,182 字节 / 51 个分类
+    ///     · QQ阅读 → 768ms /  4,386 字节 / 23 个分类
+    ///   ⇒ 番茄的分类列表**大 20 倍** ⇒ 每次切平台都要重新拉 74KB ⇒ 白等两秒多。
+    ///   ⇒ 缓存一下 ⇒ 切回番茄**秒开** ✅
+    ///
+    /// ⚠️ 缓存 key 必须带**平台 + 模式**（站方的 `find_source` / `find_tab` 变了 ⇒ 分类就变了）
+    private static var kindsCache: [String: KindsDTO] = [:]
+    private static var kindsCacheAt: [String: Date] = [:]
+    /// 缓存有效期（30 分钟）—— 站方的分类很少变，但线路故障时可能变
+    private static let kindsCacheTTL: TimeInterval = 30 * 60
+
+    private static func kindsCacheKey(source: BookSource) -> String {
+        var platform = ""
+        var tab = ""
+        if let d = SourceVariables.effectiveVars(for: source.bookSourceUrl).data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+            platform = (obj["find_source"] as? String) ?? ""
+            tab = (obj["find_tab"] as? String) ?? ""
+        }
+        return "\(source.bookSourceUrl)|\(platform)|\(tab)"
+    }
+
     /// 拿发现页的**分类 + 筛选栏**
     ///
     /// ⚠️ 2026-10-21：返回整个 `KindsDTO`（多了 `filters`）——
     ///    分类和筛选栏是**两回事**，别再混在一起。
-    func exploreKinds(source: BookSource) async throws -> KindsDTO {
+    /// - Parameter force: 强制绕过缓存（用户下拉刷新 / 线路故障后重试）
+    func exploreKinds(source: BookSource, force: Bool = false) async throws -> KindsDTO {
+        let key = Self.kindsCacheKey(source: source)
+        if !force,
+           let dto = Self.kindsCache[key],
+           let at = Self.kindsCacheAt[key],
+           Date().timeIntervalSince(at) < Self.kindsCacheTTL {
+            return dto
+        }
         let dto: KindsDTO = try await call("exploreKinds", json([:]), as: KindsDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
+        Self.kindsCache[key] = dto
+        Self.kindsCacheAt[key] = Date()
+        // 缓存别无限长（换很多平台会攒一堆）
+        if Self.kindsCache.count > 24 {
+            let old = Self.kindsCacheAt.min { ($0.value ?? .distantPast) < ($1.value ?? .distantPast) }
+            if let k = old?.key {
+                Self.kindsCache.removeValue(forKey: k)
+                Self.kindsCacheAt.removeValue(forKey: k)
+            }
+        }
         return dto
     }
 

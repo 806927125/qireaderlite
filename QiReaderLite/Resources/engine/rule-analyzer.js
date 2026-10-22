@@ -309,6 +309,10 @@
     var prevCache = QR.__qrAjaxCache;
     var prevToast = QR.__qrSuppressToast;
     var cache = {};
+    // ⚠️ 「本 op 里已经试挂过的线路」⇒ 换线兜底时跳过它们
+    //    （两遍跑有 5 轮上限 ⇒ 最多覆盖 5 条不同线路，不会来回打同一条）
+    //    ⚠️ 每个 op 开始时清（不能跨 op 记，否则下次 op 就不试那条线了）
+    QR.__qrTriedHosts = {};
 
     function restore() {
       QR.__qrAjaxRecord = prevRecord;

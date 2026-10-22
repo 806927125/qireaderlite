@@ -18,8 +18,6 @@ struct ExploreView: View {
     @State private var loadMoreID = 0
     /// 顶栏分类胶囊点开的「分类筛选」页
     @State private var showCategoryPicker = false
-    /// 顶栏「筛选」点开的「发现页筛选栏」页（站方 exploreUrl 的 `type:"select"` 契约）
-    @State private var showFilterPicker = false
     /// 站方的发现页筛选栏（平台 / 模式 / 频道 / 字数 / 状态 / 排序…）
     @State private var filters: [SourceService.FilterDTO] = []
     /// 已经加载过分类（从详情页返回时**不要**重新加载）
@@ -38,16 +36,6 @@ struct ExploreView: View {
     /// 当前书源的 URL（闭包里要用 ⇒ 不能用局部变量）
     private var currentSourceUrl: String { current?.bookSourceUrl ?? "" }
 
-    /// 筛选栏里「平台」这一项的**当前值**（显示在顶栏按钮上）
-    ///
-    /// ⚠️ 别写成 `if let cur = ...currentValue(...)` ——
-    ///    `currentValue` 返回的是**非可选 String** ⇒ 那样编不过
-    ///    （2026-10-22 CI 报错：initializer for conditional binding must have Optional type）
-    private var currentPlatformText: String {
-        guard let pf = filters.first(where: { $0.paramKey == "find_source" }) else { return "" }
-        return SourceService.FilterDTO.currentValue(pf, sourceUrl: currentSourceUrl)
-    }
-
     private var current: BookSource? {
         if let pid = pinnedSourceId, let s = sources.source(id: pid) { return s }
         guard let id = sourceId, let s = sources.source(id: id) else { return sources.enabled.first }
@@ -60,6 +48,7 @@ struct ExploreView: View {
 
             VStack(spacing: 0) {
                 picker
+                filterBar
                 list
             }
         }
@@ -68,32 +57,10 @@ struct ExploreView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 8) {
-                    // ⭐ **筛选按钮**（2026-10-21 补：站方的发现页筛选栏契约）
-                    //   站方 exploreUrl 会返回「平台 / 模式 / 频道 / 字数 / 状态 / 排序」这些
-                    //   `type:"select"` 项（**没有 url 字段**）⇒ 以前混在分类里、点不动
-                    //   ⇒ 用户看到的「平台」那几项**没有 api**（2026-10-21 用户原话）
-                    //   ⇒ 现在单独渲染成筛选栏 ⇒ **42 个平台终于能切**
-                    if !filters.isEmpty {
-                        Button { showFilterPicker = true } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "line.3.horizontal.decrease")
-                                    .font(.system(size: 11, weight: .semibold))
-                                // 有筛选项时显示**当前平台**（一眼知道自己在哪）
-                                if !currentPlatformText.isEmpty {
-                                    Text(currentPlatformText)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .lineLimit(1)
-                                }
-                            }
-                            .foregroundStyle(Theme.ink)
-                            .padding(.horizontal, 10)
-                            .frame(height: 34)
-                            .liquidGlass(cornerRadius: 999)
-                        }
-                        .buttonStyle(.plain)
-                    }
                     // 分类胶囊放导航栏，跟返回键平齐一行。
                     // 之前它跟内容区里的书源名挤在一起，看起来是错位的。
+                    // ⚠️ **筛选不在顶栏**（2026-10-22 用户反馈「栖阅是弄一行胶囊的」）
+                    //   ⇒ 筛选胶囊行放在**内容区顶部**（跟栖阅一样）
                     Button { showCategoryPicker = true } label: {
                         HStack(spacing: 4) {
                             Text(selected?.title ?? "选分类")
@@ -117,38 +84,6 @@ struct ExploreView: View {
         // sheet 自带顶部区域 + 我自己画的「× 关闭」胶囊打架，下半屏还全是空白。
         .navigationDestination(item: $pickedBook) { b in
             BookDetailView(book: b)
-        }
-        .navigationDestination(isPresented: $showFilterPicker) {
-            ExploreFilterView(
-                filters: filters,
-                current: SourceService.FilterDTO.currentValues(
-                    filters: filters, sourceUrl: currentSourceUrl),
-                onPick: { key, value in
-                    // ⭐ 写源级变量（**必须合并站方默认表**，不能只写一项 ——
-                    //    站方 getArguments 只在变量串为空时才给默认表 ⇒ 只写一项会把源改坏）
-                    let merged = SourceVariables.mergeVars(
-                        userJSON: SourceVariables.vars(for: currentSourceUrl),
-                        defaults: SourceVariables.defaultVars(for: currentSourceUrl))
-                    var obj: [String: Any] = [:]
-                    if let d = merged.data(using: .utf8),
-                       let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
-                        obj = o
-                    }
-                    obj[key] = value
-                    if let data = try? JSONSerialization.data(withJSONObject: obj),
-                       let str = String(data: data, encoding: .utf8) {
-                        SourceVariables.setVars(str, for: currentSourceUrl)
-                    }
-                    showFilterPicker = false
-                    kindsLoaded = false
-                    selected = nil
-                    books = []
-                    // 站方的 exploreUrl 要重跑才看得到新平台（discoverySource 是在里面读的）
-                    Task { await loadKinds(force: true) }
-                }
-            )
-            .navigationTitle("筛选")
-            .navigationBarTitleDisplayMode(.inline)
         }
         .navigationDestination(isPresented: $showCategoryPicker) {
             CategoryPickerView(
@@ -181,6 +116,90 @@ struct ExploreView: View {
             kindsLoaded = false          // 换了书源 ⇒ 分类要重来
             Task { await loadKinds(force: true) }
         }
+    }
+
+    /// ⭐⭐ **发现页筛选栏**（栖阅同款：内容区顶部**一行横向滚动的胶囊**）
+    ///
+    /// 2026-10-22 用户反馈：「栖阅的筛选键，是在发现页上面弄一行胶囊的呀」
+    /// 栖阅那行是：`5006` / `模式 小说` / `频道 男频` / `平台 番茄` / `字数 不限` ……
+    /// ⇒ 每个筛选项一个胶囊，显示「标题 + 当前值」⇒ 点一下直接出选项（Menu）
+    ///
+    /// ⚠️ 这些是站方 exploreUrl 返回的 `type:"select"` 项
+    ///    （**没有 url 字段** ⇒ 以前混在分类列表里、点不动 ⇒ 用户看到「平台」没有 api）
+    @ViewBuilder
+    private var filterBar: some View {
+        if !filters.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(filters) { f in
+                        filterChip(f)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+
+    /// 一个筛选项的胶囊（点开就是该筛选项的全部选项）
+    private func filterChip(_ f: SourceService.FilterDTO) -> some View {
+        // ⚠️ 别写成 `if let cur = ...currentValue(...)` ——
+        //    `currentValue` 返回的是**非可选 String** ⇒ 那样编不过
+        let cur = SourceService.FilterDTO.currentValue(f, sourceUrl: currentSourceUrl)
+        return Menu {
+            if f.chars.isEmpty {
+                Text("（这个筛选项没有可选项）")
+            } else {
+                ForEach(f.chars, id: \.self) { c in
+                    Button {
+                        applyFilter(f.paramKey, c)
+                    } label: {
+                        Text(c)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(f.title)
+                    .font(.system(size: 12))
+                Text(cur.isEmpty ? "请选择" : cur)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .background(Capsule().fill(Color.white.opacity(0.6)))
+        }
+    }
+
+    /// 选中一个筛选项 ⇒ **写源级变量** ⇒ 重新跑站方 exploreUrl
+    ///
+    /// ⚠️⚠️ 写变量**必须合并站方默认表**（`mergeVars`）—— 只写一项会把源改坏：
+    ///   站方 `getArguments` **只在变量串为空时才给默认表** ⇒ 只写一项 ⇒
+    ///   `server / tab / sources / source_type / proxy` 全变 undefined ❗
+    private func applyFilter(_ key: String, _ value: String) {
+        guard !key.isEmpty else { return }
+        let merged = SourceVariables.mergeVars(
+            userJSON: SourceVariables.vars(for: currentSourceUrl),
+            defaults: SourceVariables.defaultVars(for: currentSourceUrl))
+        var obj: [String: Any] = [:]
+        if let d = merged.data(using: .utf8),
+           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+            obj = o
+        }
+        obj[key] = value
+        if let data = try? JSONSerialization.data(withJSONObject: obj),
+           let str = String(data: data, encoding: .utf8) {
+            SourceVariables.setVars(str, for: currentSourceUrl)
+        }
+        // 站方的 exploreUrl 要重跑才看得到新平台（discoverySource 是在里面读的）
+        kindsLoaded = false
+        selected = nil
+        books = []
+        Task { await loadKinds(force: true) }
     }
 
     /// 榜单页内容区**没有任何头部**：书源名在导航栏标题上，
@@ -309,7 +328,7 @@ struct ExploreView: View {
             //    ⇒ op 层超时 360 秒 → 页面就永远转圈 ❗
             //    20 秒没出来就报错，让用户看到原因（多半是线路不通）。
             let res = try await Self.withTimeout(seconds: 20) {
-                try await SourceService.shared.exploreKinds(source: s)
+                try await SourceService.shared.exploreKinds(source: s, force: force)
             }
             kinds = res.kinds
             filters = res.filters

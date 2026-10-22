@@ -59,6 +59,15 @@
         g.source = prevSource; g.book = prevBook; g.chapter = prevChapter;
         void addedCache; void addedCookie;
       }
+      // ⚠️⚠️ **把站方的线路列表存一份**（2026-10-22 真机「QQ 阅读目录出不来」）：
+      //   站方 jsLib 里的 `var host = [...]`（8 条线路）是**换线兜底的唯一依据**
+      //   ⇒ 引擎侧在「这条线路 5xx 了」时要能拿到它 ⇒ 换一条重试
+      //   ⇒ 存一份到 `QR.__qrStationHosts`（比直接读全局 `host` 更稳）
+      try {
+        if (typeof host !== 'undefined' && Array.isArray(host) && host.length) {
+          QR.__qrStationHosts = host.slice();
+        }
+      } catch (e) { /* 忽略 */ }
     } catch (e) {
       QR.java.log('[jsLib 出错] ' + (source.bookSourceName || key) + ': ' + e.message);
     }

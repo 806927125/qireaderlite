@@ -319,7 +319,67 @@
 
   /* ---------------- HTTP ---------------- */
 
-  function rawRequest(url, method, headers, data, timeout) {
+  /**
+   * ⭐⭐⭐ **站方 jsLib 的线路列表**（`var host = [...]`）
+   *
+   * 站方 jsLib 是**间接 eval** 定义的 ⇒ `var host` 落在**全局作用域** ⇒ 这里能读到。
+   * ⇒ 宿主就能在「这条线路挂了」时**自动换一条**，
+   *    不依赖站方规则里有没有写 catch 换线 ⭐
+   */
+  function stationHosts() {
+    // ① 优先用 ensureJsLib 存下来的那份（最稳）
+    try {
+      if (QR.__qrStationHosts && QR.__qrStationHosts.length) return QR.__qrStationHosts.slice();
+    } catch (e) {}
+    // ② 回落到全局 `host`（站方 jsLib 是间接 eval ⇒ var host 进全局）
+    try {
+      if (typeof host !== 'undefined' && Array.isArray(host) && host.length) return host.slice();
+    } catch (e) {}
+    return null;
+  }
+
+  /** URL 里可能粘着 Legado 的 `,{json}` 选项后缀 ⇒ 换 host 时要保住它 */
+  function splitUrlOption(url) {
+    var s = String(url || '');
+    var m = /,\s*\{/.exec(s);
+    if (!m) return { url: s, opt: '' };
+    return { url: s.slice(0, m.index), opt: s.slice(m.index) };
+  }
+
+  /** 把 URL 的 host 换成另一条线路（保住 path/query/选项后缀） */
+  function swapHost(url, newHost) {
+    var sp = splitUrlOption(url);
+    try {
+      var u = new URL(sp.url);
+      var nh = new URL(newHost);
+      u.protocol = nh.protocol;
+      u.host = nh.host;
+      u.port = nh.port;
+      return u.href + sp.opt;
+    } catch (e) {
+      return url;
+    }
+  }
+
+  /** 除当前 host 之外的其它候选线路 */
+  function otherHosts(url) {
+    var list = stationHosts();
+    if (!list || !list.length) return [];
+    var cur = '';
+    try { cur = new URL(splitUrlOption(url).url).host; } catch (e) {}
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var h = String(list[i] || '');
+      if (!h) continue;
+      var hh = '';
+      try { hh = new URL(h).host; } catch (e) { continue; }
+      if (hh && hh === cur) continue;
+      out.push(h);
+    }
+    return out;
+  }
+
+  function rawRequest(url, method, headers, data, timeout, _swapped) {
     // ⚠️ 超时必须**显式**传给 nativeCall（默认 40s ❗）——
     //    站方（🍅大灰狼）有 8 个 host 的失败兜底，一个卡住就等满 40s × 7 = 几分钟。
     var __t = timeout ? timeout / 1000 : 12;
@@ -344,6 +404,54 @@
       timeout: __t
     }, __waitMs).then(function (r) {
       if (!r || r.ok === false) throw new Error((r && r.error) || '请求失败');
+      // ⚠️⚠️⚠️ **5xx ⇒ 这条线路挂了 ⇒ 自动换一条线路重试**（2026-10-22 真机「QQ 阅读目录出不来」）
+      //   实测：`v5.langge.uk/catalog?source=svip_QQ阅读` **一直返 502**（Cloudflare 错误页）
+      //   ⇒ 站方的 `ruleToc.chapterList` **没有 catch 换线兜底**（只有 `detail` 规则有）
+      //   ⇒ 目录解析失败 ⇒ **0 章**
+      //   ⇒ 这里替站方兜底：换 `host[]` 里的下一条线路重试**一次** ✅
+      //
+      //   ⚠️ 只换**一次**（`_swapped`）⇒ 不会变成「一次操作发 8 条」
+      //   ⇒ 也不会重演「打爆站方限流」那个坑
+      var __code = r.code || 0;
+      if (__code >= 500 && !_swapped) {
+        // ⚠️ 跳过**已经试过**的线路 ⇒ 全挂时不会在两条线之间来回打
+        //    （两遍跑有 5 轮上限 ⇒ 最多覆盖 5 条不同线路）
+        var alts = otherHosts(url);
+        var picked = null;
+        for (var ai = 0; ai < alts.length; ai++) {
+          var hh = '';
+          try { hh = new URL(alts[ai]).host; } catch (e) {}
+          if (QR.__qrTriedHosts && QR.__qrTriedHosts[hh]) continue;
+          picked = alts[ai];
+          break;
+        }
+        if (!picked) picked = alts[0];
+        if (picked) {
+          var alt = swapHost(url, picked);
+          try {
+            if (!QR.__qrTriedHosts) QR.__qrTriedHosts = {};
+            var curHost = '';
+            try { curHost = new URL(splitUrlOption(url).url).host; } catch (e) {}
+            if (curHost) QR.__qrTriedHosts[curHost] = true;
+            QR.java.log('[换线] ' + __code + ' ⇒ 这条线路挂了 ⇒ 换 ' + picked
+              + ' 重试一次：' + String(url).slice(0, 120));
+          } catch (e) {}
+          return rawRequest(alt, method, headers, data, timeout, true).then(function (r2) {
+            // ⚠️ 换过去的那条**也失败**了 ⇒ 把它也记进「已试挂」
+            //   （不记 ⇒ 每轮都在同样两条线之间来回打 ⇒ 白白多打一倍请求）
+            try {
+              var c2 = (r2 && r2.code) || 0;
+              if (c2 >= 500) {
+                if (!QR.__qrTriedHosts) QR.__qrTriedHosts = {};
+                var ph = '';
+                try { ph = new URL(splitUrlOption(alt).url).host; } catch (e) {}
+                if (ph) QR.__qrTriedHosts[ph] = true;
+              }
+            } catch (e) {}
+            return r2;
+          });
+        }
+      }
       // ⚠️ 记住**最后一次响应** —— 站方 JS 崩的时候，日志里要能看出
       //    「它拿到的到底是啥」。否则只看到一句 `abstract.split` 这种天书，
       //    根本不知道服务器返回的是 502 还是「您的会员已过期」。
