@@ -139,7 +139,10 @@ function worse(o, n) {
 (async () => {
   const rows = [];
   for (const src of pack) {
-    const o = await runOld(src);
+    const oRaw = await runOld(src);
+    const o = oRaw.steps || {};      // ⚠️⚠️ 修：worse() 访问的是 **steps 里**的字段
+                                     //    （原来传的是 {steps:{...}} ⇒ 老引擎的 error 从没被读到
+                                     //      ⇒ 所有「两边都失败」都被误判成差异）⭐
     // ⭐⭐⭐ **按书名配对**：老引擎挑的那本 ⇒ 新引擎也用同一本
     //   （两边「第一本书」常常不同 ⇒ 不配对就没法比）⭐
     const oldFirst = ((o.steps || {}).explore || {}).first;
@@ -151,6 +154,7 @@ function worse(o, n) {
     const oToc = (o.toc || {}).count, nToc = (n.toc || {}).count;
     if (typeof oToc === 'number' && typeof nToc === 'number' && nToc > oToc) good.push(`章节 ${oToc}→${nToc}`);
     rows.push({ name: src.bookSourceName, bad, good, o, n });
+    // ⇒ 顺带把「两边都失败」的源也标出来（不是差异，但值得知道）
     console.log(`${bad.length ? '❌' : (good.length ? '⬆️ ' : '✅')} ${src.bookSourceName}` +
       (bad.length ? `  差: ${bad.join(' | ')}` : '') + (good.length ? `  好: ${good.join(' | ')}` : ''));
     fflush_stdout();
