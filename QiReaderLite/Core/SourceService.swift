@@ -139,12 +139,21 @@ final class SourceService {
     ///   ⇒ 开关在 `EngineBackend.fallbackToLegacy`（关掉 = 纯新引擎）
     ///
     /// ⚠️ **新引擎不支持的 op**（登录 / 诊断 / 站方变量）⇒ 直接落老引擎。
+    /// ⭐ **只播报一次**（免得刷屏）
+    private static var newEngineAnnounced = false
+
     private static func invokeEngine(_ op: String, _ payload: [String: Any],
                                      source: BookSource) async throws -> Any {
         if EngineBackend.useNewEngine {
             do {
                 if let r = try await invokeNewEngine(op, payload, source: source) {
                     EngineBackend.current = .swiftNew
+                    // ⭐⭐ **播报一次** ⇒ 用户在「引擎日志」里能直接看到「主链路已切到新引擎」
+                    if !newEngineAnnounced {
+                        newEngineAnnounced = true
+                        RuleSandbox.shared.appendLog(
+                            "[引擎] 主链路已切到**新 Swift 引擎**（legado-engine）· 搜索/发现/详情/目录/正文")
+                    }
                     return r
                 }
                 // ⇒ 新引擎不支持这个 op ⇒ 落老引擎（登录 / 诊断那几类）

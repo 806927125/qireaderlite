@@ -16,6 +16,20 @@ struct EngineLogSheet: View {
     /// 同步通道（window.prompt）—— **默认关**：它有把 JS 线程卡死的风险
     @AppStorage(EngineSyncChannel.key) private var syncChannel = false
 
+    // MARK: - ⭐⭐ 当前引擎（主链路跑的是哪个）
+    //
+    // ⚠️ 键必须和 `EngineBackend` 里的一致 ⇒ 同一个 UserDefaults 键，两边同步
+    @AppStorage("qr.useNewEngine") private var useNewEngine = true
+    @AppStorage("qr.fallbackLegacy") private var fallbackLegacy = true
+    @AppStorage("qr.engineBackend") private var backendKind = ""
+
+    /// 当前后端（`EngineBackend.Kind` 的原文）
+    private var currentBackendName: String {
+        EngineBackend.Kind(rawValue: backendKind)?.rawValue ?? EngineBackend.Kind.swiftNew.rawValue
+    }
+    /// 主链路是不是走新引擎
+    private var isNewEngine: Bool { useNewEngine }
+
     private var summary: String { RuleSandbox.shared.diagnose() }
     private var logs: [String] { RuleSandbox.shared.recentLogs }
 
@@ -31,6 +45,41 @@ struct EngineLogSheet: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
+                    // ── ⭐⭐ 当前引擎（一眼看出主链路跑的是哪个）─────────
+                    //
+                    // ⚠️⚠️ **为什么必须放在这个面板的最上面**（2026-10-23 用户实测）：
+                    //   下面那屏「引擎文件：11 个全部就位 / 注入完成」**全是老 JS 引擎的状态**
+                    //   ⇒ 用户打开这个面板看到「引擎都就位」⇒ 以为**还在跑老引擎**
+                    //   ⇒ 实际主链路（搜索/发现/详情/目录/正文）早就走新 Swift 引擎了 ⭐
+                    //   ⇒ 所以「当前引擎」必须**在老引擎的信息之前**显示
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Text("当前引擎")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.ink)
+                            Spacer()
+                            Text(currentBackendName)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(isNewEngine ? Theme.accent : Theme.sub)
+                        }
+                        Text(isNewEngine
+                             ? "主链路（搜索 / 发现 / 详情 / 目录 / 正文）走**新 Swift 引擎**（legado-engine）。\n下面这些是老 JS 引擎（兜底通道：登录 / 诊断）的状态。"
+                             : "主链路当前走**老 JS 引擎**。新引擎被关掉了（开关在下面）。")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Toggle(isOn: $useNewEngine) {
+                            Text("用新 Swift 引擎（关掉 = 回到老引擎）")
+                                .font(.system(size: 13))
+                        }
+                        Toggle(isOn: $fallbackLegacy) {
+                            Text("新引擎失败时回退老引擎（关掉 = 纯新引擎）")
+                                .font(.system(size: 13))
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+
                     // ── 急救区：引擎卡死时先点这个 ──
                     VStack(alignment: .leading, spacing: 8) {
                         Text("引擎急救")
