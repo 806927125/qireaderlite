@@ -148,6 +148,8 @@ final class SourceService {
             do {
                 if let r = try await invokeNewEngine(op, payload, source: source) {
                     EngineBackend.current = .swiftNew
+                    // ⭐ 成功 ⇒ 清掉上一次的失败原因
+                    EngineBackend.lastError = nil
                     // ⭐⭐ **播报一次** ⇒ 用户在「引擎日志」里能直接看到「主链路已切到新引擎」
                     if !newEngineAnnounced {
                         newEngineAnnounced = true
@@ -160,6 +162,9 @@ final class SourceService {
             } catch {
                 let msg = "[引擎] 新引擎跑「\(op)」失败：\(error)"
                 RuleSandbox.shared.appendLog(msg)
+                // ⭐⭐⭐ **把失败原因留下来** ⇒ UI 能直接告诉用户「为什么回退」
+                //   （没有它 ⇒ 用户只看到「老引擎在服务」⇒ 分不清是开关关了还是新引擎坏了）⭐
+                EngineBackend.lastError = "「\(op)」失败：\(error)"
                 if !EngineBackend.fallbackToLegacy {
                     throw error
                 }

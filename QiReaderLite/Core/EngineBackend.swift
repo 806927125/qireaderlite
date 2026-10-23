@@ -35,7 +35,7 @@ public enum EngineBackend {
         set { UserDefaults.standard.set(newValue, forKey: "qr.useNewEngine") }
     }
 
-    /// ⭐ **新引擎失败时要不要回退老引擎**
+    /// ⭐⭐ **新引擎失败时要不要回退老引擎**
     ///
     /// ⚠️ 默认 **开**（安全网）⇒ 新引擎跑不通的源，老引擎还能出结果 ⇒ App 不会变成砖。
     /// ⇒ 关掉它 = **纯新引擎**（新引擎报错就报错，不兜底）。
@@ -47,11 +47,48 @@ public enum EngineBackend {
         set { UserDefaults.standard.set(newValue, forKey: "qr.fallbackLegacy") }
     }
 
-    /// 一行说明（给 UI 显示）
+    // MARK: - ⭐⭐⭐ 三件**必须分开显示**的事（2026-10-23 用户实测踩出来的）
+
+    /// **① 新引擎开关**（用户设的）
+    public static var switchState: String { useNewEngine ? "已开启" : "已关闭" }
+
+    /// **② 当前是谁在服务**（上一次 op 实际走的引擎）
+    public static var servingText: String {
+        current == .swiftNew ? "新 Swift 引擎" : "老 JS 引擎"
+    }
+
+    /// **③ 最后一次新引擎的失败原因**（回退时才有 ⇒ 其它时候为 nil）
+    ///
+    /// ⭐ 没有它 ⇒ 用户只看到「老引擎在服务」⇒ **不知道是开关关了还是新引擎坏了**
+    /// ⇒ 而这两种情况的处理方式**完全相反**（一个去开开关，一个去修引擎）⭐
+    public static var lastError: String? {
+        get { ErrorBox.shared.value }
+        set { ErrorBox.shared.value = newValue }
+    }
+
+    /// 线程安全的单值盒（引擎在后台线程写、UI 在主线程读）
+    private final class ErrorBox: @unchecked Sendable {
+        static let shared = ErrorBox()
+        private let lock = NSLock()
+        private var v: String?
+        var value: String? {
+            get { lock.lock(); defer { lock.unlock() }; return v }
+            set { lock.lock(); v = newValue; lock.unlock() }
+        }
+    }
+
+    /// 一行说明（给 UI 显示）—— ⭐ **短版**（测书源面板那行）
     public static var description: String {
-        var s = current.rawValue
-        if useNewEngine && current == .legacyJS { s += "（开关已关 · 走的是老引擎）" }
-        if useNewEngine && fallbackToLegacy { s += " · 失败回退老引擎" }
-        return s
+        guard useNewEngine else {
+            return "老 JS 引擎（WKWebView）· 新引擎开关已关"
+        }
+        if current == .swiftNew {
+            return "新 Swift 引擎（legado-engine）· 运行中"
+        }
+        // ⚠️ 新引擎开着，但这次是老引擎在服务 ⇒ **说明发生了回退**
+        if fallbackToLegacy {
+            return "新 Swift 引擎 · 已开启，但本次**回退老引擎**"
+        }
+        return "新 Swift 引擎 · 已开启（纯新引擎，无回退）"
     }
 }

@@ -95,15 +95,39 @@ struct SourceTestView: View {
                 }
                 Spacer()
             }
-            // ⭐⭐ **当前引擎后端**（一眼看出跑的是老的还是新的）
-            HStack(spacing: 6) {
-                Text("引擎后端")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.sub)
-                Text(EngineBackend.description)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(EngineBackend.current == .swiftNew ? Theme.accent : Theme.sub)
-                Spacer()
+            // ⭐⭐⭐ **当前引擎后端**（一眼看出跑的是老的还是新的）
+            //
+            // ⚠️⚠️ **三件事必须分开说**（2026-10-23 用户实测踩出来的）：
+            //   只写一行「老 JS 引擎」⇒ 用户以为**开关被关了**
+            //   ⇒ 实际是「新引擎开着，但这次失败回退了」⇒ **处理方式完全相反**⭐
+            //   ⇒ 所以：开关状态 / 当前服务 / 失败原因 ⇒ 各占一行
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("新引擎")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.sub)
+                    Text(EngineBackend.switchState)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(EngineBackend.useNewEngine ? Theme.accent : Theme.sub)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.sub)
+                    Text("当前：" + EngineBackend.servingText)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(EngineBackend.current == .swiftNew ? Theme.accent : .orange)
+                    Spacer()
+                }
+                if let e = EngineBackend.lastError, EngineBackend.useNewEngine {
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("新引擎失败")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.sub)
+                        Text(e)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             Text("跑链路：发现 → 详情 → 目录 → 正文。每步单独计时，某步挂了也照样往下测 ⇒ 一次就知道哪些能用。")
                 .font(.caption2)

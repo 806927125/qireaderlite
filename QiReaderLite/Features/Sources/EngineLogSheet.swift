@@ -29,6 +29,21 @@ struct EngineLogSheet: View {
     }
     /// 主链路是不是走新引擎
     private var isNewEngine: Bool { useNewEngine }
+    /// 当前是不是新引擎在服务
+    private var servingIsNew: Bool { EngineBackend.current == .swiftNew }
+    /// 一行「标签：值」
+    private func engineRow(_ label: String, _ value: String, isError: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(Theme.sub)
+                .frame(width: 56, alignment: .leading)
+            Text(value)
+                .font(.caption2)
+                .foregroundStyle(isError ? .red : Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
     private var summary: String { RuleSandbox.shared.diagnose() }
     private var logs: [String] { RuleSandbox.shared.recentLogs }
@@ -58,9 +73,18 @@ struct EngineLogSheet: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Theme.ink)
                             Spacer()
-                            Text(currentBackendName)
+                            Text(servingText)
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(isNewEngine ? Theme.accent : Theme.sub)
+                                .foregroundStyle(isNewEngine && servingIsNew ? Theme.accent : .orange)
+                        }
+                        // ⭐⭐⭐ **三件事分开显示**（用户实测踩出来的：只看一个状态会误判）
+                        //   ① 开关开了没 ② 当前谁在服务 ③ 失败原因
+                        VStack(alignment: .leading, spacing: 2) {
+                            engineRow("新引擎开关", EngineBackend.switchState)
+                            engineRow("当前服务", servingText)
+                            if let e = EngineBackend.lastError, isNewEngine {
+                                engineRow("失败原因", e, isError: true)
+                            }
                         }
                         Text(isNewEngine
                              ? "主链路（搜索 / 发现 / 详情 / 目录 / 正文）走**新 Swift 引擎**（legado-engine）。\n下面这些是老 JS 引擎（兜底通道：登录 / 诊断）的状态。"
