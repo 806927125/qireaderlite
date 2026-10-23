@@ -667,6 +667,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
         f.bookUrl = ruleText(r.bookUrl)
         f.wordCount = ruleText(r.wordCount)
         f.searchUrl = ruleText(r.searchUrl)
+        // ⭐⭐ **`ruleExplore.exploreUrl`** —— 站方把发现页 URL 写在规则块里的那种
+        //   ⇒ 引擎的 exploreKinds 兜底要读它（顶层空 ⇒ 试它）
+        f.exploreUrl = ruleText(r.exploreUrl)
         return f
     }
 

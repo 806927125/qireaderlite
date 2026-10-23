@@ -16,6 +16,8 @@ guard args.count >= 2 else {
 }
 let packPath = args[1]
 let keyword = args.count >= 3 ? args[2] : ""
+// ⭐⭐⭐ **指定要测哪本书**（两边跑**同一本书**才可比 ⇒ 列表顺序不同也没关系）
+let wantBook = args.count >= 4 ? args[3] : ""
 
 let data = try Data(contentsOf: URL(fileURLWithPath: packPath))
 let pack = try JSONDecoder().decode([BookSource].self, from: data)
@@ -52,10 +54,15 @@ do {
             let r2 = try LegadoEngineBackend.shared.invoke("explore", ["kindUrl": firstUrl, "page": 1], source: src)
             let d2 = (r2 as? [String: Any]) ?? [:]
             let books = d2["books"] as? [[String: Any]] ?? []
-            let firstName = (books.first?["name"] as? String) ?? ""
+            // ⭐ 挑书：指定了就按名字找，没指定就第一本
+            var picked: [String: Any]? = books.first
+            if !wantBook.isEmpty {
+                picked = books.first { ($0["name"] as? String) == wantBook }
+            }
+            let firstName = (picked?["name"] as? String) ?? ""
             steps.append(step("explore", [("count", "\(books.count)"), ("first", jsonString(firstName))]))
 
-            if let b = books.first, let bookUrl = b["bookUrl"] as? String, !bookUrl.isEmpty {
+            if let b = picked, let bookUrl = b["bookUrl"] as? String, !bookUrl.isEmpty {
                 // ③ 详情
                 var bookDict: [String: Any] = b
                 do {
