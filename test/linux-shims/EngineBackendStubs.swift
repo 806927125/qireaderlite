@@ -19,6 +19,9 @@ enum Toast {
 enum CookieJar {
     static func cookieString(for url: String) -> String { "" }
     static func snapshot() -> [String: String] { [:] }
+    // ⚠️ 真机的 `CookieJar`（RuleSandbox.swift）有这两个 ⇒ stub 必须照抄
+    static func set(_ cookie: String, for url: String) {}
+    static func remove(for url: String) {}
 }
 
 enum CacheFiles {

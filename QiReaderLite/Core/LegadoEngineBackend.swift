@@ -159,6 +159,8 @@ final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
         case "source": return session.engine?.sourceObject
         case "book": return session.engine?.bookObject
         case "chapter": return session.engine?.chapterObject
+        // ⭐⭐ **cookie 宿主对象**（站方 `cookie.*` —— 真实语料 205 处）
+        case "cookie": return session.engine?.cookieObject
         default: return nil
         }
     }
@@ -192,6 +194,32 @@ final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
     }
 }
 
+// MARK: - ① 之二 cookie 服务（站方 `cookie.*` —— 真实语料 205 处）
+
+/// ⭐⭐ **cookie 服务**（站方 `cookie.getCookie` / `setCookie` / `removeCookie` / `replaceCookie`）
+///
+/// ⚠️ 轻阅的 cookie 罐就是**系统共享罐**（`HTTPCookieStorage.shared`）
+/// ⇒ 跟 `URLSession` 自动带的 cookie 是**同一份** ⇒ 站方改了立刻生效 ✅
+final class AppCookieService: CookieService, @unchecked Sendable {
+
+    func cookieHeader(for url: String) -> String {
+        CookieJar.cookieString(for: url)
+    }
+
+    func setCookie(_ value: String, for url: String) {
+        CookieJar.set(value, for: url)
+    }
+
+    func removeCookie(for url: String) {
+        CookieJar.remove(for: url)
+    }
+
+    func replaceCookie(_ value: String, for url: String) {
+        CookieJar.remove(for: url)
+        CookieJar.set(value, for: url)
+    }
+}
+
 // MARK: - ② 源级键值存储
 
 /// ⭐⭐ **源级键值存储**（登录信息 ⇒ 站方 `source.getLoginInfoMap()` 读它）
@@ -210,6 +238,11 @@ final class SourceStorage: KeyValueStorage, @unchecked Sendable {
                let t = String(data: d, encoding: .utf8) { return t }
             return nil
         }
+        // ⭐ **登录头**（站方 `source.getLoginHeader()` / `putLoginHeader`）
+        if key == SourceEngine.loginHeaderKey {
+            let h = SourceVariables.loginHeader(for: sourceUrl)
+            return h.isEmpty ? nil : h
+        }
         return nil
     }
 
@@ -217,15 +250,21 @@ final class SourceStorage: KeyValueStorage, @unchecked Sendable {
         if key == SourceEngine.loginInfoKey {
             SourceVariables.setLoginInfoJSON(value ?? "", for: sourceUrl)
         }
+        if key == SourceEngine.loginHeaderKey {
+            SourceVariables.setLoginHeader(value ?? "", for: sourceUrl)
+        }
     }
 
     func removeValue(forKey key: String) {
         if key == SourceEngine.loginInfoKey {
             SourceVariables.setLoginInfoJSON("", for: sourceUrl)
         }
+        if key == SourceEngine.loginHeaderKey {
+            SourceVariables.setLoginHeader("", for: sourceUrl)
+        }
     }
 
-    func allKeys() -> [String] { [SourceEngine.loginInfoKey] }
+    func allKeys() -> [String] { [SourceEngine.loginInfoKey, SourceEngine.loginHeaderKey] }
 }
 
 // MARK: - ③ 后端
@@ -283,7 +322,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
             let engine = SourceEngine(source: source,
                                       fetcher: PageFetcher(transport: URLSessionTransport(), cookieJar: jar),
                                       js: js,
-                                      storage: storage)
+                                      storage: storage,
+                                      cookies: AppCookieService())
             self.engine = engine
             // ⭐⭐⭐ **站方 jsLib** ⇒ 加载到 JS 全局（它定义的 `host` / `getArguments` 等
             //   是站方规则的前提）⇒ 加载完必须**重设基线**，否则下次求值会被清掉 ⭐
