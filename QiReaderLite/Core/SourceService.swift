@@ -111,7 +111,8 @@ final class SourceService {
         p["source"] = srcDict
         // cookie 快照：同理，Legado 的 cookie.getCookie(url) 也是同步的。
         p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await RuleSandbox.shared.invoke(op, p, source: source)
+        // ⭐⭐⭐ **新引擎（自研 Swift 引擎）优先** —— 老引擎已被完全替换
+        let raw = try await Self.invokeEngine(op, p, source: source)
         // 站方 JS 改过的书籍变量 / 登录信息 → 落盘（下次调用直接生效）
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
@@ -122,6 +123,62 @@ final class SourceService {
             }
         }
         return try decode(T.self, from: raw)
+    }
+
+    // MARK: - ⭐⭐⭐ 引擎分流
+
+    /// ⭐⭐⭐ **跑一个 op**：**新引擎优先**，失败才回退老引擎。
+    ///
+    /// ⚠️ **为什么新引擎优先**（2026-10-23）：
+    ///   老 JS 引擎（11 个 JS 文件 · 9845 行 · WKWebView 异步桥）已被自研 Swift 引擎替换
+    ///   ⇒ 主链路（搜索 / 发现 / 详情 / 目录 / 正文）**一律走新引擎**。
+    ///
+    /// ⚠️ **为什么还留一条退路**：
+    ///   新引擎在**个别源**上还有缺口（站方怪写法）⇒ 直接报错会让 App「像坏了」
+    ///   ⇒ **回退 + 明确记一笔** ⇒ 用户能在自检面板看到「哪些源新引擎跑不通」⭐
+    ///   ⇒ 开关在 `EngineBackend.fallbackToLegacy`（关掉 = 纯新引擎）
+    ///
+    /// ⚠️ **新引擎不支持的 op**（登录 / 诊断 / 站方变量）⇒ 直接落老引擎。
+    private static func invokeEngine(_ op: String, _ payload: [String: Any],
+                                     source: BookSource) async throws -> Any {
+        if EngineBackend.useNewEngine {
+            do {
+                if let r = try await invokeNewEngine(op, payload, source: source) {
+                    EngineBackend.current = .swiftNew
+                    return r
+                }
+                // ⇒ 新引擎不支持这个 op ⇒ 落老引擎（登录 / 诊断那几类）
+            } catch {
+                let msg = "[引擎] 新引擎跑「\(op)」失败：\(error)"
+                RuleSandbox.shared.appendLog(msg)
+                if !EngineBackend.fallbackToLegacy {
+                    throw error
+                }
+                RuleSandbox.shared.appendLog("[引擎] ⇒ 回退老引擎兜底")
+                EngineBackend.current = .legacyJS
+            }
+        } else {
+            EngineBackend.current = .legacyJS
+        }
+        return try await RuleSandbox.shared.invoke(op, payload, source: source)
+    }
+
+    /// ⭐⭐⭐ **新引擎调用**（**必须离开主线程**）
+    ///
+    /// ⚠️⚠️ **引擎内部全同步**（URLSession 用信号量等回调）⇒ 在主线程跑会卡死 UI
+    /// ⇒ 丢到后台队列 ⇒ 主线程只等结果。
+    private static func invokeNewEngine(_ op: String, _ payload: [String: Any],
+                                         source: BookSource) async throws -> Any? {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any?, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let r = try LegadoEngineBackend.shared.invoke(op, payload, source: source)
+                    cont.resume(returning: r)
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from raw: Any?) throws -> T {

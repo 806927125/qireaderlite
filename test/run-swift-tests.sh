@@ -130,6 +130,44 @@ rc4=${PIPESTATUS[0]}
 [ $rc4 -ne 0 ] && rc=$rc4
 _sum "$TMP/out4.txt"
 
+# ── 第五组：新引擎适配层（老 JS 引擎 → 自研 Swift 引擎）────
+# ⭐⭐⭐ 这组的意义：适配层把两个模型的字段名一一对上
+#   ⇒ 对错一个字段 = 「某条规则静默失效」⇒ iOS 真机构建要等 CI ⇒ 这里 3 秒抓错
+# ⚠️ 需要本地已编译的 legado-engine（LegadoCore 模块）⇒ 没有就**跳过**（别假绿）
+LEGADO_MODULES="${LEGADO_MODULES:-../legado-engine/.build/debug/Modules}"
+if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
+  echo
+  echo "=== 编译新引擎适配层（swiftc 真编）==="
+  mkdir -p "$TMP/engine"
+  cp test/engine-backend-test.swift "$TMP/engine/main.swift"
+  # ⚠️ 链接要带上 **LegadoCore / SwiftSoup 的目标文件**
+  #   （SwiftPM 的 library product 默认是**静态**的 ⇒ 没有 .a/.so 可链 ⇒ 只能链 .o）
+  LEGADO_BUILD="${LEGADO_BUILD:-../legado-engine/.build/debug}"
+  if ! "$SWIFTC" -O -I "$LEGADO_MODULES" \
+        "$TMP/engine/main.swift" \
+        test/linux-shims/EngineBackendStubs.swift \
+        QiReaderLite/Core/BookSource.swift \
+        QiReaderLite/Core/SourceVariables.swift \
+        QiReaderLite/Core/EngineBackend.swift \
+        QiReaderLite/Core/LegadoEngineBackend.swift \
+        "$LEGADO_BUILD"/LegadoCore.build/*.o \
+        "$LEGADO_BUILD"/SwiftSoup.build/*.o \
+        -o "$TMP/engine-test" 2>"$TMP/err5.txt"; then
+    echo "❌ 编译失败："
+    cat "$TMP/err5.txt" | head -30
+    exit 1
+  fi
+  echo "✓ 编译通过"
+  echo
+  "$TMP/engine-test" | tee "$TMP/out5.txt"
+  rc5=${PIPESTATUS[0]}
+  [ $rc5 -ne 0 ] && rc=$rc5
+  _sum "$TMP/out5.txt"
+else
+  echo
+  echo "⚠️  没找到 LegadoCore 模块（$LEGADO_MODULES）⇒ 跳过新引擎适配层的门禁"
+fi
+
 # ⚠️ 汇总行必须**只有一行**、且是**合并后的总数** ——
 #    跑器的汇总解析取「最后一行」⇒ 三组各打一行会把总数算错。
 echo
