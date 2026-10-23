@@ -433,6 +433,8 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     private func markReady() {
         guard !ready else { return }
         ready = true
+        // ⭐ 标记当前引擎后端（用户能在「测书源」面板看到）
+        if !EngineBackend.useNewEngine { EngineBackend.current = .legacyJS }
         let ws = bootWaiters; bootWaiters = []
         ws.forEach { $0.resume() }
     }
