@@ -130,6 +130,15 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
+/// ⭐⭐⭐ **日志回主线程**（文件级 ⇒ 适配层里谁都能用）
+///
+/// ⚠️ `RuleSandbox` 是 **`@MainActor`** ⇒ 后台线程（引擎在那边跑）**不能直接调**
+/// ⇒ 否则编译期就报「call to main actor-isolated instance method in a synchronous
+///    nonisolated context」（**真机 CI 才暴露** ⇒ 沙盒 stub 必须也标 `@MainActor` 才拦得住）⭐
+func engineLog(_ message: String) {
+    Task { @MainActor in RuleSandbox.shared.appendLog(message) }
+}
+
 // MARK: - ② 站方 JS 的宿主 API
 
 /// ⭐⭐⭐ **站方 JS 的宿主 API**（`JSHostAPIProvider`）
@@ -161,13 +170,13 @@ final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
             Toast.show(first)
             return .string("")
         case "log":
-            RuleSandbox.shared.appendLog(first)
+            engineLog(first)
             return .string("")
         case "getCookie":
             return .string(CookieJar.cookieString(for: first))
         case "startBrowser":
             // ⚠️ 浏览器交接是**宿主的事**⇒ 这里只记一笔（真浏览器由 App 的登录面板处理）
-            RuleSandbox.shared.appendLog("[宿主] startBrowser：\(first)")
+            engineLog("[宿主] startBrowser：\(first)")
             return .string("")
         case "cacheFile":
             if args.count >= 2 {
@@ -285,7 +294,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
                     _ = try js.run(lib, context: ctx)
                     js.markGlobalsAsBaseline()
                 } catch {
-                    RuleSandbox.shared.appendLog("[新引擎] jsLib 加载失败：\(error)")
+                    engineLog("[新引擎] jsLib 加载失败：\(error)")
                 }
             }
         }

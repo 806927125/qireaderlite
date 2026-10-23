@@ -26,6 +26,11 @@ enum CacheFiles {
     static func read(_ path: String) -> String? { nil }
 }
 
+// ⚠️⚠️ **必须标 `@MainActor`** —— 真机的 `RuleSandbox` 就是 `@MainActor`
+//   ⇒ 适配层在后台线程调 `appendLog` 会被编译器拦下
+//   ⇒ ⚠️ **沙盒 stub 之前没标 ⇒ 那类错误本地看不见（真机 CI 才炸）** ⭐
+//   ⇒ 现在标上 ⇒ 沙盒就能抓「主线程隔离」这类错
+@MainActor
 final class RuleSandbox {
     static let shared = RuleSandbox()
     func appendLog(_ message: String) {}
