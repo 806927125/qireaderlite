@@ -86,6 +86,19 @@ jobs:
           ( cd build/ipa && zip -qry QingYue.ipa Payload )
           ls -la build/ipa/QingYue.ipa
 
+          # ⭐⭐ 额外打一个【不含伪造描述文件】的包（给「全能签」）
+          #   伪造的**通配符**描述文件（application-identifier = *）⇒ iOS 认它
+          #   ⇒ 但「全能签」要拿用户证书去匹配 appid ⇒ 看到 * ⇒ 匹配不上
+          #      ⇒ 报「未匹配到有效证书，请先导入证书」⭐
+          #   ⇒ 这个版本**去掉**它 ⇒ 让签工具自己生成匹配真证书的描述文件
+          #   （「证书全能签」两个版本都能用 ⇒ 保留原包，零回归）
+          cp build/ipa/Payload/QingYue.app/embedded.mobileprovision /tmp/fake-provision.plist 2>/dev/null || true
+          rm -f build/ipa/Payload/QingYue.app/embedded.mobileprovision
+          ( cd build/ipa && zip -qry QingYue-noprov.ipa Payload )
+          # 装回（后面还要用它）
+          [ -f /tmp/fake-provision.plist ] && cp /tmp/fake-provision.plist build/ipa/Payload/QingYue.app/embedded.mobileprovision
+          ls -la build/ipa/QingYue-noprov.ipa
+
       - name: 提交进仓库
         # Artifacts 在手机上下不动，改成把 ipa 直接 push 进仓库，
         # 从仓库页面就能下载，手机浏览器完全没问题。
@@ -108,12 +121,14 @@ jobs:
           fi
           git config user.email "ci@local"
           git config user.name "ci"
-          git add -f out/QingYue.ipa
+          [ -f build/ipa/QingYue-noprov.ipa ] && cp build/ipa/QingYue-noprov.ipa out/QingYue-noprov.ipa
+          git add -f out/QingYue.ipa out/QingYue-noprov.ipa
           git commit -q -m "ipa build ${{ github.run_number }}" || echo "(无变化)"
           # 推到独立分支 ipa-build，不碰 main ——
           # 否则用户本地仓库每次推送都要先 pull，白折腾
           git push -q origin HEAD:refs/heads/ipa-build --force 2>&1 | tail -3
           echo "下载地址: https://github.com/806927125/qireaderlite/blob/ipa-build/out/QingYue.ipa"
+          echo "（全能签请用这个）: https://github.com/806927125/qireaderlite/blob/ipa-build/out/QingYue-noprov.ipa"
 
       - name: 上传
         if: always()
