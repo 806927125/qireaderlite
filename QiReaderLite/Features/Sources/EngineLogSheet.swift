@@ -73,17 +73,15 @@ struct EngineLogSheet: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Theme.ink)
                             Spacer()
-                            Text(servingText)
+                            Text(EngineBackend.servingText)
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(isNewEngine && servingIsNew ? Theme.accent : .orange)
                         }
                         // ⭐⭐⭐ **三件事分开显示**（用户实测踩出来的：只看一个状态会误判）
                         //   ① 开关开了没 ② 当前谁在服务 ③ 失败原因
                         VStack(alignment: .leading, spacing: 2) {
-                            engineRow("新引擎开关", EngineBackend.switchState)
-                            engineRow("当前服务", servingText)
-                            if let e = EngineBackend.lastError, isNewEngine {
-                                engineRow("失败原因", e, isError: true)
+                            ForEach(EngineBackend.statusLines(), id: \.label) { line in
+                                engineRow(line.label, line.value, isError: line.isError)
                             }
                         }
                         Text(isNewEngine

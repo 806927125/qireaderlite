@@ -102,29 +102,15 @@ struct SourceTestView: View {
             //   ⇒ 实际是「新引擎开着，但这次失败回退了」⇒ **处理方式完全相反**⭐
             //   ⇒ 所以：开关状态 / 当前服务 / 失败原因 ⇒ 各占一行
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text("新引擎")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.sub)
-                    Text(EngineBackend.switchState)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(EngineBackend.useNewEngine ? Theme.accent : Theme.sub)
-                    Text("·")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.sub)
-                    Text("当前：" + EngineBackend.servingText)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(EngineBackend.current == .swiftNew ? Theme.accent : .orange)
-                    Spacer()
-                }
-                if let e = EngineBackend.lastError, EngineBackend.useNewEngine {
+                ForEach(EngineBackend.statusLines(), id: \.label) { line in
                     HStack(alignment: .top, spacing: 6) {
-                        Text("新引擎失败")
+                        Text(line.label)
                             .font(.caption2)
                             .foregroundStyle(Theme.sub)
-                        Text(e)
-                            .font(.caption2)
-                            .foregroundStyle(.red)
+                            .frame(width: 56, alignment: .leading)
+                        Text(line.value)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(line.isError ? .red : Theme.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

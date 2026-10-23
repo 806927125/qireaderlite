@@ -77,6 +77,35 @@ public enum EngineBackend {
         }
     }
 
+    // MARK: - ⭐⭐⭐ UI 用的「状态行」（放 Core ⇒ 沙盒能真编真跑 + 能写门禁）
+
+    /// 一行状态
+    public struct StatusLine: Sendable, Equatable {
+        public let label: String
+        public let value: String
+        /// ⭐ 这一行是不是**错误**（UI 用红色）
+        public let isError: Bool
+        public init(label: String, value: String, isError: Bool = false) {
+            self.label = label; self.value = value; self.isError = isError
+        }
+    }
+
+    /// ⭐⭐⭐ **三行状态**（开关 / 当前服务 / 失败原因）—— **各管各的，别混成一句**
+    ///
+    /// ⚠️⚠️ **为什么必须分开**（2026-10-23 用户实测踩出来的）：
+    ///   只写一句「老 JS 引擎」⇒ 用户以为**开关被关了** ⇒ 去开开关
+    ///   ⇒ 实际是「新引擎**开着**但这次失败回退了」⇒ **该去修引擎，不是去开开关**⭐
+    ///   ⇒ 两种情况的处理方式**完全相反** ⇒ 必须能一眼分开
+    public static func statusLines() -> [StatusLine] {
+        var out: [StatusLine] = []
+        out.append(StatusLine(label: "新引擎开关", value: switchState))
+        out.append(StatusLine(label: "当前服务", value: servingText))
+        if useNewEngine, let e = lastError, !e.isEmpty {
+            out.append(StatusLine(label: "失败原因", value: e, isError: true))
+        }
+        return out
+    }
+
     /// 一行说明（给 UI 显示）—— ⭐ **短版**（测书源面板那行）
     public static var description: String {
         guard useNewEngine else {

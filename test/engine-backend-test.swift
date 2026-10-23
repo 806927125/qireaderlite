@@ -91,5 +91,40 @@ ok(LegadoEngineBackend.paramKey(from: "show(infoMap['平台'],'find_source')") =
    "paramKey = find_source")
 ok(LegadoEngineBackend.paramKey(from: nil) == "", "没有 action ⇒ 空")
 
+print("\n=== ⑤ 引擎状态显示：三行必须分开（用户实测踩出来的）===")
+// ⚠️⚠️ 2026-10-23 用户实测：只写一句「老 JS 引擎」⇒ 用户以为**开关被关了**
+//   ⇒ 实际是「新引擎开着但失败回退了」⇒ **该修引擎，不是去开开关** ⭐
+//   ⇒ 两种情况处理方式完全相反 ⇒ 必须能一眼分开
+EngineBackend.useNewEngine = true
+EngineBackend.current = .swiftNew
+EngineBackend.lastError = nil
+var lines = EngineBackend.statusLines()
+ok(lines.count == 2, "成功时只有两行（开关 / 当前服务），不该有失败原因")
+ok(lines.contains { $0.label == "新引擎开关" && $0.value == "已开启" }, "开关状态要有")
+ok(lines.contains { $0.label == "当前服务" && $0.value.contains("新") }, "当前服务要有")
+ok(!lines.contains { $0.isError }, "没有失败就不该有错误行")
+
+// ⭐ 失败回退 ⇒ **三行**，且第三行是错误
+EngineBackend.current = .legacyJS
+EngineBackend.lastError = "「search」失败：emptyResult(\"bookList\")"
+lines = EngineBackend.statusLines()
+ok(lines.count == 3, "失败回退时要有三行（多了失败原因）")
+let errLine = lines.first { $0.label == "失败原因" }
+ok(errLine != nil, "⭐ 必须有「失败原因」行（不然用户看不出为什么回退）")
+ok(errLine?.isError == true, "失败原因那行要标成错误（UI 显示红色）")
+ok(errLine?.value.contains("emptyResult") == true, "失败原因要带原始错误")
+
+// ⭐ 开关关了 ⇒ 状态是「已关闭」，**不是**「失败原因」
+EngineBackend.useNewEngine = false
+lines = EngineBackend.statusLines()
+ok(lines.contains { $0.label == "新引擎开关" && $0.value == "已关闭" }, "开关关了要显示已关闭")
+ok(!lines.contains { $0.label == "失败原因" }, "开关关了就不该报失败原因（那是两回事）")
+ok(EngineBackend.description.contains("开关已关"), "短版文案：开关关了要说清楚")
+
+// 复原
+EngineBackend.useNewEngine = true
+EngineBackend.current = .swiftNew
+EngineBackend.lastError = nil
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)
