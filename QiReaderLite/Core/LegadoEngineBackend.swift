@@ -325,14 +325,14 @@ final class LegadoEngineBackend: @unchecked Sendable {
                                       storage: storage,
                                       cookies: AppCookieService())
             self.engine = engine
-            // ⭐⭐⭐ **站方 jsLib** ⇒ 加载到 JS 全局（它定义的 `host` / `getArguments` 等
+            // ⭐⭐⭐ **站方 jsLib** ⇒ 加载到 JS **全局**（它定义的 `host` / `getArguments` 等
             //   是站方规则的前提）⇒ 加载完必须**重设基线**，否则下次求值会被清掉 ⭐
-            if let js, let lib = jsLib, !lib.isEmpty {
+            //
+            // ⚠️⚠️ **必须走 `loadJsLib`**（间接 eval ⇒ 全局作用域）——
+            //   普通规则求值用的是 **eval 局部作用域**（防 `let device_type` 撞全局）⭐
+            if let lib = jsLib, !lib.isEmpty {
                 do {
-                    let ctx = JSRunContext(base: .page(""), baseUrl: source.bookSourceUrl,
-                                           varBox: engine.varBox)
-                    _ = try js.run(lib, context: ctx)
-                    js.markGlobalsAsBaseline()
+                    try engine.loadJsLib(lib)
                 } catch {
                     engineLog("[新引擎] jsLib 加载失败：\(error)")
                 }
