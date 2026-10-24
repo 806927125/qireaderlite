@@ -43,7 +43,14 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         cfg.httpCookieStorage = HTTPCookieStorage.shared
         cfg.httpShouldSetCookies = true
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
-        cfg.timeoutIntervalForRequest = 30
+        // ⭐⭐⭐ **请求超时 30 秒 → 8 秒**（2026-10-24 真机「app 死机」）
+        //   老引擎的「两遍跑」**只抓同组第一条** ⇒ 站方 8 条线路一次操作只发 1 个请求
+        //   ⇒ 新引擎是「每次 java.ajax 都真发」⇒ 站方 catch 循环里 **8 条线路各发一次**
+        //   ⇒ 死线路（服务器不回包）**每条 30 秒** ⇒ 8 条 = 4 分钟 ⇒ 一次发现页 = 十几分钟
+        //   ⇒ 用户看到的就是「app 死机」⭐⭐⭐
+        //   ⇒ 现在：**8 秒** ⇒ 8 条死线路最坏 64 秒（而且 op 本身有 60 秒兜底）
+        //   ⇒ 活着���线路照旧很快（正常几百 ms）⭐
+        cfg.timeoutIntervalForRequest = 8
         session = URLSession(configuration: cfg)
     }
 
@@ -331,8 +338,18 @@ final class LegadoEngineBackend: @unchecked Sendable {
             #else
             let js: JSExecutor? = nil
             #endif
+            // ⭐⭐⭐ **HTTP 缓存**（2026-10-24 真机「app 死机」的第二根因）
+            //   引擎自带 `CachedTransport`（装饰器）⇒ 宿主按需启用
+            //   ⚠️ 之前**没接** ⇒ 每个 op 都**重新 ajax 站方**
+            //   ⇒ 大灰狼的 `exploreUrl` 每次都自己去 ajax `/discovestyle`（365 个分类）
+            //   ⇒ 发现页「拉分类 → 拉书 → 翻页」= **同一个 URL 跑 3 次** ⇒ 每次都等服务器
+            //   ⇒ 一次发现页 = 几十秒起步 ⇒ 用户以为 App 死了 ⭐⭐⭐
+            //   ⇒ 现在：60 秒 TTL 的缓存 ⇒ 同一个响应 60 秒内只请求一次 ⭐
+            //
+            // ⚠️ TTL 别太长（书源内容会变）⇒ 60 秒刚好够「一次发现页」复用 ⭐
+            let transport = CachedTransport(inner: URLSessionTransport(), ttl: 60, capacity: 64)
             let engine = SourceEngine(source: source,
-                                      fetcher: PageFetcher(transport: URLSessionTransport(), cookieJar: jar),
+                                      fetcher: PageFetcher(transport: transport, cookieJar: jar),
                                       js: js,
                                       storage: storage,
                                       // ⭐⭐⭐ **必须传 logger** ⇒ 引擎的诊断才看得见
@@ -424,12 +441,33 @@ final class LegadoEngineBackend: @unchecked Sendable {
         }
     }
 
+    /// ⭐⭐⭐ **变量串的解析结果也缓存**（2026-10-24 真机「app 死机」）
+    ///
+    /// ⚠️ 崩溃日志里这个函数正卡在 Foundation 的 JSON 解析器上
+    ///   （`seedVars` → `_NSJSONReader parseData:`）⇒ 它在**跟主线程抢 malloc 锁** ⭐
+    /// ⇒ 同一个变量串**只解析一次**（按串本身做 key）
+    private static let varsParseLock = NSLock()
+    private static var varsParseCache: [String: [String: Any]] = [:]
+
     static func seedVars(from payload: [String: Any], into box: VarBox) {
         guard let srcDict = payload["source"] as? [String: Any],
-              let text = srcDict["__variables"] as? String,
-              let data = text.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+              let text = srcDict["__variables"] as? String, !text.isEmpty
         else { return }
+        varsParseLock.lock()
+        var obj = varsParseCache[text]
+        let hit = obj != nil
+        varsParseLock.unlock()
+        if !hit {
+            guard let data = text.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return }
+            obj = parsed
+            varsParseLock.lock()
+            varsParseCache[text] = parsed
+            if varsParseCache.count > 32 { varsParseCache.removeAll() }
+            varsParseLock.unlock()
+        }
+        guard let obj else { return }
         for (k, v) in obj {
             if let s = v as? String { box.set(k, s) }
             else if let n = v as? NSNumber { box.set(k, n.stringValue) }
@@ -461,6 +499,23 @@ final class LegadoEngineBackend: @unchecked Sendable {
         sessions[key] = s
         lock.unlock()
         return s
+    }
+
+    /// ⭐⭐⭐ **丢掉某个源的会话**（新引擎卡死时的急救）
+    ///
+    /// ⚠️⚠️ **为什么必须有**（2026-10-24 真机）：
+    ///   引擎的 JSC context 是**复用**的（一个源一个）⇒
+    ///   站方 JS 一旦在里面死循环 ⇒ **contextLock 永远拿不到**
+    ///   ⇒ 后面每一个 op 都卡在锁上 ⇒ 整个源永久报废
+    ///   ⇒ 所以**超时的时候必须把会话整个换掉**（不只是放弃这一次调用）⭐
+    ///   ⇒ 新的 context 是干净的 ⇒ 源立刻能用
+    func dropSession(for sourceUrl: String) {
+        lock.lock()
+        let existed = sessions.removeValue(forKey: sourceUrl) != nil
+        lock.unlock()
+        if existed {
+            NSLog("[engine] 丢弃卡死的会话：\(sourceUrl)")
+        }
     }
 
     // MARK: - op 实现

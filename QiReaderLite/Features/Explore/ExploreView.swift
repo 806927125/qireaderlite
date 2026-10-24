@@ -251,7 +251,23 @@ struct ExploreView: View {
         if let s = current, s.exploreUrl.isNil {
             EmptyHint(icon: "safari", title: "这个书源没有发现页", subtitle: "去「搜索」页直接搜书名")
         } else if busy && books.isEmpty {
-            Spacer().overlay(ProgressView("加载中…"))
+            // ⭐⭐⭐ **说清在等什么**（2026-10-24 真机「app 死机」）
+            //   聚合源的发现页要**跑站方 JS + 自己 ajax 站方服务器** ⇒ 可能几十秒
+            //   ⇒ 以前只转一个圈 ⇒ 用户以为 App 死了（真机就是被 watchdog 杀的）
+            //   ⇒ 现在：**明说在等站方服务器**，并给出「最多等多久」
+            Spacer().overlay(
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("在等书源服务器…")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.sub)
+                    Text("聚合源要自己跑站方脚本再问服务器，慢的话可能要几十秒\n（不会超过 60 秒；超时会自动报错并可换线路）")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.sub)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+                }
+            )
         } else if !statusText.isEmpty && books.isEmpty {
             ErrorHint(message: statusText)
         } else if books.isEmpty {

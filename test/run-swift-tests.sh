@@ -153,6 +153,27 @@ rc4b=${PIPESTATUS[0]}
 [ $rc4b -ne 0 ] && rc=$rc4b
 _sum "$TMP/out4b.txt"
 
+# ── 第四组之三：**源字典缓存**（Core/SourceDictCache.swift）────
+# ⭐⭐⭐ 2026-10-24 真机「app 死机」的真凶（崩溃日志 0x8BADF00D 实证）：
+#   每个 op 都把整个源（大灰狼 158KB）编码 + Foundation 解析一遍
+#   ⇒ 每次 op 几 MB 的分配 ⇒ **主线程在 malloc 锁上被拖死** ⇒ iOS watchdog 杀进程
+# ⇒ 这组门禁钉死「同一个源只编码一次」
+echo
+echo "=== 编译 Core/SourceDictCache.swift（swiftc 真编）==="
+mkdir -p "$TMP/dictcache"
+cp test/source-dict-cache-test.swift "$TMP/dictcache/main.swift"
+if ! "$SWIFTC" -O "$TMP/dictcache/main.swift" QiReaderLite/Core/BookSource.swift QiReaderLite/Core/SourceRawArchive.swift QiReaderLite/Core/SourceDictCache.swift -o "$TMP/dictcache-test" 2>"$TMP/err4c.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4c.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/dictcache-test" | tee "$TMP/out4c.txt"
+rc4c=${PIPESTATUS[0]}
+[ $rc4c -ne 0 ] && rc=$rc4c
+_sum "$TMP/out4c.txt"
+
 # ── 第五组：新引擎适配层（老 JS 引擎 → 自研 Swift 引擎）────
 # ⭐⭐⭐ 这组的意义：适配层把两个模型的字段名一一对上
 #   ⇒ 对错一个字段 = 「某条规则静默失效」⇒ iOS 真机构建要等 CI ⇒ 这里 3 秒抓错

@@ -53,6 +53,8 @@ final class SourceStore: ObservableObject {
 
     func replaceAll(_ list: [BookSource]) {
         sources = list.sorted { $0.name < $1.name }
+        // ⭐⭐⭐ 源变了 ⇒ **源字典缓存要清**（否则引擎会拿到旧的源）
+        SourceDictCache.invalidate()
         persist()
     }
 
@@ -69,12 +71,15 @@ final class SourceStore: ObservableObject {
             index[s.bookSourceUrl] = s
         }
         sources = index.values.sorted { $0.name < $1.name }
+        // ⭐⭐⭐ 源变了 ⇒ 缓存要清
+        SourceDictCache.invalidate()
         persist()
         return added
     }
 
     func remove(ids: Set<String>) {
         sources.removeAll { ids.contains($0.bookSourceUrl) }
+        SourceDictCache.invalidate()
         persist()
     }
 

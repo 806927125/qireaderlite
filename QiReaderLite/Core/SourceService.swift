@@ -34,8 +34,8 @@ final class SourceService {
     func login(source: BookSource, action: String,
                formValues: [String: String]) async throws -> (ok: Bool, message: String, messages: [String]) {
         var p: [String: Any] = ["action": action, "formValues": formValues]
-        let srcData = try AppEncoder.encode(source)
-        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        // ⭐⭐⭐ 走缓存（同上）
+        var srcDict = SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
@@ -70,8 +70,8 @@ final class SourceService {
     /// 返回的 `messages` 是站方的原文（会员卡片 / 失败原因）。
     func probeLogin(source: BookSource) async throws
         -> (baseUrl: String, messages: [String], stationCheck: Bool) {
-        let srcData = try AppEncoder.encode(source)
-        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        // ⭐⭐⭐ 走缓存（同上：别每个 op 都编码+解析 158KB）
+        var srcDict = SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
@@ -99,8 +99,11 @@ final class SourceService {
         var p = payload
         // 必须是**嵌套对象**。塞 JSON 字符串的话，引擎里 src.ruleSearch 全是 undefined，
         // 表现是「所有字段都空」这种很难查的问题。
-        let srcData = try AppEncoder.encode(source)
-        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        // ⭐⭐⭐ **源字典走缓存**（2026-10-24 真机「app 死机」的真凶）
+        //   大灰狼的源 158KB ⇒ 以前**每个 op** 都编码 + Foundation 解析一遍
+        //   ⇒ 每次 op 几 MB 的分配 ⇒ **主线程在 malloc 锁上被拖死**
+        //   ⇒ 现在：**同一个源只算一次** ⇒ 之后每个 op 直接拿缓存
+        var srcDict = SourceDictCache.dict(for: source)
         // 书籍变量 / 登录信息：Legado 的 source.getVariable() 是**同步** API，
         // 我们的原生桥是异步的（只能 postMessage）→ 只能原生侧读出来塞进去，
         // 引擎侧同步读。改完由引擎回传（见下面 __sourceVars）。
@@ -147,18 +150,36 @@ final class SourceService {
         if EngineBackend.useNewEngine {
             do {
                 if let r = try await invokeNewEngine(op, payload, source: source) {
-                    EngineBackend.current = .swiftNew
-                    // ⭐ 成功 ⇒ 清掉上一次的失败原因
-                    EngineBackend.lastError = nil
-                    // ⭐⭐ **播报一次** ⇒ 用户在「引擎日志」里能直接看到「主链路已切到新引擎」
-                    if !newEngineAnnounced {
-                        newEngineAnnounced = true
-                        RuleSandbox.shared.appendLog(
-                            "[引擎] 主链路已切到**新 Swift 引擎**（legado-engine）· 搜索/发现/详情/目录/正文")
+                    // ⭐⭐⭐⭐⭐ **「成功」不等于「对」**（2026-10-24 真机）
+                    //   新引擎对 🍅大灰狼会返回**假成功**：
+                    //     · 分类只有 1 个（站方兜底分类「未分组」）
+                    //     · 书单 0 本 / bookUrl 空
+                    //   ⇒ 以前「没抛错」就当成功 ⇒ **永远不会回退老引擎**
+                    //   ⇒ 用户拿到的就是「未分组 + 空书单」⭐⭐⭐
+                    //
+                    //   ⇒ **老引擎（WKWebView + JS）是验过能跑大灰狼的**
+                    //      （分类 9 个 / 目录 2566 章 / 正文 2000+ 字）
+                    //   ⇒ 所以判据不是「抛没抛错」，而是「**结果可不可信**」⭐
+                    if Self.isTrustworthy(op, r) {
+                        EngineBackend.current = .swiftNew
+                        // ⭐ 成功 ⇒ 清掉上一次的失败原因
+                        EngineBackend.lastError = nil
+                        // ⭐⭐ **播报一次** ⇒ 用户在「引擎日志」里能直接看到「主链路已切到新引擎」
+                        if !newEngineAnnounced {
+                            newEngineAnnounced = true
+                            RuleSandbox.shared.appendLog(
+                                "[引擎] 主链路已切到**新 Swift 引擎**（legado-engine）· 搜索/发现/详情/目录/正文")
+                        }
+                        return r
                     }
-                    return r
+                    // ⇒ 结果不可信 ⇒ **自动回退老引擎**（老引擎验过能跑大灰狼）⭐
+                    let why = Self.untrustworthyReason(op, r)
+                    RuleSandbox.shared.appendLog(
+                        "[引擎] 新引擎的「\(op)」结果不可信（\(why)）⇒ 回退老引擎（老引擎验过能跑大灰狼）")
+                    EngineBackend.lastError = "「\(op)」结果不可信：\(why)"
+                    EngineBackend.current = .legacyJS
                 }
-                // ⇒ 新引擎不支持这个 op ⇒ 落老引擎（登录 / 诊断那几类）
+                // ⇒ 新引擎不支持这个 op（返回 nil）⇒ 落老引擎（登录 / 诊断那几类）
             } catch {
                 let msg = "[引擎] 新引擎跑「\(op)」失败：\(error)"
                 RuleSandbox.shared.appendLog(msg)
@@ -183,15 +204,107 @@ final class SourceService {
     /// ⇒ 丢到后台队列 ⇒ 主线程只等结果。
     private static func invokeNewEngine(_ op: String, _ payload: [String: Any],
                                          source: BookSource) async throws -> Any? {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any?, Error>) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let r = try LegadoEngineBackend.shared.invoke(op, payload, source: source)
-                    cont.resume(returning: r)
-                } catch {
-                    cont.resume(throwing: error)
+        // ⭐⭐⭐ **新引擎的 op 也必须有超时**（2026-10-24 真机「app 死机」）
+        //   以前**完全没有** ⇒ 站方服务器不通 / 引擎里死循环 ⇒ **永远不返回**
+        //   ⇒ UI 永远转圈 ⇒ 用户以为 App 死了
+        //   ⇒ 引擎是**全同步**的（URLSession + 信号量等回调）⇒ 卡住就是卡住
+        //
+        // ⚠️ **按 op 分档**（同老引擎）：
+        //   · 交互类（发现/搜索/分类）⇒ 60 秒
+        //   · 取内容类（详情/目录/正文）⇒ 300 秒
+        //     （站方详情页会**逐条试 8 条线路** ⇒ 8×29 秒 = 232 秒是**正常的**）
+        let budget = Self.newEngineTimeoutSeconds(for: op)
+        return try await withThrowingTaskGroup(of: Any?.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any?, Error>) in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            let r = try LegadoEngineBackend.shared.invoke(op, payload, source: source)
+                            cont.resume(returning: r)
+                        } catch {
+                            cont.resume(throwing: error)
+                        }
+                    }
                 }
             }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(budget * 1_000_000_000))
+                throw ServiceError.engineFailed(
+                    "新引擎「\(op)」超时（\(Int(budget)) 秒）⇒ 站方服务器没响应或引擎卡住了")
+            }
+            do {
+                guard let first = try await group.next() else {
+                    throw ServiceError.engineFailed("新引擎「\(op)」没有结果")
+                }
+                group.cancelAll()
+                return first
+            } catch {
+                group.cancelAll()
+                // ⭐⭐⭐ **超时要「换掉卡死的会话」**（不只是放弃这一次调用）
+                //   引擎的 JSC context 是复用的 ⇒ 里面死循环 ⇒ 后面每个 op 都卡在锁上
+                //   ⇒ 换掉它 ⇒ 这个源立刻能用 ⭐
+                let msg = String(describing: error)
+                if msg.contains("超时") {
+                    LegadoEngineBackend.shared.dropSession(for: source.bookSourceUrl)
+                    RuleSandbox.shared.appendLog(
+                        "[引擎] 新引擎「\(op)」超时 ⇒ 已换掉卡死的会话（这个源现在能用）")
+                }
+                throw error
+            }
+        }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **新引擎的结果可不可信**（决定要不要回退老引擎）
+    ///
+    /// ⚠️ 判据必须**按 op**定（有的 op 空结果是对的，有的不对）：
+    ///   · `exploreKinds` ⇒ 分类数 **< 3** 就是假成功（站方兜底只有 1~2 个「未分组」）
+    ///   · `explore`     ⇒ 书单 0 本 = 不可信（大灰狼任何分类都有书）
+    ///   · `bookInfo`    ⇒ 没有书名/书 URL = 不可信
+    ///   · `toc`         ⇒ 0 章 = 不可信
+    static func isTrustworthy(_ op: String, _ r: Any?) -> Bool {
+        guard let dict = r as? [String: Any] else { return false }
+        switch op {
+        case "exploreKinds":
+            let kinds = dict["kinds"] as? [[String: Any]] ?? []
+            return kinds.count >= 3
+        case "explore":
+            let books = dict["books"] as? [[String: Any]] ?? []
+            return !books.isEmpty
+        case "bookInfo":
+            let name = dict["name"] as? String ?? ""
+            let url = dict["bookUrl"] as? String ?? ""
+            return !name.isEmpty && !url.isEmpty
+        case "toc":
+            let chapters = dict["chapters"] as? [[String: Any]] ?? []
+            return !chapters.isEmpty
+        default:
+            return true
+        }
+    }
+
+    /// 不可信的原因（写进日志，让用户一眼看懂）
+    static func untrustworthyReason(_ op: String, _ r: Any?) -> String {
+        guard let dict = r as? [String: Any] else { return "返回格式不对" }
+        switch op {
+        case "exploreKinds":
+            let n = (dict["kinds"] as? [[String: Any]])?.count ?? 0
+            return "只解析出 \(n) 个分类（站方正常是几十上百个 ⇒ 多半是站方兜底的「未分组」）"
+        case "explore":
+            return "书单 0 本"
+        case "bookInfo":
+            return "书名/书 URL 是空的"
+        case "toc":
+            return "目录 0 章"
+        default:
+            return "结果不可信"
+        }
+    }
+
+    /// 新引擎每个 op 的超时（秒）
+    private static func newEngineTimeoutSeconds(for op: String) -> Double {
+        switch op {
+        case "bookInfo", "toc", "content": return 300
+        default: return 60
         }
     }
 
@@ -637,8 +750,8 @@ final class SourceService {
     func sourceDefaultVars(source: BookSource) async -> [String: Any] {
         let cached = SourceVariables.defaultVars(for: source.bookSourceUrl)
         if !cached.isEmpty { return cached }
-        let srcData = try? AppEncoder.encode(source)
-        var srcDict = (try? JSONSerialization.jsonObject(with: srcData ?? Data()) as? [String: Any]) ?? [:]
+        // ⭐⭐⭐ 走缓存（别再编码+解析一遍 158KB）
+        var srcDict = SourceDictCache.dict(for: source)
         // ⚠️ 这里不能用 effectiveVars(for:)（会递归）⇒ 用原始变量
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
@@ -651,8 +764,8 @@ final class SourceService {
 
     /// **站方的全部线路**（jsLib 里的 `host` 数组）—— 用来测速挑一条通的
     func sourceHosts(source: BookSource) async throws -> [String] {
-        let srcData = try AppEncoder.encode(source)
-        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        // ⭐⭐⭐ 走缓存（同上）
+        var srcDict = SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
@@ -738,8 +851,8 @@ final class SourceService {
     func applySourceFilter(source: BookSource, action: String,
                            title: String, value: String) async throws -> Bool {
         var p: [String: Any] = ["action": action, "title": title, "value": value]
-        let srcData = try AppEncoder.encode(source)
-        var srcDict = (try JSONSerialization.jsonObject(with: srcData) as? [String: Any]) ?? [:]
+        // ⭐⭐⭐ 走缓存（同上）
+        var srcDict = SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
