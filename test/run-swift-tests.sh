@@ -130,6 +130,29 @@ rc4=${PIPESTATUS[0]}
 [ $rc4 -ne 0 ] && rc=$rc4
 _sum "$TMP/out4.txt"
 
+# ── 第四组之二：**书源导入补齐**（Core/BookSource.swift）────────
+# ⭐⭐⭐ 2026-10-24 真机：「登录界面整没了」的根因就在这个文件里
+#   `BookSource.init(from:)` 是**白名单解码** ⇒ 模型后加的字段（`loginUi` 是 build153 才加的）
+#   ⇒ **老版本存下来的源，存储里根本没这个键** ⇒ 登录面板永远说「loginUi 是空的」
+#   ⇒ 站方 19 个登录按钮 + 邮箱/密码输入框**一起消失**
+# ⇒ 修法：导入时用**原始 JSON**（权威）把模型缺的字段补上
+# ⇒ 这组门禁钉死它：把实现改坏 ⇒ 必须红
+echo
+echo "=== 编译 Core/BookSource.swift（swiftc 真编）==="
+mkdir -p "$TMP/import"
+cp test/source-import-patch-test.swift "$TMP/import/main.swift"
+if ! "$SWIFTC" -O "$TMP/import/main.swift" QiReaderLite/Core/BookSource.swift QiReaderLite/Core/SourceRawArchive.swift -o "$TMP/import-test" 2>"$TMP/err4b.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4b.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/import-test" | tee "$TMP/out4b.txt"
+rc4b=${PIPESTATUS[0]}
+[ $rc4b -ne 0 ] && rc=$rc4b
+_sum "$TMP/out4b.txt"
+
 # ── 第五组：新引擎适配层（老 JS 引擎 → 自研 Swift 引擎）────
 # ⭐⭐⭐ 这组的意义：适配层把两个模型的字段名一一对上
 #   ⇒ 对错一个字段 = 「某条规则静默失效」⇒ iOS 真机构建要等 CI ⇒ 这里 3 秒抓错
@@ -147,6 +170,7 @@ if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
         "$TMP/engine/main.swift" \
         test/linux-shims/EngineBackendStubs.swift \
         QiReaderLite/Core/BookSource.swift \
+        QiReaderLite/Core/SourceRawArchive.swift \
         QiReaderLite/Core/LegadoCompat.swift \
         QiReaderLite/Core/SourceVariables.swift \
         QiReaderLite/Core/EngineBackend.swift \

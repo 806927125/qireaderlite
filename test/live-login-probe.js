@@ -16,8 +16,11 @@ const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require('./harness');
 
-const SRC = process.env.SRC_OUT ||
-  '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json';
+const SRC = process.env.SRC_OUT || [
+  '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json',
+  path.join(__dirname, '..', 'sources', '🍅大灰狼聚合5.9.30-轻阅适配版v2.json'),
+  path.join(__dirname, '..', 'sources', 'dahlang-v2.json'),
+].find(p => fs.existsSync(p)) || '';
 if (!fs.existsSync(SRC)) {
   console.log('ℹ️  适配版聚合源不在本机 → 跳过');
   process.exit(0);

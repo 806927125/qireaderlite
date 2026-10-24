@@ -325,8 +325,13 @@ console.log('\n=== 12. 卡死防护 ===');
   // ② op 队列：任何 op 卡死都不能永久堵死引擎
   ok(/opTimeoutSeconds/.test(sb2) && /withThrowingTaskGroup/.test(sb2),
      'op 有超时保护（一个 op 卡死不会把整个引擎拖死）');
-  ok(/static let opTimeoutSeconds: Double = 360/.test(sb2),
-     'op 超时是 6 分钟（比浏览器看门狗长 1 分钟）');
+  // ⭐⭐⭐ 2026-10-24 真机：6 分钟太长了 ⇒ 主观上就是「app 卡死」
+  //   （用户原话：「打开登录还把 app 卡死了」—— 面板里的按钮全在等那个死掉的 op）
+  //   ⇒ 45 秒 + 超时后**自动换引擎** ⇒ 最坏 45 秒恢复
+  ok(/static let opTimeoutSeconds: Double = 45/.test(sb2),
+     'op 超时是 45 秒（不是 6 分钟 ⇒ 引擎卡住时用户不用干等一分钟）');
+  ok(/self\.resetEngine\(\)/.test(sb2),
+     'op 超时后**自动换引擎**（卡死的 JS 线程换掉 ⇒ 队列立刻疏通）');
   // ③ 同步通道（window.prompt）有把 JS 线程卡死的风险 → **默认关**
   ok(/QR\.__qrSyncEnabled = false;/.test(javai),
      '同步通道默认关闭（prompt 不回调 → JS 线程永久卡死 → 引擎死掉）');

@@ -20,8 +20,11 @@ const { createSandbox } = require('./harness');
 const { looksServerSide, skipServerSide } = require('./live-helpers');
 
 const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
-const SRC = process.env.SRC_OUT ||
-  '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json';
+const SRC = process.env.SRC_OUT || [
+  '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json',
+  path.join(__dirname, '..', 'sources', '🍅大灰狼聚合5.9.30-轻阅适配版v2.json'),
+  path.join(__dirname, '..', 'sources', 'dahlang-v2.json'),
+].find(p => fs.existsSync(p)) || '';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };

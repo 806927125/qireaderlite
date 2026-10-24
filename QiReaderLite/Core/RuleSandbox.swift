@@ -473,8 +473,26 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///    后面所有 op 全排队 → **整个 App 点什么都没反应**（真机踩过：
     ///    内嵌浏览器 present 失败 → continuation 没人 resume → 引擎彻底卡死）。
     ///    有了这个超时，最坏情况是「这次操作失败」，不是「App 死了」。
-    ///    （浏览器那个 op 自己有 5 分钟看门狗，这里给 6 分钟留余量）
-    static let opTimeoutSeconds: Double = 360
+    ///
+    /// ⭐⭐ **2026-10-24 真机改成 45 秒**（原来 360 秒 = 6 分钟）：
+    ///   引擎卡住时，用户要**干等 6 分钟**才看到超时 ⇒ 主观上就是「**app 卡死了**」⭐
+    ///   （用户原话：「打开登录还把 app 卡死了」—— 面板里的按钮全排队等那个死掉的 op）
+    ///   ⇒ 45 秒 + 超时后**自动换引擎** ⇒ 最坏 45 秒恢复，**观感从「卡死」变成「有点慢」** ⭐
+    static let opTimeoutSeconds: Double = 45
+
+    /// ⭐⭐⭐ **取内容类 op 的超时**（比交互类长得多）
+    ///
+    /// ⚠️⚠️ **为什么不能一刀切**（2026-10-24 真机差点踩）：
+    ///   站方详情页在默认线路不通时，会**逐条试 8 条线路** ⇒
+    ///   8 × 29 秒 = **232 秒是正常的**（不是卡死）⇒
+    ///   ⇒ 交互类 op 用 45 秒没问题，但**取内容的必须给够**，否则「慢但能用」被判成失败
+    ///   ⇒ **制造新 bug** ⭐
+    private static let slowOps: Set<String> = ["bookInfo", "toc", "content", "chapter"]
+
+    /// 每个 op 的超时（秒）
+    static func timeoutSeconds(for op: String) -> Double {
+        slowOps.contains(op) ? 300 : opTimeoutSeconds
+    }
 
     /// 把书源给的 URL 字符串解析成 `URL`
     ///
@@ -508,9 +526,10 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         // ⚠️ 超时保护：current 永不返回时，**别把整个队列拖死**
         return try await withThrowingTaskGroup(of: Any.self) { group in
             group.addTask { try await current.value }
+            let budget = Self.timeoutSeconds(for: op)
             group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(Self.opTimeoutSeconds * 1_000_000_000))
-                throw SandboxError(message: "操作「\(op)」超时（\(Int(Self.opTimeoutSeconds)) 秒），引擎可能卡住了")
+                try await Task.sleep(nanoseconds: UInt64(budget * 1_000_000_000))
+                throw SandboxError(message: "操作「\(op)」超时（\(Int(budget)) 秒），引擎可能卡住了")
             }
             do {
                 guard let first = try await group.next() else {

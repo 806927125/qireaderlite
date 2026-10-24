@@ -48,8 +48,16 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
   // 分母递减 ⇒ 总耗时 1.83 × timeout ⇒ JS 侧必须等 ≥ 2 × timeout
   ok(/timeout \/ Double\(attempts - i\)/.test(sw),
      '原生侧每次超时是 timeout/(attempts-i)（分母递减 ⇒ 总 1.83×timeout）');
-  ok(/opTimeoutSeconds\s*:\s*Double\s*=\s*360/.test(sw),
-     'op 超时 360 秒（远大于单次请求的 29 秒）');
+  // ⭐⭐⭐ 2026-10-24 真机：6 分钟 ⇒ 用户干等 6 分钟 = 主观「app 卡死」
+  //   ⇒ 交互类 op 降到 45 秒（仍远大于单次请求的 29 秒）
+  ok(/opTimeoutSeconds\s*:\s*Double\s*=\s*45/.test(sw),
+     'op 超时 45 秒（不是 6 分钟 ⇒ 引擎卡住时用户不用干等一分钟）');
+  // ⭐⭐⭐ 但**取内容的 op 必须给够**：站方详情页会逐条试 8 条线路
+  //   ⇒ 8 × 29 秒 = 232 秒是**正常的** ⇒ 一刀切 45 秒会把「慢但能用」判成失败（制造新 bug）⭐
+  ok(/slowOps/.test(sw) && /bookInfo/.test(sw) && /toc/.test(sw) && /content/.test(sw),
+     '取内容类 op（详情/目录/正文）单独给 300 秒（8 条线路 × 29 秒是正常的）');
+  ok(/timeoutSeconds\(for op: String\)/.test(sw) && /slowOps\.contains\(op\) \? 300 : opTimeoutSeconds/.test(sw),
+     '超时按 op 分档取（慢 op 300 秒 / 交互 op 45 秒）');
 
   console.log('\n=== ③ 超时链路自证 ===');
   // 12s ⇒ 原生侧最坏 22.6s ⇒ JS 侧等 29s ⇒ 覆盖

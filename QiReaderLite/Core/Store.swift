@@ -59,6 +59,9 @@ final class SourceStore: ObservableObject {
     /// 按 bookSourceUrl 覆盖式导入，重复的更新、不重复的追加，返回新增条数
     @discardableResult
     func importSources(_ list: [BookSource]) -> Int {
+        // ⭐⭐⭐ **用「导入时的原始 JSON 存档」把模型缺的字段补上**
+        //   （`loginUi` 是 build153 才加的 ⇒ 老版本存下来的源缺它 ⇒ 登录界面整没了）
+        let list = list.map { SourceRawArchive.patch($0) }
         var index = Dictionary(sources.map { ($0.bookSourceUrl, $0) }, uniquingKeysWith: { _, last in last })
         var added = 0
         for s in list where !s.bookSourceUrl.isEmpty {
@@ -84,6 +87,10 @@ final class SourceStore: ObservableObject {
     private func load() {
         guard let d = try? Data(contentsOf: AppPaths.sourcesFile) else { return }
         sources = (try? AppDecoder.decode([BookSource].self, from: d)) ?? []
+        // ⭐⭐⭐ **用「原始 JSON 存档」把缺的字段补上**（2026-10-24 真机：「登录界面没了」）
+        //   老版本存下来的源缺 `loginUi` / `jsLib` / `loginUrl` ⇒ 登录面板空、站方 JS 跑不起来
+        //   ⇒ 存档是**导入时留的原始 JSON**（权威）⇒ 补得回来，**不用重新导入** ⭐
+        sources = sources.map { SourceRawArchive.patch($0) }
         sources.sort { $0.name < $1.name }
     }
 

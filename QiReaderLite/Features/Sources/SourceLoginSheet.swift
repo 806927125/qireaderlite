@@ -133,9 +133,23 @@ struct SourceLoginSheet: View {
                     loginFields
 
                     if fields.isEmpty {
-                        Text("这个书源没有登录界面（loginUi 是空的）")
-                            .font(.caption)
-                            .foregroundStyle(Theme.sub)
+                        // ⭐⭐⭐ **说清「为什么空」+「怎么修」**（2026-10-24 真机）
+                        //   原来只写一句「loginUi 是空的」⇒ 用户一脸懵 ⇒ 只能来问
+                        //   ⚠️ 两种可能：
+                        //     ① **导入时字段被丢了**（模型白名单解码 ⇒ 老版本存的源缺 `loginUi`）
+                        //        ⇒ **重新导入一次源文件就能恢复** ⭐
+                        //     ② 源文件里本来就没有 ⇒ 这个源确实没有站方登录
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("这个书源没有登录界面（loginUi 是空的）")
+                                .font(.caption)
+                                .foregroundStyle(Theme.sub)
+                            Text("当前源：\(source.name)\n"
+                                 + "① 多半是**导入时这个字段被丢掉了**（老版本存的源）⇒ **重新导入一次源文件**就能恢复\n"
+                                 + "② 源文件里本来就没有 ⇒ 这个源确实没有站方登录界面")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.sub)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
 
                     // ── 站方原文 ──────────────────────────────
@@ -191,13 +205,12 @@ struct SourceLoginSheet: View {
             }
             .task {
                 load()
-                // ⭐ 拉一次站方默认变量（jsLib 的 getArguments 兜底表）——
-                //    没有它，面板里看不到 server/tab/sources/proxy 这些默认值，
-                //    而且「改任意一项」就会把它们全丢掉（2026-10-21 真机目录 0 章的根因）。
-                let defaults = await SourceService.shared.sourceDefaultVars(source: source)
-                if !defaults.isEmpty {
-                    varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
-                }
+                // ⚠️⚠️ **别在这儿拉站方默认变量**（2026-10-24 真机「打开登录把 app 卡死」）
+                //   那个调用要**跑站方 jsLib + 发网络请求**（大灰狼的服务器经常 502）
+                //   ⇒ 卡在引擎队列里 ⇒ 面板一直转 ⇒ 用户以为 App 死了 ⭐⭐⭐
+                //   ⇒ 现在：**打开面板只读本地缓存**（同步、秒开）
+                //   ⇒ 想拉默认值/测速，点下面的「测速并选最快线路」⭐
+                varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
             }
             }
         }
@@ -323,6 +336,13 @@ struct SourceLoginSheet: View {
                 // ⚠️ 这里用 `.regular` 磨砂档（等宽小字要看得清）；
                 //    站方的邮箱/密码框用 `.clear` 通透档（栖阅同款）
                 .glassCard(cornerRadius: 10, variant: .regular)
+            // ⚠️ 空的时候**说清为什么空**（2026-10-24 真机：空框让人以为是 App 坏了）
+            if varsText.isEmpty {
+                Text("还没有变量。点下面的「**测速并选最快线路**」会跑一次站方 jsLib，把默认变量和线路一起拉回来。")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 10) {
                 Button {
                     let raw = varsText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -406,6 +426,13 @@ struct SourceLoginSheet: View {
     ///    ⇒ 一次并发测速（6 秒超时）→ 挑通的写进去 ⇒ 立刻恢复 ✅
     private func probeLines() async {
         defer { probingHosts = false }
+        // ⭐ 顺便把站方默认变量拉回来（jsLib 的 getArguments 兜底表）
+        //   ⇒ 「打开面板不再发网络请求」之后，这里是唯一的拉取入口
+        //   ⇒ 拉不到就提示（引擎卡住 / 站方服务器不通）⇒ 用户一眼知道是哪边的问题 ⭐
+        let defaults = await SourceService.shared.sourceDefaultVars(source: source)
+        if !defaults.isEmpty {
+            varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+        }
         var hosts: [String] = (try? await SourceService.shared.sourceHosts(source: source)) ?? []
         // 兜底：当前变量里的 server 也一起测
         if let m = try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any],
@@ -572,6 +599,9 @@ struct SourceLoginSheet: View {
 
     /// 解析 loginUi（字段名 / 类型 / 按钮动作）
     private func load() {
+        // ⭐⭐⭐ **先把模型缺的字段从「原始 JSON 存档」补上**（2026-10-24 真机）
+        //   老版本存下来的源缺 `loginUi` ⇒ 登录界面整没了 ⇒ 这里补回来（不用重导）
+        let src = SourceRawArchive.patch(source)
         // ⚠️ 已存的**表单值**回填（邮箱/密码等）—— 以前只在内存里，
         //    关掉面板就没了 ❗（2026-10-21 用户反馈）
         let saved = SourceVariables.loginFormValues(for: source.bookSourceUrl)
@@ -587,7 +617,7 @@ struct SourceLoginSheet: View {
         //    站方的 `getArguments` 只在变量串为空时才给默认表 ⇒ 只显示用户那几项
         //    会让人以为「只有 server 一项」，也不知道 proxy/tab 这些默认值去哪了。
         varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
-        guard let raw = source.loginUi, !raw.isEmpty,
+        guard let raw = src.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return }
@@ -645,7 +675,13 @@ struct SourceLoginSheet: View {
 
     /// 一个登录动作最多等多久（秒）
     /// ⚠️ 不能太短：🍅番茄登录要等用户在浏览器里登录完（可能几分钟）
-    static let actionTimeout: Double = 330
+    /// ⭐⭐⭐ **登录动作的 UI 级超时**：330 秒 → **90 秒**
+    ///   原来 330 秒（5 分半）是为了「浏览器登录要用户手动操作」⇒
+    ///   但**站方服务器不通**时也一起等 5 分半 ⇒ 用户看到的就是「**app 卡死了**」⭐⭐⭐
+    ///   （用户原话：「打开登录还把 app 卡死了」）
+    ///   ⇒ 现在：**90 秒**（浏览器那个 op 自己有 5 分钟看门狗，够用）
+    ///   ⇒ 超时后按钮自动放开 + 提示，不会再把面板锁死 ⭐
+    static let actionTimeout: Double = 90
 
     /// 给 SwiftUI 的超时包装（`Task.sleep` + 竞速）
     private func withTimeout<T>(seconds: Double,
@@ -674,8 +710,24 @@ struct SourceLoginSheet: View {
         probing = true
         report = nil
         Task { @MainActor in
-            let r = await LoginStatus.probe(source)
-            report = r
+            // ⚠️⚠️ **必须有 UI 级超时**（2026-10-24 真机「打开登录把 app 卡死」）
+            //   `LoginStatus.probe` 里有多次引擎调用（loginProbe + 独立硬验证）
+            //   ⇒ 引擎卡住时它**永远不返回** ⇒ `probing` 永远 true
+            //   ⇒ 「检测登录状态」按钮**永远转圈** ⇒ 用户看到的又是「点不动 / 卡死」⭐⭐⭐
+            //   ⇒ 现在：90 秒后自动收场（按钮放开 + 说清发生了什么）
+            do {
+                let r = try await withTimeout(seconds: 90) { await LoginStatus.probe(source) }
+                report = r
+            } catch {
+                report = LoginStatusReport(
+                    verdict: "不确定",
+                    loggedIn: false,
+                    lines: ["⏱ 检测超时（90 秒）⇒ 引擎/站方服务器没响应。",
+                            "· 站方服务器不通时会这样（点上面的「测速并选最快线路」换一条线路）",
+                            "· 引擎卡住的话点「重置引擎」换掉它"],
+                    stationMessages: [],
+                    baseUrl: "")
+            }
             probing = false
         }
     }

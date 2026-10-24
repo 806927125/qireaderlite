@@ -69,7 +69,11 @@ function setArguments(key, value) { return ''; }
   ok(!('proxy' in vars), '（站方默认表里本来就没有 proxy —— 面板要自己给）');
 
   console.log('\n=== ③ 真书源（🍅大灰狼）也能问出来 ===');
-  const SRC = process.env.SRC_OUT || '/workspace/out/大灰狼v2.json';
+  const SRC = process.env.SRC_OUT || [
+    '/workspace/out/大灰狼v2.json',
+    path.join(__dirname, '..', 'sources', '🍅大灰狼聚合5.9.30-轻阅适配版v2.json'),
+    path.join(__dirname, '..', 'sources', 'dahlang-v2.json'),
+  ].find(p => fs.existsSync(p)) || '';
   if (fs.existsSync(SRC)) {
     const list = JSON.parse(fs.readFileSync(SRC, 'utf8'));
     const src = (Array.isArray(list) ? list : [list])

@@ -316,6 +316,83 @@ struct BookSource: Codable, Identifiable, Hashable {
 enum BookSourceParser {
     /// 失败时把真实原因带出来 —— 「没解析出书源」这种报错等于没报。
     static func parse(_ data: Data) throws -> [BookSource] {
+        let list = try parseRaw(data)
+        // ⭐⭐⭐ **用原始 JSON 补齐模型丢掉的字段**（见 patchMissingFields 的说明）
+        let raw = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        let patched = patchAll(list, raw: raw)
+        // ⭐⭐⭐ **顺手把原始 JSON 存档** ⇒ 以后模型再加字段，**老源也能补回来**（不用重导）
+        archiveRaw(patched, raw: raw)
+        return patched
+    }
+
+    /// 把原始 JSON 逐源存档（`SourceRawArchive`）
+    private static func archiveRaw(_ list: [BookSource], raw: Any?) {
+        guard let raw else { return }
+        var dicts: [[String: Any]] = []
+        func collect(_ v: Any) {
+            if let d = v as? [String: Any] { dicts.append(d) }
+            else if let a = v as? [Any] { a.forEach(collect) }
+        }
+        collect(raw)
+        guard !dicts.isEmpty else { return }
+        var byURL: [String: [String: Any]] = [:]
+        for d in dicts {
+            if let u = d["bookSourceUrl"] as? String { byURL[u] = d }
+        }
+        for s in list {
+            guard let d = byURL[s.bookSourceUrl] else { continue }
+            SourceRawArchive.save(d, for: s.bookSourceUrl)
+        }
+    }
+
+    /// ⭐⭐⭐ **用原始 JSON 补齐「模型白名单解码」丢掉的字段**
+    ///
+    /// ⚠️⚠️ **这是「登录界面没了」的真凶**（2026-10-24 真机）：
+    ///   `BookSource.init(from:)` 是**白名单解码** —— 只认模型里写了的键
+    ///   ⇒ **凡是模型后来才加的字段，凡是那之前导入并存下来的源，全都缺** ⭐
+    ///   - `loginUi` 是 **build153** 才加的 ⇒ **在那之前导入的源，存储里根本没有这个键**
+    ///     ⇒ 登录面板永远显示「这个书源没有登录界面（loginUi 是空的）」
+    ///     ⇒ 站方登录按钮、邮箱/密码输入框**一起消失**（19 个按钮全没了）
+    ///   - 同理会丢的还有 `jsLib` / `loginUrl` / `header` / `searchUrl` / `exploreUrl`
+    ///     ⇒ 「站方 JS 跑不起来」「请求头丢了」「搜索/发现静默失效」**同源** ⭐⭐⭐
+    ///
+    /// ⇒ **修法**：原始 JSON 是**权威** ⇒ 导入时用它把模型里缺的字段**补上**
+    ///   （模型里有值就不动 ⇒ 站方更新过的字段仍以模型为准）
+    ///
+    /// ⚠️ **老存储里的源还是缺的** ⇒ 这次修好的是「**重新导入**就能补回来」
+    static func patchMissingFields(_ source: BookSource, from raw: [String: Any]) -> BookSource {
+        var s = source
+        if (s.loginUi ?? "").isEmpty { s.loginUi = raw["loginUi"] as? String }
+        if (s.loginUrl ?? "").isEmpty { s.loginUrl = raw["loginUrl"] as? String }
+        if (s.jsLib ?? "").isEmpty { s.jsLib = raw["jsLib"] as? String }
+        if (s.header ?? "").isEmpty { s.header = raw["header"] as? String }
+        if (s.searchUrl ?? "").isEmpty { s.searchUrl = raw["searchUrl"] as? String }
+        if (s.exploreUrl ?? "").isEmpty { s.exploreUrl = raw["exploreUrl"] as? String }
+        if (s.bookUrlPattern ?? "").isEmpty { s.bookUrlPattern = raw["bookUrlPattern"] as? String }
+        return s
+    }
+
+    /// 按 `bookSourceUrl` 把原始 JSON 和模型里的源对上，一一补齐。
+    private static func patchAll(_ list: [BookSource], raw: Any?) -> [BookSource] {
+        guard let raw else { return list }
+        var dicts: [[String: Any]] = []
+        func collect(_ v: Any) {
+            if let d = v as? [String: Any] { dicts.append(d) }
+            else if let a = v as? [Any] { a.forEach(collect) }
+        }
+        collect(raw)
+        guard !dicts.isEmpty else { return list }
+        var byURL: [String: [String: Any]] = [:]
+        for d in dicts {
+            if let u = d["bookSourceUrl"] as? String { byURL[u] = d }
+        }
+        return list.map { s in
+            guard let d = byURL[s.bookSourceUrl] else { return s }
+            return patchMissingFields(s, from: d)
+        }
+    }
+
+    private static func parseRaw(_ data: Data) throws -> [BookSource] {
         let text = String(data: data, encoding: .utf8)
             ?? String(decoding: data, as: UTF8.self)
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

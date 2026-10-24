@@ -33,15 +33,42 @@ const OUT = process.env.SRC_OUT
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
 
-if (!SRC || !OUT) {
+// ⭐⭐⭐ 2026-10-24：**不许「0 项通过」**（一条断言都没跑 = 什么都没验 = 假绿）
+//   原来缺「125 源原件」就整段跳过 ⇒ 门禁一直是 0 项 ⭐⭐⭐
+//   ⇒ 现在：**原件在就比对，不在就只跑【自洽断言】**（适配版自己的规矩）
+//      ⇒ 门禁永远有东西可验 ⇒ 而且「② 有 loginUrl 必须有 loginUi」**正是这次真机那个 bug**
+if (!OUT) {
   console.log('=== 125 源适配门禁 ===');
-  console.log('  ℹ️  125 源原件 / 适配版都不在本机 → 跳过（引擎侧断言照跑）');
-  console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
-  process.exit(0);
+  console.log('  ❌ 连适配版都不在本机 ⇒ 门禁必须失败');
+  console.log(`\n❌ 通过 ${pass} / 失败 ${fail + 1}`);
+  process.exit(1);
 }
 
-const raw = JSON.parse(fs.readFileSync(SRC, 'utf8'));
 const out = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+const hasRaw = !!SRC && fs.existsSync(SRC);
+const raw = hasRaw ? JSON.parse(fs.readFileSync(SRC, 'utf8')) : null;
+if (!hasRaw) {
+  console.log('  ℹ️  没有 125 源原件 ⇒ 只跑【自洽断言】（不比对差异）');
+  // ① 发现页：enabledExplore 的源必须有 exploreUrl
+  const badExplore = out.filter(s => s.enabledExplore && !(s.exploreUrl || '').trim());
+  ok(badExplore.length === 0, `还有 ${badExplore.length} 个 enabledExplore 但 exploreUrl 空：` +
+     badExplore.map(s => s.bookSourceName).join(', '));
+  // ② ⭐⭐⭐ 登录：有 loginUrl 的源**必须有 loginUi**（2026-10-24 真机丢的就是这条）
+  const badLogin = out.filter(s => s.loginUrl && !(s.loginUi || '').trim());
+  ok(badLogin.length === 0, `还有 ${badLogin.length} 个 loginUrl 但 loginUi 空：` +
+     badLogin.map(s => s.bookSourceName).join(', '));
+  const withUi = out.filter(s => (s.loginUi || '').trim());
+  ok(withUi.length > 0, `有 ${withUi.length} 个源带 loginUi（站方登录界面没被清掉）`);
+  // ③ canReName 一律不许出现
+  ok(out.filter(s => 'canReName' in s).length === 0, '输出不含 canReName');
+  // ④ 关键规则不能空
+  for (const [p1, p2] of [['ruleContent', 'content'], ['ruleToc', 'chapterList'], ['ruleSearch', 'bookList']]) {
+    const empty = out.filter(s => !(s[p1] || {})[p2]);
+    ok(empty.length <= 4, `${p1}.${p2} 空的源有 ${empty.length} 个（包里有几个「（发现）」专属源是正常的）`);
+  }
+  console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
+  process.exit(fail ? 1 : 0);
+}
 
 ok(Array.isArray(out), '输出是数组');
 ok(out.length === raw.length, `条数没变（${out.length}/${raw.length}）`);

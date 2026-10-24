@@ -18,11 +18,19 @@ const fs = require('fs');
 const path = require('path');
 const { createSandbox } = require('./harness');
 
-const SRC = process.env.SRC_OUT ||
-  '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json';
-if (!fs.existsSync(SRC)) {
-  console.log('ℹ️  适配版聚合源不在本机 → 跳过');
-  process.exit(0);
+// ⭐⭐⭐ **不许「跳过」**（2026-10-24 真机教训）
+//   跳过 = 这条链路**一次都没被验过** ⇒ 真机炸了沙盒还全绿 ⭐⭐⭐
+//   ⇒ 回退到**仓库里的源文件副本** ⇒ 干净克隆也能跑 ⇒ 门禁永远在跑 ⭐
+const CANDIDATES = [
+  process.env.SRC_OUT,
+  '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json',
+  path.join(__dirname, '..', 'sources', '🍅大灰狼聚合5.9.30-轻阅适配版v2.json'),
+  path.join(__dirname, '..', 'sources', 'dahlang-v2.json'),
+].filter(Boolean);
+const SRC = CANDIDATES.find(p => fs.existsSync(p));
+if (!SRC) {
+  console.log('❌ 找不到大灰狼源文件（连仓库副本都没有）⇒ 门禁必须失败，不许跳过');
+  process.exit(1);
 }
 const list = JSON.parse(fs.readFileSync(SRC, 'utf8'));
 const src = (Array.isArray(list) ? list : [list])
