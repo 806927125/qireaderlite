@@ -145,6 +145,8 @@ final class SourceService {
     /// ⚠️ **新引擎不支持的 op**（登录 / 诊断 / 站方变量）⇒ 直接落老引擎。
     /// ⭐ **只播报一次**（免得刷屏）
     private static var newEngineAnnounced = false
+    /// ⭐⭐⭐ **新引擎连续超时次数**（≥2 ⇒ 永久切回老引擎）
+    private static var newEngineTimeouts = 0
 
     private static func invokeEngine(_ op: String, _ payload: [String: Any],
                                      source: BookSource) async throws -> Any {
@@ -246,9 +248,23 @@ final class SourceService {
                 //   ⇒ 换掉它 ⇒ 这个源立刻能用 ⭐
                 let msg = String(describing: error)
                 if msg.contains("超时") {
+                    // ⭐⭐⭐ **换掉卡死的会话**（JSC context 是复用的 ⇒ 死循环会传染）
                     LegadoEngineBackend.shared.dropSession(for: source.bookSourceUrl)
-                    RuleSandbox.shared.appendLog(
-                        "[引擎] 新引擎「\(op)」超时 ⇒ 已换掉卡死的会话（这个源现在能用）")
+                    // ⭐⭐⭐⭐⭐ **连续超时 ⇒ 永久切回老引擎**（2026-10-24 真机「JSC 死循环」）
+                    //   新引擎的 JSC **跑在 App 进程里** ⇒ 站方 JS 死循环 = 线程烧 CPU + 锁死引擎
+                    //   ⇒ 设备发烫（真机日志 `Thermal serious`）+ 整个源永久报废 ⭐⭐⭐
+                    //   ⇒ 老引擎的 JS 跑在 **独立 WebContent 进程** ⇒ 死循环只影响那个进程 ⇒ App 不死
+                    //   ⇒ 所以：**连续 2 次超时就别再赌新引擎了 ⇒ 永久回老引擎**（用户可手动再打开）⭐
+                    Self.newEngineTimeouts += 1
+                    if Self.newEngineTimeouts >= 2 {
+                        EngineBackend.useNewEngine = false
+                        RuleSandbox.shared.appendLog(
+                            "[引擎] 新引擎连续 2 次超时（多半是站方 JS 死循环）⇒ **已永久切回老引擎**"
+                            + "（老引擎的 JS 在独立进程里 ⇒ 死循环不会拖死 App）")
+                    } else {
+                        RuleSandbox.shared.appendLog(
+                            "[引擎] 新引擎「\(op)」超时 ⇒ 已换掉卡死的会话（这个源现在能用）")
+                    }
                 }
                 throw error
             }
