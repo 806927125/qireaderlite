@@ -846,8 +846,14 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   // 卡片在 0 档本来就是纯玻璃（一点白都没有）→ 要让「透」被看见，
   // 底下得有颜色可折射，否则就是一片浅蓝白
   const backd = stripComments(fsE.readFileSync(path.join(ROOT, 'App/Components.swift'), 'utf8'));
-  ok(/\.fill\(c\.opacity\(0\.52\)\)/.test(backd),
-     '页底光斑加强到 0.52（玻璃得有东西可折射）');
+  // ⭐⭐⭐ 2026-10-24 真机崩溃日志：光斑原来是 `Circle + .blur(radius: 42)`（6 次全屏高斯模糊）
+  //   ⇒ 玻璃还要**采样**这个背景 ⇒ **页面弹出的那一瞬间**就算背景 ⇒ iOS 27 Beta 上超 10 秒
+  //   ⇒ `scene-update watchdog` 杀进程（app 死机）⇒ 设备还 Thermal serious
+  // ⇒ 现在：**径向渐变**（零模糊成本，视觉几乎一样）
+  ok(/RadialGradient\(/.test(backd) && !/\.blur\(radius: 42\)/.test(backd),
+     '页底光斑改用径向渐变（不再有 6 次全屏高斯模糊 ⇒ 弹出即卡）⭐');
+  ok(/c\.opacity\(0\.5[0-9]?\)/.test(backd),
+     '光斑颜色不透明度还在 0.5x（玻璃得有东西可折射）');
   ok((backd.match(/blob\(w \* /g) || []).length >= 6,
      '页底多补了一块中间光斑（卡片落在页面中部才有颜色透出来）');
 }
