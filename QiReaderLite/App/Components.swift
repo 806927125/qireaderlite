@@ -62,12 +62,24 @@ struct PageBackdrop: View {
         .allowsHitTesting(false)
     }
 
+    /// ⭐⭐⭐ **光斑：径向渐变，不用 blur**（2026-10-24 真机崩溃日志实证）
+    ///
+    /// ⚠️ 原来每个光斑是 `Circle + .blur(radius: 42)` ⇒ **6 次全屏高斯模糊**
+    ///   ⇒ 玻璃还要**采样**这个背景 ⇒ 每个玻璃视图 = 一次「采样 + 模糊」
+    ///   ⇒ iOS 26/27（尤其 27 Beta）上，**页面弹出的那一瞬间**光算背景就够呛
+    ///   ⇒ 真机崩溃日志：`scene-update watchdog`（推页面 > 10 秒）⇒ **app 死机**⭐⭐⭐
+    ///   ⇒ 而且设备 `Thermal serious`（排版/模糊排的）
+    ///
+    /// ⇒ 现在：**径向渐变**（零模糊成本，视觉几乎一样 —— 本来就是柔和光斑）⭐⭐⭐
     private func blob(_ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ c: Color) -> some View {
-        Circle()
-            .fill(c.opacity(0.52))
-            .frame(width: size, height: size)
-            .blur(radius: 42)
-            .position(x: x, y: y)
+        RadialGradient(
+            colors: [c.opacity(0.55), c.opacity(0.0)],
+            center: .center,
+            startRadius: 0,
+            endRadius: size / 2
+        )
+        .frame(width: size, height: size)
+        .position(x: x, y: y)
     }
 }
 

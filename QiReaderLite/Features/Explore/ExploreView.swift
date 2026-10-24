@@ -79,7 +79,13 @@ struct ExploreView: View {
                 }
             }
         }
-        .task { await loadKinds() }
+        .task {
+            // ⭐⭐⭐ **先挑一条最快的线路**（2026-10-24 真机「唯独大灰狼卡死」）
+            //   大灰狼 8 条线路 ⇒ 站方挨个试 ⇒ 死线路每条等超时 ⇒ 每个 op 十几秒
+            //   ⇒ 先挑一条通的写进 `server` ⇒ 之后每个 op 只打那一条 ⇒ 秒回 ⭐
+            if let s = current { await SourceService.shared.ensureFastLine(source: s) }
+            await loadKinds()
+        }
         // 分类筛选是 push 进来的页面，不是 sheet 弹窗。
         // sheet 自带顶部区域 + 我自己画的「× 关闭」胶囊打架，下半屏还全是空白。
         .navigationDestination(item: $pickedBook) { b in

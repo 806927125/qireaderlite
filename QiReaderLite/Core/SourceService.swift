@@ -775,6 +775,45 @@ final class SourceService {
         return vars
     }
 
+    /// ⭐⭐⭐ **挑一条最快的线路**（2026-10-24 真机「唯独大灰狼卡死」的根治）
+    ///
+    /// ⚠️⚠️ **为什么只有大灰狼卡**：它的 jsLib 里 `host` 数组有 **8 条线路**
+    ///   （v5 / 219.154.201.122:5006 / v4 / v2 / v7 / v8 / v9 / v10）
+    ///   ⇒ 站方的 catch 循环会**挨个试** ⇒ 死线路每条要等超时
+    ///   ⇒ 沙盒实测：v5 要 4.1 秒、v8 直接不通 ⇒ 8 条加起来**每个 op 十几秒**
+    ///   ⇒ 别的聚合源线路少/服务器活 ⇒ **就不卡** ⭐⭐⭐
+    ///
+    /// ⇒ **修法**：进页面时**先测速**，把最快的一条写进 `server` 变量
+    ///   ⇒ 站方 `getArguments('server')` 拿到它 ⇒ **只走那一条** ⇒ 每个 op 一次请求 ⇒ 秒回 ⭐⭐⭐
+    ///
+    /// ⚠️ 写 `server` **必须以站方默认表做底**（`mergeVars`）
+    ///   ⇒ 只写一项会把 server/tab/sources/proxy 全丢掉 ⇒ 源被改坏（老坑）
+    ///
+    /// - Returns: 用上的线路（空 = 没挑到 / 不影响本次）
+    @discardableResult
+    func ensureFastLine(source: BookSource, timeout: Double = 5) async -> String {
+        // ⭐ 30 分钟内选过就不重选
+        if let cached = Self.fastLineCache[source.bookSourceUrl],
+           Date().timeIntervalSince(cached.at) < 30 * 60 {
+            return cached.host
+        }
+        guard let hosts = try? await sourceHosts(source: source), !hosts.isEmpty else { return "" }
+        let results = await LegadoCompat.pingHosts(hosts, timeout: timeout)
+        guard let best = results.first(where: { ($0["ok"] as? Bool) == true }),
+              let host = best["host"] as? String, !host.isEmpty else { return "" }
+        // ⭐ 写进书源变量（**以站方默认表做底**）
+        let defaults = await sourceDefaultVars(source: source)
+        let payload = "{\"server\":\"\(host)\"}"
+        let merged = SourceVariables.mergeVars(userJSON: payload, defaults: defaults)
+        SourceVariables.setVars(merged, for: source.bookSourceUrl)
+        Self.fastLineCache[source.bookSourceUrl] = (host, Date())
+        RuleSandbox.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
+        return host
+    }
+
+    /// **已选的线路缓存**（30 分钟）
+    private static var fastLineCache: [String: (host: String, at: Date)] = [:]
+
     /// **站方的全部线路**（jsLib 里的 `host` 数组）—— 用来测速挑一条通的
     func sourceHosts(source: BookSource) async throws -> [String] {
         // ⭐⭐⭐ 走缓存（同上）

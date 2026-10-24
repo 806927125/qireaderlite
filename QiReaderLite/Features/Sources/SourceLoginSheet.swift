@@ -205,6 +205,12 @@ struct SourceLoginSheet: View {
             }
             .task {
                 load()
+                // ⭐⭐⭐ **先挑一条最快的线路**（2026-10-24 真机「唯独大灰狼卡死」）
+                //   大灰狼的站方 jsLib 里有 **8 条线路** ⇒ 站方 catch 循环会挨个试
+                //   ⇒ 死线路每条等超时 ⇒ **每个 op 十几秒** ⇒ 面板一开就卡 ⭐⭐⭐
+                //   ⇒ 挑一条通的写进 `server` ⇒ 之后所有 op 只打那一条 ⇒ 秒回
+                await SourceService.shared.ensureFastLine(source: source)
+                varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
                 // ⚠️⚠️ **别在这儿拉站方默认变量**（2026-10-24 真机「打开登录把 app 卡死」）
                 //   那个调用要**跑站方 jsLib + 发网络请求**（大灰狼的服务器经常 502）
                 //   ⇒ 卡在引擎队列里 ⇒ 面板一直转 ⇒ 用户以为 App 死了 ⭐⭐⭐

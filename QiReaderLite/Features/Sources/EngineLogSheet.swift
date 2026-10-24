@@ -273,6 +273,16 @@ struct EngineLogSheet: View {
                     }
                     .disabled(logs.isEmpty)
                 }
+                // ⭐⭐⭐ **玻璃模式开关**：iOS 27 Beta 上系统玻璃会拖慢「弹出」⇒ 一键切轻量
+                ToolbarItem(placement: .bottomBar) {
+                    Toggle(isOn: Binding(
+                        get: { GlassMode.isLight },
+                        set: { GlassMode.setLight($0) })) {
+                        Label("轻量玻璃", systemImage: GlassMode.isLight ? "leaf.fill" : "sparkles")
+                            .font(.system(size: 13))
+                    }
+                    .padding(.bottom, 4)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("好") { dismiss() }
                 }

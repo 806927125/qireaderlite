@@ -23,6 +23,32 @@ import SwiftUI
 /// 免得老 SDK 直接编不过。
 private let USE_SYSTEM_GLASS = true
 
+/// ⭐⭐⭐ **玻璃模式：系统玻璃 / 轻量玻璃**（2026-10-24 真机崩溃日志实证）
+///
+/// ⚠️ 系统 `glassEffect` 要**采样背后的内容**（backdrop）⇒ 代价：
+///   ① 每个玻璃视图一次采样 + 折射 + 阴影合成
+///   ② 背景越复杂越贵（我们的背景有 6 个光斑）
+///   ⇒ iOS 27（Beta）上，**页面弹出的那一瞬间**就可能超过 10 秒
+///   ⇒ 真机崩溃日志：`scene-update watchdog`（推页面 > 10 秒）⇒ **app 死机**⭐⭐⭐
+///
+/// ⇒ 「轻量玻璃」= **手搓版**（几层半透明 + 描边，**零采样、零合成**）⇒ 快一个数量级
+/// ⇒ ⚠️ iOS 27+ **默认轻量**（那正是出问题的版本）；iOS 26 保持系统玻璃（好看且不卡）
+/// ⇒ 开关在「引擎日志」面板里 ⇒ 一键切
+enum GlassMode {
+    static let key = "qr.glass.light"
+    /// 是否用轻量玻璃
+    static var isLight: Bool {
+        if UserDefaults.standard.object(forKey: key) != nil {
+            return UserDefaults.standard.bool(forKey: key)
+        }
+        // ⭐ 用运行时判断（不用 `#available(iOS 27)` ⇒ 老 SDK 也能编）
+        return ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+    }
+    static func setLight(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: key)
+    }
+}
+
 // MARK: - 玻璃填充 / 描边（手搓版专用）
 
 private struct GlassFill: View {
@@ -106,7 +132,8 @@ struct LiquidGlass: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if USE_SYSTEM_GLASS {
+        // ⭐⭐⭐ **iOS 27（Beta）默认走轻量玻璃**（系统玻璃在 27 上采样背景太贵 ⇒ 弹出即卡）
+        if USE_SYSTEM_GLASS && !GlassMode.isLight {
             if #available(iOS 26.0, *) {
                 systemGlass(content)
             } else {
