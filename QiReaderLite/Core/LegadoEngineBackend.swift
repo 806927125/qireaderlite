@@ -139,6 +139,18 @@ func engineLog(_ message: String) {
     Task { @MainActor in RuleSandbox.shared.appendLog(message) }
 }
 
+// ⭐⭐⭐ **把【引擎的诊断】送进 App 的「引擎日志」**（2026-10-24 真机栽的）
+//
+// ⚠️⚠️ **以前 App 没给引擎传 logger** ⇒ 引擎算出了什么、哪条规则没命中、
+//   `java.ajax` 为什么失败 ⇒ **一条都看不到** ⇒ 只能靠猜 ⭐⭐
+//   （真机表现：发现页冒出「未分组」假分类 ⇒ 但日志里只有 App 自己那两行）
+//
+// ⇒ 现在引擎的每条诊断（分支 / 失败原因 / 规则名）都会进同一个日志面板
+//   ⇒ 用户把「引擎日志」贴回来 ⇒ 就是**可证伪的观测**（不用再猜）⭐
+final class EngineDiagnosticLogger: EngineLogger, @unchecked Sendable {
+    func log(_ message: String) { engineLog("[新引擎] " + message) }
+}
+
 // MARK: - ② 站方 JS 的宿主 API
 
 /// ⭐⭐⭐ **站方 JS 的宿主 API**（`JSHostAPIProvider`）
@@ -323,7 +335,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
                                       fetcher: PageFetcher(transport: URLSessionTransport(), cookieJar: jar),
                                       js: js,
                                       storage: storage,
-                                      cookies: AppCookieService())
+                                      cookies: AppCookieService(),
+                                      // ⭐⭐⭐ **必须传 logger** ⇒ 引擎的诊断才看得见
+                                      logger: EngineDiagnosticLogger())
             self.engine = engine
             // ⭐⭐⭐ **站方 jsLib** ⇒ 加载到 JS **全局**（它定义的 `host` / `getArguments` 等
             //   是站方规则的前提）⇒ 加载完必须**重设基线**，否则下次求值会被清掉 ⭐
@@ -445,6 +459,11 @@ final class LegadoEngineBackend: @unchecked Sendable {
     /// ⭐ **发现页的分类 + 筛选栏**
     private func runExploreKinds(_ engine: SourceEngine) throws -> Any {
         let (kinds, filters) = try engine.exploreKinds()
+        // ⭐⭐ **把分类/筛选栏的标题记下来**（2026-10-24 真机栽的）
+        //   ⭐ 站方聚合源在「ajax 失败」时会**造一个叫「未分组」的兜底分类**
+        //   ⇒ 看到「未分组」就知道是**站方接口没通**，不是分类规则写错 ⭐⭐
+        engineLog("[新引擎] 分类 \(kinds.count) 个 / 筛选栏 \(filters.count) 个："
+                  + kinds.map(\.title).joined(separator: "、"))
         let kindList: [[String: Any]] = kinds.map { k in
             var d: [String: Any] = ["title": k.title, "url": k.url, "style": k.style ?? ""]
             d["group"] = k.group ?? ""
