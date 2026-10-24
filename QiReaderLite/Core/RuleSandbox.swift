@@ -134,7 +134,9 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
-    static let engineVersion = "2026.10.22-r28（DTO 容错解码 / 目录 nextTocUrl 翻页队列）"
+    /// ⭐⭐⭐ build247：legado-engine `5cfc2e9` ⇒ **整链（详情/目录/正文）与老引擎逐字一致**
+    ///   + 契约补 `source.get`/`source.put`/`cookie.replaceCookie`（125 源实测 129 处 ⇒ 之前静默失效）
+    static let engineVersion = "2026.10.25-r29（legado-engine 5cfc2e9 · 整链与老引擎逐字一致）"
 
     /// 给界面用的一行状态
     var statusText: String {
