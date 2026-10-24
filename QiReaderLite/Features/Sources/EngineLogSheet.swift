@@ -86,7 +86,7 @@ struct EngineLogSheet: View {
                         }
                         Text(isNewEngine
                              ? "主链路（搜索 / 发现 / 详情 / 目录 / 正文）走**新 Swift 引擎**（legado-engine）。\n下面这些是老 JS 引擎（兜底通道：登录 / 诊断）的状态。"
-                             : "主链路当前走**老 JS 引擎**。新引擎被关掉了（开关在下面）。")
+                             : "主链路当前走**老 JS 引擎**。新引擎被关掉了（开关在下面）。\n⭐ 新引擎已修好大灰狼的**详情/目录/正文**（engine 6748ba7）⇒ 可以打开试试；不满意随时关回来。")
                             .font(.caption2)
                             .foregroundStyle(Theme.sub)
                             .fixedSize(horizontal: false, vertical: true)
