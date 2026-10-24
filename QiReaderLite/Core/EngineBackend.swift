@@ -28,8 +28,14 @@ public enum EngineBackend {
     /// ⇒ 用户可以手动关掉，回到老引擎（出问题时有个退路）。
     public static var useNewEngine: Bool {
         get {
-            // ⚠️ **没写过这个键 ⇒ 默认 true**（UserDefaults.bool 默认 false ⇒ 必须自己判）
-            if UserDefaults.standard.object(forKey: "qr.useNewEngine") == nil { return true }
+            // ⭐⭐⭐ **默认 = 关**（2026-10-24 用户原话：「我让你看老引擎怎么弄的大灰狼」）
+            //   新引擎（自研 Swift）对 🍅大灰狼一直有**假成功**（分类只有兜底的「未分组」/
+            //   书单 0 本 / bookUrl 空），而且真机把 App 拖到死机 ⇒
+            //   **老引擎（WKWebView + JS）是验过能跑大灰狼的**
+            //   （分类 9 个 / 目录 2566 章 / 正文 2000+ 字 · build161~165 实测）⭐
+            //   ⇒ **默认走老引擎**（= 回到换引擎之前的行为）⇒ 新引擎继续在后台修
+            //   ⇒ 开关还在「引擎日志」面板里 ⇒ 修好了随时可以打开
+            if UserDefaults.standard.object(forKey: "qr.useNewEngine") == nil { return false }
             return UserDefaults.standard.bool(forKey: "qr.useNewEngine")
         }
         set { UserDefaults.standard.set(newValue, forKey: "qr.useNewEngine") }

@@ -35,7 +35,7 @@ final class SourceService {
                formValues: [String: String]) async throws -> (ok: Bool, message: String, messages: [String]) {
         var p: [String: Any] = ["action": action, "formValues": formValues]
         // ⭐⭐⭐ 走缓存（同上）
-        var srcDict = SourceDictCache.dict(for: source)
+        var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
@@ -71,7 +71,7 @@ final class SourceService {
     func probeLogin(source: BookSource) async throws
         -> (baseUrl: String, messages: [String], stationCheck: Bool) {
         // ⭐⭐⭐ 走缓存（同上：别每个 op 都编码+解析 158KB）
-        var srcDict = SourceDictCache.dict(for: source)
+        var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
@@ -103,7 +103,7 @@ final class SourceService {
         //   大灰狼的源 158KB ⇒ 以前**每个 op** 都编码 + Foundation 解析一遍
         //   ⇒ 每次 op 几 MB 的分配 ⇒ **主线程在 malloc 锁上被拖死**
         //   ⇒ 现在：**同一个源只算一次** ⇒ 之后每个 op 直接拿缓存
-        var srcDict = SourceDictCache.dict(for: source)
+        var srcDict = await SourceDictCache.dict(for: source)
         // 书籍变量 / 登录信息：Legado 的 source.getVariable() 是**同步** API，
         // 我们的原生桥是异步的（只能 postMessage）→ 只能原生侧读出来塞进去，
         // 引擎侧同步读。改完由引擎回传（见下面 __sourceVars）。
@@ -125,7 +125,8 @@ final class SourceService {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
             }
         }
-        return try decode(T.self, from: raw)
+        // ⭐⭐⭐ **后台解码**（大灰狼的分类响应 100KB+ ⇒ 主线程解会卡）
+        return try await Self.decodeAsync(T.self, from: raw)
     }
 
     // MARK: - ⭐⭐⭐ 引擎分流
@@ -308,7 +309,19 @@ final class SourceService {
         }
     }
 
-    private func decode<T: Decodable>(_ type: T.Type, from raw: Any?) throws -> T {
+    /// ⭐⭐⭐ **解码也必须离开主线程**（2026-10-24 真机「进大灰狼发现页就死机」）
+    ///   大灰狼的分类响应是 **365 个分类**（100KB+）⇒ Foundation 解码在主线程上 ⇒ **主线程卡** ⭐⭐⭐
+    ///   ⇒ 现在：**后台解码** ⇒ 主线程只等结果
+    private static func decodeAsync<T: Decodable>(_ type: T.Type, from raw: Any?) async throws -> T {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<T, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do { cont.resume(returning: try Self.decode(type, from: raw)) }
+                catch { cont.resume(throwing: error) }
+            }
+        }
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, from raw: Any?) throws -> T {
         guard let obj = raw, !(obj is NSNull) else { throw ServiceError.badPayload }
         if let dict = obj as? [String: Any], let msg = dict["error"] as? String, !msg.isEmpty {
             throw ServiceError.engineFailed(msg)
@@ -751,7 +764,7 @@ final class SourceService {
         let cached = SourceVariables.defaultVars(for: source.bookSourceUrl)
         if !cached.isEmpty { return cached }
         // ⭐⭐⭐ 走缓存（别再编码+解析一遍 158KB）
-        var srcDict = SourceDictCache.dict(for: source)
+        var srcDict = await SourceDictCache.dict(for: source)
         // ⚠️ 这里不能用 effectiveVars(for:)（会递归）⇒ 用原始变量
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
@@ -765,7 +778,7 @@ final class SourceService {
     /// **站方的全部线路**（jsLib 里的 `host` 数组）—— 用来测速挑一条通的
     func sourceHosts(source: BookSource) async throws -> [String] {
         // ⭐⭐⭐ 走缓存（同上）
-        var srcDict = SourceDictCache.dict(for: source)
+        var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
@@ -852,7 +865,7 @@ final class SourceService {
                            title: String, value: String) async throws -> Bool {
         var p: [String: Any] = ["action": action, "title": title, "value": value]
         // ⭐⭐⭐ 走缓存（同上）
-        var srcDict = SourceDictCache.dict(for: source)
+        var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)

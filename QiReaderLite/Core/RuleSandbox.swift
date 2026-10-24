@@ -298,12 +298,16 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         ready = false
         lastError = nil
         bootLog.removeAll()
-        // 旧的那个还挂着 message handler → 先摘掉，免得回调打到新的
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "qr")
-        webView?.navigationDelegate = nil
-        webView?.uiDelegate = nil
-        webView?.stopLoading()
+        // ⭐⭐⭐ **顺序反了会卡死主线程**（2026-10-24 真机：「重置引擎 点不动」）
+        //   以前**先** `removeScriptMessageHandler` ⇒ **它要等 WebView 的 JS 线程**
+        //   ⇒ 引擎卡死（JS 线程占着）时这一步**永久阻塞主线程**
+        //   ⇒ 整个 App 冻住 ⇒ 连「重置引擎」这个急救按钮都点不动 ⭐⭐⭐
+        //   ⇒ 现在：**先丢引用**（message handler 跟着 WebView 一起走）⇒ 不等 JS 线程 ⭐
+        let old = webView
         webView = nil
+        old?.navigationDelegate = nil
+        old?.uiDelegate = nil
+        old?.stopLoading()
         // 队列里排队的 op 全部作废（它们等的是那个死掉的引擎）
         invokeTail = nil
         boot()

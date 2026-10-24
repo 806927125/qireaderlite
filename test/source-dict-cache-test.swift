@@ -33,13 +33,13 @@ let big = makeBigSource(url: "https://big.example", size: 32_000)
 let enc0 = SourceDictCache.encodes
 
 let t0 = Date()
-let d1 = SourceDictCache.dict(for: big)
+let d1 = SourceDictCache.dictSync(for: big)
 let first = Date().timeIntervalSince(t0)
 let enc1 = SourceDictCache.encodes
 ok(enc1 == enc0 + 1, "第一次：编码+解析了 1 次（实际 \(enc1 - enc0)）")
 
 let t1 = Date()
-let d2 = SourceDictCache.dict(for: big)
+let d2 = SourceDictCache.dictSync(for: big)
 let second = Date().timeIntervalSince(t1)
 let enc2 = SourceDictCache.encodes
 ok(enc2 == enc1, "第二次：**没有再编码**（encodes 不变）⭐")
@@ -50,23 +50,23 @@ ok(d1["jsLib"] as? String == big.jsLib, "jsLib 没丢")
 ok(d2.count == d1.count, "两次拿到的是同一份内容")
 
 print("\n=== ② 缓存命中时返回的是【值语义】副本 ⇒ 调用方改它不会污染缓存 ===")
-var mutated = SourceDictCache.dict(for: big)
+var mutated = SourceDictCache.dictSync(for: big)
 mutated["__variables"] = "改了"
-let after = SourceDictCache.dict(for: big)
+let after = SourceDictCache.dictSync(for: big)
 ok(after["__variables"] == nil, "缓存没被调用方改脏 ⭐")
 
 print("\n=== ③ 源变了 ⇒ invalidate ⇒ 重新算 ===")
 SourceDictCache.invalidate()
 let encBefore = SourceDictCache.encodes
-_ = SourceDictCache.dict(for: big)
+_ = SourceDictCache.dictSync(for: big)
 ok(SourceDictCache.encodes == encBefore + 1, "invalidate 之后重新编码了 ⭐")
 
 print("\n=== ④ 不同的源各算各的 ===")
 let small = makeBigSource(url: "https://small.example", size: 100)
 let encBefore2 = SourceDictCache.encodes
-let _ = SourceDictCache.dict(for: small)
+let _ = SourceDictCache.dictSync(for: small)
 ok(SourceDictCache.encodes == encBefore2 + 1, "另一个源单独算一次")
-ok(SourceDictCache.dict(for: small)["bookSourceUrl"] as? String == "https://small.example", "小源的字典对")
+ok(SourceDictCache.dictSync(for: small)["bookSourceUrl"] as? String == "https://small.example", "小源的字典对")
 
 print("\n=== ⑤ ⭐ 真实量级：100 个 op（旧做法 vs 缓存后）===")
 let real = makeBigSource(url: "https://real.example", size: 32_000)
@@ -85,7 +85,7 @@ SourceDictCache.invalidate()
 var newCost: Double = 0
 for _ in 0..<20 {
     let t = Date()
-    _ = SourceDictCache.dict(for: real)
+    _ = SourceDictCache.dictSync(for: real)
     newCost += Date().timeIntervalSince(t)
 }
 print(String(format: "  旧做法（每 op 编码+解析）20 次 = %.0f ms", oldCost * 1000))

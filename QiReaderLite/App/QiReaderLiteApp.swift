@@ -8,6 +8,16 @@ struct QiReaderLiteApp: App {
     @AppStorage(GlassTintStore.key) private var glassTintPercent: Double = 45
 
     init() {
+        // ⭐⭐⭐ **build240：一次性把主链路切回【老引擎】**（2026-10-24 真机）
+        //   · 新引擎（自研 Swift）对 🍅大灰狼一直**假成功**，还把真机拖到死机
+        //   · 老引擎（WKWebView + JS）**验过能跑大灰狼**（分类 9 个 / 目录 2566 章 / 正文 2000+ 字）
+        //   ⇒ 默认走老引擎（= 回到换引擎之前的行为）⇒ 新引擎继续在后台修
+        //   ⇒ 开关在「引擎日志」面板里 ⇒ 修好了随时能打开
+        //   ⚠️ 用「一次性迁移键」⇒ **强制生效一次**（哪怕用户之前手动开过新引擎）
+        if UserDefaults.standard.object(forKey: "qr.engine.legacy240") == nil {
+            UserDefaults.standard.set(false, forKey: "qr.useNewEngine")
+            UserDefaults.standard.set(true, forKey: "qr.engine.legacy240")
+        }
         // 引擎沙盒尽早起来，首个界面就要用到
         Task { @MainActor in RuleSandbox.shared.boot() }
     }
