@@ -25,9 +25,24 @@ enum SourceVariables {
     }
 
     /// 写回某个源的书籍变量
+    ///
+    /// ⭐⭐⭐ **超长不许存**（2026-10-24 真机崩溃日志）
+    ///   变量串是**回流**的（引擎回传的 `__sourceVars` ⇒ 存成用户变量 ⇒ 下次再喂回去）
+    ///   ⇒ 一旦存进巨量文本就会**永久**拖垮：登录面板排版炸 + 每个 op 都背着它跑 ⭐⭐⭐
+    ///   ⇒ 现在：**超 8K 直接拒收**（并回一份空 ⇒ 调用方能察觉）⭐
     static func setVars(_ value: String, for sourceUrl: String) {
         guard !sourceUrl.isEmpty else { return }
+        if value.count > maxVarsLength {
+            NSLog("[vars] 拒绝存超长变量（\(value.count) 字符 > \(maxVarsLength)）· \(sourceUrl)")
+            UserDefaults.standard.set("", forKey: varsPrefix + sourceUrl)
+            return
+        }
         UserDefaults.standard.set(value, forKey: varsPrefix + sourceUrl)
+    }
+
+    /// ⭐ **存量变量是不是超长了**（面板用它提示用户「你之前存了一份超大的变量」）
+    static func varsTooLong(for sourceUrl: String) -> Bool {
+        vars(for: sourceUrl).count > maxVarsLength
     }
 
     // MARK: - 站方默认变量（jsLib 的 getArguments 兜底）
@@ -78,8 +93,18 @@ enum SourceVariables {
     /// ⚠️ 这一串才是喂给引擎的 `__variables` —— 少了它，
     ///    站方 JS 拿不到 `server / tab / sources / proxy` ⇒ 行为跟安卓/栖阅不一致。
     static func effectiveVars(for sourceUrl: String) -> String {
-        mergeVars(userJSON: vars(for: sourceUrl), defaults: defaultVars(for: sourceUrl))
+        // ⭐⭐⭐ **长度上限**（2026-10-24 真机崩溃日志实证）
+        //   变量是**回流**的：引擎回传的 `__sourceVars` 被存成「用户变量」⇒ 下次再当用户变量喂回去
+        //   ⇒ 一旦某次把大段文本存进去（手滑粘了 158KB 的源 JSON 之类）⇒ **永久撑大**
+        //   ⇒ 后果：① 登录面板的 TextEditor 排版巨量文本 ⇒ **10 秒排不完 ⇒ watchdog 杀进程**
+        //        ② 每个 op 都背着它跑 ⇒ 发现页又慢又卡 ⭐⭐⭐
+        //   ⇒ 现在：**超长的一律忽略**（只留前 8K）⇒ 老数据也不会再撑爆 ⭐
+        let merged = mergeVars(userJSON: vars(for: sourceUrl), defaults: defaultVars(for: sourceUrl))
+        return String(merged.prefix(Self.maxVarsLength))
     }
+
+    /// **变量串的最大长度**（8K）—— 超了就当没有
+    static let maxVarsLength = 8_000
 
     /// 清掉某个源的书籍变量（删源时用）
     static func clear(for sourceUrl: String) {

@@ -621,6 +621,17 @@ struct SourceLoginSheet: View {
         // ⚠️ 显示**合并后**的变量（站方默认 + 你的改动）
         //    站方的 `getArguments` 只在变量串为空时才给默认表 ⇒ 只显示用户那几项
         //    会让人以为「只有 server 一项」，也不知道 proxy/tab 这些默认值去哪了。
+        //
+        // ⭐⭐⭐ **存量变量超长 ⇒ 自动清掉 + 告诉用户**（2026-10-24 真机崩溃日志）
+        //   变量是**回流**的（引擎回传 ⇒ 存成用户变量 ⇒ 下次再喂回去）
+        //   ⇒ 手滑存过一次大文本（158KB 那种）⇒ **永久**撑大
+        //   ⇒ 登录面板一弹出来就排版巨量文本 ⇒ **10 秒排不完 ⇒ watchdog 杀进程** ⭐⭐⭐
+        //   ⇒ 现在：**自动清掉**（`effectiveVars` 也会截断到 8K ⇒ 双保险）
+        if SourceVariables.varsTooLong(for: source.bookSourceUrl) {
+            SourceVariables.setVars("", for: source.bookSourceUrl)
+            message = "你之前存了一份超大的书源变量（已被丢弃）⇒ 现在变量是干净的，可以重新填 server"
+            failed = true
+        }
         varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
         guard let raw = src.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),
