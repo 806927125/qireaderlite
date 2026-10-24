@@ -144,6 +144,38 @@ enum LegadoCompat {
     /// ⚠️ 以前把「不是 JSON」也归成 notLoggedIn → 服务器 502 会被报成「未登录」
     ///    → 用户以为白登了。真机踩过（HTTP 502 + `<!DOCTYPE html>`，
     ///    站方那边同一个响应直接 `JSON.parse` 炸成 "Unrecognized token '<'"）。
+    // MARK: - ⭐⭐⭐ cookie 快照 ⇒ 引擎的 cookie 罐（2026-10-24 真机栽的）
+
+    /// ⭐⭐⭐ **把 App 的 cookie 快照拆成一条条 cookie**
+    ///
+    /// ⚠️⚠️ **为什么必须有它**（🍅大灰狼真机）：
+    ///   · 老引擎的 `java.ajax` 走**原生桥** ⇒ 用的是 **App 的 cookie 罐**（**有登录态**）✅
+    ///   · 新引擎的 `java.ajax` 用**引擎自己的罐** ⇒ 每个源从空开始 ⇒ **登录态丢了** ❌
+    ///   ⇒ 站方 `/discovestyle`（拿真分类）要登录态 ⇒ 失败 ⇒ 只剩兜底分类「未分组」⭐⭐
+    ///
+    /// ⚠️ **解析要点**：
+    ///   · 快照格式 = `[host: "k=v; k2=v2"]`
+    ///   · **值里可能有 `=`**（base64 的 padding！）⇒ 只切**第一个** `=`
+    ///   · 空的 name / host 跳过
+    ///
+    /// - Returns: `(host, name, value)` 三元组
+    static func cookiePairs(from snapshot: [String: String]) -> [(host: String, name: String, value: String)] {
+        var out: [(host: String, name: String, value: String)] = []
+        for (host, pair) in snapshot {
+            let h = host.trimmingCharacters(in: .whitespaces)
+            guard !h.isEmpty else { continue }
+            for one in pair.split(separator: ";").map(String.init) {
+                let kv = one.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                guard kv.count == 2 else { continue }
+                let name = kv[0].trimmingCharacters(in: .whitespaces)
+                let value = kv[1].trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { continue }
+                out.append((host: h, name: name, value: value))
+            }
+        }
+        return out
+    }
+
     static func classify(code: Int, data: Data) -> ProbeResult {
         if code >= 500 {
             return .serverError("HTTP \(code)（服务器临时抽风，过几分钟再试）")

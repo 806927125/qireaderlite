@@ -147,6 +147,7 @@ if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
         "$TMP/engine/main.swift" \
         test/linux-shims/EngineBackendStubs.swift \
         QiReaderLite/Core/BookSource.swift \
+        QiReaderLite/Core/LegadoCompat.swift \
         QiReaderLite/Core/SourceVariables.swift \
         QiReaderLite/Core/EngineBackend.swift \
         QiReaderLite/Core/LegadoEngineBackend.swift \

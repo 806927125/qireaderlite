@@ -187,5 +187,17 @@ ok(LegadoCompat.isFanqieHost(".fanqienovel.com"), "带前导点的也是")
 ok(LegadoCompat.isFanqieHost("api5-normal-sinfonlinec.fqnovel.com"), "fqnovel.com 也是番茄域")
 ok(!LegadoCompat.isFanqieHost("v5.langge.uk"), "大灰狼自己的域不是番茄域")
 
+
+// ── ⭐⭐⭐ cookie 快照解析（2026-10-24 真机栽的：登录 cookie 送不到新引擎）────
+let ck = LegadoCompat.cookiePairs(from: ["v5.langge.uk": "qttoken=abc; sessionid=YWJjZA=="])
+eq(ck.count, 2, "快照里的两条 cookie 都要拆出来")
+eq(ck.first?.name ?? "", "qttoken", "第一条是 qttoken")
+eq(ck.last?.value ?? "", "YWJjZA==", "⭐ 值里的 base64 padding `=` 不能被截断")
+eq(ck.last?.host ?? "", "v5.langge.uk", "host 要原样")
+eq(LegadoCompat.cookiePairs(from: ["h": "novalue"]).count, 0, "没有 `=` 的要跳过")
+eq(LegadoCompat.cookiePairs(from: ["": "a=b"]).count, 0, "空 host 要跳过")
+eq(LegadoCompat.cookiePairs(from: ["h": "=v"]).count, 0, "空 name 要跳过")
+eq(LegadoCompat.cookiePairs(from: ["h": "a=b; ; c=d"]).count, 2, "空的分段要跳过")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

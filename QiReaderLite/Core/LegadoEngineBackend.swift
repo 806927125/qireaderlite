@@ -335,9 +335,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
                                       fetcher: PageFetcher(transport: URLSessionTransport(), cookieJar: jar),
                                       js: js,
                                       storage: storage,
-                                      cookies: AppCookieService(),
                                       // ⭐⭐⭐ **必须传 logger** ⇒ 引擎的诊断才看得见
-                                      logger: EngineDiagnosticLogger())
+                                      logger: EngineDiagnosticLogger(),
+                                      cookies: AppCookieService())
             self.engine = engine
             // ⭐⭐⭐ **站方 jsLib** ⇒ 加载到 JS **全局**（它定义的 `host` / `getArguments` 等
             //   是站方规则的前提）⇒ 加载完必须**重设基线**，否则下次求值会被清掉 ⭐
@@ -371,6 +371,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
         //   轻阅存在 `SourceVariables`（一个 JSON 串）⇒ 引擎存在 `varBox`（键值表）
         //   ⇒ **双向同步**：进（轻阅 → 引擎）/ 出（引擎 → 轻阅，落盘）
         Self.seedVars(from: payload, into: engine.varBox)
+        // ⭐⭐⭐ **cookie 也要灌进引擎的罐**（2026-10-24 真机栽的 ⇒ 详见 seedCookies 的注释）
+        Self.seedCookies(from: payload, into: engine.fetcher.cookieJar)
         var out: Any?
         switch op {
         case "search": out = try runSearch(session, engine, payload)
@@ -397,6 +399,31 @@ final class LegadoEngineBackend: @unchecked Sendable {
     /// ⚠️ **不做这一步的后果**（站方聚合源）：
     ///   `server`（线路）/ `tab`（模式）/ `sources`（平台）都在变量里
     ///   ⇒ 引擎拿不到 ⇒ 站方 jsLib 读到 undefined ⇒ 请求打错地址 / 分类全空 ⭐
+    /// ⭐⭐⭐ **把 App 的 cookie 罐灌进引擎的 cookie 罐**（2026-10-24 真机栽的）
+    ///
+    /// ⚠️⚠️ **症状**：🍅大灰狼的发现页只剩「**未分组**」一个分类 ⇒ 详情/目录/正文全断
+    ///   ⇒ 查下来：站方 `exploreUrl` 的 JS **自己去 ajax `/discovestyle`** 拿真分类
+    ///   ⇒ 那个 ajax 失败 ⇒ 站方只剩硬编码的 7 个筛选栏 + **一个兜底分类「未分组」**
+    ///   （App 自己的代码也记着这事：`discovestyle` 返 503 时「分类只剩 2 个（正常 365 个）」）
+    ///
+    /// ⚠️⚠️ **为什么老引擎能、新引擎不能**：
+    ///   · 老引擎的 `java.ajax` 走**原生桥** ⇒ 用的是 **App 的 cookie 罐**（**有登录态**）✅
+    ///   · 新引擎的 `java.ajax` 用的是**引擎自己的罐** ⇒ 每个源**从空开始** ⇒ **登录态丢了** ❌
+    ///   ⇒ 而且站方 JS 里的 `cookie.getCookie()` 读的也是**引擎的罐** ⇒ 同样看不到登录态 ⭐⭐
+    ///
+    /// ⇒ 修：每次 op 前把 App 的 cookie 快照（`HTTPCookieStorage.shared`）灌进引擎的罐
+    ///   ⇒ 引擎的 ajax + 站方 JS 的 `cookie.*` 就都有登录态了 ⭐
+    static func seedCookies(from payload: [String: Any], into jar: LegadoCore.CookieJar?) {
+        guard let jar else { return }
+        guard let snap = payload["cookieSnapshot"] as? [String: String] else { return }
+        // ⭐ 解析在纯 Foundation 层（LegadoCompat）⇒ 沙盒里能真编真跑 ⇒ 有门禁
+        for c in LegadoCompat.cookiePairs(from: snap) {
+            // ⭐ domain 写 host ⇒ 该域**及其子域**都能带上（引擎的 Cookie.matches 语义）
+            jar.set(LegadoCore.CookieJar.Cookie(name: c.name, value: c.value,
+                                                domain: c.host, host: c.host))
+        }
+    }
+
     static func seedVars(from payload: [String: Any], into box: VarBox) {
         guard let srcDict = payload["source"] as? [String: Any],
               let text = srcDict["__variables"] as? String,

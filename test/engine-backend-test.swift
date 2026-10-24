@@ -126,5 +126,21 @@ EngineBackend.useNewEngine = true
 EngineBackend.current = .swiftNew
 EngineBackend.lastError = nil
 
+
+// ── ⭐⭐⭐ cookie 快照 ⇒ 引擎的 cookie 罐（2026-10-24 真机栽的）────────────
+//   症状：🍅大灰狼发现页只剩「未分组」⇒ 站方 /discovestyle（拿真分类）没通
+//   根因：老引擎的 java.ajax 用 App 的 cookie 罐（有登录态）⇒ 新引擎用自己的罐（空的）⇒ 登录态丢了
+//   ⇒ 修：每次 op 前把 App 的 cookie 快照灌进引擎的罐
+let ckJar = LegadoCore.CookieJar()
+LegadoEngineBackend.seedCookies(from: ["cookieSnapshot": ["v5.langge.uk": "qttoken=abc; sessionid=YWJjZA=="]],
+                                 into: ckJar)
+let ckHeader = ckJar.cookieHeader(for: "https://v5.langge.uk/api/x") ?? ""
+ok(ckHeader.contains("qttoken=abc"), "⭐⭐ 引擎的 cookie 罐里要有 qttoken（登录态）")
+ok(ckHeader.contains("sessionid=YWJjZA=="), "⭐⭐ base64 padding 的 = 不能被截断")
+ok(ckJar.cookieHeader(for: "https://other.example.com/x") == nil, "⭐ 别的域不该拿到 cookie")
+let ckEmpty = LegadoCore.CookieJar()
+LegadoEngineBackend.seedCookies(from: [:], into: ckEmpty)
+ok(ckEmpty.cookieHeader(for: "https://v5.langge.uk/x") == nil, "没有快照就不能凭空造 cookie")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

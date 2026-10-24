@@ -54,6 +54,6 @@ enum AppDecoder {
     }
 }
 
-enum LegadoCompat {
-    static func pingHosts(_ hosts: [String], timeout: Double = 6) async -> [[String: Any]] { [] }
-}
+// ⭐ 2026-10-24：`LegadoCompat` 的**替身删掉了** —— 现在这一组**编译真的那份**
+//   （`QiReaderLite/Core/LegadoCompat.swift`）⇒ cookie 解析等新能力能在沙盒里真编真跑
+//   ⇒ 真的那份自带 `pingHosts` ⇒ 替身不再需要
