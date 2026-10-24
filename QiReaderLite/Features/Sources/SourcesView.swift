@@ -370,17 +370,31 @@ struct URLImportView: View {
 struct PasteImportView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
+    /// ⭐⭐⭐ 超长提示（真机崩溃日志：粘 158KB ⇒ CoreText 排 10 秒 ⇒ watchdog 杀进程）
+    @State private var overflowHint = ""
     let onImport: (String) -> Void
+
+    /// ⭐⭐⭐ **粘贴上限**（20K 字符）—— 大文件一律走「从文件导入」
+    private let limit = 20_000
 
     var body: some View {
         NavigationStack {
             VStack {
-                TextEditor(text: $text)
-                    .font(.system(size: 12, design: .monospaced))
+                // ⭐⭐⭐ **用 LimitedTextEditor（不是 TextEditor）**
+                //   `TextEditor` 粘贴时会立刻排版 ⇒ 158KB ⇒ 排 10 秒 ⇒ **app 死机**（真机实证）
+                LimitedTextEditor(text: $text, limit: limit) { projected in
+                    overflowHint = "文本 \(projected) 字符，太大了（上限 \(limit)）⇒ 大文件请用书源页的「**从文件导入**」"
+                }
+                    .frame(minHeight: 220)
                     .padding(8)
                     .background(Theme.sub.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                     .padding()
-                Text("把书源 JSON 整段粘进来，支持单个对象、数组，或多个对象拼在一起。")
+                if !overflowHint.isEmpty {
+                    Text(overflowHint)
+                        .font(.caption).foregroundStyle(Theme.accent)
+                        .padding(.horizontal, 16)
+                }
+                Text("把书源 JSON 整段粘进来，支持单个对象、数组，或多个对象拼在一起。\n⚠️ 超过 \(limit) 字符会被拦下 —— 大文件请用书源页的「从文件导入」。")
                     .font(.caption).foregroundStyle(Theme.sub)
                     .padding(.bottom, 8)
             }

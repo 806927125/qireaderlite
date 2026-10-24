@@ -328,8 +328,13 @@ struct SourceLoginSheet: View {
             Text("聚合源把服务器地址存在这里。默认线路不通时，详情页会逐条试 8 条（很慢）。把 server 改成一条通的线路即可。")
                 .font(.caption2).foregroundStyle(Theme.sub)
                 .fixedSize(horizontal: false, vertical: true)
-            TextEditor(text: $varsText)
-                .font(.system(size: 12, design: .monospaced))
+            // ⭐⭐⭐ **用 LimitedTextEditor**（不是 TextEditor）
+            //   真机崩溃日志：TextEditor 粘贴/赋值巨量文本 ⇒ CoreText 排版 10 秒 ⇒ watchdog 杀进程
+            //   ⇒ 这里给 8K 上限（站方默认表正常只有 170 字符 ⇒ 够用）⭐
+            LimitedTextEditor(text: $varsText, limit: 8_000) { projected in
+                message = "变量表 \(projected) 字符，太大了（上限 8000）⇒ 请只改 server 一项"
+                failed = true
+            }
                 .frame(minHeight: 90)
                 .scrollContentBackground(.hidden)
                 .padding(8)
