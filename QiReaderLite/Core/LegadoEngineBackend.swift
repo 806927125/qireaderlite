@@ -306,7 +306,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
         /// ⇒ 加载完必须 `markGlobalsAsBaseline()`，否则下次求值会被清掉 ⭐
         let jsLib: String?
 
-        init(source: EngineSource, jar: EngineCookieJar, jsLib: String? = nil) {
+        init(source: EngineSource, jar: EngineCookieJar, jsLib: String? = nil) throws {
             self.engineSource = source
             self.jar = jar
             self.jsLib = jsLib
@@ -334,7 +334,11 @@ final class LegadoEngineBackend: @unchecked Sendable {
                 do {
                     try engine.loadJsLib(lib)
                 } catch {
+                    // ⚠️⚠️ **jsLib 加载失败必须「报出来」**（不能静默吞）
+                    //   ⇒ 站方 jsLib 挂了 ⇒ 站方 JS 会走兜底分支 ⇒ 分类变成假分类 ⇒ 整本书打不开
+                    //   ⇒ 而用户看到「失败原因」那行才知道**真凶**（2026-10-23 真机栽的）⭐
                     engineLog("[新引擎] jsLib 加载失败：\(error)")
+                    throw error
                 }
             }
         }
@@ -409,7 +413,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
 
         let engineSource = Self.convert(source)
         let jar = EngineCookieJar()
-        let s = Session(source: engineSource, jar: jar, jsLib: source.jsLib)
+        let s = try Session(source: engineSource, jar: jar, jsLib: source.jsLib)
         lock.lock()
         // ⚠️ 可能有别的线程先建了 ⇒ 以先建的那个为准（本建的白扔）
         if let exist = sessions[key] { lock.unlock(); return exist }
