@@ -253,6 +253,17 @@ struct EngineLogSheet: View {
                               systemImage: copied ? "checkmark" : "doc.on.clipboard")
                     }
                 }
+                // ⭐⭐⭐ **「诊断包」**：一键把**崩溃前**的日志 + 设备信息 + 引擎状态 复制出来
+                //   ⇒ 不用手抄、不用导出 .ips ⇒ 直接粘给我就能定位 ⭐⭐⭐
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        UIPasteboard.general.string = Self.diagnosticBundle()
+                        copied = true
+                    } label: {
+                        Label(copied ? "已复制" : "诊断包",
+                              systemImage: copied ? "checkmark" : "stethoscope")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     // ⭐ 「测试完日志要清空」—— 一键清掉，避免旧日志混着新日志看花眼
                     Button {
@@ -269,6 +280,29 @@ struct EngineLogSheet: View {
         }
     }
 
+
+    /// ⭐⭐⭐ **诊断包**（一键复制 ⇒ 直接发给我）
+    ///
+    /// ⇒ 包含：**崩溃前**的磁盘日志（进程被杀也不丢）+ 设备/系统 + 引擎状态 + 最近的开销
+    @MainActor
+    static func diagnosticBundle() -> String {
+        var lines: [String] = []
+        lines.append("======== 轻阅 诊断包 ========")
+        lines.append("生成时间：\(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium))")
+        lines.append("App：\(AppPaths.appVersionLine)")
+        lines.append("设备：\(UIDevice.current.model) · iOS \(UIDevice.current.systemVersion)")
+        lines.append("引擎开关：新引擎=\(EngineBackend.useNewEngine ? "开" : "关")（关 = 走老引擎）")
+        lines.append("引擎状态：\(EngineBackend.current.rawValue)")
+        if let e = EngineBackend.lastError { lines.append("引擎错误：\(e)") }
+        lines.append("")
+        let disk = RuleSandbox.diskLogText()
+        lines.append("======== 磁盘日志（\(disk.count) 字符 · 含崩溃前）========")
+        lines.append(disk.isEmpty ? "（磁盘日志是空的）" : disk)
+        lines.append("")
+        lines.append("======== 当前内存日志 ========")
+        lines.append(RuleSandbox.shared.fullLogText())
+        return lines.joined(separator: "\n")
+    }
 
     @ViewBuilder
     private func section(_ title: String, _ body: String) -> some View {

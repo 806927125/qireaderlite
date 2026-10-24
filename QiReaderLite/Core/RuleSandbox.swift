@@ -388,6 +388,50 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         recentLogs.append(stamped)
         if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
         NSLog("%@", stamped)
+        // ⭐⭐⭐ **同时落盘**（2026-10-24 真机：App 被 watchdog 杀掉 ⇒ 内存里的日志全丢
+        //   ⇒ 用户重启后什么都看不到 ⇒ 我拿不到任何证据 ⇒ 只能猜）
+        //   ⇒ 现在每行都写进 Documents/engine-log.txt（超过 1MB 就从头轮转）
+        //   ⇒ 崩溃后重启 ⇒ 「引擎日志」面板里照样能复制到**崩溃前**的日志 ⭐⭐⭐
+        Self.persistToDisk(stamped)
+    }
+
+    /// **日志落盘**（进程被杀也不丢）
+    private static let logFileURL: URL = {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return docs.appendingPathComponent("engine-log.txt")
+    }()
+
+    private static let diskLogLock = NSLock()
+
+    private static func persistToDisk(_ line: String) {
+        diskLogLock.lock(); defer { diskLogLock.unlock() }
+        let url = logFileURL
+        // 超过 1MB ⇒ 只留后半段（免得无限涨）
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int, size > 1_000_000 {
+            if let data = try? Data(contentsOf: url) {
+                let keep = data.suffix(600_000)
+                try? keep.write(to: url, options: .atomic)
+            }
+        }
+        if let data = (line + "\n").data(using: .utf8) {
+            if let fh = try? FileHandle(forWritingTo: url) {
+                fh.seekToEndOfFile()
+                fh.write(data)
+                try? fh.close()
+            } else {
+                try? data.write(to: url, options: .atomic)
+            }
+        }
+    }
+
+    /// **磁盘上的日志全文**（崩溃后也能拿）
+    static func diskLogText() -> String {
+        diskLogLock.lock(); defer { diskLogLock.unlock() }
+        guard let d = try? Data(contentsOf: logFileURL),
+              let s = String(data: d, encoding: .utf8) else { return "" }
+        return s
     }
 
     /// **清空引擎日志**
