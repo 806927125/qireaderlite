@@ -80,6 +80,8 @@ declare -a GATES=(
   "rules:test/rules.test.js"
   "e2e:test/e2e.test.js"
   "swift-bookdto:test/swift-bookdto.test.js"
+  # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
+  "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
 )
 
 TOTAL_PASS=0

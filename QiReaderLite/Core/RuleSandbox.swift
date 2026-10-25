@@ -134,12 +134,18 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
+    /// ⭐⭐⭐⭐⭐ build250：修**点「发现」闪退**（后台线程动 UIKit）
+    ///   · 真凶：build248 给 `java.longToast` 加了宿主实现 ⇒ 站方第一次真的调到宿主
+    ///     ⇒ 引擎在**后台线程**跑 ⇒ `Toast.show` 在后台建 UILabel / 碰 UIApplication
+    ///     ⇒ **UIKit 主线程违规 ⇒ 闪退** ⭐⭐⭐
+    ///   · 根治：UIKit 渲染标 `@MainActor`（编译器强制调用点处理隔离）+ 入口自己切主线程
+    ///   · 新门禁 `mainactor-ui-guard`：非 @MainActor 且没切主线程的函数碰 UIKit ⇒ 红
     /// ⭐⭐⭐ build249：legado-engine `00e0890`
     ///   · ⭐⭐⭐ 修 **build248 的包装函数 JS 语法坏** ⇒ 75 个宿主 API 的包装函数**全没生成**
     ///     ⇒ 真机症状：`java.longToast is undefined`（JSC 说的，不是引擎抛的）⭐⭐⭐
     ///     ⇒ 根因：Swift 多行字符串里 `//` 行注释把 `\` 续行后的整行吃掉
     ///   · ⭐⭐⭐ 「抛不抛」由「老引擎上存不存在」决定（实测 75 个不抛 ⇒ 新引擎也不抛）
-    static let engineVersion = "2026.10.25-r31（legado-engine 00e0890 · 修 75 个宿主 API 包装函数未生成）"
+    static let engineVersion = "2026.10.25-r32（legado-engine 00e0890 · 修发现页闪退：后台线程动 UIKit）"
 
     /// 给界面用的一行状态
     var statusText: String {
@@ -1422,7 +1428,25 @@ enum EngineSyncChannel {
 }
 
 enum Toast {
+    // ⭐⭐⭐⭐⭐ **必须切主线程**（2026-10-25 真机闪退实证）
+    //
+    // **事故**：build248 加了 `java.longToast` 的宿主实现 ⇒ 站方第一次真的调到宿主
+    // ⇒ 引擎在**后台线程**跑 ⇒ `Toast.show` 在后台线程建 `UILabel` / 碰 `UIApplication`
+    // ⇒ **UIKit 主线程违规 ⇒ 闪退**（点「发现」就退）⭐⭐⭐
+    //
+    // ⚠️ **为什么以前没事**：`java.toast` 走引擎自己那条路（不落宿主）⇒ 这个函数一直没人从后台调
+    // ⇒ 一旦新增走宿主的 API（如 longToast）⇒ **立刻踩雷** ⇒ 所以要**根治**，不是在这一个调用点打补丁 ⭐
+    //
+    // ⇒ 修法：① 渲染部分标 `@MainActor`（**编译器从此强制所有调用点处理隔离**）
+    //        ② 入口自己切主线程（谁调都安全）
     static func show(_ text: String) {
+        // ⭐ 永远切主线程（哪怕已经在主线程也无妨 ⇒ 少一帧无所谓 ⇒ 绝不多一个崩溃点）
+        DispatchQueue.main.async { MainActor.assumeIsolated { render(text) } }
+    }
+
+    /// ⭐ **UIKit 渲染**（只能在主线程）
+    @MainActor
+    private static func render(_ text: String) {
         let lbl = UILabel()
         lbl.text = text
         lbl.font = .systemFont(ofSize: 15, weight: .medium)
