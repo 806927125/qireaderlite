@@ -134,9 +134,11 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
-    /// ⭐⭐⭐ build247：legado-engine `5cfc2e9` ⇒ **整链（详情/目录/正文）与老引擎逐字一致**
-    ///   + 契约补 `source.get`/`source.put`/`cookie.replaceCookie`（125 源实测 129 处 ⇒ 之前静默失效）
-    static let engineVersion = "2026.10.25-r29（legado-engine 5cfc2e9 · 整链与老引擎逐字一致）"
+    /// ⭐⭐⭐ build248：legado-engine `6a41c80`
+    ///   · ⭐⭐⭐ 修 **`java.longToast` 站方 TypeError**（真机：🍅大灰狼「发现功能」整条挂）
+    ///     ⇒ 宿主没实现 ⇒ 包装函数抛 TypeError ⇒ **站方 JS 第一句就炸** ⇒ 整条规则死定
+    ///   · ⭐⭐⭐ **「抛不抛」由「老引擎上存不存在」决定**（实测 75 个不抛 ⇒ 新引擎也不抛）
+    static let engineVersion = "2026.10.25-r30（legado-engine 6a41c80 · 修 java.longToast 站方 TypeError）"
 
     /// 给界面用的一行状态
     var statusText: String {

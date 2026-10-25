@@ -190,6 +190,12 @@ final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
         case "toast":
             Toast.show(first)
             return .string("")
+        // ⭐⭐⭐ **`java.longToast` = `java.toast` 的别名**（老引擎 `java-api.js` 里两者代码逐字相同）
+        //   ⇒ 站方 125 源实测 **114 处**在用 ⇒ 不实现 ⇒ 站方 JS 第一句就 TypeError ⇒ **整条规则死定**
+        //   （2026-10-25 真机实证：build247 的「发现功能」就炸在这）⭐⭐⭐
+        case "longToast":
+            Toast.show(first)
+            return .string("")
         case "log":
             engineLog(first)
             return .string("")
