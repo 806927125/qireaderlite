@@ -148,14 +148,11 @@ final class RuleSandbox: NSObject, ObservableObject {
         }
         lines.append("就绪状态：\(ready ? "已就绪" : "未就绪")")
         if let e = lastError { lines.append("错误：\(e)") }
-        let missing = ResourceLocator.missingScripts()
-        if !missing.isEmpty { lines.append("缺少引擎文件：\(missing.joined(separator: ", "))") }
-        else { lines.append("引擎文件：\(ResourceLocator.scripts.count) 个全部就位") }
-        if let d = ResourceLocator.engineHTML() {
-            lines.append("engine.html：已找到（\(d.html.count) 字符）")
-        } else {
-            lines.append("engine.html：**没找到**")
-        }
+        // ⭐⭐⭐⭐⭐ **老引擎的「引擎文件清单」这段退休了**（2026-10-26 物理删除老引擎）
+        //   ⇒ 以前这里报「11 个引擎 JS 全部就位 / engine.html 找到没找到」
+        //   ⇒ 那 12 个 JS **已物理删除** ⇒ 报「全部就位」是**假的** ⇒ 整段删掉 ⭐⭐⭐
+        //   ⇒ 引擎健康度改看**新引擎**（引擎 revision + 自检）⭐⭐⭐
+        lines.append("引擎：Swift 新引擎（老 JS 引擎已退役）")
         lines.append(contentsOf: bootLog.suffix(6).map { "· " + $0 })
         return lines.joined(separator: "\n")
     }
