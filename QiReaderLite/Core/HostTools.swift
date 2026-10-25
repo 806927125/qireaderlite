@@ -482,3 +482,40 @@ enum CacheFiles {
         return "cf_\(h).cache"
     }
 }
+
+// ⭐⭐⭐⭐⭐ **HeaderCodec**（2026-10-26 物理删除老引擎时**误删**，iOS CI 编译失败实证）
+//
+// ⚠️⚠️⚠️ **它原来定义在老 `RuleSandbox.swift` 的尾部** ⇒ 物理删除时**跟着被砍了**
+//   ⇒ 但它是**通用能力**（解析书源 header 字符串）⇒ `LoginStatus.swift` 在用
+//   ⇒ ⇒ iOS 编译不过：`cannot find 'HeaderCodec' in scope` ⭐⭐⭐
+//
+// ⭐⭐⭐ **通用教训（第三次踩同一个坑）**：
+//   「砍一个大文件时」⇒ **文件尾部的类型**最容易被误伤
+//   ⇒ 砍之前先列一遍「这个文件定义了哪些顶层类型」⇒ 砍完逐个 grep 全仓还有谁在用 ⭐⭐⭐
+//   ⇒ 已被同一个坑咬到三次：`CookieJar` / `CacheFiles` / `HeaderCodec` ⭐⭐⭐
+//
+enum HeaderCodec {
+    /// 解析书源 header 字符串：`key:value` 换行分隔，或 JSON。
+    static func decode(_ s: String) -> [String: String]? {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return nil }
+        if t.hasPrefix("{") {
+            if let d = try? JSONSerialization.jsonObject(with: Data(t.utf8)) as? [String: Any] {
+                return d.reduce(into: [:]) { acc, kv in
+                    if let v = kv.value as? String { acc[kv.key] = v }
+                    else if let v = kv.value as? NSNumber { acc[kv.key] = v.stringValue }
+                }
+            }
+        }
+        var out: [String: String] = [:]
+        for line in t.components(separatedBy: .newlines) {
+            let l = line.trimmingCharacters(in: .whitespaces)
+            guard let c = l.firstIndex(of: ":") else { continue }
+            let k = String(l[l.startIndex..<c]).trimmingCharacters(in: .whitespaces)
+            let v = String(l[l.index(after: c)...]).trimmingCharacters(in: .whitespaces)
+            if !k.isEmpty { out[k] = v }
+        }
+        return out.isEmpty ? nil : out
+    }
+}
+
