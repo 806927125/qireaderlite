@@ -1,22 +1,15 @@
 import Foundation
 
+// MARK: - ⭐⭐⭐ 引擎调用的错误类型
+// ⚠️ `ServiceError` 在**独立文件** `Core/ServiceError.swift` ⇒ 任何层都能引用 ⭐⭐⭐
+//   （原来它是 `SourceService` 的嵌套类型 ⇒ 带主 actor 隔离 ⇒ 后台层引用不了 ⇒ CI 挂）
+
 /// Swift 侧调用 JS 引擎的唯一入口。
 /// 引擎返回的是普通 JSON 对象，这里统一转成 Codable。
 @MainActor
 final class SourceService {
     static let shared = SourceService()
     private init() {}
-
-    enum ServiceError: LocalizedError {
-        case engineFailed(String)
-        case badPayload
-        var errorDescription: String? {
-            switch self {
-            case .engineFailed(let m): return m
-            case .badPayload: return "引擎返回的数据格式不对"
-            }
-        }
-    }
 
     // MARK: 登录
 
@@ -367,6 +360,11 @@ final class SourceService {
     }
 
     /// 不可信的原因（写进日志，让用户一眼看懂）
+    ///
+    /// ⭐⭐⭐⭐⭐ **必须说清「哪个字段空」+「引擎实际返回了什么」**（2026-10-25 真机）
+    ///   以前只说「书名/书 URL 是空的」⇒ 用户看到这句话**完全不知道该查哪** ⇒
+    ///   ⇒ 白等一轮（真机就是这么卡住的）⭐⭐⭐
+    ///   ⇒ 现在：**逐个字段点名** + **带上引擎的实际返回**（截断）⇒ 一次就能定位 ⭐⭐⭐
     static func untrustworthyReason(_ op: String, _ r: Any?) -> String {
         guard let dict = r as? [String: Any] else { return "返回格式不对" }
         switch op {
@@ -376,7 +374,23 @@ final class SourceService {
         case "explore":
             return "书单 0 本"
         case "bookInfo":
-            return "书名/书 URL 是空的"
+            // ⭐ 兼容嵌套形状（`["book": {...}]`）
+            let book = (dict["book"] as? [String: Any]) ?? dict
+            let name = (book["name"] as? String) ?? ""
+            let url = (book["bookUrl"] as? String) ?? ""
+            let author = (book["author"] as? String) ?? ""
+            let kind = (book["kind"] as? String) ?? ""
+            let intro = (book["intro"] as? String) ?? ""
+            var missing: [String] = []
+            if name.isEmpty { missing.append("书名") }
+            if url.isEmpty { missing.append("书 URL") }
+            // ⭐⭐⭐ **带上引擎实际返回了什么** ⇒ 一次定位，不用猜 ⭐⭐⭐
+            let got = "引擎返回：书名=\(name.prefix(20))｜URL=\(url.prefix(60))"
+                + "｜作者=\(author.prefix(12))｜类型=\(kind.prefix(12))｜简介=\(intro.prefix(20))"
+            if missing.isEmpty {
+                return "字段都非空但仍判不可信（\(got)）"
+            }
+            return "\(missing.joined(separator: "、"))是空的（\(got)）"
         case "toc":
             return "目录 0 章"
         default:
