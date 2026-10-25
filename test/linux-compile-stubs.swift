@@ -32,37 +32,9 @@ final class RuleSandbox {
 
 // MARK: - Stub：`CookieJar`（真身在 RuleSandbox.swift）
 
-enum CookieJar {
-    /// ⭐ 真身：`CookieJar.snapshot() -> [String: String]`
-    static func snapshot() -> [String: String] {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CookieJar.cookieString(for url: String) -> String`
-    static func cookieString(for url: String) -> String {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CookieJar.set(_ cookie: String, for url: String)`
-    static func set(_ cookie: String, for url: String) {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CookieJar.remove(for url: String)`
-    static func remove(for url: String) {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-}
 
 // MARK: - Stub：`CacheFiles`（真身在 RuleSandbox.swift）
 
-enum CacheFiles {
-    /// ⭐ 真身：`CacheFiles.write(_ path: String, _ text: String) -> Bool`
-    static func write(_ path: String, _ text: String) -> Bool {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CacheFiles.read(_ path: String) -> String?`
-    static func read(_ path: String) -> String? {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-}
 
 // MARK: - Stub：`EngineBackend`（真身在 EngineBackend.swift）
 
@@ -131,3 +103,15 @@ enum RuleSandboxVersionProbe {
     static let engineRevision: String = EngineRevision.generated
     static let engineVersion = LegadoEngineInfo.version(revision: RuleSandboxVersionProbe.engineRevision)
 }
+
+// ⭐⭐⭐⭐⭐ **别在这里 stub `CookieJar` / `CacheFiles`**（2026-10-26 真 bug）
+//
+// ⚠️⚠️⚠️ **为什么**：这两个类型**真实存在**（在 `QiReaderLite/Core/HostTools.swift`）
+//   ⇒ stub 里再定义一份 ⇒ **重名** ⇒ 真类型被遮住 ⇒ 门禁**假绿** ⭐⭐⭐
+//   ⇒ 后果：App 侧真代码里的类型错（`CookieJar` 没有 `cookieString`）**沙盒看不见**
+//   ⇒ 一路漏到 iOS CI ⇒ BUILD FAILED（2026-10-26 实证）⭐⭐⭐
+//
+// ⭐⭐⭐ **通用判据**：
+//   **stub 只许给「App 侧确实没有、但被 import 的模块提供」的类型**
+//   ⇒ App 侧自己有的类型**绝不能 stub** ⇒ 否则真身被遮住 ⇒ 门禁失明 ⭐⭐⭐
+//   ⇒ 变异测试能自证：把真类型改名 ⇒ 门禁必须报「重名/找不到」而不是绿 ⭐⭐⭐

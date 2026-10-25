@@ -52,8 +52,12 @@ FILES=(
   "QiReaderLite/Core/SourceVariables.swift"
   "QiReaderLite/Core/SourceDictCache.swift"
   "QiReaderLite/Core/SourceRawArchive.swift"
-  "QiReaderLite/Core/LegadoCompat.swift"
+  "QiReaderLite/Core/HostTools.swift"
   "QiReaderLite/Core/ServiceError.swift"      # ⭐⭐⭐ 错误类型独立文件 ⇒ 两组都能编
+  # ⭐⭐⭐⭐⭐ **`AppPaths.swift` 也要编**（2026-10-26 从 `Store.swift` 拆出来的纯 Foundation 文件）
+  #   ⇒ `HostTools.swift` 的 `CacheFiles` 用到 `AppPaths.cacheDir`
+  #   ⇒ 不编它 ⇒ 「cannot find 'AppPaths' in scope」⇒ 门禁抓不到真错 ⭐⭐⭐
+  "QiReaderLite/Core/AppPaths.swift"
 )
 
 # ⭐⭐⭐⭐⭐ **组 B：要链【真引擎】编的文件**（2026-10-25 补）
@@ -95,6 +99,40 @@ else
 fi
 
 # ⭐⭐⭐ **`LegadoEngineBackend.swift` 已并入上面那一组**（一起链真引擎编）⭐⭐⭐
+
+# ⭐⭐⭐⭐⭐ **全量语法解析：每一个 App 侧 Swift 文件都要被编译器看过**（2026-10-25 补）
+#
+# ⚠️⚠️⚠️ **为什么必须有这个**（build253 CI 失败事故的**同一个洞**）：
+#   上面那组 typecheck 只编 **9 个纯 Foundation 的 Core/ 文件**
+#   ⇒ `RuleSandbox.swift`（WebKit）/ `LoginStatus.swift`（WebKit）
+#     / `SourceLoginSheet.swift` / `EngineLogSheet.swift`（SwiftUI）/ `ReaderHost.swift`
+#     ⇒ **这些文件从来没被任何编译器看过** ⭐⭐⭐
+#   ⇒ 本轮恰恰改过其中 5 个 ⇒ **多一个 `}` 就能一路溜到 CI**（build253 同款事故）⭐⭐⭐
+#   ⇒ 「门禁全绿」**只代表「我改的东西被门禁覆盖到了」** ⇒ 没覆盖到的部分 = 没验 ⭐⭐⭐
+#
+# ⭐ **怎么补这个洞**：
+#   · `swiftc -parse` = **只查语法**（不做类型检查 ⇒ **不需要 UIKit / SwiftUI / WebKit**）
+#     ⇒ Linux 上能跑 ⇒ **50 个文件全覆盖**，7 秒（并行）⇒ 不用等 5 分钟 CI ⭐⭐⭐
+#   · 抓得到：多余的 `}` / 括号不配对 / 关键字写错 / 字符串没闭合
+#   · 抓不到：类型错（那些由上面那组 typecheck 负责）
+#   ⇒ 两层合起来 = **每个文件都至少被「语法层」覆盖过** ⭐⭐⭐
+echo "=== 全量语法解析（每个 App 侧 Swift 文件都过一遍 parse）==="
+PARSE_LIST="$(mktemp)"
+find QiReaderLite -name '*.swift' | sort > "$PARSE_LIST"
+PARSE_N="$(wc -l < "$PARSE_LIST" | tr -d ' ')"
+if [ "$PARSE_N" -eq 0 ]; then
+  echo "  ⚠️ 一个 Swift 文件都没找到 ⇒ 跳过（??）"
+else
+  # ⭐ 并行（-P 8）：串行要 36 秒（NAS 挂载的 I/O 等待）⇒ 并行 7 秒 ⭐
+  if ! xargs -P 8 -I{} "$SWIFTC" -parse {} < "$PARSE_LIST" > "$TMP/parse.txt" 2>&1; then
+    echo "❌ 语法解析失败（这些文件 CI 必挂）："
+    grep -E "error:" "$TMP/parse.txt" | head -20 | sed 's/^/     /'
+    rm -f "$PARSE_LIST"
+    exit 1
+  fi
+  echo "  ✅ $PARSE_N 个文件全部通过语法解析"
+fi
+rm -f "$PARSE_LIST"
 
 # ⭐⭐⭐⭐⭐ **一致性比对**：stub 里的「引擎版本片段」必须与 `RuleSandbox.swift` 里的**真代码一致**
 #   ⇒ 改了一边忘了另一边 ⇒ 门禁红（防止两边漂移 ⇒ 假的）⭐⭐⭐

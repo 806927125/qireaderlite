@@ -363,3 +363,122 @@ enum HostTools {
         }
     }
 }
+
+// ⭐⭐⭐⭐⭐ **CookieJar / CacheFiles**（2026-10-26 物理删除老引擎时**误删**，iOS CI 编译失败实证）
+//
+// ⚠️⚠️⚠️ **这段是从老 `RuleSandbox.swift` 里搬回来的**（老文件 1560 行 ⇒ 物理删除时砍到 382 行
+//   ⇒ **顺手把这两个通用能力一起砍掉了**）⭐⭐⭐
+//   ⇒ App 侧到处在用（`CookieJar.cookieString` / `CookieJar.snapshot` / `CookieJar.set` /
+//     `CookieJar.remove` / `CacheFiles.write` / `CacheFiles.read`）⇒ **iOS 编译不过** ⭐⭐⭐
+//   ⇒ 症状：`type 'CookieJar' has no member 'cookieString'` / `cannot find 'CacheFiles' in scope`
+//     ⇒ 而 **Linux 沙盒门禁看不见**（stub 里有一个同名的 `enum CookieJar` ⇒ 把它遮住了）⭐⭐⭐⭐⭐
+//
+// ⭐⭐⭐ **教训**：「砍文件」时要用**编译期清单**核对「这个文件里定义了哪些类型」
+//   ⇒ 删完拿 `grep -rn "<类型名>"` 全仓查还有谁在用 ⇒ 少一个就是编译失败 ⭐⭐⭐
+// ⭐⭐⭐ **更要命**：沙盒 stub 里**同名类型**会把真类型遮住 ⇒ 门禁假绿 ⭐⭐⭐
+//   ⇒ stub 里的类型名要**和真类型名错开**（或干脆不 stub）⇒ 否则门禁看不见真错 ⭐⭐⭐
+//
+enum CookieJar {
+    static func cookieString(for url: String) -> String {
+        guard let u = URL(string: url) else { return "" }
+        let cookies = HTTPCookieStorage.shared.cookies(for: u) ?? []
+        return cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+    }
+
+    /// 全量 cookie 快照：**host → "k=v; k2=v2"**
+    ///
+    /// ⚠️ 为什么需要快照：Legado 的 `cookie.getCookie(url)` 是**同步** API，
+    ///    而原生桥只能 postMessage（异步）→ JS 里没法 await 一次同步调用。
+    ///    所以原生侧先把 cookie 罐拍成快照塞进 payload，引擎侧同步读。
+    static func snapshot() -> [String: String] {
+        var out: [String: String] = [:]
+        for c in HTTPCookieStorage.shared.cookies ?? [] {
+            var host = c.domain
+            if host.hasPrefix(".") { host.removeFirst() }
+            guard !host.isEmpty else { continue }
+            let pair = "\(c.name)=\(c.value)"
+            if let prev = out[host], !prev.isEmpty {
+                out[host] = prev + "; " + pair
+            } else {
+                out[host] = pair
+            }
+        }
+        // ⚠️⚠️ **番茄 sessionid 别名**（2026-10-21 真机「番茄登了还是说过期」）：
+        //   番茄新版登录的 cookie 键是 `sessionid_ss`，
+        //   而站方（🍅大灰狼）有一行老正则 `rawCookie.match(/sessionid=[^;]+/)` **只认 `sessionid=`**
+        //   ⇒ 站方抠不到 sessionid ⇒ 发现页一直 toast「您还未登陆番茄账号」
+        //   ⇒ `ssionid` 参数空 ⇒ 大灰狼服务器回「番茄登录过期」
+        //   ⇒ 这里补一条 `sessionid=<同值>` 别名（不覆盖已有的）⇒ 站方立刻能用 ✅
+        //   （逻辑在 HostTools（纯 Foundation）→ 沙盒 swiftc 能真编真跑）
+        // ⚠️⚠️ **不能一边遍历一边改字典** ⇒ Swift 会崩
+        //   （Fatal error: Collection was mutated while being enumerated）
+        //   ⇒ 先收集要改的，再统一改
+        var updates: [String: String] = [:]
+        for (host, value) in out {
+            if HostTools.isFanqieHost(host) {
+                let fixed = HostTools.fanqieSessionAlias(value)
+                if fixed != value { updates[host] = fixed }
+            }
+        }
+        for (host, value) in updates { out[host] = value }
+        return out
+    }
+    static func set(_ cookie: String, for url: String) {
+        guard let u = URL(string: url) else { return }
+        // 新 SDK 的 setCookies 多了第三个参数 mainDocumentURL，不给编译不过
+        HTTPCookieStorage.shared.setCookies(cookies(from: cookie, host: u.host ?? ""),
+                                            for: u, mainDocumentURL: nil)
+    }
+
+    /// 删某个站点下的 cookie（站方的「退出登录」用）
+    ///
+    /// ⚠️ `HTTPCookieStorage.shared.setCookies([])` **不一定**会清掉已有的
+    ///    （实测不可靠）→ 这里显式遍历 deleteCookie。
+    ///    域匹配：cookie.domain 是 "v5.langge.uk" 或 ".langge.uk"，
+    ///    要把 **父域** 的 cookie 也删掉（站方 logout 会逐个清 host + langge.uk）。
+    static func remove(for url: String) {
+        guard let u = URL(string: url) else { return }
+        let host = (u.host ?? "").lowercased()
+        guard !host.isEmpty else { return }
+        for c in HTTPCookieStorage.shared.cookies ?? [] {
+            var d = c.domain.lowercased()
+            if d.hasPrefix(".") { d.removeFirst() }
+            if d.isEmpty { continue }
+            if d == host || host.hasSuffix("." + d) || d.hasSuffix("." + host) {
+                HTTPCookieStorage.shared.deleteCookie(c)
+            }
+        }
+    }
+    static func cookies(from header: String, host: String) -> [HTTPCookie] {
+        var out: [HTTPCookie] = []
+        for part in header.components(separatedBy: ";;") {
+            let p = part.trimmingCharacters(in: .whitespaces)
+            let kv = p.split(separator: "=", maxSplits: 1).map(String.init)
+            guard kv.count == 2, let c = HTTPCookie(properties: [
+                .name: kv[0], .value: kv[1], .domain: host, .path: "/",
+            ]) else { continue }
+            out.append(c)
+        }
+        return out
+    }
+}
+
+enum CacheFiles {
+    private static let root = AppPaths.cacheDir
+
+    /// Legado 的 `java.cacheFile(path, content)`，路径是书源自定的 key，不是真实路径
+    static func write(_ path: String, _ text: String) -> Bool {
+        let safe = safeName(path)
+        guard let d = text.data(using: .utf8) else { return false }
+        let p = root.appendingPathComponent(safe)
+        do { try d.write(to: p, options: .atomic); return true } catch { return false }
+    }
+    static func read(_ path: String) -> String? {
+        let p = root.appendingPathComponent(safeName(path))
+        return try? String(contentsOf: p, encoding: .utf8)
+    }
+    private static func safeName(_ s: String) -> String {
+        let h = abs(s.hashValue)
+        return "cf_\(h).cache"
+    }
+}
