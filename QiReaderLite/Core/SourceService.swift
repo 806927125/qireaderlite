@@ -457,6 +457,9 @@ final class SourceService {
         var author: String = ""
         var intro: String = ""
         var kind: String = ""
+        /// ⭐⭐⭐ **分组**（站方的 `ruleBookInfo.group` / `category`）
+        /// ⚠️ 2026-10-25 真机：详情页那格「分组」之前**硬编码「未分组」** ⇒ 现在取站方真值 ⭐⭐⭐
+        var group: String = ""
         var lastChapter: String = ""
         var coverUrl: String = ""
         var bookUrl: String = ""
@@ -483,18 +486,20 @@ final class SourceService {
             func g(_ k: K) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? "" }
             name = g(.name);           author   = g(.author)
             intro = g(.intro);         kind     = g(.kind)
+            group = g(.group)
             lastChapter = g(.lastChapter); coverUrl = g(.coverUrl)
             bookUrl = g(.bookUrl);     wordCount = g(.wordCount)
             tocUrl = g(.tocUrl)
             raw = (try? c.decodeIfPresent([String: String].self, forKey: .raw)) as? [String: String]
         }
         private enum K: String, CodingKey {
-            case name, author, intro, kind, lastChapter, coverUrl, bookUrl, wordCount, tocUrl, raw
+            case name, author, intro, kind, group, lastChapter, coverUrl, bookUrl, wordCount, tocUrl, raw
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: K.self)
             try c.encode(name, forKey: .name);         try c.encode(author, forKey: .author)
             try c.encode(intro, forKey: .intro);       try c.encode(kind, forKey: .kind)
+            try c.encode(group, forKey: .group)
             try c.encode(lastChapter, forKey: .lastChapter); try c.encode(coverUrl, forKey: .coverUrl)
             try c.encode(bookUrl, forKey: .bookUrl);   try c.encode(wordCount, forKey: .wordCount)
             try c.encode(tocUrl, forKey: .tocUrl)
@@ -1148,7 +1153,7 @@ final class SourceService {
 extension SourceService.BookDTO {
     func toBook(origin: String, sourceName: String) -> Book {
         Book(origin: origin, bookUrl: bookUrl, name: name, author: author, intro: intro,
-             kind: kind, lastChapter: lastChapter, coverUrl: coverUrl, wordCount: wordCount,
+             kind: kind, group: group, lastChapter: lastChapter, coverUrl: coverUrl, wordCount: wordCount,
              tocUrl: tocUrl, sourceName: sourceName, raw: raw ?? [:], detailLoaded: false)
     }
 }
@@ -1161,7 +1166,7 @@ extension Book {
         //   ⇒ 宿主原先只送九个字段 ⇒ 站方拿不到 ⇒ 载荷只有 {tab,url} ⇒ book_id=undefined
         //      ⇒ 服务器回「illegal base64 data at input byte 9」⇒ 详情/目录全空 ⭐
         var out: [String: Any] = ["bookUrl": bookUrl, "name": name, "author": author, "intro": intro,
-         "kind": kind, "lastChapter": lastChapter, "coverUrl": coverUrl, "wordCount": wordCount,
+         "kind": kind, "group": group, "lastChapter": lastChapter, "coverUrl": coverUrl, "wordCount": wordCount,
          "tocUrl": tocUrl,
          // ⚠️ 必须有 variables —— 站方会调 `book.getVariable('custom')`
          //    （🍅大灰狼的 ruleToc.chapterList / ruleContent.content 都调）
