@@ -196,20 +196,34 @@ struct BookDetailView: View {
     }
 
     /// 栖阅那三列「分组 / 类型 / 更新」——横向分栏，各自带图标
+    ///
+    /// ⭐⭐⭐⭐⭐ **2026-10-25 真机修**（详情页三格一直显示「未分组 / 文本 / 未加载」）：
+    /// ① 「分组」之前是**硬编码 `"未分组"`** ⇒ 站方给了分组也看不见 ⭐⭐⭐
+    ///    ⇒ 现在取站方的 `ruleBookInfo.group` / `category`（引擎侧同期新增）⭐⭐⭐
+    /// ② 「更新」之前是**章节数**（目录没加载就「未加载」）⇒ 跟站方的「最新章节/更新时间」不是一个东西
+    ///    ⇒ 现在优先显示站方的 `lastChapter`（**最新章节 + 更新时间**）⇒ 目录没加载也有值 ⭐⭐⭐
+    /// ③ 「类型」站方没给 `kind` ⇒ 仍兜底「文本」（**如实反映站方没给**，不编）⭐
     private var meta: some View {
         HStack(spacing: 0) {
-            metaCell("folder.fill", "分组", "未分组", Theme.tagBlue)
+            metaCell("folder.fill", "分组", book.group.isEmpty ? "未分组" : book.group, Theme.tagBlue)
             Divider().frame(height: 34)
             metaCell("doc.text.fill", "类型", book.kind.isEmpty ? "文本" : book.kind, Theme.tagPurple)
             Divider().frame(height: 34)
-            metaCell("bell.fill", "更新",
-                     chapters.filter { !$0.isVolume }.count > 0
-                        ? "\(chapters.filter { !$0.isVolume }.count) 章"
-                        : "未加载",
-                     Theme.tagOrange)
+            metaCell("bell.fill", "更新", updateText, Theme.tagOrange)
         }
         .padding(.vertical, 14)
         .glassCard(cornerRadius: 16)
+    }
+
+    /// ⭐⭐⭐ **「更新」那一格的值**
+    ///
+    /// ⇒ 优先站方的「最新章节 + 更新时间」（`lastChapter`）⇒ **目录没加载也有值** ⭐⭐⭐
+    /// ⇒ 站方没给 ⇒ 退回章节数 ⇒ 还没有 ⇒ 「未加载」
+    private var updateText: String {
+        let latest = book.lastChapter.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !latest.isEmpty { return latest }
+        let n = chapters.filter { !$0.isVolume }.count
+        return n > 0 ? "\(n) 章" : "未加载"
     }
 
     private func metaCell(_ icon: String, _ title: String, _ value: String, _ tint: Color) -> some View {
@@ -239,14 +253,17 @@ struct BookDetailView: View {
                     .foregroundStyle(Theme.ink)
                 Spacer()
             }
-            Text(book.intro.isEmpty ? "（这本书没有简介）" : book.intro)
+            // ⭐⭐⭐ **简介的 HTML 标签转纯文本**（2026-10-25 真机：`<p></p>` 露在界面上）
+            //   ⇒ 站方的 `abstract` 带 `<p>` 段落 ⇒ 原样显示很难看 ⭐⭐⭐
+            //   ⇒ 清洗放在**显示层** ⇒ 引擎输出不变 ⇒ 沙盒对拍零影响 ⭐⭐⭐
+            Text(book.intro.isEmpty ? "（这本书没有简介）" : IntroHTMLCleaner.plainText(book.intro))
                 .font(.system(size: 15))
                 .foregroundStyle(Theme.ink.opacity(0.85))
                 .lineSpacing(5)
                 .lineLimit(showAllIntro ? nil : 6)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if !book.intro.isEmpty && book.intro.count > 110 {
+            if !book.intro.isEmpty && IntroHTMLCleaner.plainText(book.intro).count > 110 {
                 Button {
                     withAnimation { showAllIntro.toggle() }
                 } label: {
