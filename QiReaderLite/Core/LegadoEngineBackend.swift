@@ -564,8 +564,23 @@ final class LegadoEngineBackend: @unchecked Sendable {
                             _ payload: [String: Any]) throws -> Any {
         let kindUrl = (payload["kindUrl"] as? String) ?? ""
         let page = (payload["page"] as? Int) ?? 1
-        let books = try engine.explore(kindUrl, page: page)
-        return Self.bookListPayload(books)
+        // ⭐⭐⭐⭐⭐ **失败时把【引擎的诊断行】带进错误**（2026-10-25 真机实证）
+        //   ⇒ 以前只有「emptyResult(\"bookList\")」⇒ 用户完全看不到引擎看到了什么 ⇒ 只能猜 ⭐⭐⭐
+        //   ⇒ 诊断行里有：**实际请求的 URL + 响应长度 + 响应前 200 字 + isJSON** ⇒ 一次定位 ⭐⭐⭐
+        do {
+            let books = try engine.explore(kindUrl, page: page)
+            return Self.bookListPayload(books)
+        } catch {
+            throw Self.diagnose(engine, "发现页", error)
+        }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **把引擎的失败诊断拼进宿主错误**（真机日志能直接看出真凶）
+    static func diagnose(_ engine: SourceEngine, _ what: String, _ error: Error) -> Error {
+        let lines = engine.failureDiagnosticLines
+        guard !lines.isEmpty else { return error }
+        let detail = lines.joined(separator: " ／ ")
+        return ServiceError.engineFailed("\(what)失败：\(error.localizedDescription)（引擎诊断：\(detail)）")
     }
 
     /// ⭐ **发现页的分类 + 筛选栏**
@@ -610,7 +625,13 @@ final class LegadoEngineBackend: @unchecked Sendable {
     }
 
     private func runExploreKinds(_ engine: SourceEngine) throws -> Any {
-        let (kinds, filters) = try engine.exploreKinds()
+        // ⭐⭐⭐ 失败时带诊断（见 runExplore 的说明）⭐⭐⭐
+        let kinds: [SourceCategory]; let filters: [SourceFilter]
+        do {
+            (kinds, filters) = try engine.exploreKinds()
+        } catch {
+            throw Self.diagnose(engine, "发现页分类", error)
+        }
         // ⭐⭐ **把分类/筛选栏的标题记下来**（2026-10-24 真机栽的）
         //   ⭐ 站方聚合源在「ajax 失败」时会**造一个叫「未分组」的兜底分类**
         //   ⇒ 看到「未分组」就知道是**站方接口没通**，不是分类规则写错 ⭐⭐
@@ -645,9 +666,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
             //   以前错误只说「书名/书 URL 是空的」⇒ 用户**完全不知道该查哪** ⇒ 白等一轮 ⭐⭐⭐
             //   ⇒ 引擎明明知道「哪条规则走的哪个分支、为什么失败」⇒ 把它带出来 ⭐⭐⭐
             let lines = engine.failureDiagnosticLines
-            let detail = lines.isEmpty ? "" : "（引擎诊断：" + lines.joined(separator: " ／ ") + "）"
             // ⚠️ `ServiceError` 现在在**文件顶层**（不依赖 `@MainActor` 类）⇒ 两边都能引用 ⭐⭐⭐
-            throw ServiceError.engineFailed("详情页解析失败：\(error.localizedDescription)\(detail)")
+            throw Self.diagnose(engine, "详情页", error)
         }
         var rawMap: [String: String] = [:]
         for (k, v) in raw { if let s = v as? String { rawMap[k] = s } }
@@ -670,7 +690,12 @@ final class LegadoEngineBackend: @unchecked Sendable {
         info.bookUrl = bookUrl
         // ⚠️ tocUrl 为空 ⇒ 目录规则跑在**详情页**上（Legado 语义）
         info.tocUrl = tocUrl
-        let chapters = try engine.toc(info, book: book, variables: Self.variables(from: raw))
+        let chapters: [EngineChapter]
+        do {
+            chapters = try engine.toc(info, book: book, variables: Self.variables(from: raw))
+        } catch {
+            throw Self.diagnose(engine, "目录", error)
+        }
         let list: [[String: Any]] = chapters.map { c in
             ["url": c.url, "title": c.name, "index": c.index, "isVolume": c.isVolume, "tag": ""]
         }
@@ -690,7 +715,12 @@ final class LegadoEngineBackend: @unchecked Sendable {
         var chapter = EngineChapter()
         chapter.name = title
         chapter.url = chapterUrl
-        let text = try engine.content(chapter, book: book, variables: Self.variables(from: raw))
+        let text: String
+        do {
+            text = try engine.content(chapter, book: book, variables: Self.variables(from: raw))
+        } catch {
+            throw Self.diagnose(engine, "正文", error)
+        }
         return ["title": title, "content": text, "nextUrl": ""]
     }
 
