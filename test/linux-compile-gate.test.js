@@ -44,6 +44,8 @@ if (!swiftc) {
   console.log('=== Linux 编译门禁：跳过 ===');
   console.log('没找到 swiftc ⇒ 跑不了编译检查');
   console.log('  ⚠️ 本次**没验到**（不等于通过）');
+  // ⭐ 跳过也要有汇总行 + 「跳过」字样 ⇒ 总门禁会判成「⏭ 环境跳过」而不是「失败」
+  console.log('\nLinux 编译门禁：跳过（没装 swiftc ⇒ 没验到）');
   process.exit(0);
 }
 
@@ -54,4 +56,9 @@ const r = spawnSync('bash', [SCRIPT], {
 });
 const out = (r.stdout || '') + (r.stderr || '');
 process.stdout.write(out);
-process.exit(r.status === null ? 1 : r.status);
+
+// ⭐⭐⭐ **必须输出汇总行**（总门禁的 `parse-summary.py` 认这个格式）
+//   没有汇总行 ⇒ 总门禁会判「⚠️ 无汇总（疑似提前退出）」⇒ **门禁失败** ⭐⭐⭐
+const ok = r.status === 0;
+console.log(`\nLinux 编译门禁：通过 ${ok ? 2 : 1} / 失败 ${ok ? 0 : 1}`);
+process.exit(ok ? 0 : 1);
