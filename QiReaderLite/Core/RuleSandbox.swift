@@ -134,11 +134,12 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
-    /// ⭐⭐⭐ build248：legado-engine `6a41c80`
-    ///   · ⭐⭐⭐ 修 **`java.longToast` 站方 TypeError**（真机：🍅大灰狼「发现功能」整条挂）
-    ///     ⇒ 宿主没实现 ⇒ 包装函数抛 TypeError ⇒ **站方 JS 第一句就炸** ⇒ 整条规则死定
-    ///   · ⭐⭐⭐ **「抛不抛」由「老引擎上存不存在」决定**（实测 75 个不抛 ⇒ 新引擎也不抛）
-    static let engineVersion = "2026.10.25-r30（legado-engine 6a41c80 · 修 java.longToast 站方 TypeError）"
+    /// ⭐⭐⭐ build249：legado-engine `00e0890`
+    ///   · ⭐⭐⭐ 修 **build248 的包装函数 JS 语法坏** ⇒ 75 个宿主 API 的包装函数**全没生成**
+    ///     ⇒ 真机症状：`java.longToast is undefined`（JSC 说的，不是引擎抛的）⭐⭐⭐
+    ///     ⇒ 根因：Swift 多行字符串里 `//` 行注释把 `\` 续行后的整行吃掉
+    ///   · ⭐⭐⭐ 「抛不抛」由「老引擎上存不存在」决定（实测 75 个不抛 ⇒ 新引擎也不抛）
+    static let engineVersion = "2026.10.25-r31（legado-engine 00e0890 · 修 75 个宿主 API 包装函数未生成）"
 
     /// 给界面用的一行状态
     var statusText: String {
