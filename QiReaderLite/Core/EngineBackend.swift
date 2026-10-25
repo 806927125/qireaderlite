@@ -1,72 +1,32 @@
 import Foundation
 
-/// ⭐⭐ **引擎后端标识** —— 让用户一眼看出「现在跑的是哪个引擎」。
+/// ⭐⭐ **引擎标识** —— 现在**只有一个引擎**（新 Swift 引擎 `legado-engine`）。
 ///
-/// ⚠️ 背景：新引擎（`legado-engine`，Swift 自研）已作为 SPM 依赖编进 App。
-/// ⇒ 这个标识就是「替换进度」的**可见仪表盘**。
+/// ⭐⭐⭐ **老 JS 引擎（WKWebView）已于 2026-10-25 退役**（用户明确要求：「老引擎给我去掉先」）
+/// ⇒ 「用哪个引擎」的开关、「失败自动回退」的开关 ⇒ **全部删除** ⇒ 用户不再需要操心这件事 ⭐⭐⭐
 ///
-/// ⭐ 取值：
-/// - `legacyJS` ⇒ 老 JS 引擎（WKWebView）
-/// - `swiftNew` ⇒ 新 Swift 引擎（legado-engine）—— **当前**
+/// ⚠️ **唯一残留**：`login` / `loginProbe` 两个 op（站方登录）**暂时**还跑在老引擎的 WKWebView 上
+/// ⇒ 它们迁到新引擎后 ⇒ `RuleSandbox.swift` 的 WKWebView 壳 + `Resources/engine/*.js` 一并物理删除 ⭐⭐⭐
 public enum EngineBackend {
+    private static let key = "qr.engineBackend"
+
+    /// 当前后端（**只有新引擎** ⇒ 恒为 `.swiftNew`）
     public enum Kind: String {
-        case legacyJS = "老 JS 引擎（WKWebView）"
         case swiftNew = "新 Swift 引擎（legado-engine）"
     }
 
-    private static let key = "qr.engineBackend"
-
     /// 当前后端
-    public static var current: Kind {
-        get { Kind(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .swiftNew }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
-    }
+    public static var current: Kind { .swiftNew }
 
-    /// ⭐⭐⭐ **是否走新引擎**（开关）
-    ///
-    /// ⚠️ **默认 = 开**（2026-10-23：老引擎已被完全替换 ⇒ 主链路走新引擎）
-    /// ⇒ 用户可以手动关掉，回到老引擎（出问题时有个退路）。
-    public static var useNewEngine: Bool {
-        get {
-            // ⭐⭐⭐ **默认 = 关**（2026-10-24 用户原话：「我让你看老引擎怎么弄的大灰狼」）
-            //   新引擎（自研 Swift）对 🍅大灰狼一直有**假成功**（分类只有兜底的「未分组」/
-            //   书单 0 本 / bookUrl 空），而且真机把 App 拖到死机 ⇒
-            //   **老引擎（WKWebView + JS）是验过能跑大灰狼的**
-            //   （分类 9 个 / 目录 2566 章 / 正文 2000+ 字 · build161~165 实测）⭐
-            //   ⇒ **默认走老引擎**（= 回到换引擎之前的行为）⇒ 新引擎继续在后台修
-            //   ⇒ 开关还在「引擎日志」面板里 ⇒ 修好了随时可以打开
-            if UserDefaults.standard.object(forKey: "qr.useNewEngine") == nil { return false }
-            return UserDefaults.standard.bool(forKey: "qr.useNewEngine")
-        }
-        set { UserDefaults.standard.set(newValue, forKey: "qr.useNewEngine") }
-    }
+    // MARK: - ⭐⭐⭐ 三件**必须分开显示**的事（各管各的，别混成一句）
 
-    /// ⭐⭐ **新引擎失败时要不要回退老引擎**
-    ///
-    /// ⚠️ 默认 **开**（安全网）⇒ 新引擎跑不通的源，老引擎还能出结果 ⇒ App 不会变成砖。
-    /// ⇒ 关掉它 = **纯新引擎**（新引擎报错就报错，不兜底）。
-    public static var fallbackToLegacy: Bool {
-        get {
-            if UserDefaults.standard.object(forKey: "qr.fallbackLegacy") == nil { return true }
-            return UserDefaults.standard.bool(forKey: "qr.fallbackLegacy")
-        }
-        set { UserDefaults.standard.set(newValue, forKey: "qr.fallbackLegacy") }
-    }
+    /// **① 引擎**（只有一个 ⇒ 恒为新引擎）
+    public static var switchState: String { "新 Swift 引擎（legado-engine）" }
 
-    // MARK: - ⭐⭐⭐ 三件**必须分开显示**的事（2026-10-23 用户实测踩出来的）
+    /// **② 当前是谁在服务**
+    public static var servingText: String { "新 Swift 引擎" }
 
-    /// **① 新引擎开关**（用户设的）
-    public static var switchState: String { useNewEngine ? "已开启" : "已关闭" }
-
-    /// **② 当前是谁在服务**（上一次 op 实际走的引擎）
-    public static var servingText: String {
-        current == .swiftNew ? "新 Swift 引擎" : "老 JS 引擎"
-    }
-
-    /// **③ 最后一次新引擎的失败原因**（回退时才有 ⇒ 其它时候为 nil）
-    ///
-    /// ⭐ 没有它 ⇒ 用户只看到「老引擎在服务」⇒ **不知道是开关关了还是新引擎坏了**
-    /// ⇒ 而这两种情况的处理方式**完全相反**（一个去开开关，一个去修引擎）⭐
+    /// **③ 最后一次失败原因**（没有它 ⇒ 用户只看到「引擎在服务」⇒ 不知道出了什么事）
     public static var lastError: String? {
         get { ErrorBox.shared.value }
         set { ErrorBox.shared.value = newValue }
@@ -96,17 +56,11 @@ public enum EngineBackend {
         }
     }
 
-    /// ⭐⭐⭐ **三行状态**（开关 / 当前服务 / 失败原因）—— **各管各的，别混成一句**
-    ///
-    /// ⚠️⚠️ **为什么必须分开**（2026-10-23 用户实测踩出来的）：
-    ///   只写一句「老 JS 引擎」⇒ 用户以为**开关被关了** ⇒ 去开开关
-    ///   ⇒ 实际是「新引擎**开着**但这次失败回退了」⇒ **该去修引擎，不是去开开关**⭐
-    ///   ⇒ 两种情况的处理方式**完全相反** ⇒ 必须能一眼分开
+    /// ⭐⭐⭐ **状态行**（引擎 / 失败原因）—— **各管各的**
     public static func statusLines() -> [StatusLine] {
         var out: [StatusLine] = []
-        out.append(StatusLine(label: "新引擎开关", value: switchState))
-        out.append(StatusLine(label: "当前服务", value: servingText))
-        if useNewEngine, let e = lastError, !e.isEmpty {
+        out.append(StatusLine(label: "引擎", value: servingText))
+        if let e = lastError, !e.isEmpty {
             out.append(StatusLine(label: "失败原因", value: e, isError: true))
         }
         return out
@@ -114,16 +68,9 @@ public enum EngineBackend {
 
     /// 一行说明（给 UI 显示）—— ⭐ **短版**（测书源面板那行）
     public static var description: String {
-        guard useNewEngine else {
-            return "老 JS 引擎（WKWebView）· 新引擎开关已关"
+        if let e = lastError, !e.isEmpty {
+            return "新 Swift 引擎（legado-engine）· 上次失败：\(e.prefix(40))"
         }
-        if current == .swiftNew {
-            return "新 Swift 引擎（legado-engine）· 运行中"
-        }
-        // ⚠️ 新引擎开着，但这次是老引擎在服务 ⇒ **说明发生了回退**
-        if fallbackToLegacy {
-            return "新 Swift 引擎 · 已开启，但本次**回退老引擎**"
-        }
-        return "新 Swift 引擎 · 已开启（纯新引擎，无回退）"
+        return "新 Swift 引擎（legado-engine）· 运行中"
     }
 }

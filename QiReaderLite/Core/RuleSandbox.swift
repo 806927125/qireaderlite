@@ -168,6 +168,12 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
+    /// ⭐⭐⭐⭐⭐ build252：⭐⭐⭐ **老 JS 引擎（WKWebView）退役** —— App 里**只剩新引擎**
+    ///   · 「用哪个引擎」的开关 ⇒ **删除**；「失败自动回退老引擎」⇒ **删除**
+    ///   · 失败就是失败 ⇒ **如实报出来**（不再悄悄换引擎）
+    ///   · ⚠️ 唯一残留：`login` / `loginProbe`（站方登录）暂时还跑在老引擎上
+    ///     ⇒ 引擎侧**已有完整登录支持**（`loadLoginScript`/`loginUI`/`performLogin`/`checkLogin`）
+    ///     ⇒ 下一版把登录也切到新引擎 ⇒ 老引擎的 WKWebView 壳 + `Resources/engine/*.js` **物理删除**
     /// ⭐⭐⭐⭐⭐ build251：⭐⭐⭐ **发现页已与老引擎逐字一致**（沙盒整链对拍：5 分类 + 7 筛选栏）
     ///   · 引擎 `c28de9b`：`StationDahulangExploreParityTests` **PASSED**
     ///     ⇒ 新引擎的发现页 == 老引擎（同一份完整源 + 同一份假服务器响应，逐字比）⭐⭐⭐
@@ -185,7 +191,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///     ⇒ 真机症状：`java.longToast is undefined`（JSC 说的，不是引擎抛的）⭐⭐⭐
     ///     ⇒ 根因：Swift 多行字符串里 `//` 行注释把 `\` 续行后的整行吃掉
     ///   · ⭐⭐⭐ 「抛不抛」由「老引擎上存不存在」决定（实测 75 个不抛 ⇒ 新引擎也不抛）
-    static let engineVersion = "2026.10.25-r33（legado-engine c28de9b · 发现页已与老引擎逐字一致）"
+    static let engineVersion = "2026.10.25-r34（legado-engine c28de9b · 老 JS 引擎已退役，只剩新引擎）"
 
     /// 给界面用的一行状态
     var statusText: String {
@@ -532,8 +538,8 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     private func markReady() {
         guard !ready else { return }
         ready = true
-        // ⭐ 标记当前引擎后端（用户能在「测书源」面板看到）
-        if !EngineBackend.useNewEngine { EngineBackend.current = .legacyJS }
+        // ⭐ 老 JS 引擎已退役 ⇒ 不再有「引擎选择」⇒ 这里不再标记后端
+        //   （老引擎现在**只**服务 `login` / `loginProbe` 两个 op ⇒ 见 SourceService.invokeEngine）⭐⭐⭐
         let ws = bootWaiters; bootWaiters = []
         ws.forEach { $0.resume() }
     }

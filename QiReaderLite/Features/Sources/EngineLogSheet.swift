@@ -16,19 +16,18 @@ struct EngineLogSheet: View {
     /// 同步通道（window.prompt）—— **默认关**：它有把 JS 线程卡死的风险
     @AppStorage(EngineSyncChannel.key) private var syncChannel = false
 
-    // MARK: - ⭐⭐ 当前引擎（主链路跑的是哪个）
+    // MARK: - ⭐⭐ 当前引擎
     //
-    // ⚠️ 键必须和 `EngineBackend` 里的一致 ⇒ 同一个 UserDefaults 键，两边同步
-    @AppStorage("qr.useNewEngine") private var useNewEngine = true
-    @AppStorage("qr.fallbackLegacy") private var fallbackLegacy = true
+    // ⭐⭐⭐ **2026-10-25：老 JS 引擎退役** ⇒ 「用哪个引擎」「失败回不退」两个开关**都删了**
+    //   ⇒ 用户不再需要操心这件事 ⇒ 只剩新 Swift 引擎（legado-engine）⭐⭐⭐
     @AppStorage("qr.engineBackend") private var backendKind = ""
 
     /// 当前后端（`EngineBackend.Kind` 的原文）
     private var currentBackendName: String {
         EngineBackend.Kind(rawValue: backendKind)?.rawValue ?? EngineBackend.Kind.swiftNew.rawValue
     }
-    /// 主链路是不是走新引擎
-    private var isNewEngine: Bool { useNewEngine }
+    /// 主链路是不是走新引擎（**恒为真** ⇒ 只剩一个引擎）
+    private var isNewEngine: Bool { true }
     /// 当前是不是新引擎在服务
     private var servingIsNew: Bool { EngineBackend.current == .swiftNew }
     /// 一行「标签：值」
@@ -84,20 +83,10 @@ struct EngineLogSheet: View {
                                 engineRow(line.label, line.value, isError: line.isError)
                             }
                         }
-                        Text(isNewEngine
-                             ? "主链路（搜索 / 发现 / 详情 / 目录 / 正文）走**新 Swift 引擎**（legado-engine）。\n下面这些是老 JS 引擎（兜底通道：登录 / 诊断）的状态。"
-                             : "主链路当前走**老 JS 引擎**。新引擎被关掉了（开关在下面）。\n⭐ 新引擎已修好大灰狼的**详情/目录/正文**（engine 6748ba7）⇒ 可以打开试试；不满意随时关回来。")
+                        Text("主链路（搜索 / 发现 / 详情 / 目录 / 正文）跑**新 Swift 引擎**（legado-engine）。\n⭐ 老 JS 引擎已于 2026-10-25 退役 ⇒ 没有开关、没有自动回退 ⇒ 失败会如实报出来。")
                             .font(.caption2)
                             .foregroundStyle(Theme.sub)
                             .fixedSize(horizontal: false, vertical: true)
-                        Toggle(isOn: $useNewEngine) {
-                            Text("用新 Swift 引擎（关掉 = 回到老引擎）")
-                                .font(.system(size: 13))
-                        }
-                        Toggle(isOn: $fallbackLegacy) {
-                            Text("新引擎失败时回退老引擎（关掉 = 纯新引擎）")
-                                .font(.system(size: 13))
-                        }
                     }
                     .padding(12)
                     .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
@@ -301,7 +290,7 @@ struct EngineLogSheet: View {
         lines.append("生成时间：\(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium))")
         lines.append("App：\(AppPaths.appVersionLine)")
         lines.append("设备：\(UIDevice.current.model) · iOS \(UIDevice.current.systemVersion)")
-        lines.append("引擎开关：新引擎=\(EngineBackend.useNewEngine ? "开" : "关")（关 = 走老引擎）")
+        lines.append("引擎：新 Swift 引擎（legado-engine）· 老 JS 引擎已退役")
         lines.append("引擎状态：\(EngineBackend.current.rawValue)")
         if let e = EngineBackend.lastError { lines.append("引擎错误：\(e)") }
         lines.append("")

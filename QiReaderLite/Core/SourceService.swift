@@ -140,7 +140,7 @@ final class SourceService {
     /// ⚠️ **为什么还留一条退路**：
     ///   新引擎在**个别源**上还有缺口（站方怪写法）⇒ 直接报错会让 App「像坏了」
     ///   ⇒ **回退 + 明确记一笔** ⇒ 用户能在自检面板看到「哪些源新引擎跑不通」⭐
-    ///   ⇒ 开关在 `EngineBackend.fallbackToLegacy`（关掉 = 纯新引擎）
+    ///   ⇒ 老引擎已于 2026-10-25 退役 ⇒ **没有回退** ⇒ 失败就是失败（如实报出来）⭐⭐⭐
     ///
     /// ⚠️ **新引擎不支持的 op**（登录 / 诊断 / 站方变量）⇒ 直接落老引擎。
     /// ⭐ **只播报一次**（免得刷屏）
@@ -150,55 +150,45 @@ final class SourceService {
 
     private static func invokeEngine(_ op: String, _ payload: [String: Any],
                                      source: BookSource) async throws -> Any {
-        if EngineBackend.useNewEngine {
-            do {
-                if let r = try await invokeNewEngine(op, payload, source: source) {
-                    // ⭐⭐⭐⭐⭐ **「成功」不等于「对」**（2026-10-24 真机）
-                    //   新引擎对 🍅大灰狼会返回**假成功**：
-                    //     · 分类只有 1 个（站方兜底分类「未分组」）
-                    //     · 书单 0 本 / bookUrl 空
-                    //   ⇒ 以前「没抛错」就当成功 ⇒ **永远不会回退老引擎**
-                    //   ⇒ 用户拿到的就是「未分组 + 空书单」⭐⭐⭐
-                    //
-                    //   ⇒ **老引擎（WKWebView + JS）是验过能跑大灰狼的**
-                    //      （分类 9 个 / 目录 2566 章 / 正文 2000+ 字）
-                    //   ⇒ 所以判据不是「抛没抛错」，而是「**结果可不可信**」⭐
-                    if Self.isTrustworthy(op, r) {
-                        EngineBackend.current = .swiftNew
-                        // ⭐ 成功 ⇒ 清掉上一次的失败原因
-                        EngineBackend.lastError = nil
-                        // ⭐⭐ **播报一次** ⇒ 用户在「引擎日志」里能直接看到「主链路已切到新引擎」
-                        if !newEngineAnnounced {
-                            newEngineAnnounced = true
-                            RuleSandbox.shared.appendLog(
-                                "[引擎] 主链路已切到**新 Swift 引擎**（legado-engine）· 搜索/发现/详情/目录/正文")
-                        }
-                        return r
-                    }
-                    // ⇒ 结果不可信 ⇒ **自动回退老引擎**（老引擎验过能跑大灰狼）⭐
-                    let why = Self.untrustworthyReason(op, r)
-                    RuleSandbox.shared.appendLog(
-                        "[引擎] 新引擎的「\(op)」结果不可信（\(why)）⇒ 回退老引擎（老引擎验过能跑大灰狼）")
-                    EngineBackend.lastError = "「\(op)」结果不可信：\(why)"
-                    EngineBackend.current = .legacyJS
-                }
-                // ⇒ 新引擎不支持这个 op（返回 nil）⇒ 落老引擎（登录 / 诊断那几类）
-            } catch {
-                let msg = "[引擎] 新引擎跑「\(op)」失败：\(error)"
-                RuleSandbox.shared.appendLog(msg)
-                // ⭐⭐⭐ **把失败原因留下来** ⇒ UI 能直接告诉用户「为什么回退」
-                //   （没有它 ⇒ 用户只看到「老引擎在服务」⇒ 分不清是开关关了还是新引擎坏了）⭐
-                EngineBackend.lastError = "「\(op)」失败：\(error)"
-                if !EngineBackend.fallbackToLegacy {
-                    throw error
-                }
-                RuleSandbox.shared.appendLog("[引擎] ⇒ 回退老引擎兜底")
-                EngineBackend.current = .legacyJS
-            }
-        } else {
-            EngineBackend.current = .legacyJS
+        // ⭐⭐⭐ **只有一个引擎了**（老 JS 引擎 2026-10-25 退役）
+        //   ⇒ 不再有「开关」⇒ 不再有「回退」⇒ **失败就是失败**，如实报出来 ⭐⭐⭐
+        //
+        // ⚠️ **唯一例外**：`login` / `loginProbe`（站方登录）**暂时**还跑在老引擎的 WKWebView 上
+        //   （新引擎还没这个 op）⇒ 它们迁过去 ⇒ 老引擎的 WKWebView 壳 + `Resources/engine/*.js`
+        //   ⇒ **一并物理删除** ⭐⭐⭐
+        if op == "login" || op == "loginProbe" {
+            return try await RuleSandbox.shared.invoke(op, payload, source: source)
         }
-        return try await RuleSandbox.shared.invoke(op, payload, source: source)
+        do {
+            guard let r = try await invokeNewEngine(op, payload, source: source) else {
+                // 新引擎不认识这个 op ⇒ 明确报错（**不再悄悄落老引擎**）
+                throw ServiceError.engineFailed("新引擎不支持「\(op)」这个操作")
+            }
+            // ⭐⭐⭐⭐⭐ **「成功」不等于「对」**（2026-10-24 真机）
+            //   新引擎对某些源会返回**假成功**（分类只有兜底的「未分组」/ 书单 0 本 / bookUrl 空）
+            //   ⇒ **结果不可信就当失败** ⇒ 如实告诉用户 ⇒ **不再回退老引擎**
+            //   （老引擎已退役 ⇒ 没得回退 ⇒ 与其给假结果，不如说清楚）
+            if Self.isTrustworthy(op, r) {
+                EngineBackend.lastError = nil
+                if !newEngineAnnounced {
+                    newEngineAnnounced = true
+                    RuleSandbox.shared.appendLog(
+                        "[引擎] 主链路使用**新 Swift 引擎**（legado-engine）· 搜索/发现/详情/目录/正文")
+                }
+                return r
+            }
+            let why = Self.untrustworthyReason(op, r)
+            RuleSandbox.shared.appendLog(
+                "[引擎] 新引擎的「\(op)」结果不可信（\(why)）")
+            EngineBackend.lastError = "「\(op)」结果不可信：\(why)"
+            throw ServiceError.engineFailed("「\(op)」结果不可信：\(why)")
+        } catch {
+            let msg = "[引擎] 新引擎跑「\(op)」失败：\(error)"
+            RuleSandbox.shared.appendLog(msg)
+            // ⭐⭐⭐ **失败原因留下来** ⇒ UI 能直接告诉用户「为什么」
+            EngineBackend.lastError = "「\(op)」失败：\(error)"
+            throw error
+        }
     }
 
     /// ⭐⭐⭐ **新引擎调用**（**必须离开主线程**）
@@ -250,28 +240,20 @@ final class SourceService {
                 if msg.contains("超时") {
                     // ⭐⭐⭐ **换掉卡死的会话**（JSC context 是复用的 ⇒ 死循环会传染）
                     LegadoEngineBackend.shared.dropSession(for: source.bookSourceUrl)
-                    // ⭐⭐⭐⭐⭐ **连续超时 ⇒ 永久切回老引擎**（2026-10-24 真机「JSC 死循环」）
-                    //   新引擎的 JSC **跑在 App 进程里** ⇒ 站方 JS 死循环 = 线程烧 CPU + 锁死引擎
-                    //   ⇒ 设备发烫（真机日志 `Thermal serious`）+ 整个源永久报废 ⭐⭐⭐
-                    //   ⇒ 老引擎的 JS 跑在 **独立 WebContent 进程** ⇒ 死循环只影响那个进程 ⇒ App 不死
-                    //   ⇒ 所以：**连续 2 次超时就别再赌新引擎了 ⇒ 永久回老引擎**（用户可手动再打开）⭐
+                    // ⭐⭐⭐ **超时 ⇒ 换掉卡死的会话**（JSC context 是复用的 ⇒ 死循环会传染）
+                    //   ⇒ 换掉它 ⇒ 这个源立刻能用 ⭐
+                    // ⚠️ **不再有「永久切回老引擎」**（老引擎 2026-10-25 退役）⇒
+                    //   ⇒ 超时就是超时 ⇒ 如实报错 ⇒ 用户知道哪儿有问题 ⭐⭐⭐
                     Self.newEngineTimeouts += 1
-                    if Self.newEngineTimeouts >= 2 {
-                        EngineBackend.useNewEngine = false
-                        RuleSandbox.shared.appendLog(
-                            "[引擎] 新引擎连续 2 次超时（多半是站方 JS 死循环）⇒ **已永久切回老引擎**"
-                            + "（老引擎的 JS 在独立进程里 ⇒ 死循环不会拖死 App）")
-                    } else {
-                        RuleSandbox.shared.appendLog(
-                            "[引擎] 新引擎「\(op)」超时 ⇒ 已换掉卡死的会话（这个源现在能用）")
-                    }
+                    RuleSandbox.shared.appendLog(
+                        "[引擎] 新引擎「\(op)」超时 ⇒ 已换掉卡死的会话（这个源现在能用）")
                 }
                 throw error
             }
         }
     }
 
-    /// ⭐⭐⭐⭐⭐ **新引擎的结果可不可信**（决定要不要回退老引擎）
+    /// ⭐⭐⭐⭐⭐ **新引擎的结果可不可信**（不可信就当失败 ⇒ 如实告诉用户）
     ///
     /// ⚠️ 判据必须**按 op**定（有的 op 空结果是对的，有的不对）：
     ///   · `exploreKinds` ⇒ 分类数 **< 3** 就是假成功（站方兜底只有 1~2 个「未分组」）

@@ -91,39 +91,30 @@ ok(LegadoEngineBackend.paramKey(from: "show(infoMap['平台'],'find_source')") =
    "paramKey = find_source")
 ok(LegadoEngineBackend.paramKey(from: nil) == "", "没有 action ⇒ 空")
 
-print("\n=== ⑤ 引擎状态显示：三行必须分开（用户实测踩出来的）===")
-// ⚠️⚠️ 2026-10-23 用户实测：只写一句「老 JS 引擎」⇒ 用户以为**开关被关了**
-//   ⇒ 实际是「新引擎开着但失败回退了」⇒ **该修引擎，不是去开开关** ⭐
-//   ⇒ 两种情况处理方式完全相反 ⇒ 必须能一眼分开
-EngineBackend.useNewEngine = true
-EngineBackend.current = .swiftNew
+print("\n=== ⑤ 引擎状态显示（2026-10-25：老引擎退役 ⇒ 只剩一个引擎）===")
+// ⭐⭐⭐ 2026-10-25：**老 JS 引擎已退役**（用户明确要求）⇒
+//   ⇒ 没有「开关」⇒ 没有「回退」⇒ **只剩新引擎** ⇒ 状态行也简化成一行 ⭐⭐⭐
 EngineBackend.lastError = nil
 var lines = EngineBackend.statusLines()
-ok(lines.count == 2, "成功时只有两行（开关 / 当前服务），不该有失败原因")
-ok(lines.contains { $0.label == "新引擎开关" && $0.value == "已开启" }, "开关状态要有")
-ok(lines.contains { $0.label == "当前服务" && $0.value.contains("新") }, "当前服务要有")
+ok(lines.count == 1, "成功时只有一行（引擎），不该有失败原因")
+ok(lines.contains { $0.label == "引擎" && $0.value.contains("新") }, "引擎那行要有")
 ok(!lines.contains { $0.isError }, "没有失败就不该有错误行")
 
-// ⭐ 失败回退 ⇒ **三行**，且第三行是错误
-EngineBackend.current = .legacyJS
+// ⭐ 失败 ⇒ **两行**，第二行是错误（失败原因要看得见）
 EngineBackend.lastError = "「search」失败：emptyResult(\"bookList\")"
 lines = EngineBackend.statusLines()
-ok(lines.count == 3, "失败回退时要有三行（多了失败原因）")
+ok(lines.count == 2, "失败时要有两行（多了失败原因）")
 let errLine = lines.first { $0.label == "失败原因" }
-ok(errLine != nil, "⭐ 必须有「失败原因」行（不然用户看不出为什么回退）")
+ok(errLine != nil, "⭐ 必须有「失败原因」行（不然用户看不出哪儿坏了）")
 ok(errLine?.isError == true, "失败原因那行要标成错误（UI 显示红色）")
 ok(errLine?.value.contains("emptyResult") == true, "失败原因要带原始错误")
 
-// ⭐ 开关关了 ⇒ 状态是「已关闭」，**不是**「失败原因」
-EngineBackend.useNewEngine = false
-lines = EngineBackend.statusLines()
-ok(lines.contains { $0.label == "新引擎开关" && $0.value == "已关闭" }, "开关关了要显示已关闭")
-ok(!lines.contains { $0.label == "失败原因" }, "开关关了就不该报失败原因（那是两回事）")
-ok(EngineBackend.description.contains("开关已关"), "短版文案：开关关了要说清楚")
+// ⭐⭐⭐ **不再有「老引擎」这个概念**（2026-10-25 老引擎退役）⇒ 状态里不许出现它
+ok(!lines.contains { $0.value.contains("老") }, "状态行里不该再提老引擎")
+ok(EngineBackend.description.contains("legado-engine"), "短版文案要说清用的是哪个引擎")
+ok(!EngineBackend.description.contains("回退"), "短版文案不该再提回退（已经没有回退了）")
 
 // 复原
-EngineBackend.useNewEngine = true
-EngineBackend.current = .swiftNew
 EngineBackend.lastError = nil
 
 
