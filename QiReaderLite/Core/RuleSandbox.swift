@@ -135,16 +135,6 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         UserDefaults.standard.set(id, forKey: "qr.deviceID")
     }
 
-    /// ⭐⭐⭐ **用系统浏览器打开**（站方 `java.startBrowser` / `startBrowserAwait` / `showBrowser` …）
-    func openExternal(url: String, title: String) {
-        guard let u = URL(string: url), u.scheme != nil else {
-            appendLog("[宿主] 浏览器 URL 非法：\(url)")
-            return
-        }
-        appendLog("[宿主] 打开浏览器：\(u.absoluteString) \(title)")
-        UIApplication.shared.open(u)
-    }
-
     /// ⭐⭐⭐ **设备 ID（同步可取）** —— 给**不需要 UIKit 的层**用
     /// ⚠️ `LegadoEngineBackend` 里**不能 import UIKit**（沙盒的 swift 门禁在 Linux 上编译 ⇒ 编不过）⭐⭐⭐
     /// ⇒ 凡是要 UIKit 的东西，**留在本文件里**，别的文件只读这里 ⭐
