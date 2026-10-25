@@ -168,7 +168,7 @@ enum LoginStatus {
 
     // MARK: - 直连服务器
 
-    typealias ProbeResult = LegadoCompat.ProbeResult
+    typealias ProbeResult = HostTools.ProbeResult
 
     /// POST `{base}/user_api` 带 cookie —— 站方 checkStatus 用的同一个接口。
     ///
@@ -208,7 +208,7 @@ enum LoginStatus {
         do {
             let (data, resp) = try await session.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            return LegadoCompat.classify(code: code, data: data)
+            return HostTools.classify(code: code, data: data)
         } catch {
             return .serverError(error.localizedDescription)
         }

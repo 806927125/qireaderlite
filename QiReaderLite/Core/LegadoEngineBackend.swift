@@ -429,6 +429,10 @@ final class LegadoEngineBackend: @unchecked Sendable {
         case "sourceVars": out = ["vars": try engine.sourceVars()]
         case "sourceHosts": out = ["hosts": try engine.sourceHosts()]
         case "filterAction": out = try runFilterAction(engine, payload)
+        // ⭐⭐⭐⭐⭐ **诊断 op**（2026-10-25 真机：老引擎退役 ⇒ 诊断迁到新引擎）
+        //   ⇒ 字段名与老引擎**逐字一致** ⇒ App 侧拼人话的代码不用改 ⭐⭐⭐
+        case "explain": out = try runExplain(engine, payload)
+        case "explainToc": out = try runExplainToc(engine, payload)
         default:
             // ⚠️ 其余 op（sourceVars / sourceHosts / filterAction / explain*）暂不接
             return nil
@@ -463,8 +467,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
     static func seedCookies(from payload: [String: Any], into jar: LegadoCore.CookieJar?) {
         guard let jar else { return }
         guard let snap = payload["cookieSnapshot"] as? [String: String] else { return }
-        // ⭐ 解析在纯 Foundation 层（LegadoCompat）⇒ 沙盒里能真编真跑 ⇒ 有门禁
-        for c in LegadoCompat.cookiePairs(from: snap) {
+        // ⭐ 解析在纯 Foundation 层（HostTools）⇒ 沙盒里能真编真跑 ⇒ 有门禁
+        for c in HostTools.cookiePairs(from: snap) {
             // ⭐ domain 写 host ⇒ 该域**及其子域**都能带上（引擎的 Cookie.matches 语义）
             jar.set(LegadoCore.CookieJar.Cookie(name: c.name, value: c.value,
                                                 domain: c.host, host: c.host))
@@ -539,6 +543,15 @@ final class LegadoEngineBackend: @unchecked Sendable {
     ///   ⇒ 后面每一个 op 都卡在锁上 ⇒ 整个源永久报废
     ///   ⇒ 所以**超时的时候必须把会话整个换掉**（不只是放弃这一次调用）⭐
     ///   ⇒ 新的 context 是干净的 ⇒ 源立刻能用
+    /// ⭐⭐⭐⭐⭐ **清掉所有会话**（老引擎退役后「重置引擎」⇒ 清新引擎的会话）
+    func dropAllSessions() {
+        lock.lock()
+        let n = sessions.count
+        sessions.removeAll()
+        lock.unlock()
+        if n > 0 { NSLog("[engine] 清掉 \(n) 个会话") }
+    }
+
     func dropSession(for sourceUrl: String) {
         lock.lock()
         let existed = sessions.removeValue(forKey: sourceUrl) != nil
@@ -624,6 +637,20 @@ final class LegadoEngineBackend: @unchecked Sendable {
         return d
     }
 
+    /// ⭐⭐⭐⭐⭐ **发现页诊断**（对应老引擎的 `explain` op）
+    private func runExplain(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
+        let kindUrl = (payload["kindUrl"] as? String) ?? ""
+        let page = (payload["page"] as? Int) ?? 1
+        return ExplainOps.explain(engine: engine, kindUrl: kindUrl, page: page)
+    }
+
+    /// ⭐⭐⭐⭐⭐ **目录诊断**（对应老引擎的 `explainToc` op）
+    private func runExplainToc(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
+        let tocUrl = (payload["tocUrl"] as? String) ?? ""
+        let bookUrl = (payload["bookUrl"] as? String) ?? ""
+        return ExplainOps.explainToc(engine: engine, tocUrl: tocUrl, bookUrl: bookUrl)
+    }
+
     private func runExploreKinds(_ engine: SourceEngine) throws -> Any {
         // ⭐⭐⭐ 失败时带诊断（见 runExplore 的说明）⭐⭐⭐
         let kinds: [SourceCategory]; let filters: [SourceFilter]
@@ -665,8 +692,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
             // ⭐⭐⭐⭐⭐ **失败时把引擎的诊断带出来**（2026-10-25 真机教训）
             //   以前错误只说「书名/书 URL 是空的」⇒ 用户**完全不知道该查哪** ⇒ 白等一轮 ⭐⭐⭐
             //   ⇒ 引擎明明知道「哪条规则走的哪个分支、为什么失败」⇒ 把它带出来 ⭐⭐⭐
-            let lines = engine.failureDiagnosticLines
             // ⚠️ `ServiceError` 现在在**文件顶层**（不依赖 `@MainActor` 类）⇒ 两边都能引用 ⭐⭐⭐
+            // ⚠️ `diagnose` 内部自己取 `engine.failureDiagnosticLines` ⇒ 这里**别再取一遍**
+            //   （取两遍 ⇒ 一份没人用 ⇒ swiftc 报「never used」warning ⇒ 门禁噪音）⭐⭐⭐
             throw Self.diagnose(engine, "详情页", error)
         }
         var rawMap: [String: String] = [:]

@@ -14,7 +14,6 @@ struct EngineLogSheet: View {
     @State private var copied = false
     @State private var resetNote = ""
     /// 同步通道（window.prompt）—— **默认关**：它有把 JS 线程卡死的风险
-    @AppStorage(EngineSyncChannel.key) private var syncChannel = false
 
     // MARK: - ⭐⭐ 当前引擎
     //
@@ -116,22 +115,8 @@ struct EngineLogSheet: View {
                                     .foregroundStyle(Theme.sub)
                             }
                         }
-                        Toggle(isOn: $syncChannel) {
-                            Text("用 Swift 同步通道（实验）")
-                                .font(.system(size: 13))
-                        }
-                        .onChange(of: syncChannel) { _, on in
-                            // 立刻生效：不用重启引擎
-                            Task { @MainActor in
-                                _ = try? await RuleSandbox.shared.applySyncChannel(on)
-                            }
-                        }
-                        Text(syncChannel
-                             ? "已开：java.timeFormat 走 Swift 原生实现。若又卡了，先关掉它再「重置引擎」。"
-                             : "默认关：走纯 JS 兜底（语义跟 Swift 一致）。开着有把 JS 线程卡死的风险。")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.sub)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // ⭐⭐⭐⭐⭐ **老引擎的「Swift 同步通道」开关已删**（2026-10-25 老引擎物理删除）
+                        //   ⇒ 那个通道是**老 WKWebView 引擎**的 `window.prompt` 桥 ⇒ 引擎没了就没意义了 ⭐⭐⭐
                     }
                     .padding(12)
                     .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))

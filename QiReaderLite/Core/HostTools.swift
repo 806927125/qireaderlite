@@ -6,20 +6,19 @@ import FoundationNetworking
 #endif
 import Dispatch
 
-/// Legado 兼容层的「纯计算能力」—— **一律用 Swift 写**，JS 只做转发。
+/// ⭐⭐⭐ **宿主的纯计算能力** —— 站方 `java.*` / `cookie.*` 的**精确语义**都在这实现。
 ///
-/// 为什么不写在 JS 里：
-/// 1. `Core/` 是**纯 Foundation 层**，沙盒里能 `swiftc` 真编真测 → 改完 3 秒出结果，
-///    不用等 CI（SwiftUI 层在沙盒里只能靠 CI 验编译）。
-/// 2. 逻辑沉在原生侧，行为不会受 WebView 的 JS 引擎差异影响。
-/// 3. 站方 JS 依赖这些能力的**精确语义**（Legado 的 `java.timeFormat` 是 Long → String），
-///    在 JS 里自己实现很容易搞成「差不多但不一样」，然后站方拼卡片时炸在一个莫名其妙的地方。
+/// ⚠️⚠️ **2026-10-25 更名**（原名 `LegadoCompat`）：
+///   老 JS 引擎（WKWebView）退役并**物理删除** ⇒ 这里**不再是「老引擎的兼容层」**
+///   ⇒ 现在它是**新引擎也用的宿主工具** ⇒ 改名 `HostTools`（免得误导）⭐⭐⭐
 ///
-/// ⚠️ 站方有**同步**调用原生能力的地方：
-///     java.timeFormat(res.register_time*1000).padEnd(20,"\t")
-/// `.padEnd` 必须在同一个同步表达式里 → 原生桥的 postMessage（异步）**用不了**。
-/// 唯一能同步拿到原生返回值的通道是 `window.prompt`（见 `RuleSandbox` 的 WKUIDelegate）。
-enum LegadoCompat {
+/// ⭐ **为什么不写在 JS 里**：
+/// 1. `Core/` 是**纯 Foundation 层** ⇒ 沙盒里能 `swiftc` 真编真测 → 改完 **3 秒**出结果，
+///    不用等 CI（SwiftUI 层在沙盒里只能靠 CI 验编译）⭐⭐⭐
+/// 2. 逻辑沉在原生侧 ⇒ 行为**不受 JS 引擎差异影响**（JSC / Node / 浏览器都一样）⭐⭐⭐
+/// 3. 站方依赖这些能力的**精确语义**（`java.timeFormat` 是 Long → String），
+///    在 JS 里自己实现很容易搞成「差不多但不一样」，然后站方拼卡片时炸在一个莫名其妙的地方 ⭐⭐⭐
+enum HostTools {
 
     // MARK: - java.timeFormat
 
