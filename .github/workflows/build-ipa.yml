@@ -42,9 +42,24 @@ jobs:
         run: |
           # || true 只为让脚本能往下走到打印错误那步
           # ⚠️ ENABLE_BITCODE 在 Xcode 16 起已被彻底移除，别再传（传了也是未知 setting）
+          # ⭐⭐⭐ **注入引擎的真实 revision**（2026-10-25 真机教训）
+          #   之前 App 界面里的引擎 revision 是**手写**的 ⇒ 显示的跟真在跑的不一致
+          #   ⇒ 自证是假的 ⇒ 把排查带偏了 ⇒ 现在从 checkout 日志里**抓真值**注入 ⭐⭐⭐
+          # ⭐ 先跑一次 xcodebuild（**不带注入**）⇒ 拿到 SPM resolve 的真实 checkout 信息
+          #   （`Checking out main (8d206b5)`）⇒ 从中抓引擎 revision ⭐⭐⭐
           xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
             -configuration Release -sdk iphoneos -derivedDataPath build/dd \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build > b.log 2>&1 || true
+          # ⭐⭐⭐ 抓引擎真实 revision（SPM resolve 的输出里）⇒ 拿不到就明说 unknown（**绝不手写**）⭐
+          LEGADO_REV="$(grep -aoE 'Checking out main \([0-9a-f]+\)' b.log | head -1 | grep -oE '[0-9a-f]{7,40}' || true)"
+          if [ -z "$LEGADO_REV" ]; then LEGADO_REV="unknown"; fi
+          echo "注入的引擎 revision = $LEGADO_REV"
+          # ⭐ 带注入再编一次（**增量** ⇒ 只重编受影响的 ⇒ 不多花几分钟）⭐
+          xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
+            -configuration Release -sdk iphoneos -derivedDataPath build/dd \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            OTHER_SWIFT_FLAGS="$(inherited) -DLEGADO_REVISION=\"$LEGADO_REV\"" \
             build > b.log 2>&1 || true
           echo "===== 编译错误 ====="
           grep "error:" b.log | sort -u | head -40

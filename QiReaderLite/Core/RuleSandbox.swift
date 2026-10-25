@@ -2,6 +2,8 @@ import Foundation
 import WebKit
 import SwiftUI
 import UIKit
+// ⭐⭐⭐ 引擎的**真实 revision**（CI 用 -DLEGADO_REVISION=<sha> 注入 ⇒ 显示的永远是真在跑的）
+import LegadoCore
 
 // MARK: - 资源定位
 
@@ -203,7 +205,14 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///     ⇒ 真机症状：`java.longToast is undefined`（JSC 说的，不是引擎抛的）⭐⭐⭐
     ///     ⇒ 根因：Swift 多行字符串里 `//` 行注释把 `\` 续行后的整行吃掉
     ///   · ⭐⭐⭐ 「抛不抛」由「老引擎上存不存在」决定（实测 75 个不抛 ⇒ 新引擎也不抛）
-    static let engineVersion = "2026.10.25-r34（legado-engine c28de9b · 老 JS 引擎已退役，只剩新引擎）"
+    /// ⭐⭐⭐⭐⭐ **引擎版本**（**真实 revision** ⇒ 不再手写）
+    ///
+    /// ⚠️⚠️ **2026-10-25 真机教训**：之前这里是**手写**的 revision
+    ///   ⇒ build253 实际跑 `8d206b5`，界面却显示 `c28de9b`（**老值**）⭐⭐⭐
+    ///   ⇒ **自证是假的** ⇒ 看日志的人会以为「引擎没变 ⇒ 不是引擎的锅」⇒ **排查被带偏** ⭐⭐⭐
+    /// ⇒ 现在：revision 由**引擎包自己**提供（`LegadoEngineInfo.revision`）
+    ///   ⇒ CI 构建时用 `-DLEGADO_REVISION=<sha>` 注入 ⇒ **显示的永远是真在跑的** ⭐⭐⭐
+    static let engineVersion = LegadoEngineInfo.version
 
     /// 给界面用的一行状态
     var statusText: String {

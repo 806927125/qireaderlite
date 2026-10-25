@@ -348,8 +348,15 @@ final class SourceService {
             let books = dict["books"] as? [[String: Any]] ?? []
             return !books.isEmpty
         case "bookInfo":
-            let name = dict["name"] as? String ?? ""
-            let url = dict["bookUrl"] as? String ?? ""
+            // ⭐⭐⭐⭐⭐ **兼容嵌套形状**（2026-10-25 真机 build253 实证）
+            //   `runBookInfo` 返回的是 `["book": {name, bookUrl, …}]`（**嵌套一层**）
+            //   而判据原来读**顶层** `dict["name"]` ⇒ **永远空** ⇒ 永远判「不可信」
+            //   ⇒ **详情页 100% 失败**（发现/目录/正文都过 ⇒ 因为它们是顶层 key）⭐⭐⭐
+            //   ⇒ 症状离根因极远：引擎明明出对了 ⇒ 却被自己的判据否掉 ⭐
+            //   ⇒ 修法：**两种形状都认**（不改成扁平 ⇒ 免得动到别的调用方）⭐⭐⭐
+            let book = (dict["book"] as? [String: Any]) ?? dict
+            let name = book["name"] as? String ?? ""
+            let url = book["bookUrl"] as? String ?? ""
             return !name.isEmpty && !url.isEmpty
         case "toc":
             let chapters = dict["chapters"] as? [[String: Any]] ?? []
