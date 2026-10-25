@@ -97,3 +97,38 @@ enum AppDecoder {
         fatalError("stub：门禁只做编译检查，不许真跑")
     }
 }
+
+// MARK: - ⭐⭐⭐⭐⭐ `RuleSandbox` 的**可编译片段**（2026-10-25 build254 CI 失败实证）
+//
+// ⚠️⚠️ **为什么单独抽出来**：
+//   `RuleSandbox.swift` 整个文件 import UIKit/WebKit/SwiftUI ⇒ **Linux 编不到**
+//   ⇒ 它的**类型错误**（如 `Self` 在存储属性初始化器里）**沙盒永远抓不到** ⭐⭐⭐
+//   ⇒ 实测：build254 CI 报 `covariant 'Self' type cannot be referenced from
+//     a stored property initializer` ⇒ 沙盒门禁全绿 ⇒ **白等一轮 CI** ⭐⭐⭐
+//
+// ⇒ 办法：把**与纯 Foundation 相关的部分**抽到这里 ⇒ Linux 真编真 typecheck ⭐⭐⭐
+//   ⚠️ **stub 原则不变**：只给签名，不给实现 ⇒ 但这段是**真代码**（要验语义）⭐
+
+/// ⭐⭐⭐ **引擎版本串的拼装 + revision 读取**（与 `RuleSandbox` 里的**真代码逐字一致**）
+///
+/// ⚠️⚠️ **这段必须与 `QiReaderLite/Core/RuleSandbox.swift` 保持一致**
+///   ⇒ 门禁会**比对两边** ⇒ 改了一边忘了另一边 ⇒ 门禁红 ⭐⭐⭐
+enum LegadoEngineInfo {
+    static func version(revision: String) -> String {
+        "legado-engine \(revision) · 老 JS 引擎已退役，只剩新引擎"
+    }
+}
+
+/// ⭐⭐⭐ **revision 常量**（与 `RuleSandbox` 里的**真代码逐字一致**）
+enum EngineRevision {
+    static let generated: String = "unknown"
+}
+
+enum RuleSandboxVersionProbe {
+    /// ⭐⭐⭐⭐⭐ **这里就是 CI 挂过的那一行**：
+    ///   旧写法 `Self.engineRevision` ⇒ `covariant 'Self' type cannot be referenced
+    ///   from a stored property initializer` ⇒ **CI 必挂** ⭐⭐⭐
+    ///   ⇒ 修法：**显式类型名**（`RuleSandboxVersionProbe.engineRevision`）⭐⭐⭐
+    static let engineRevision: String = EngineRevision.generated
+    static let engineVersion = LegadoEngineInfo.version(revision: RuleSandboxVersionProbe.engineRevision)
+}

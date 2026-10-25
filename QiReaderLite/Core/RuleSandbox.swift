@@ -212,7 +212,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///   ⇒ **自证是假的** ⇒ 看日志的人会以为「引擎没变 ⇒ 不是引擎的锅」⇒ **排查被带偏** ⭐⭐⭐
     /// ⇒ 现在：revision 由**引擎包自己**提供（`LegadoEngineInfo.version(revision:)`）⭐⭐⭐
     ///   ⇒ 真实 revision 从**CI 生成的文件**读（`EngineRevision.generated`）⭐⭐⭐
-    static let engineVersion = LegadoEngineInfo.version(revision: Self.engineRevision)
+    static let engineVersion = LegadoEngineInfo.version(revision: RuleSandbox.engineRevision)
 
     /// ⭐⭐⭐⭐⭐ **引擎的真实 revision**（**构建时生成的文件** ⇒ 绝不用手写的假值）
     ///
