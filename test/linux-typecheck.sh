@@ -58,7 +58,7 @@ echo "▶ 类型检查 Foundation 层…"
   QiReaderLite/Core/Book.swift \
   QiReaderLite/Core/SourceVariables.swift \
   QiReaderLite/Core/EngineBackend.swift \
-  QiReaderLite/Core/LegadoCompat.swift \
+  QiReaderLite/Core/HostTools.swift \
   "$OUT/Store.swift" \
   QiReaderLite/Core/SourceService.swift \
   "$OUT/RuleSandbox.swift" \

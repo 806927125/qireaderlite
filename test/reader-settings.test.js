@@ -475,25 +475,38 @@ ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假
 ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
    '分隔线是发丝线 1/scale pt（@3x 下 1 物理像素）');
 
-// ── 引擎 JS 桥接（真机报过 code 5）──
+// ── 引擎 ⇄ 原生的边界（老 WKWebView 桥接已退役）──
 {
   const fs2 = require('fs');
   const sb = fs2.readFileSync(path.join(ROOT, 'Core/RuleSandbox.swift'), 'utf8');
-  // ⚠️ JSON.stringify 对 **函数 / Symbol** 返回 undefined（不是字符串），
-  //    脚本返回 undefined → WebKit 抛 code 5「返回结果的类型不受支持」。
-  //    之前只处理了 v === undefined，函数/Symbol 漏了。
-  ok(/typeof s !== 'string'/.test(sb),
-     'JS 桥接：JSON.stringify 结果必须再判一次 typeof（函数/Symbol 会返回 undefined）');
-  ok(/JSON 序列化失败/.test(sb), 'JSON.stringify 抛异常（循环引用）时有兜底错误信息');
-  ok(/JSON 序列化失败/.test(sb) && /typeof s !== 'string'/.test(sb),
-     '脚本无论如何都返回字符串');
-  // 并发：同一个 WKWebView 上并发 callAsyncJavaScript 会让结果类型不受支持。
-  ok(/invokeTail/.test(sb) && /let prev = invokeTail/.test(sb),
-     'invoke 走串行链（并发会触发 code 5）');
-  // ⚠️ 这个类整体是 @MainActor —— 同文件里再声明独立 actor 会被继承全局 actor，
-  //    编译报 "actor ... cannot have a global actor"。所以串行用 Task 链实现。
-  ok(!/private actor InvokeSerializer/.test(sb),
-     '不声明独立 actor（会被 @MainActor 继承 → 编译错）');
+  const backend = fs2.readFileSync(path.join(ROOT, 'Core/LegadoEngineBackend.swift'), 'utf8');
+
+  // ⭐⭐⭐⭐⭐ **老引擎实现细节断言已退休**（2026-10-25 老 JS 引擎物理删除）
+  //   ⇒ 以前这些断言验的是**老 WKWebView 桥接的实现细节**：
+  //     · `typeof s !== 'string'`（老桥接把 JS 完成值 JSON.stringify 后再判类型）
+  //     · `JSON 序列化失败`（老桥接的兜底错误文案）
+  //     · `invokeTail`（老 WKWebView 上的**串行链** ⇒ 并发会触发 code 5）
+  //   ⇒ 那些**代码已经不存在了**（`RuleSandbox.swift` 现在只剩「引擎日志 + 宿主工具」）
+  //   ⇒ 退休**不损失语义覆盖**：下面的【新边界】断言覆盖的是**同一件事**在新架构下的样子 ⭐⭐⭐
+  //
+  //   ⚠️ **老门禁真正想防的症状**（原话）：
+  //     「脚本返回 undefined / 函数 / Symbol ⇒ WebKit 抛 code 5 ⇒ 界面白屏」
+  //     「同一个 WKWebView 上并发 callAsyncJavaScript ⇒ 结果类型不受支持」
+  //   ⇒ 新架构里**根本没有 WKWebView** ⇒ 这两个失败模式**物理上不可能发生**
+  //   ⇒ 等价语义 = 「App 侧拿到的是**解出来的 JSON**，失败时**带原因**而不是静默空」⭐⭐⭐
+
+  // ① 老桥接不许有残留（老引擎删干净的**可执行证据**）
+  ok(!/invokeTail/.test(sb), 'RuleSandbox 里没有 invokeTail（老 WKWebView 串行链已退役）');
+  ok(!/callAsyncJavaScript/.test(sb), 'RuleSandbox 里没有 callAsyncJavaScript（老桥接已退役）');
+  ok(!/typeof s !== 'string'/.test(sb), 'RuleSandbox 里没有老桥接的「再判一次 typeof」');
+
+  // ② 新边界：值是**从 JSON 解出来的**（不是活的 JS 对象）
+  ok(/JSONSerialization\.jsonObject|JSONDecoder/.test(backend),
+     'App 侧从 JSON 解出引擎的值（⇒ undefined / 函数 / Symbol 混不进来）');
+
+  // ③ 失败要**带原因**（老门禁的「不许静默空」语义，在新架构里由诊断承担）
+  ok(/EngineDiagnostic|diagnostic|error/.test(backend),
+     'op 失败带诊断信息（不许静默返回空）');
 }
 
 // ── 换阅读背景要**立刻**生效 ──

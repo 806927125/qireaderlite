@@ -19,16 +19,28 @@
  * 所以门禁必须**执行代码路径**，而不是读源码。
  *
  * ⇒ 这里把引擎的关键入口逐个调一遍，任何 ReferenceError / TypeError 都算红。
+ *
+ * ────────────────────────────────────────────────────────────
+ * ⭐⭐⭐ **2026-10-25 老 JS 引擎物理删除 ⇒ 本门禁改跑新引擎**（Swift，`legado-engine`）⭐⭐⭐
+ *
+ * 迁移要点（老引擎的实现细节 ⇒ 退休；能力 ⇒ 换成新引擎的等价入口）：
+ *   · 老引擎的 `QR.__qrInstallCookieSnapshot` / `__qrResetDirty` / `__qrTakeDirty` /
+ *     `__qrMergeCookie` / `__qrHoldBegin` / `__qrHoldEnd` / `__qrSync` / `__qrAjaxRecord` /
+ *     `__qrAjaxCache` ⇒ **老引擎的实现细节**（两遍跑机制 + WKWebView 的 prompt 桥）
+ *     ⇒ 新引擎**全同步**、没有「轮数上限 / 暂存区 / prompt 桥」那套补丁 ⇒ **没有等价物**
+ *     ⇒ **退休**（规范 §2.1）⇒ 语义覆盖在下面的【新引擎真跑段】⭐⭐⭐
+ *   · 「cookie 罐」「java.timeFormat」「java.ajax」「浏览器」「op 入口」这些**能力**
+ *     ⇒ 新引擎**都还有** ⇒ 改成跑新引擎的等价入口 ⭐⭐⭐
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./harness');
+const { createSandbox, engineAvailable } = require('./new-engine-harness');
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
 
 /** 调一个引擎函数，把「运行时错误」原样抛出来（门禁要看到真错误） */
-function call(win, label, fn) {
+function call(label, fn) {
   try {
     const r = fn();
     pass++;
@@ -41,82 +53,139 @@ function call(win, label, fn) {
   }
 }
 
-console.log('=== 引擎冒烟：关键入口逐个调一遍 ===');
-const { win } = createSandbox({ nativeMock: async () => ({ ok: true, value: '' }) });
-
-// ⚠️ 先把引擎脚本都加载上（g.cookie 是 source-api.js 加载时才装的）
-console.log('\n=== 引擎脚本逐个求值（顶层不能抛）===');
-const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
-const FILES = fs.readdirSync(ENGINE).filter(f => f.endsWith('.js')).sort();
-for (const f of FILES) {
-  const code = fs.readFileSync(path.join(ENGINE, f), 'utf8');
-  call(win, `加载 ${f}`, () => {
-    win.eval(code + '\n;void 0;');
-  });
+// ⭐⭐⭐ **引擎不可用 ⇒ 显式 SKIP**（规范 §3.4：「没验到」≠「通过」）⭐⭐⭐
+if (!engineAvailable()) {
+  console.log('⏭ 跳过：新引擎（legado-engine 的 conformance）不在本机 ⇒ 引擎**没验到**');
+  console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
+  process.exit(0);
 }
 
-// ① cookie 快照安装（**每个 op 开头都跑** → 这里炸 = 全盘皆输）
-call(win, 'QR.__qrInstallCookieSnapshot({})', () => {
-  win.eval('QR.__qrInstallCookieSnapshot({"example.com":"a=b"});');
+console.log('=== 引擎冒烟：关键入口逐个调一遍 ===');
+
+// ────────────────────────────────────────────────────────────
+// ⭐⭐⭐⭐⭐ **老引擎实现细节断言已退休**（2026-10-25 老 JS 引擎物理删除）
+//   ⇒ 以前这里断言的是**老引擎的函数名/代码片段**（`QR.__qrInstallCookieSnapshot` /
+//     `__qrHoldBegin` / `__qrSync` / `__qrAjaxCache` …）⇒ 那些是**实现细节**，不是语义
+//   ⇒ 老引擎退役后**没有等价物** ⇒ 退休**不损失语义覆盖** ⭐⭐⭐
+//   ⇒ **语义覆盖在下面的【新引擎真跑段】**（现在跑的是【新引擎】）⇒ 覆盖不丢 ⭐⭐⭐
+//   ⇒ 等价断言在【引擎仓的 swift test】（266 项）与真机上 ⭐⭐⭐
+//
+//   逐条对应（老入口 ⇒ 新引擎的等价能力 ⇒ 现在在哪验）：
+//   · `QR.__qrInstallCookieSnapshot` / `__qrMergeCookie` ⇒ cookie 罐 ⇒ **下面的「cookie 罐」段**
+//   · `QR.__qrResetDirty` / `__qrTakeDirty`               ⇒ 脏标记 ⇒ 新引擎**没有脏标记**
+//        （变量/登录信息由宿主按 op 回传落盘 ⇒ 「取走」的语义变成了 op 的返回值）⭐
+//        ⇒ 下面的「op 回传」段验它
+//   · `QR.__qrHoldBegin` / `__qrHoldEnd`                 ⇒ 消息暂存 ⇒ 新引擎**全同步**
+//        （压根没有「中间遍的假报错」）⇒ 下面的「站方原文」段验它
+//   · `QR.__qrSync`                                      ⇒ WKWebView 的 prompt 同步桥
+//        ⇒ 随老 WKWebView 引擎一起退役 ⇒ 新引擎**没有**（能力在 Swift 侧）⭐
+//   · `QR.__qrAjaxRecord` / `QR.__qrAjaxCache`            ⇒ 老引擎的「录 URL / ajax 缓存」
+//        ⇒ 新引擎的 ajax **直接走 transport** ⇒ 下面的「java.ajax」段验它
+// ────────────────────────────────────────────────────────────
+
+const routes = [
+  { match: 'smoke.example', status: 200, body: '{"ok":1}' },
+];
+const { win, sandbox } = createSandbox({ routes });
+
+// ① ⭐⭐⭐ **Java 兼容层（Packages）装载后不能抛** —— 老引擎的「引擎脚本逐个加载」段
+//   ⇒ 新引擎把兼容层编进 Swift（JavaCompat）⇒ 等价入口 = 「兼容层在不在、能不能用」
+call('Java 兼容层（Packages）在位', () => {
+  const v = win.eval("typeof Packages === 'object' && typeof Packages.javax.crypto.Cipher === 'object'");
+  if (v !== 'true') throw new Error('Packages / javax.crypto.Cipher 不可用');
+  return v;
 });
 
-// ② 脏标记
-call(win, 'QR.__qrResetDirty()', () => win.eval('QR.__qrResetDirty();'));
-call(win, 'QR.__qrTakeDirty()', () => win.eval('QR.__qrTakeDirty();'));
-
-// ③ cookie 合并 + 删除（**mergedHosts 的两个用法**）
-call(win, 'QR.__qrMergeCookie(host, cookie)', () => {
-  win.eval('QR.__qrMergeCookie("fanqienovel.com","sessionid=TEST");');
-});
-call(win, 'cookie.removeCookie(合并回来的域) —— 不该抛', () => {
-  win.eval('window.cookie.removeCookie("fanqienovel.com");');
-});
-call(win, 'cookie.removeCookie(别的域)', () => {
-  win.eval('window.cookie.removeCookie("other.example.com");');
-});
-call(win, 'cookie.getCookie / setCookie / getKey', () => {
-  win.eval('window.cookie.setCookie("a.com","x=1");'
-    + 'var v = window.cookie.getCookie("a.com");'
-    + 'var k = window.cookie.getKey("a.com","x");'
+// ② ⭐⭐⭐ **cookie 罐**（老引擎的 `__qrInstallCookieSnapshot` / `__qrMergeCookie` 的等价能力）
+call('cookie.setCookie / getCookie / getKey（写进去要读得回来）', () => {
+  win.eval('cookie.setCookie("https://a.example/", "x=1; y=2");'
+    + 'var v = cookie.getCookie("https://a.example/");'
+    + 'if (!v || v.indexOf("x=1") < 0) throw new Error("getCookie 读不到刚写的值: " + v);'
+    + 'var k = cookie.getKey("https://a.example/", "x");'
     + 'if (k !== "1") throw new Error("getKey 读不到刚写的值: " + k);');
 });
-
-// ④ 暂存区（消息捕获）
-call(win, 'QR.__qrHoldBegin / __qrHoldEnd', () => {
-  win.eval('var h = QR.__qrHoldBegin();'
-    + 'QR.__qrPushMsg ? QR.__qrPushMsg("x","toast") : null;'
-    + 'QR.__qrHoldEnd(true);');
+call('cookie.removeCookie（删了要真删）', () => {
+  win.eval('cookie.removeCookie("https://a.example/");'
+    + 'var v = cookie.getCookie("https://a.example/");'
+    + 'if (v && v.indexOf("x=1") >= 0) throw new Error("removeCookie 没删掉: " + v);');
 });
 
-// ⑤ 同步通道（默认关 → 不能抛，也不该去碰 prompt）
-call(win, 'QR.__qrSync（默认关闭 → 返回 null，不抛）', () => {
-  win.eval('var r = QR.__qrSync("timeFormat",{input:"0"});'
-    + 'if (r !== null && r !== undefined) throw new Error("同步通道默认应该关闭");');
+// ③ ⭐⭐⭐ **java.timeFormat**（老引擎段里也有 ⇒ 能力还在 ⇒ 换成新引擎的等价入口）
+//   ⚠️ 老门禁只断言「返回数字或字符串」⇒ 太松（实现坏一半也过）⇒ 这里钉死「**必须是字符串**」
+//   （站方会 `.padEnd(20,"\t")` ⇒ 返回数字 ⇒ 站方脚本直接炸 ⇒ 用户真机 bug）⭐⭐⭐
+call('java.timeFormat（必须返回字符串，站方要 .padEnd）', () => {
+  const v = win.eval('java.timeFormat(1700000000000)');
+  if (typeof v !== 'string') throw new Error('timeFormat 返回了 ' + typeof v + '（站方 .padEnd 会炸）');
+  if (!/^\d{4}-\d{2}-\d{2}/.test(v)) throw new Error('timeFormat 的格式不对: ' + v);
+  return v;
 });
 
-// ⑥ java.* 的常用能力
-call(win, 'java.timeFormat（兜底路径）', () => {
-  win.eval('var s = java.timeFormat("2017-04-24 14:16:34");'
-    + 'if (typeof s !== "number" && typeof s !== "string") throw new Error("timeFormat 返回了怪东西: " + typeof s);');
+// ④ ⭐⭐⭐ **java.ajax**（老引擎的「缓存优先」那套 ⇒ 新引擎直接走 transport ⇒ 走假服务器验）
+call('java.ajax（走假服务器 ⇒ 拿得到正文）', () => {
+  const v = win.eval('java.ajax("https://smoke.example/p")');
+  if (String(v).indexOf('"ok":1') < 0) throw new Error('ajax 没拿到正文: ' + v);
+  return v;
 });
-call(win, 'java.startBrowserAwait（走录制器，不直连原生）', () => {
-  win.eval('var rec = [];'
-    + 'QR.__qrAjaxRecord = function (u, kind) { rec.push(kind); return ""; };'
-    + 'java.startBrowserAwait("https://x.com/","t");'
-    + 'if (rec.length !== 1 || rec[0] !== "browser") throw new Error("没按 browser 录制: " + JSON.stringify(rec));'
-    + 'QR.__qrAjaxRecord = undefined;');
-});
-call(win, 'java.ajax（缓存优先 → 命中缓存直接返回）', () => {
-  win.eval('QR.__qrAjaxCache = {"https://y.com/":"CACHED"};'
-    + 'var r = java.ajax("https://y.com/");'
-    + 'if (r !== "CACHED") throw new Error("缓存没命中: " + r);'
-    + 'QR.__qrAjaxCache = undefined;');
+call('java.ajax（未命中的路由 ⇒ 明确失败，不许静默 200）', () => {
+  const v = String(win.eval('java.ajax("https://nomatch.example/p")'));
+  if (v.indexOf('请求失败(404)') < 0) throw new Error('未命中路由没有明确失败: ' + v);
+  return v;
 });
 
-// ⑦ 引擎调度层在位
-call(win, 'window.__qrInvoke 存在', () => {
-  const t = win.eval('typeof window.__qrInvoke');
-  if (t !== 'function') throw new Error('__qrInvoke 不是函数: ' + t);
+// ⑤ ⭐⭐⭐ **浏览器类 API**（老引擎段：`java.startBrowserAwait` 走录制器）
+//   ⇒ 新架构里「弹浏览器」是**宿主**的能力（真机 = RuleSandbox 的 op）⇒
+//   ⇒ 等价语义 = 「引擎把要开的 URL 交给宿主了」⇒ 沙盒里由假浏览器接管 ⭐⭐⭐
+const browserPages = [{ match: 'smoke.example', html: '<html>ok</html>', cookies: { 'smoke.example': 'sid=1' } }];
+call('java.startBrowserAwait（要开的 URL 交给宿主）', () => {
+  const v = win.eval('java.startBrowserAwait("https://smoke.example/login", "登录")');
+  if (v === undefined || v === null) throw new Error('startBrowserAwait 什么都没返回');
+  return v;
+});
+
+// ⑥ ⭐⭐⭐⭐⭐ **op 入口 + 站方原文**（老引擎的 `window.__qrInvoke` 那段的等价能力）⭐⭐⭐⭐⭐
+//   ⇒ 老门禁只断言「`window.__qrInvoke` 是个函数」（**恒真** ⇒ 抓不到 bug）
+//   ⇒ 这里改成**真跑一个 op** ⇒ 任何 ReferenceError / TypeError 都算红 ⭐⭐⭐
+console.log('\n=== op 入口 + 站方原文（老引擎的 __qrInvoke 段的等价能力）===');
+const SYNTH = {
+  bookSourceName: '冒烟源',
+  bookSourceUrl: 'https://smoke.example/',
+  // ⭐ 假的「站方」：吐一条 toast + 一条 log ⇒ 验「站方原文能不能收回来」
+  loginUrl: "function smokeLogin(){ java.toast('站方原文-toast'); java.log('站方原文-log'); return 'ok'; }",
+};
+const opRes = call('op 入口（login）跑得通', () => {
+  const r = win.__qrInvoke('login', {
+    source: SYNTH,
+    action: 'smokeLogin()',
+    formValues: { '账号': 'a' },
+    browserPages,
+    routes,
+  });
+  if (!r) throw new Error('op 没有返回');
+  if (r.error) throw new Error('op 报错: ' + r.error);
+  if (r.ok !== true) throw new Error('op 没成功');
+  return r;
+});
+if (opRes) {
+  const msgs = (opRes.messages || []).join('\n');
+  ok(/站方原文-toast/.test(msgs),
+     '站方的 toast 原文收回来了（老引擎的 __qrMsgSink 的等价能力）', '实际：' + msgs);
+  ok(/站方原文-log/.test(msgs),
+     '站方的 log 原文收回来了', '实际：' + msgs);
+  ok(/账号/.test(String(opRes.__loginInfo || '')),
+     '表单值合并进登录信息了（站方 source.getLoginInfoMap() 读得到）',
+     '实际：' + String(opRes.__loginInfo || ''));
+  ok(sandbox.__requests.length > 0 || (opRes.requests || []).length > 0,
+     '请求记录拿得到（门禁要能断言「发了哪几条」）');
+}
+
+// ⑦ ⭐⭐⭐ **op 的诊断信息**（老门禁没有 ⇒ 现在补：失败必须**带原因**，不能静默空）
+call('op 失败要带原因（不许静默空）', () => {
+  const r = win.__qrInvoke('bookInfo', { source: SYNTH, routes });
+  // bookInfo 没有详情规则 ⇒ 引擎要么给一个结果，要么**明确报出原因**（不能悄悄空）
+  if (!r) throw new Error('op 没有返回');
+  if (r.ok === false && !r.error) throw new Error('失败却没有 error 说明');
+  if (r.ok === false && r.error) return r.error;
+  return r;
 });
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);

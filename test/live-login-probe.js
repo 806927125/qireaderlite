@@ -14,7 +14,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./harness');
+const { createSandbox } = require('./new-engine-harness');
 
 const SRC = process.env.SRC_OUT || [
   '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json',

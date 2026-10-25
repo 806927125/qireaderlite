@@ -13,7 +13,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./harness');
+const { createSandbox } = require('./new-engine-harness');
 
 const SRC = process.env.SRC ||
   path.join(__dirname, '..', 'sources', '🍅大灰狼聚合5.9.30-轻阅适配版v2.json');

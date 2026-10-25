@@ -3,17 +3,37 @@
 //
 // ⚠️ 测试向量**不手敲** —— 全部用 Node 的 crypto 现算，再跟纯 JS 实现交叉比对。
 //    手抄的常量一定会抄错（上次纯 JS AES 就是栽在 S 盒上）。
+//
+// ⭐⭐⭐ **2026-10-25：老 JS 引擎物理删除 ⇒ 装载源换了地方**
+//   以前读的是独立文件 `legado-engine/Sources/LegadoCore/packages-native.js`
+//   ⇒ 那个路径**从来没存在过**（老引擎的 JS 在 `QiReaderLite/Resources/engine/`，已删）
+//   ⇒ 门禁一直 ENOENT 崩着 ⭐⭐⭐
+//   现在：新引擎的这两段 JS 是**写在 Swift 里的 raw string**
+//   （`JavaCompat.packagesNativeSource` / `packagesStubSource`）
+//   ⇒ **从 Swift 里抠出来**（`test/engine-js-artifacts.js`）⇒ 而且**必须整组拼起来**
+//      （Swift 侧是 `.joined(separator: "\n")` ⇒ 单独一块是残缺的）⭐⭐⭐
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const vm = require('vm');
-
-const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
+const { artifactFrom } = require('./engine-js-artifacts');
 
 let failed = 0, passed = 0;
 function check(name, cond, extra) {
   if (cond) { passed++; console.log('  ✓', name); }
   else { failed++; console.log('  ✗', name, extra === undefined ? '' : ('→ ' + extra)); }
+}
+
+// ── 装载被测脚本（从 Swift 里抠出**拼好之后**的产物）──
+const NATIVE_JS = artifactFrom('JS/JavaCompat.swift', 'packagesNativeSource');
+const STUB_JS = artifactFrom('JS/JavaCompat.swift', 'packagesStubSource');
+
+if (!NATIVE_JS || !STUB_JS) {
+  // ⭐⭐⭐ **显式 SKIP，不许崩**（规范 §3.4）：抠不出来 ⇒ 没验到 ≠ 通过
+  console.log('=== 跳过：引擎源码不在本机 / 抠不出 JS 产物 ⇒ 这条链路**没验到** ===');
+  console.log('  ⚠️ 本次**没验到**（不等于通过）');
+  console.log('\npackages-native 门禁：跳过（没验到）');
+  process.exit(0);
 }
 
 // ── 装载被测脚本 ──
@@ -25,8 +45,7 @@ const sandbox = {
 };
 sandbox.window = sandbox; sandbox.globalThis = sandbox; sandbox.self = sandbox;
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(ENGINE, 'packages-native.js'), 'utf8'), sandbox,
-                { filename: 'packages-native.js' });
+vm.runInContext(NATIVE_JS, sandbox, { filename: 'packages-native.js' });
 
 const N = sandbox;
 
@@ -204,9 +223,8 @@ console.log('\n=== 6. 集成：packages_stub.js + packages-native.js 端到端 =
   s2.window = s2; s2.globalThis = s2; s2.self = s2;
   vm.createContext(s2);
   // 先 native，后 stub（顺序不能反）
-  vm.runInContext(fs.readFileSync(path.join(ENGINE, 'packages-native.js'), 'utf8'), s2);
-  vm.runInContext(fs.readFileSync(path.join(ENGINE, 'packages_stub.js'), 'utf8'), s2,
-                  { filename: 'packages_stub.js' });
+  vm.runInContext(NATIVE_JS, s2, { filename: 'packages-native.js' });
+  vm.runInContext(STUB_JS, s2, { filename: 'packages_stub.js' });
   const P = s2.Packages;
   check('Packages 命名空间存在', !!P);
   check('javax.crypto.Cipher 存在', !!(P && P.javax && P.javax.crypto && P.javax.crypto.Cipher));

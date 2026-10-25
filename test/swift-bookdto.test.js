@@ -22,12 +22,13 @@ function ok(c, label, extra) {
 const svc = fs.readFileSync(path.join(ROOT, 'Core/SourceService.swift'), 'utf8');
 const bsw = fs.readFileSync(path.join(ROOT, 'Core/BookSource.swift'), 'utf8');
 
-// 引擎 bookInfo 实际会返回哪些 key
-const engine = fs.readFileSync(path.join(ROOT, 'Resources/engine/engine.js'), 'utf8');
-const m = /book: \{([\s\S]*?)\}\s*;?\s*\n/.exec(
-  engine.slice(engine.indexOf('book: {', engine.indexOf('bookInfo: function')))
-);
-const engineKeys = (m ? (m[1].match(/(\w+):/g) || []) : []).map(s => s.replace(':', ''));
+// ⭐⭐⭐⭐⭐ **引擎 bookInfo 实际会返回哪些 key** —— 现在读【新引擎】（老 JS 引擎已物理删除）
+//   ⇒ 新引擎的 `BookInfo` 字段（Swift）⇒ **验的是真正在跑的那份**⭐⭐⭐
+const { engineSwiftSrc } = require('./engine-gate-helpers.js');
+const engineInfoSrc = engineSwiftSrc('Pipeline/Models.swift');
+const engineBiBlock = /public struct BookInfo[\s\S]*?public init\(/.exec(engineInfoSrc);
+const engineKeys = (engineBiBlock ? (engineBiBlock[0].match(/public var (\w+):/g) || []) : [])
+  .map(s => s.replace('public var ', '').replace(':', ''));
 
 console.log('\n── 引擎 bookInfo 返回的字段 ──');
 console.log('  ' + engineKeys.join(', '));
@@ -37,6 +38,13 @@ const dtoBlock = /struct BookDTO: Codable \{([\s\S]*?)\n    \}/.exec(svc);
 ok(!!dtoBlock, '能定位到 BookDTO 结构体');
 const dto = dtoBlock ? dtoBlock[1] : '';
 for (const k of engineKeys) {
+  // ⭐⭐⭐ `sourceName` 不在 BookDTO 里（它在 `Book` 上 ⇒ 由 `toBook` 单独填）
+  //   ⇒ 引擎多返回的字段**不该**逼着 DTO 声明（否则「少字段」就会炸）⭐⭐⭐
+  if (k === 'sourceName') {
+    const bk = fs.readFileSync(path.join(ROOT, 'Core/Book.swift'), 'utf8');
+    ok(/var sourceName: String/.test(bk), 'sourceName 在 Book 上（不在 BookDTO）');
+    continue;
+  }
   ok(new RegExp(`var ${k}\\s*:`).test(dto), `BookDTO 声明了 ${k}`);
 }
 

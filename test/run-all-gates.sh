@@ -27,6 +27,9 @@ declare -a GATES=(
   "engine-lint:test/engine-lint.test.js"
   "engine-smoke:test/engine-smoke.test.js"
   "login-card:test/live-login-card.test.js"
+  # ⭐⭐⭐ 登录流程的端到端联调（2026-10-26 补进列表）
+  #   ⇒ 这个门禁**从来没被 CI 跑过**（文件在、列表里没有）⇒ 登录链路一次都没被验过 ⭐⭐⭐
+  "login-flow:test/live-login-flow.test.js"
   "toc-diag-truth:test/toc-diag-truth.test.js"
   "b64-url-mangle:test/b64-url-mangle.test.js"
   "ajax-retry:test/ajax-retry.test.js"
@@ -91,6 +94,12 @@ declare -a GATES=(
   #   runBookInfo 返回 ["book": {...}]（嵌套）而 isTrustworthy 读顶层 ⇒ 详情页 100% 失败
   #   ⇒ 沙盒对拍**直接调引擎** ⇒ 绕过 App 侧这层 ⇒ 永远抓不到 ⭐⭐⭐
   "op-shape-consistency:test/op-shape-consistency.test.js"
+  # ⭐⭐⭐⭐⭐ **「生成的 JS」必须过语法检查**（2026-10-25 事故）：
+  #   引擎的 Node 后端是一大段写在 Swift 里的 JS ⇒ 那天有人在【模板字符串里的注释】
+  #   写了个反引号 ⇒ 模板被截断 ⇒ 整个 Node 后端语法错 ⇒ 门禁大面积变红，
+  #   而报的是「Expression expected」⇒ 离根因十万八千里（找了好几分钟）⭐⭐⭐
+  #   ⇒ 现在**产物本身**先过一遍 `node --check` + 反引号配平 ⇒ 错在哪行指哪行
+  "generated-js-syntax:test/generated-js-syntax.test.js"
 )
 
 TOTAL_PASS=0
@@ -130,8 +139,11 @@ for entry in "${GATES[@]}"; do
   #    ⚠️ 不能拿 "Error" 裸匹配 —— 测试用例名里就有「→ Error」这种字样
   #    （jsoup-xpath 的 '[xpath] $$$$ → Error'），会把好门禁误判成崩了。
   #    只认**真异常**的样子：xxxError: / 行首 Error: / ENOENT:
+  #    ⚠️⚠️ **必须锚在【行首】**（2026-10-26 迁移门禁时踩到）：
+  #      站方 JS 自己会把 catch 到的异常**当消息吐出来**（java.log(e)）
+  #      ⇒ 门禁把原文打印出来时，行里就有 TypeError ⇒ 不锚行首 ⇒ **好门禁被误判成崩了**⭐⭐⭐
   crash="$(printf '%s' "$out" \
-    | grep -oE '(ReferenceError|SyntaxError|TypeError|RangeError|ENOENT|Cannot find module)[^\\n]{0,80}' \
+    | grep -oE '^[[:space:]]*(ReferenceError|SyntaxError|TypeError|RangeError|ENOENT|Cannot find module)[^\\n]{0,80}' \
     | head -1)"
   if [ -z "$crash" ]; then
     crash="$(printf '%s' "$out" | grep -oE '^[[:space:]]*Error:[^\\n]{0,80}' | head -1 | sed 's/^[[:space:]]*//')"

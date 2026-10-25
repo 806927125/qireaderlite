@@ -12,7 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { createSandbox } = require('./harness');
+const { createSandbox } = require('./new-engine-harness');
 
 // ⚠️⚠️ **老引擎内部有未捕获的 promise rejection**（java-api.js 的原生桥）
 //   ⇒ 不吞掉的话，整个 Node 进程会挂 ⇒ 对拍跑到一半就死 ⭐

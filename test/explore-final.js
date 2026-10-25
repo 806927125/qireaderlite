@@ -2,7 +2,7 @@
    顺手产出可导入的书源文件。
    跑法：node test/explore-final.js */
 const fs = require('fs');
-const { createSandbox } = require('./harness');
+const { createSandbox } = require('./new-engine-harness');
 
 const IN = '/workspace/发现可用书源.json';
 const OUT = '/workspace/发现可用书源.json';

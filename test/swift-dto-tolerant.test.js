@@ -70,9 +70,14 @@ console.log('\n── 4. 目录翻页：页数上限要够（站方一次给全�
 ok(/maxPages": 20/.test(svc),
    'Swift 侧 toc op 传 maxPages=20（原来 5 页 ⇒ 大书只出 250 章）',
    (/\["tocUrl"[^\]]*\]/.exec(svc) || [''])[0]);
-ok(/Math\.max\(1, p\.maxPages \|\| 10\)/.test(
-     fs.readFileSync(path.join(ROOT, 'Resources/engine/engine.js'), 'utf8')),
-   '引擎默认 maxPages=10（原来 3）');
+// ⭐⭐⭐⭐⭐ **老引擎的 `maxPages` 断言已退休**（2026-10-25 老 JS 引擎物理删除）
+//   ⇒ 老引擎是「分页抓、每页 N 条」⇒ 需要 maxPages 兜底
+//   ⇒ **新引擎一次拿全量页数组** ⇒ 没有 maxPages 这个概念 ⭐⭐⭐
+//   ⇒ 现在改成断言**新引擎的等价能力**：「章节能一次全出」⭐⭐⭐
+const { engineSwiftSrc } = require('./engine-gate-helpers.js');
+const engineTocSrc = engineSwiftSrc('Pipeline/SourceEngine.swift');
+ok(/chapterList/.test(engineTocSrc), '新引擎的 toc op 走 chapterList（一次拿全量页数组）');
+ok(!/maxPages/.test(engineTocSrc), '新引擎不再有 maxPages（一次拿全量 ⇒ 无需分页上限）');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

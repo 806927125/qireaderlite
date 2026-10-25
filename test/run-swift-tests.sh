@@ -49,10 +49,10 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # ⚠️ swiftc 编译多个文件时，入口文件必须叫 main.swift（顶层代码限制）
-cp test/legado-compat-test.swift "$TMP/main.swift"
+cp test/host-tools-test.swift "$TMP/main.swift"
 
-echo "=== 编译 Core/LegadoCompat.swift（swiftc 真编）==="
-if ! "$SWIFTC" -O "$TMP/main.swift" QiReaderLite/Core/LegadoCompat.swift -o "$TMP/compat-test" 2>"$TMP/err.txt"; then
+echo "=== 编译 Core/HostTools.swift（swiftc 真编）==="
+if ! "$SWIFTC" -O "$TMP/main.swift" QiReaderLite/Core/HostTools.swift -o "$TMP/compat-test" 2>"$TMP/err.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err.txt" | head -30
   exit 1
@@ -210,7 +210,7 @@ if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
         test/linux-shims/EngineBackendStubs.swift \
         QiReaderLite/Core/BookSource.swift \
         QiReaderLite/Core/SourceRawArchive.swift \
-        QiReaderLite/Core/LegadoCompat.swift \
+        QiReaderLite/Core/HostTools.swift \
         QiReaderLite/Core/SourceVariables.swift \
         QiReaderLite/Core/EngineBackend.swift \
         QiReaderLite/Core/ServiceError.swift \

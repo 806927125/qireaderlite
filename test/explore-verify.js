@@ -3,7 +3,7 @@
    跑法：node test/explore-verify.js [并发数] */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./harness');
+const { createSandbox } = require('./new-engine-harness');
 
 const IN = process.env.IN || '/workspace/发现可用书源.json';
 const OUT = process.env.OUT || '/workspace/发现可用书源-全链路.json';

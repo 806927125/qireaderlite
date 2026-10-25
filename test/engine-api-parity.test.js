@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 
 const QY_JS = process.env.QY_JS || '/workspace/qy2027/Payload/栖阅.app/jsoup_bridge.js';
-const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
+const ENGINE = path.join(__dirname, '..', '..', 'legado-engine', 'Sources', 'LegadoCore');
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
@@ -71,7 +71,7 @@ diff('_JXNode', 'JXNode');
   //    是 Array.prototype 自带的，源码里当然找不到 e.forEach = function。
   //    所以最终以**运行时**为准。
   {
-    const { createSandbox } = require('./harness');
+    const { createSandbox } = require('./new-engine-harness');
     const { win } = createSandbox({ origin: 'https://example.com/' });
     const els = win.org.jsoup.Jsoup.parse('<html><body><p class="c">a</p><p class="c">b</p></body></html>')
       .select('p.c');
@@ -87,7 +87,7 @@ diff('_JXNode', 'JXNode');
 const exposed = [...new Set((qy.match(/Packages\.org\.[A-Za-z0-9_.]+/g) || [])
   .filter(t => !/\.__javaClassName$/.test(t)))];
 {
-  const { createSandbox } = require('./harness');
+  const { createSandbox } = require('./new-engine-harness');
   const { win } = createSandbox({ origin: 'https://example.com/' });
   const get = p => exposed
     .filter(t => t.endsWith(p))

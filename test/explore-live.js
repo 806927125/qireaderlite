@@ -3,7 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./harness');
+const { createSandbox } = require('./new-engine-harness');
 
 const DIR = process.env.LEGADO_DIR || '/tmp/legado/sources';
 const WANT = process.env.WANT
