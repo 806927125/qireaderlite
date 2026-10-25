@@ -14,6 +14,9 @@ struct Book: Codable, Identifiable, Hashable {
     var author: String = ""
     var intro: String = ""
     var kind: String = ""
+    /// ⭐⭐⭐ **分组**（站方的 `ruleBookInfo.group` / `category`）
+    /// ⚠️ 2026-10-25 真机：详情页那格「分组」之前**硬编码「未分组」** ⇒ 现在取站方真值 ⭐⭐⭐
+    var group: String = ""
     var lastChapter: String = ""
     var coverUrl: String = ""
     var wordCount: String = ""
@@ -42,6 +45,7 @@ struct Book: Codable, Identifiable, Hashable {
         b.author   = pick(info.author, author)
         b.intro    = pick(info.intro, intro)
         b.kind     = pick(info.kind, kind)
+        b.group    = pick(info.group, group)
         b.lastChapter = pick(info.lastChapter, lastChapter)
         b.coverUrl = pick(info.coverUrl, coverUrl)
         b.wordCount = pick(info.wordCount, wordCount)
