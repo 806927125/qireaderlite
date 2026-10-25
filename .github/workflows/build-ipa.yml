@@ -51,15 +51,40 @@ jobs:
             -configuration Release -sdk iphoneos -derivedDataPath build/dd \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
             build > b.log 2>&1 || true
-          # ⭐⭐⭐ 抓引擎真实 revision（SPM resolve 的输出里）⇒ 拿不到就明说 unknown（**绝不手写**）⭐
-          LEGADO_REV="$(grep -aoE 'Checking out main \([0-9a-f]+\)' b.log | head -1 | grep -oE '[0-9a-f]{7,40}' || true)"
+          # ⭐⭐⭐ 抓引擎真实 revision
+          #   ⚠️⚠️ **别去 grep `b.log`**（那句 `Checking out main (...)` 在 **SPM resolve 的输出**里
+          #   ⇒ 不在 b.log ⇒ 抓不到 ⇒ 注入成了空值 ⇒ 二进制里显示 unknown）⭐⭐⭐
+          #   ⇒ 正解：**直接读 SPM checkout 出来的引擎目录的 git HEAD** ⇒ 那是真在跑的 revision ⭐⭐⭐
+          ENG_DIR="build/dd/SourcePackages/checkouts/legado-engine"
+          LEGADO_REV="$(git -C "$ENG_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)"
           if [ -z "$LEGADO_REV" ]; then LEGADO_REV="unknown"; fi
           echo "注入的引擎 revision = $LEGADO_REV"
-          # ⭐ 带注入再编一次（**增量** ⇒ 只重编受影响的 ⇒ 不多花几分钟）⭐
+          # ⭐⭐⭐⭐⭐ **生成 revision 文件**（2026-10-25 真机教训 ⇒ 不用 `-D` 宏）
+          #   ⚠️⚠️ **为什么不用 `-D`**：Swift 的条件编译标志**不带值**
+          #     （`-DLEGADO_REVISION=xxx` ⇒ 告警 `flags do not have values in Swift`）⭐⭐⭐
+          #   ⇒ 而且 `LegadoCore` 是 SPM 依赖 target ⇒ App 的 `OTHER_SWIFT_FLAGS` 传不进去 ⭐⭐⭐
+          #   ⇒ **生成一个 Swift 文件**才是可靠通道（pbxproj 是同步 root group ⇒ 新文件自动进 target）⭐⭐⭐
+          # ⭐⭐⭐ **用 python 生成**（不用 heredoc ⇒ 绕开 YAML 缩进/tab 的坑）⭐⭐⭐
+          #   ⚠️ YAML 的 run 块里 heredoc 的缩进极难控制（tab 会被 yaml 处理）⇒ 别用 ⭐⭐⭐
+          LEGADO_REV="$LEGADO_REV" python3 - <<'PYGEN'
+          import os, pathlib
+          rev = os.environ.get("LEGADO_REV", "unknown")
+          p = pathlib.Path("QiReaderLite/Core/EngineRevision.generated.swift")
+          p.write_text(
+              "// ⭐⭐⭐⭐⭐ **引擎 revision（CI 生成 ⇒ 真值）** —— **不许手改**\n"
+              "// ⚠️ 自动生成：CI 用「SPM checkout 出来的引擎目录的 git HEAD」覆写 ⭐⭐⭐\n"
+              "enum EngineRevision {\n"
+              "    /// ⭐ 真实 revision（CI 注入）\n"
+              f"    static let generated: String = \"{rev}\"\n"
+              "}\n",
+              encoding="utf-8")
+          print("--- 生成的内容 ---")
+          print(p.read_text(encoding="utf-8"))
+          PYGEN
+          # ⭐⭐⭐ **必须重新编译**（生成的文件要进二进制 ⇒ 增量重编受影响的 target）⭐⭐⭐
           xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
             -configuration Release -sdk iphoneos -derivedDataPath build/dd \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
-            OTHER_SWIFT_FLAGS="$(inherited) -DLEGADO_REVISION=\"$LEGADO_REV\"" \
             build > b.log 2>&1 || true
           echo "===== 编译错误 ====="
           grep "error:" b.log | sort -u | head -40

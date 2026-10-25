@@ -210,9 +210,26 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     /// ⚠️⚠️ **2026-10-25 真机教训**：之前这里是**手写**的 revision
     ///   ⇒ build253 实际跑 `8d206b5`，界面却显示 `c28de9b`（**老值**）⭐⭐⭐
     ///   ⇒ **自证是假的** ⇒ 看日志的人会以为「引擎没变 ⇒ 不是引擎的锅」⇒ **排查被带偏** ⭐⭐⭐
-    /// ⇒ 现在：revision 由**引擎包自己**提供（`LegadoEngineInfo.revision`）
-    ///   ⇒ CI 构建时用 `-DLEGADO_REVISION=<sha>` 注入 ⇒ **显示的永远是真在跑的** ⭐⭐⭐
-    static let engineVersion = LegadoEngineInfo.version
+    /// ⇒ 现在：revision 由**引擎包自己**提供（`LegadoEngineInfo.version(revision:)`）⭐⭐⭐
+    ///   ⇒ 真实 revision 从**CI 生成的文件**读（`EngineRevision.generated`）⭐⭐⭐
+    static let engineVersion = LegadoEngineInfo.version(revision: Self.engineRevision)
+
+    /// ⭐⭐⭐⭐⭐ **引擎的真实 revision**（**构建时生成的文件** ⇒ 绝不用手写的假值）
+    ///
+    /// ⚠️⚠️ **2026-10-25 真机教训**：之前这里是**手写**的 ⇒ build253 实际跑 `8d206b5`，
+    ///   界面却显示 `c28de9b`（老值）⇒ **假证据** ⇒ 把排查带偏了 ⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么不能用 `-D` 宏**（实测踩过）：
+    ///   Swift 的条件编译标志是**「有/无」**，**不带值**
+    ///   （`-DLEGADO_REVISION=xxx` ⇒ 编译告警 `flags do not have values in Swift`）⭐⭐⭐
+    ///   ⇒ 就算传进去也读不到值 ⇒ `#if` 分支里拿不到 revision ⭐⭐⭐
+    ///   ⇒ 而且 `LegadoCore` 是 **SPM 依赖 target** ⇒ App target 的 `OTHER_SWIFT_FLAGS`
+    ///   **根本传不进它**（实测：只出现在 App target 的 SwiftCompile 命令行里）⭐⭐⭐
+    ///
+    /// ⇒ 正解：**CI 生成一个 Swift 文件**（`EngineRevision.generated.swift`）
+    ///   ⇒ 里面写 `static let generated = "89de55f67e3d"` ⇒ 编译进去 ⇒ **真值** ⭐⭐⭐
+    ///   ⇒ 拿不到 ⇒ `"unknown"` ⇒ **明说不知道**（绝不含糊其辞）⭐⭐⭐
+    static let engineRevision: String = EngineRevision.generated
 
     /// 给界面用的一行状态
     var statusText: String {
