@@ -45,16 +45,22 @@ jobs:
           # ⭐⭐⭐ **注入引擎的真实 revision**（2026-10-25 真机教训）
           #   之前 App 界面里的引擎 revision 是**手写**的 ⇒ 显示的跟真在跑的不一致
           #   ⇒ 自证是假的 ⇒ 把排查带偏了 ⇒ 现在从 checkout 日志里**抓真值**注入 ⭐⭐⭐
-          # ⭐ 先跑一次 xcodebuild（**不带注入**）⇒ 拿到 SPM resolve 的真实 checkout 信息
-          #   （`Checking out main (8d206b5)`）⇒ 从中抓引擎 revision ⭐⭐⭐
+          # ⭐⭐⭐ **只解析依赖，不编译**（2026-10-25 build254 实证踩过）
+          #   ⚠️ 之前是「先编一次 ⇒ 生成文件 ⇒ 再编一次」
+          #   ⇒ **第二次增量编译没重编那个文件** ⇒ 二进制里还是第一次的 "unknown" ⭐⭐⭐
+          #   ⇒ 正解：**先 `-resolvePackageDependencies`**（只拉依赖，不编译 ⇒ 快）
+          #   ⇒ 拿到 SPM checkout 出来的引擎目录 ⇒ 生成文件 ⇒ **然后只编译一次** ⭐⭐⭐
+          # ⚠️⚠️ **必须用同一个 `-derivedDataPath`** ⇒ 否则 checkout 落在**另一个目录**
+          #   ⇒ 后面 `git -C build/dd/SourcePackages/checkouts/legado-engine` 就找不到 ⭐⭐⭐
           xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
             -configuration Release -sdk iphoneos -derivedDataPath build/dd \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
-            build > b.log 2>&1 || true
-          # ⭐⭐⭐ 抓引擎真实 revision
+            -resolvePackageDependencies \
+            > resolve.log 2>&1 || true
+          # ⚠️ resolve 失败也要看得见（否则后面 revision 抓不到 ⇒ 显示 unknown）
+          grep -E "error:|Checking out main" resolve.log | head -10 || true
+          # ⭐⭐⭐ 抓引擎真实 revision（**直接读 SPM checkout 出来的引擎目录的 git HEAD**）
           #   ⚠️⚠️ **别去 grep `b.log`**（那句 `Checking out main (...)` 在 **SPM resolve 的输出**里
           #   ⇒ 不在 b.log ⇒ 抓不到 ⇒ 注入成了空值 ⇒ 二进制里显示 unknown）⭐⭐⭐
-          #   ⇒ 正解：**直接读 SPM checkout 出来的引擎目录的 git HEAD** ⇒ 那是真在跑的 revision ⭐⭐⭐
           ENG_DIR="build/dd/SourcePackages/checkouts/legado-engine"
           LEGADO_REV="$(git -C "$ENG_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)"
           if [ -z "$LEGADO_REV" ]; then LEGADO_REV="unknown"; fi
@@ -81,7 +87,7 @@ jobs:
           print("--- 生成的内容 ---")
           print(p.read_text(encoding="utf-8"))
           PYGEN
-          # ⭐⭐⭐ **必须重新编译**（生成的文件要进二进制 ⇒ 增量重编受影响的 target）⭐⭐⭐
+          # ⭐⭐⭐ **只编译一次**（生成的文件在编译**之前**就位 ⇒ 一定会进二进制）⭐⭐⭐
           xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
             -configuration Release -sdk iphoneos -derivedDataPath build/dd \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
