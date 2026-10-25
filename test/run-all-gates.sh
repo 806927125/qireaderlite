@@ -83,6 +83,10 @@ declare -a GATES=(
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
   "real-timeout-guard:test/real-timeout-guard.test.js"
+  # ⭐⭐⭐⭐⭐ **Linux 编译门禁**（2026-10-25 build253 CI 失败事故）：
+  #   改了 SourceService.swift 沙盒却全绿 ⇒ 因为它**根本没被编过** ⇒ 多一个 } 就把 CI 挂了
+  #   ⇒ 现在用 stub 让它**真被 swiftc 编译** ⇒ 3 秒抓到 ⇒ 不用等 5 分钟 CI
+  "linux-compile:bash test/linux-compile-gate.sh"
 )
 
 TOTAL_PASS=0

@@ -316,71 +316,7 @@ final class SourceService {
     static func withRealTimeout<T>(seconds: Double,
                                   work: @escaping () throws -> T,
                                   onTimeout: @escaping () throws -> Void) async throws -> T {
-        // ⭐ **一次性闸门**：超时信号与引擎线程**谁先到谁赢** ⇒ 不会重复 resume
-        // ⚠️ **嵌套类型不能捕获外层作用域** ⇒ `onTimeout` 靠初始化参数传进来 ⭐
-        final class Gate: @unchecked Sendable {
-            private let lock = NSLock()
-            private var cont: CheckedContinuation<T, Error>?
-            private var finished = false
-            private var timer: DispatchSourceTimer?
-            /// ⭐ 超时补救（由外层传入 ⇒ 闭包不捕获外层作用域）
-            private let onTimeout: () throws -> Void
-
-            init(onTimeout: @escaping () throws -> Void) { self.onTimeout = onTimeout }
-
-            /// ⭐ 引擎那边完成 ⇒ 尝试恢复
-            func succeed(_ value: T) { finish(.success(value)) }
-            /// ⭐ 引擎那边抛错 ⇒ 尝试恢复
-            func fail(_ error: Error) { finish(.failure(error)) }
-            /// ⭐ 超时信号 ⇒ 尝试恢复（**只对尚未完成的那一次生效**）
-            func timeout() {
-                // ⭐⭐⭐ **超时后先跑补救**（换掉卡死的会话 / 熔断）⇒ 补救抛错就抛那个错
-                lock.lock()
-                let already = finished
-                lock.unlock()
-                if !already {
-                    do {
-                        try onTimeout()
-                    } catch {
-                        finish(.failure(error))
-                        return
-                    }
-                }
-                finish(.failure(ServiceError.engineFailed("超时")))
-            }
-
-            private func finish(_ r: Result<T, Error>) {
-                lock.lock()
-                if finished { lock.unlock(); return }
-                finished = true
-                let c = cont
-                cont = nil
-                let t = timer
-                timer = nil
-                lock.unlock()
-                t?.cancel()
-                c?.resume(with: r)
-            }
-
-            /// 装上 continuation 并起超时定时器
-            func arm(_ c: CheckedContinuation<T, Error>, timeout: Double) {
-                lock.lock()
-                if finished {
-                    lock.unlock()
-                    c.resume(throwing: ServiceError.engineFailed("超时"))
-                    return
-                }
-                cont = c
-                lock.unlock()
-                let t = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-                t.schedule(deadline: .now() + timeout)
-                t.setEventHandler { [weak self] in self?.timeout() }
-                lock.lock(); timer = t; lock.unlock()
-                t.resume()
-            }
-        }
-
-        let gate = Gate(onTimeout: onTimeout)
+        let gate = TimeoutGate<T>(onTimeout: onTimeout)
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<T, Error>) in
             gate.arm(cont, timeout: seconds)
             // ⭐ 引擎调用跑在**后台队列**（引擎内部全同步 ⇒ 不能占主线程）
@@ -393,7 +329,6 @@ final class SourceService {
                 }
             }
         }
-    }
     }
 
     /// ⭐⭐⭐⭐⭐ **新引擎的结果可不可信**（不可信就当失败 ⇒ 如实告诉用户）
@@ -462,7 +397,11 @@ final class SourceService {
         }
     }
 
-    private static func decode<T: Decodable>(_ type: T.Type, from raw: Any?) throws -> T {
+    /// ⭐⭐⭐ **纯函数 ⇒ 标 `nonisolated`**（2026-10-25 build253 编译门禁抓到）
+    ///   · 它只在后台线程被调（`decodeAsync`）⇒ 而类整体标了 `@MainActor`
+    ///   ⇒ 不标 `nonisolated` ⇒ **主 actor 隔离的方法被后台线程调** ⇒ 编译告警/错误
+    ///   ⇒ 标了之后：① 语义正确（纯解码，不碰任何 UIKit/主线程状态）② Swift 6 模式也能编 ⭐⭐⭐
+    private nonisolated static func decode<T: Decodable>(_ type: T.Type, from raw: Any?) throws -> T {
         guard let obj = raw, !(obj is NSNull) else { throw ServiceError.badPayload }
         if let dict = obj as? [String: Any], let msg = dict["error"] as? String, !msg.isEmpty {
             throw ServiceError.engineFailed(msg)
@@ -1223,6 +1162,98 @@ extension Book {
          "variables": [String: String]()]
         for (rk, rv) in raw { if out[rk] == nil { out[rk] = rv } }
         return out
+    }
+}
+
+// MARK: - ⭐⭐⭐⭐⭐ 真超时的「一次性闸门」（2026-10-25 真机闪退的修法）
+
+/// ⭐⭐⭐ **真超时专用错误**（放在顶层 ⇒ `TimeoutGate` 能引用）
+struct TimeoutGateError: LocalizedError {
+    /// ⭐ 静态构造（`TimeoutGateError.timedOut` ⇒ 是个**实例**，不是 Bool）
+    static let timedOut = TimeoutGateError()
+    var errorDescription: String? { "引擎调用超时（站方 JS 卡住或服务器没响应）" }
+}
+
+/// ⭐⭐⭐⭐⭐ **一次性 resume 闸门** —— 站方 JS 死循环时，**超时信号必须能独立返回**
+///
+/// ⚠️⚠️ **为什么不能用 `withThrowingTaskGroup`**：
+///   TaskGroup 退出时**必须等所有子任务结束** ⇒ 站方 JS 死循环那个子任务永不结束
+///   ⇒ `group.cancelAll()` 救不了它 ⇒ **超时永远不生效**
+///   ⇒ 沙盒实测：1 秒超时 ⇒ **实际耗时 8 秒** ⭐⭐⭐
+///   ⇒ 站方 JS 死循环在 App 进程内 100% CPU 空转 ⇒ 设备发烫 ⇒ **iOS 热保护杀 App**
+///   ⇒ 表现为「闪退」（系统杀的 ⇒ 没有崩溃日志 ⇒ 之前一直查不到）⭐⭐⭐
+///
+/// ⇒ 本类型：**引擎线程**与**超时定时器**谁先到谁赢 ⇒ 只恢复一次续体
+///   ⇒ 卡死的引擎线程**拖不住返回** ⭐⭐⭐
+///
+/// ⚠️ **必须放在类型里、不能是泛型函数里的嵌套类型**
+///   （Swift 报 `type 'X' cannot be nested in generic function` ⇒ 硬编译错误）⭐⭐⭐
+final class TimeoutGate<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cont: CheckedContinuation<T, Error>?
+    private var finished = false
+    private var timer: DispatchSourceTimer?
+    /// ⭐ 超时补救（换掉卡死的会话 / 熔断）
+    private let onTimeout: () throws -> Void
+
+    init(onTimeout: @escaping () throws -> Void) { self.onTimeout = onTimeout }
+
+    /// ⭐ 引擎那边完成 ⇒ 尝试恢复
+    func succeed(_ value: T) { finish(.success(value)) }
+    /// ⭐ 引擎那边抛错 ⇒ 尝试恢复
+    func fail(_ error: Error) { finish(.failure(error)) }
+
+    /// ⭐ 超时信号 ⇒ 尝试恢复（**只对尚未完成的那一次生效**）
+    func timeout() {
+        // ⭐⭐⭐ **超时后先跑补救**（换掉卡死的会话 / 熔断）⇒ 补救抛错就抛那个错
+        lock.lock()
+        let already = finished
+        lock.unlock()
+        if !already {
+            do {
+                try onTimeout()
+            } catch {
+                finish(.failure(error))
+                return
+            }
+        }
+        finish(.failure(TimeoutGate.timeoutError))
+    }
+
+    /// ⭐ 超时错误（统一构造 ⇒ 免得各处写不同的文案）
+    ///
+    /// ⚠️ **不能引用 `SourceService.ServiceError`**（本类型在**类外面** ⇒ 拿不到嵌套类型）
+    ///   ⇒ 用一个**自己的错误类型** ⇒ 语义清晰 ⇒ 也不依赖类的嵌套结构 ⭐
+    static var timeoutError: Error { TimeoutGateError.timedOut }
+
+    private func finish(_ r: Result<T, Error>) {
+        lock.lock()
+        if finished { lock.unlock(); return }
+        finished = true
+        let c = cont
+        cont = nil
+        let t = timer
+        timer = nil
+        lock.unlock()
+        t?.cancel()
+        c?.resume(with: r)
+    }
+
+    /// 装上 continuation 并起超时定时器
+    func arm(_ c: CheckedContinuation<T, Error>, timeout: Double) {
+        lock.lock()
+        if finished {
+            lock.unlock()
+            c.resume(throwing: TimeoutGate.timeoutError)
+            return
+        }
+        cont = c
+        lock.unlock()
+        let t = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        t.schedule(deadline: .now() + timeout)
+        t.setEventHandler { [weak self] in self?.timeout() }
+        lock.lock(); timer = t; lock.unlock()
+        t.resume()
     }
 }
 
