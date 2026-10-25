@@ -62,28 +62,51 @@ function extractFunction(src, name) {
 
 const timeoutFn = extractFunction(src, 'withRealTimeout');
 const invokeFn = extractFunction(src, 'invokeNewEngine');
+// ⭐⭐⭐ **闸门类型 `TimeoutGate` 在文件顶层**（Swift 不许泛型函数里嵌套类型 ⇒ 硬编译错误）
+// ⚠️ 闸门有**好几个方法**（timeout / arm / finish）⇒ 要**合并起来**看
+//   （只看一个方法 ⇒ 定时器在 arm 里、闸门标志在 finish 里 ⇒ 误报）⭐⭐⭐
+const gateFn = ['timeout', 'arm', 'finish']
+  .map(n => extractFunction(src, n))
+  .filter(Boolean)
+  .join('\n');
 
 ok(!!timeoutFn, '⭐⭐⭐ 有 `withRealTimeout` 这个真超时实现（找不到 ⇒ 有人改回去了）');
 ok(!!invokeFn, '有 `invokeNewEngine`');
+// ⭐⭐⭐ 闸门必须是**顶层类型**（不是泛型函数里的嵌套类 ⇒ Swift 编译错误 ⇒ CI 必挂）
+ok(/final class TimeoutGate</.test(src),
+   '⭐⭐⭐⭐⭐ 闸门必须是**顶层类型** `TimeoutGate`'
+   + '（Swift 不许泛型函数里嵌套类型 ⇒ `type X cannot be nested in generic function` ⇒ CI 必挂）');
+
+// ⭐⭐⭐ 「泛型函数里嵌套类型」这条**交给编译门禁**（`test/linux-compile-gate.sh`）
+//   ⇒ 那里是**真 swiftc 编译** ⇒ 实测能报红（`type 'X' cannot be nested in generic function`）⭐⭐⭐
+//   ⚠️ 本文件里的「纯文本扫描」**不可靠**（Swift 语法太复杂 ⇒ 深度/签名跨行都会误判）
+//   ⇒ 教训：**能用真编译器验的，别用文本扫描凑** ⭐⭐⭐
+//   ⇒ 顶层的 `final class TimeoutGate` 断言保留（它抓的是「有人把类型挪回函数里」这个意图）⭐
+ok(/final class TimeoutGate</.test(src),
+   '⭐⭐⭐⭐⭐ 闸门 `TimeoutGate` 必须是**顶层类型**（嵌套进泛型函数 ⇒ Swift 编译错误 ⇒ 编译门禁会红）');
 
 if (timeoutFn) {
   // ① ⭐⭐⭐ **不许用 TaskGroup**（它会等卡死的子任务 ⇒ 超时形同虚设）
   ok(!/withThrowingTaskGroup/.test(timeoutFn),
      '⭐⭐⭐⭐⭐ `withRealTimeout` 里**不许**用 `withThrowingTaskGroup`'
      + '（它退出时必须等所有子任务 ⇒ 站方 JS 死循环那个子任务永不结束 ⇒ 超时形同虚设）');
+  ok(!/withThrowingTaskGroup/.test(gateFn || ''),
+     '⭐⭐⭐⭐⭐ 闸门里也不许用 `withThrowingTaskGroup`');
+}
 
+if (gateFn) {
   // ② ⭐ **独立超时定时器**（超时信号与引擎线程解耦）
-  ok(/DispatchSource\.makeTimerSource/.test(timeoutFn),
-     '⭐⭐⭐ `withRealTimeout` 必须有**独立超时定时器**（`DispatchSource.makeTimerSource`）'
+  ok(/DispatchSource\.makeTimerSource/.test(gateFn),
+     '⭐⭐⭐ 闸门必须有**独立超时定时器**（`DispatchSource.makeTimerSource`）'
      + ' ⇒ 超时信号与引擎线程解耦 ⇒ 卡死线程拖不住返回');
 
   // ③ ⭐ **一次性闸门**（续体只能恢复一次 ⇒ 否则会 crash: "resume of continuation more than once"）
-  ok(/finished/.test(timeoutFn) && /guard|if finished/.test(timeoutFn),
-     '⭐⭐⭐ `withRealTimeout` 必须有「一次性闸门」（续体只恢复一次）');
+  ok(/finished/.test(gateFn) && /if finished/.test(gateFn),
+     '⭐⭐⭐ 闸门必须有「一次性闸门」（续体只恢复一次）');
 
   // ④ ⭐ **定时器必须能被取消**（否则每次调用都留一个定时器 ⇒ 泄漏）
-  ok(/\.cancel\(\)/.test(timeoutFn),
-     '⭐⭐⭐ `withRealTimeout` 的定时器必须 `cancel()`（否则泄漏）');
+  ok(/\.cancel\(\)/.test(gateFn),
+     '⭐⭐⭐ 闸门的定时器必须 `cancel()`（否则泄漏）');
 }
 
 if (invokeFn) {
