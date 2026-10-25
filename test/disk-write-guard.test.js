@@ -108,6 +108,20 @@ ok(/prefix\(/.test(clipDef),
    'clipped 必须用 prefix 真截断（掏空成 `clipped = line` ⇒ 本条红）');
 ok(/maxLineLength/.test(clipDef), 'clipped 的截断长度用 maxLineLength（不是硬编码）');
 
+
+console.log('');
+console.log('=== ⑦ build 号必须钉住（2026-10-26 踩过：两个 agent 共用工作区 ⇒ build 号被覆盖）===');
+const pbx = read('QiReaderLite.xcodeproj/project.pbxproj');
+const vers = [...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(m => m[1]);
+ok(vers.length > 0, 'pbxproj 里有 CURRENT_PROJECT_VERSION');
+ok(vers.length > 0 && vers.every(v => v === vers[0]), '所有 target 的 build 号一致（实际：' + vers.join(',') + '）');
+// ⭐⭐⭐ build 号必须**比已交付的最高号大** ⇒ 否则用户分不清装的是哪一版
+const DELIVERED_MAX = 259;   // ⭐ 已交付过的最高 build 号（build259）
+if (vers.length) {
+  const v = parseInt(vers[0], 10);
+  ok(v > DELIVERED_MAX,
+     `build 号必须 > ${DELIVERED_MAX}（实际 ${v}）⇒ 否则和已交付的包重号 ⇒ 用户分不清`);
+}
 console.log('');
 console.log(`${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

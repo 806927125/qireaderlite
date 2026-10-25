@@ -89,6 +89,8 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **Linux 编译门禁**（2026-10-25 build253 CI 失败事故）：
   #   改了 SourceService.swift 沙盒却全绿 ⇒ 因为它**根本没被编过** ⇒ 多一个 } 就把 CI 挂了
   #   ⇒ 现在用 stub 让它**真被 swiftc 编译** ⇒ 3 秒抓到 ⇒ 不用等 5 分钟 CI
+  "jm-novel-e2e:test/jm-novel-e2e.test.js"
+  "js-backend-parity:test/js-backend-parity.test.js"
   "disk-write-guard:test/disk-write-guard.test.js"
   "linux-compile:test/linux-compile-gate.test.js"
   # ⭐⭐⭐⭐⭐ **op 结构一致性**（2026-10-25 真机 build253 实证）：
