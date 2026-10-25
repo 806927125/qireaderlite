@@ -637,7 +637,18 @@ final class LegadoEngineBackend: @unchecked Sendable {
         let bookUrl = (payload["bookUrl"] as? String) ?? ""
         let raw = (payload["book"] as? [String: Any]) ?? [:]
         let book = Self.book(from: raw, bookUrl: bookUrl)
-        let info = try engine.bookInfo(book, variables: Self.variables(from: raw))
+        let info: EngineBookInfo
+        do {
+            info = try engine.bookInfo(book, variables: Self.variables(from: raw))
+        } catch {
+            // ⭐⭐⭐⭐⭐ **失败时把引擎的诊断带出来**（2026-10-25 真机教训）
+            //   以前错误只说「书名/书 URL 是空的」⇒ 用户**完全不知道该查哪** ⇒ 白等一轮 ⭐⭐⭐
+            //   ⇒ 引擎明明知道「哪条规则走的哪个分支、为什么失败」⇒ 把它带出来 ⭐⭐⭐
+            let lines = engine.failureDiagnosticLines
+            let detail = lines.isEmpty ? "" : "（引擎诊断：" + lines.joined(separator: " ／ ") + "）"
+            // ⚠️ `ServiceError` 现在在**文件顶层**（不依赖 `@MainActor` 类）⇒ 两边都能引用 ⭐⭐⭐
+            throw ServiceError.engineFailed("详情页解析失败：\(error.localizedDescription)\(detail)")
+        }
         var rawMap: [String: String] = [:]
         for (k, v) in raw { if let s = v as? String { rawMap[k] = s } }
         let out = Self.bookPayload(info.name, author: info.author, intro: info.intro,
