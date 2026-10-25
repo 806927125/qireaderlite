@@ -43,13 +43,32 @@ function parseFunctions(src) {
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^\s*(?:(?:public|private|internal|fileprivate|open|static|final|override|mutating|nonisolated|@\w+)\s+)*func\s+(\w+)/);
     if (!m) continue;
-    // 往上找最近的非空行 ⇒ 判断有没有 @MainActor
+    // ⭐⭐⭐ 往上找最近的非空行 ⇒ 函数级 @MainActor
     let isMainActor = false;
     for (let k = i - 1; k >= 0 && k >= i - 4; k--) {
       const t = lines[k].trim();
       if (!t) continue;
       if (t.startsWith('@MainActor')) { isMainActor = true; }
       break;
+    }
+    // ⭐⭐⭐ **class 级 @MainActor** ⇒ 类里所有方法都是主线程隔离的
+    //   （`@MainActor final class RuleSandbox: NSObject { … }` ⇒ 里面的方法全在主线程）
+    //   ⚠️ 之前只认「函数上一行」⇒ 误报了一堆 ⇒ **收窄判据才有意义** ⭐
+    if (!isMainActor) {
+      for (let k = i - 1; k >= 0; k--) {
+        const t = lines[k].trim();
+        if (/^(?:@\w+\s*)*(?:public\s+|private\s+|internal\s+|fileprivate\s+|final\s+)*(?:class|struct|enum|extension)\b/.test(t)) {
+          // 找到类型声明 ⇒ 往上看它上面的注解
+          for (let j = k - 1; j >= 0; j--) {
+            const a = lines[j].trim();
+            if (!a) continue;
+            if (a.startsWith('@MainActor')) { isMainActor = true; }
+            break;
+          }
+          break;
+        }
+        // ⚠️ **不要**因为遇到 `}` 就停 ⇒ 类的成员之间有 `}` ⇒ 会提前退出 ⇒ 找不到 class 声明 ⭐⭐⭐
+      }
     }
     // 收集函数体（大括号配平 ⇒ ⭐ 必须忽略「字符串里」和「注释里」的括号，否则会算大 ⭐）
     let depth = 0, started = false, body = '';

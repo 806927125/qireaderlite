@@ -110,6 +110,46 @@ enum ResourceLocator {
 final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     static let shared = RuleSandbox()
 
+    /// ⭐⭐⭐ **用系统浏览器打开**（站方 `java.startBrowser` / `startBrowserAwait` / `showBrowser` …）
+    ///
+    /// ⚠️ **为什么放这里**：要碰 `UIApplication` ⇒ 只能住在 import 了 UIKit 的文件
+    /// ⇒ 而 `LegadoEngineBackend` **不能 import UIKit**（沙盒 swift 门禁在 Linux 上编译 ⇒ 编不过）⭐⭐⭐
+    /// ⇒ 分工：**能弹浏览器的逻辑住这里**，别的层只调它 ⭐
+    ///
+    /// ⚠️ **不等待用户关掉**（老引擎是「同步等」⇒ 靠两遍跑拿 cookie）
+    /// ⇒ 新引擎没有两遍跑 ⇒ 先做到「能打开、不抛异常」⭐⭐⭐
+    func openExternal(url: String, title: String) {
+        guard let u = URL(string: url), u.scheme != nil else {
+            appendLog("[宿主] 浏览器 URL 非法：\(url)")
+            return
+        }
+        appendLog("[宿主] 打开浏览器：\(u.absoluteString) \(title)")
+        UIApplication.shared.open(u)
+    }
+
+    /// ⭐⭐⭐ **把真设备 ID 写进 `UserDefaults`**（给**不能 import UIKit 的层**用）
+    /// ⚠️ `LegadoEngineBackend` 在沙盒的 swift 门禁里**在 Linux 上编译** ⇒ **不许 import UIKit** ⭐⭐⭐
+    /// ⇒ 凡是要 UIKit 的东西**留在本文件**，别的层通过 `UserDefaults` 拿 ⇒ 纯 Foundation ⇒ 两边都能编 ⭐
+    static func cacheDeviceID() {
+        let id = UIDevice.current.identifierForVendor?.uuidString ?? "qiReaderLite"
+        UserDefaults.standard.set(id, forKey: "qr.deviceID")
+    }
+
+    /// ⭐⭐⭐ **用系统浏览器打开**（站方 `java.startBrowser` / `startBrowserAwait` / `showBrowser` …）
+    func openExternal(url: String, title: String) {
+        guard let u = URL(string: url), u.scheme != nil else {
+            appendLog("[宿主] 浏览器 URL 非法：\(url)")
+            return
+        }
+        appendLog("[宿主] 打开浏览器：\(u.absoluteString) \(title)")
+        UIApplication.shared.open(u)
+    }
+
+    /// ⭐⭐⭐ **设备 ID（同步可取）** —— 给**不需要 UIKit 的层**用
+    /// ⚠️ `LegadoEngineBackend` 里**不能 import UIKit**（沙盒的 swift 门禁在 Linux 上编译 ⇒ 编不过）⭐⭐⭐
+    /// ⇒ 凡是要 UIKit 的东西，**留在本文件里**，别的文件只读这里 ⭐
+    static let cachedDeviceID: String = UIDevice.current.identifierForVendor?.uuidString ?? "qiReaderLite"
+
     @Published private(set) var ready = false
     @Published private(set) var lastError: String?
     /// 引擎启动过程中的每一步状态，界面上直接显示。
@@ -129,12 +169,22 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     /// 当前这次调用所属的书源，决定 header / jsLib / Cookie 策略
     var currentSource: BookSource?
 
-    private override init() { super.init() }
+    private override init() {
+        super.init()
+        // ⭐ 把真设备 ID 交给**不能 import UIKit 的层**（`LegadoEngineBackend`）⭐⭐⭐
+        Self.cacheDeviceID()
+    }
 
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
-    /// ⭐⭐⭐⭐⭐ build250：修**点「发现」闪退**（后台线程动 UIKit）
+    /// ⭐⭐⭐⭐⭐ build251：⭐⭐⭐ **发现页已与老引擎逐字一致**（沙盒整链对拍：5 分类 + 7 筛选栏）
+    ///   · 引擎 `c28de9b`：`StationDahulangExploreParityTests` **PASSED**
+    ///     ⇒ 新引擎的发现页 == 老引擎（同一份完整源 + 同一份假服务器响应，逐字比）⭐⭐⭐
+    ///   · 宿主补：`java.androidId`（18 处）、浏览器类（`startBrowserAwait`/`startBrowserDp`/`showReadingBrowser` 共 39 处）**绝不抛**
+    ///   · ⭐⭐⭐ 架构约束：`LegadoEngineBackend` **不许 import UIKit**
+    ///     （沙盒的 swift 门禁在 Linux 上编译 App 代码 ⇒ 编不过）⇒ UIKit 逻辑住 `RuleSandbox`，别的层用 `UserDefaults` 传 ⭐
+    /// ⭐⭐⭐ build250：修**点「发现」闪退**（后台线程动 UIKit）
     ///   · 真凶：build248 给 `java.longToast` 加了宿主实现 ⇒ 站方第一次真的调到宿主
     ///     ⇒ 引擎在**后台线程**跑 ⇒ `Toast.show` 在后台建 UILabel / 碰 UIApplication
     ///     ⇒ **UIKit 主线程违规 ⇒ 闪退** ⭐⭐⭐
@@ -145,7 +195,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///     ⇒ 真机症状：`java.longToast is undefined`（JSC 说的，不是引擎抛的）⭐⭐⭐
     ///     ⇒ 根因：Swift 多行字符串里 `//` 行注释把 `\` 续行后的整行吃掉
     ///   · ⭐⭐⭐ 「抛不抛」由「老引擎上存不存在」决定（实测 75 个不抛 ⇒ 新引擎也不抛）
-    static let engineVersion = "2026.10.25-r32（legado-engine 00e0890 · 修发现页闪退：后台线程动 UIKit）"
+    static let engineVersion = "2026.10.25-r33（legado-engine c28de9b · 发现页已与老引擎逐字一致）"
 
     /// 给界面用的一行状态
     var statusText: String {

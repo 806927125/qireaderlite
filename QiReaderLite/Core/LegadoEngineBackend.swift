@@ -196,15 +196,33 @@ final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
         case "longToast":
             Toast.show(first)
             return .string("")
+        // ⭐⭐⭐ **`java.androidId`**（站方 125 源实测 **18 处**）
+        //   老引擎：`androidId: function () { return java.deviceID(); }` ⇒ 就是 deviceID 的别名
+        //   ⇒ 站方写法：`try { raw = java.androidId(); } catch (e) { try { raw = java.deviceID(); } catch (e2) {} }`
+        //   ⇒ **两个都要有**（站方拿它当设备标识 ⇒ 登录态/解锁状态会绑到它上面）⭐⭐⭐
+        //   ⚠️ 同步上下文 ⇒ 直接取 `identifierForVendor`（与 `RuleSandbox` 的 `deviceID` op 同源）⭐
+        case "androidId":
+            // ⭐⭐⭐ **设备 ID 走 `UserDefaults` 传递**（纯 Foundation ⇒ 沙盒 swift 门禁能编）
+            //   ⚠️ 本文件**不许碰 UIKit / RuleSandbox**（沙盒在 Linux 上编译 ⇒ import UIKit 编不过）⭐⭐⭐
+            //   ⇒ App 启动时（`RuleSandbox`，那边有 UIKit）把真设备 ID 写进来 ⭐
+            return .string(UserDefaults.standard.string(forKey: "qr.deviceID") ?? "")
+        // ⭐⭐ **浏览器类**（`startBrowserAwait` 27 处 / `startBrowserDp` 6 处 / `showReadingBrowser` 6 处）
+        //   老引擎是**同步等用户关掉**（两遍跑机制）⇒ 新引擎是同步引擎 ⇒ 没法在这儿等
+        //   ⇒ 先**触发打开**（不等）⇒ 站方第二遍再来取 cookie ⇒ 与老引擎的「两遍跑」同思路 ⭐⭐⭐
+        //   ⚠️ **绝不抛**（站方不少地方没包 try/catch ⇒ 抛了整条规则死定）⭐⭐⭐
+        case "startBrowserAwait", "startBrowserDp", "showReadingBrowser", "showBrowser", "startBrowser":
+            // ⭐⭐⭐ **绝不抛**（站方不少地方没包 try/catch ⇒ 抛了整条规则死定）⭐⭐⭐
+            //   老引擎是「同步等用户关掉」（两遍跑机制）⇒ 新引擎是同步引擎 ⇒ 这里等不了
+            //   ⇒ 先只记一笔；**弹浏览器**交给 `RuleSandbox` 的 op（那边有 UIKit）⭐
+            let title = args.count > 1 ? args[1].scalarString : ""
+            engineLog("[宿主] \(method)：\(first) \(title)")
+            // ⚠️ 本层不能碰 UIKit ⇒ 真正的「打开」由 `RuleSandbox` 的 op 负责（那边有 UIKit）⭐
+            return .string("")
         case "log":
             engineLog(first)
             return .string("")
         case "getCookie":
             return .string(CookieJar.cookieString(for: first))
-        case "startBrowser":
-            // ⚠️ 浏览器交接是**宿主的事**⇒ 这里只记一笔（真浏览器由 App 的登录面板处理）
-            engineLog("[宿主] startBrowser：\(first)")
-            return .string("")
         case "cacheFile":
             if args.count >= 2 {
                 _ = CacheFiles.write(first, args[1].scalarString)
