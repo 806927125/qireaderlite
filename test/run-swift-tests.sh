@@ -174,6 +174,24 @@ rc4c=${PIPESTATUS[0]}
 [ $rc4c -ne 0 ] && rc=$rc4c
 _sum "$TMP/out4c.txt"
 
+# ── 第四组之四：简介的 HTML 清洗（2026-10-25 真机：`<p></p>` 露在详情页上）──
+# ⭐⭐⭐ 纯 Foundation ⇒ 沙盒能真编真跑 ⇒ 3 秒反馈
+echo
+echo "=== 编译 Core/IntroHTMLCleaner.swift（swiftc 真编）==="
+mkdir -p "$TMP/intro"
+cp test/intro-html-cleaner-test.swift "$TMP/intro/main.swift"
+if ! "$SWIFTC" -O "$TMP/intro/main.swift" QiReaderLite/Core/IntroHTMLCleaner.swift -o "$TMP/intro-test" 2>"$TMP/err4d.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4d.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/intro-test" | tee "$TMP/out4d.txt"
+rc4d=${PIPESTATUS[0]}
+[ $rc4d -ne 0 ] && rc=$rc4d
+_sum "$TMP/out4d.txt"
+
 # ── 第五组：新引擎适配层（老 JS 引擎 → 自研 Swift 引擎）────
 # ⭐⭐⭐ 这组的意义：适配层把两个模型的字段名一一对上
 #   ⇒ 对错一个字段 = 「某条规则静默失效」⇒ iOS 真机构建要等 CI ⇒ 这里 3 秒抓错
