@@ -471,7 +471,20 @@ enum CacheFiles {
         let safe = safeName(path)
         guard let d = text.data(using: .utf8) else { return false }
         let p = root.appendingPathComponent(safe)
-        do { try d.write(to: p, options: .atomic); return true } catch { return false }
+        // ⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）
+        //   ⇒ `.atomic` = 写临时文件 + rename ⇒ **写盘量翻倍** ⇒ 累积超限额 ⇒ 被杀 ⭐⭐⭐
+        do {
+            let fh = try FileHandle(forWritingTo: p)
+            try fh.truncate(atOffset: 0)
+            try fh.write(contentsOf: d)
+            try fh.close()
+            DiskWriteMeter.record(d.count)
+            return true
+        } catch {
+            try? d.write(to: p)
+            DiskWriteMeter.record(d.count)
+            return (try? FileManager.default.fileExists(atPath: p.path)) ?? false
+        }
     }
     static func read(_ path: String) -> String? {
         let p = root.appendingPathComponent(safeName(path))
@@ -519,3 +532,87 @@ enum HeaderCodec {
     }
 }
 
+// MARK: - ⭐⭐⭐⭐⭐ 写盘计量（2026-10-26 iOS「diskwrites」限额被杀）
+
+/// ⭐⭐⭐⭐⭐ **全局写盘计量器** —— 防 iOS 因「磁盘写入超限」杀进程
+///
+/// ⚠️⚠️⚠️ **真机事故（2026-10-26 崩溃日志实证）**：
+///   iOS 的 \`diskwrites\` 限额 = **12.43 KB/s × 86400s ≈ 1.07 GB / 24 小时**
+///   ⇒ 用户的 App 7 小时写了 **1073.75 MB** ⇒ **超过限额** ⇒ **iOS 杀进程**
+///   ⇒ 用户看到的现象是「闪退」，但日志里 \`Action taken: none\`（这次侥幸没被杀）
+///   ⇒ 栈顶是 \`libswift_Concurrency\` ⇒ 后台 Task 在写 ⭐⭐⭐
+///
+/// ⭐⭐⭐ **为什么 App 会写这么多**（三个叠加的浪费点）：
+///   ① 引擎日志**每行都落盘**（且轮转用 \`.atomic\` ⇒ 一次轮转多写一份完整副本）⭐⭐⭐
+///   ② 正文缓存 / 站方缓存用 \`.atomic\` ⇒ **每次写都多一份临时文件 + rename**（双倍写盘）⭐⭐⭐
+///   ③ **内存分配过大 ⇒ 换页写回**（\`file backed memory dirtied\` 统计的是**脏页**，
+///      不只是 \`write()\`）⇒ 大对象反复编码会让**换页**也写盘 ⭐⭐⭐
+///
+/// ⭐⭐⭐ **本计量器的用途**：
+///   · 记录**每小时**的写盘字节数 ⇒ 自检面板能直接看到「谁在写」⭐⭐⭐
+///   · 超过**安全阈值** ⇒ **自动停写磁盘日志**（内存日志还在 ⇒ 不丢证据）
+///     ⇒ **宁可少落盘，也不被系统杀** ⭐⭐⭐
+enum DiskWriteMeter {
+    private static let lock = NSLock()
+    private static var bytesThisHour: Int = 0
+    private static var hourStart: Date = Date()
+
+    /// ⭐⭐⭐ **每小时安全上限**（远低于 iOS 的 12.43 KB/s 折算值 ⇒ 留足余量）
+    ///
+    /// ⚠️ iOS 限额 ≈ 1.07 GB / 24h ⇒ 平均 12.4 KB/s
+    /// ⇒ 我们自己卡在 **2 MB / 小时**（≈ 0.57 KB/s）⇒ 只有限额的 1/22 ⭐⭐⭐
+    /// ⇒ 就算 24 小时都在写也才 48 MB ⇒ **安全** ⭐⭐⭐
+    static let hourlyLimit = 2 * 1024 * 1024
+
+    /// ⭐⭐⭐ **记一次写盘** ⇒ 返回**允许不允许继续写**
+    @discardableResult
+    static func record(_ bytes: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let now = Date()
+        if now.timeIntervalSince(hourStart) > 3600 {
+            hourStart = now
+            bytesThisHour = 0
+        }
+        bytesThisHour += bytes
+        return bytesThisHour <= hourlyLimit
+    }
+
+    /// ⭐⭐⭐ **这一小时写了多少字节**
+    static var currentHourBytes: Int {
+        lock.lock(); defer { lock.unlock() }
+        let now = Date()
+        if now.timeIntervalSince(hourStart) > 3600 { return 0 }
+        return bytesThisHour
+    }
+
+    /// ⭐⭐⭐ **人类可读**
+    static var currentHourText: String {
+        let b = currentHourBytes
+        if b < 1024 { return "\(b) B" }
+        if b < 1024 * 1024 { return String(format: "%.1f KB", Double(b) / 1024) }
+        return String(format: "%.2f MB", Double(b) / (1024 * 1024))
+    }
+}
+
+extension HostTools {
+    /// ⭐⭐⭐⭐⭐ **写文件（不用 `.atomic`）** —— 防 iOS「diskwrites」限额被杀
+    ///
+    /// ⚠️⚠️ **为什么不用 `.atomic`**（2026-10-26 真机崩溃日志实证）：
+    ///   `.atomic` = **写临时文件 + rename** ⇒ **每次写盘量翻倍** ⭐⭐⭐
+    ///   ⇒ 源列表 125 个源 × 158KB ≈ 20MB ⇒ 一次 `.atomic` = **40MB 写盘**
+    ///   ⇒ iOS 的 \`diskwrites\` 限额 ≈ 1.07 GB/天 ⇒ 几十次就超 ⇒ **iOS 杀进程** ⭐⭐⭐
+    ///
+    /// ⭐ **代价**：写一半崩了会留半截文件
+    ///   ⇒ 这类文件（源列表 / 书架 / 存档）都是**幂等重写** ⇒ 下次启动重新写即可
+    ///   ⇒ 真要「原子性」的场景（配置）才用 `.atomic` ⭐⭐⭐
+    static func writeAtomicallyFree(_ data: Data, to url: URL) {
+        do {
+            let fh = try FileHandle(forWritingTo: url)
+            try fh.truncate(atOffset: 0)
+            try fh.write(contentsOf: data)
+            try fh.close()
+        } catch {
+            try? data.write(to: url)
+        }
+    }
+}

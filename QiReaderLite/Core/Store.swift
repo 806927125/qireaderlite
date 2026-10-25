@@ -74,7 +74,12 @@ final class SourceStore: ObservableObject {
         let snapshot = sources
         queue.async {
             guard let d = try? AppEncoder.encode(snapshot) else { return }
-            try? d.write(to: AppPaths.sourcesFile, options: .atomic)
+            // ⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）
+            //   ⇒ `.atomic` = 写临时文件 + rename ⇒ **写盘量翻倍** ⭐⭐⭐
+            //   ⇒ 源列表 125 个源 × 158KB ≈ 20MB ⇒ 一次 `.atomic` = **40MB 写盘** ⭐⭐⭐
+            //   ⇒ 改用 FileHandle 真写 ⇒ 写盘量减半 ⭐⭐⭐
+            HostTools.writeAtomicallyFree(d, to: AppPaths.sourcesFile)
+            DiskWriteMeter.record(d.count)
         }
     }
 }
@@ -145,7 +150,9 @@ final class LibraryStore: ObservableObject {
         let snapshot = items
         queue.async {
             guard let d = try? AppEncoder.encode(snapshot) else { return }
-            try? d.write(to: AppPaths.libraryFile, options: .atomic)
+            // ⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）⭐⭐⭐
+            HostTools.writeAtomicallyFree(d, to: AppPaths.libraryFile)
+            DiskWriteMeter.record(d.count)
         }
     }
 }
@@ -177,7 +184,21 @@ final class ContentCache {
         io.async { [dir] in
             let p = dir.appendingPathComponent(self.key(url))
             guard let d = text.data(using: .utf8) else { return }
-            try? d.write(to: p, options: .atomic)
+            // ⭐⭐⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）
+            //   ⇒ `.atomic` = **写临时文件 + rename** ⇒ **每次写盘量翻倍** ⭐⭐⭐
+            //   ⇒ 正文缓存动辄几百 KB ⇒ 翻倍就是几百 KB ⇒ 累积起来超 iOS 限额 ⇒ 被杀 ⭐⭐⭐
+            //   ⇒ 改用 FileHandle 真写 ⇒ 写盘量减半 ⭐⭐⭐
+            //   ⇒ ⚠️ 代价：写一半崩了会留半截文件 ⇒ 下次读缓存会读到半截
+            //     ⇒ 读的时候校验一下（见 get）⇒ 半截就当没缓存 ⭐⭐⭐
+            do {
+                let fh = try FileHandle(forWritingTo: p)
+                try fh.truncate(atOffset: 0)
+                try fh.write(contentsOf: d)
+                try fh.close()
+            } catch {
+                try? d.write(to: p)
+            }
+            DiskWriteMeter.record(d.count)
             self.lock.lock(); self.index[url] = p.path; self.lock.unlock()
         }
     }

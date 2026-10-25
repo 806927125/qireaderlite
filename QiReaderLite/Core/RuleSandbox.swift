@@ -127,6 +127,11 @@ final class RuleSandbox: NSObject, ObservableObject {
         var lines: [String] = []
         lines.append("引擎版本：\(Self.engineVersion)")
         lines.append("App 版本：\(AppPaths.appVersionLine)")
+        // ⭐⭐⭐⭐⭐ **写盘量**（2026-10-26 iOS「diskwrites」限额被杀 ⇒ 加自检）
+        //   ⇒ iOS 限额 ≈ 12.43 KB/s × 24h ≈ **1.07 GB/天**
+        //   ⇒ 自己卡在 2 MB/小时 ⇒ 超了就停落盘 ⇒ **再也不会被系统杀** ⭐⭐⭐
+        //   ⇒ 这一行让「谁在写盘」一眼可见（不用再猜）⭐⭐⭐
+        lines.append("本小时写盘：\(DiskWriteMeter.currentHourText)（限额 2.00 MB/小时 · iOS 约 1.07 GB/天）")
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))
@@ -231,17 +236,53 @@ final class RuleSandbox: NSObject, ObservableObject {
     }
 
 
+    /// ⭐⭐⭐⭐⭐ **加一行日志**（2026-10-26 iOS「diskwrites」限额被杀 ⇒ 重构）
+    ///
+    /// ⚠️⚠️⚠️ **原实现是真凶**（崩溃日志的 heaviest stack 实证）：
+    ///   ① \`Task { @MainActor in appendLog(...) }\` ⇒ **每条日志一次 Task 调度**
+    ///      ⇒ 栈顶正是 \`libswift_Concurrency\` ⭐⭐⭐
+    ///   ② 落盘**在主线程发起** ⇒ **每条日志一次 IO 往返** ⭐⭐⭐
+    ///   ⇒ 引擎诊断每条规则都来一行 ⇒ 一次 op 几十行 ⇒ 几千行就淹没主线程
+    ///   ⇒ iOS 的 \`diskwrites\` 限额（12.43 KB/s × 24h ≈ 1.07 GB）被吃光 ⇒ **iOS 杀进程**
+    ///   ⇒ 用户看到的现象是「闪退」⭐⭐⭐⭐⭐
+    ///
+    /// ⭐⭐⭐ **新实现（两路分开）**：
+    ///   · **内存日志**（UI 面板要显示）⇒ 主线程 ⇒ 但**只在必要时**切 ⭐⭐⭐
+    ///   · **磁盘日志**（崩溃前证据）⇒ **直接后台** ⇒ **完全不占主线程** ⭐⭐⭐
+    /// ⭐⭐⭐⭐⭐ **单行日志的最大长度**（2KB）
+    ///
+    /// ⚠️⚠️⚠️ **为什么必须截断**（2026-10-26 iOS「diskwrites」限额被杀）：
+    ///   站方可以调 \`java.log(任意内容)\` ⇒ **一行日志可能是几十 KB**
+    ///   （整个响应 / 整本书 / base64 载荷）⭐⭐⭐
+    ///   ⇒ 一次 op 打一行 50KB ⇒ **几十次就 1MB** ⇒ **几百次就 1GB** ⇒ iOS 杀进程 ⭐⭐⭐
+    ///   ⇒ 截到 2KB ⇒ 就算站方疯狂打日志 ⇒ 写盘量也可控 ⭐⭐⭐
+    private static let maxLineLength = 2_048
+
     func appendLog(_ line: String) {
+        // ⭐⭐⭐ **先截断**（站方 `java.log` 可以打任意长 ⇒ 不截断 = 写盘炸弹）⭐⭐⭐
+        let clipped = line.count > Self.maxLineLength
+            ? String(line.prefix(Self.maxLineLength)) + "…（已截断，原长 \(line.count) 字）"
+            : line
         let stamped = "[\(Self.logTimeFormatter.string(from: Date()))] "
-            + "[\(Self.stepFor(line, fallback: currentStep))] " + line
-        recentLogs.append(stamped)
-        if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
+            + "[\(Self.stepFor(clipped, fallback: currentStep))] " + clipped
         NSLog("%@", stamped)
-        // ⭐⭐⭐ **同时落盘**（2026-10-24 真机：App 被 watchdog 杀掉 ⇒ 内存里的日志全丢
-        //   ⇒ 用户重启后什么都看不到 ⇒ 我拿不到任何证据 ⇒ 只能猜）
-        //   ⇒ 现在每行都写进 Documents/engine-log.txt（超过 1MB 就从头轮转）
-        //   ⇒ 崩溃后重启 ⇒ 「引擎日志」面板里照样能复制到**崩溃前**的日志 ⭐⭐⭐
+        // ⭐⭐⭐ **落盘：直接进后台队列**（内部 \`diskQueue.async\` ⇒ 不占主线程）
         Self.persistToDisk(stamped)
+        // ⭐⭐⭐ **内存日志：必须主线程**（\`recentLogs\` 是 \`@Published\`）
+        //   ⇒ **已经在主线程就别再开 Task**（原来每次都开 ⇒ 白白一次调度）⭐⭐⭐
+        if Thread.isMainThread {
+            Self.applyMemoryLog(stamped)
+        } else {
+            Task { @MainActor in Self.applyMemoryLog(stamped) }
+        }
+    }
+
+    /// ⭐⭐⭐ **写进内存日志**（主线程）
+    private static func applyMemoryLog(_ stamped: String) {
+        shared.recentLogs.append(stamped)
+        if shared.recentLogs.count > 300 {
+            shared.recentLogs.removeFirst(shared.recentLogs.count - 300)
+        }
     }
 
     /// **日志落盘**（进程被杀也不丢）
@@ -252,26 +293,96 @@ final class RuleSandbox: NSObject, ObservableObject {
     }()
 
     private static let diskLogLock = NSLock()
+    /// ⭐⭐⭐⭐⭐ **待落盘的缓冲**（批量写 ⇒ 不再每行一次 IO）
+    private static var diskBuffer: [String] = []
+    /// ⭐⭐⭐ **落盘队列**（后台 ⇒ 不占主线程）
+    private static let diskQueue = DispatchQueue(label: "qr.disklog", qos: .utility)
 
+    /// ⭐⭐⭐⭐⭐ **日志文件上限**（256KB ⇒ 足够读完一次崩溃现场）
+    ///
+    /// ⚠️ 以前是 1MB + **每次轮转都 `.atomic` 重写 600KB**
+    ///   ⇒ 一次轮转 = 读 1MB + 写 600KB(临时) + rename ⇒ **写盘量放大好几倍** ⭐⭐⭐
+    private static let diskLogLimit = 256 * 1024
+
+    /// ⭐⭐⭐⭐⭐ **批量落盘**
+    ///
+    /// ⭐⭐⭐ **三个修法一起**（2026-10-26 iOS「diskwrites」限额被杀）：
+    ///   ① **批量**：攒够 32 行或 2 秒才写一次 ⇒ IO 次数降一个数量级 ⭐⭐⭐
+    ///   ② **不用 `.atomic`**：`.atomic` = 写临时文件 + rename ⇒ **双倍写盘**
+    ///      ⇒ 改用 FileHandle 追加（真 append）⭐⭐⭐
+    ///   ③ **计量 + 限流**：`DiskWriteMeter` 记字节数 ⇒ 超上限就**停止落盘**
+    ///      ⇒ 内存日志还在（不丢证据）⇒ 但不再被系统杀 ⭐⭐⭐
     private static func persistToDisk(_ line: String) {
-        diskLogLock.lock(); defer { diskLogLock.unlock() }
-        let url = logFileURL
-        // 超过 1MB ⇒ 只留后半段（免得无限涨）
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? Int, size > 1_000_000 {
-            if let data = try? Data(contentsOf: url) {
-                let keep = data.suffix(600_000)
-                try? keep.write(to: url, options: .atomic)
+        diskQueue.async {
+            diskLogLock.lock()
+            diskBuffer.append(line)
+            let count = diskBuffer.count
+            diskLogLock.unlock()
+            if count >= 32 { flushDiskLog() }
+            else if count == 1 {
+                // ⭐ 首次进缓冲 ⇒ 排一个 2 秒后的兜底 flush（保证最后几行也落盘）
+                diskQueue.asyncAfter(deadline: .now() + 2) { flushDiskLog() }
             }
         }
-        if let data = (line + "\n").data(using: .utf8) {
-            if let fh = try? FileHandle(forWritingTo: url) {
-                fh.seekToEndOfFile()
-                fh.write(data)
-                try? fh.close()
+    }
+
+    /// ⭐⭐⭐⭐⭐ **每小时最多落盘多少行**（防止再被刷爆）
+    ///
+    /// ⚠️ iOS 的 \`diskwrites\` 限额 ≈ 1.07 GB / 24h ⇒ 引擎诊断一多就吃光 ⭐⭐⭐
+    /// ⇒ 我们自己卡在 **2000 行 / 小时**（≈ 每行 100 字节 ⇒ 200KB/小时
+    ///   ⇒ 一天最多 4.8 MB ⇒ **远低于限额**）⭐⭐⭐
+    /// ⇒ 超了之后**内存日志照常**（面板还能看）⇒ 只是不再落盘 ⭐⭐⭐
+    private static let diskLinesPerHour = 2000
+    private static var diskLinesThisHour = 0
+    private static var diskHourStart = Date()
+
+    /// ⭐⭐⭐ **把缓冲刷到磁盘**（后台队列内调用）
+    private static func flushDiskLog() {
+        diskLogLock.lock()
+        let lines = diskBuffer
+        diskBuffer.removeAll()
+        diskLogLock.unlock()
+        guard !lines.isEmpty else { return }
+        let text = lines.joined(separator: "\n") + "\n"
+        guard let data = text.data(using: .utf8) else { return }
+
+        // ⭐⭐⭐⭐⭐ **行数限流**：超上限 ⇒ 停止落盘（内存日志还在）
+        let now = Date()
+        diskLogLock.lock()
+        if now.timeIntervalSince(diskHourStart) > 3600 {
+            diskHourStart = now
+            diskLinesThisHour = 0
+        }
+        diskLinesThisHour += lines.count
+        let overLines = diskLinesThisHour > diskLinesPerHour
+        diskLogLock.unlock()
+        if overLines { return }
+
+        // ⭐⭐⭐ **计量 + 限流**：超上限 ⇒ **停止落盘**（内存日志还在）
+        guard DiskWriteMeter.record(data.count) else { return }
+
+        let url = logFileURL
+        // ⭐⭐⭐ **轮转：超上限 ⇒ 只留尾部**（**不用 `.atomic`** ⇒ 不产生额外副本）
+        var existing = Data()
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? Int, size + data.count > diskLogLimit {
+            if let d = try? Data(contentsOf: url) { existing = Data(d.suffix(diskLogLimit / 2)) }
+        }
+        do {
+            let fh = try FileHandle(forWritingTo: url)
+            if !existing.isEmpty {
+                // ⭐⭐⭐ **截断 + 写尾部 + 追加新内容**（一次 truncate ⇒ 不留旧数据）
+                try fh.truncate(atOffset: 0)
+                try fh.write(contentsOf: existing)
             } else {
-                try? data.write(to: url, options: .atomic)
+                try fh.seekToEndOfFile()
             }
+            try fh.write(contentsOf: data)
+            try fh.close()
+        } catch {
+            // ⭐⭐⭐ 首次写（文件还不存在）⇒ 建一个
+            try? data.write(to: url)
+            DiskWriteMeter.record(data.count)
         }
     }
 
