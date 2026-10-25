@@ -73,7 +73,7 @@ function funcBody(src, name) {
  *   · `runExplore` 里有**嵌套的** `return d`（在 map 闭包里）⇒ 那是**内层**的 ⇒ 不能取 ⭐⭐⭐
  * ⇒ 办法：**取函数体里最后一个「深度 0」的 return**（按花括号深度算）⭐
  */
-function topLevelKeys(body) {
+function topLevelKeys(body, backendSrc) {
   if (!body) return null;
   const lines = body.split('\n');
   // ⭐⭐⭐ **深度基准**：函数体**自己**的那层 `{` 算 0
@@ -86,7 +86,10 @@ function topLevelKeys(body) {
     const closes = (clean.match(/\}/g) || []).length;
     const isReturn = /\breturn\b/.test(clean);
     // ⭐ 判定在**加本行深度之前** ⇒ 顶层 return 时 depth 恰为 0
-    if (isReturn && depth === 0) lastReturn = l;
+    // ⚠️⚠️ **容忍一层**（depth ≤ 1）：函数体里有 `do { … } catch { … }` 时
+    //   里面的 `return` 是 depth 1（2026-10-25：runExplore 加了 do/catch）⭐⭐⭐
+    //   ⇒ 只认 depth 0 ⇒ 解析不到 ⇒ **假失败** ⭐⭐⭐
+    if (isReturn && depth <= 1) lastReturn = l;
     depth += opens - closes;
     if (!seenBodyOpen && depth > 0) { seenBodyOpen = true; depth = 0; }  // 函数体自身那层归零
     if (depth < 0) depth = 0;
@@ -97,8 +100,8 @@ function topLevelKeys(body) {
   //   `runExplore` 返回 `Self.bookListPayload(books)` ⇒ 真正的 key 在那边 ⭐⭐⭐
   const deleg = lastReturn.match(/return\s+Self\.(\w+)\s*\(/);
   if (deleg) {
-    const target = funcBody(backend, deleg[1]);
-    if (target) return topLevelKeys(target);
+    const target = funcBody(backendSrc || backend, deleg[1]);
+    if (target) return topLevelKeys(target, backendSrc || backend);
   }
 
   const keys = [];
