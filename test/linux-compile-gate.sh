@@ -41,6 +41,11 @@ cp test/linux-compile-stubs.swift "$TMP/main.swift"
 # ⭐⭐⭐ **要编的 App 侧文件**（纯 Foundation 的那些 + 需要 stub 的那些）
 #   ⚠️ 改这个列表时 ⇒ 同步更新门禁注释 ⇒ 免得「以为编了其实没编」⭐
 FILES=(
+  # ⭐⭐⭐⭐⭐ **`LegadoEngineBackend.swift` 也要编**（2026-10-25 补）
+  #   ⚠️⚠️ 之前它**被 stub 掉** ⇒ 它的**类型错**沙盒抓不到
+  #   （`ServiceError` 作用域那个错就是这么漏到 CI 的）⭐⭐⭐
+  #   ⇒ 现在链**真引擎**编 ⇒ 它的类型错 3 秒就能抓 ⭐⭐⭐
+  "QiReaderLite/Core/LegadoEngineBackend.swift"
   "QiReaderLite/Core/SourceService.swift"      # ⭐⭐⭐ 本次事故的主角（引擎调用的入口）
   "QiReaderLite/Core/BookSource.swift"
   "QiReaderLite/Core/Book.swift"
@@ -48,32 +53,48 @@ FILES=(
   "QiReaderLite/Core/SourceDictCache.swift"
   "QiReaderLite/Core/SourceRawArchive.swift"
   "QiReaderLite/Core/LegadoCompat.swift"
+  "QiReaderLite/Core/ServiceError.swift"      # ⭐⭐⭐ 错误类型独立文件 ⇒ 两组都能编
+)
+
+# ⭐⭐⭐⭐⭐ **组 B：要链【真引擎】编的文件**（2026-10-25 补）
+#   ⚠️⚠️ **为什么单独一组**：`LegadoEngineBackend.swift` import `LegadoCore`
+#   ⇒ 光靠 stub 隔不掉 ⇒ 必须链**真引擎的 SPM 产物** ⇒ 它的类型错才能被抓到 ⭐⭐⭐
+#   ⇒ 之前它被 stub 掉 ⇒ `ServiceError` 作用域那个错**沙盒完全看不见** ⭐⭐⭐
+FILES_ENGINE=(
+  "QiReaderLite/Core/LegadoEngineBackend.swift"
 )
 
 echo "=== 编译 App 侧 Core/（swiftc 真编 ⇒ 抓语法/类型错）==="
 # ⭐⭐⭐ **-swift-version 5 + minimal 并发** ⇒ 对齐 Xcode 26.2 的 Swift 5.9 默认
 #   ⇒ 沙盒用的 Swift 6.3 更严 ⇒ 不对齐会**误报**（门禁比 CI 还严 ⇒ 没法用）⭐⭐⭐
-if ! "$SWIFTC" -swift-version 5 -strict-concurrency=minimal -typecheck \
-      "$TMP/main.swift" "${FILES[@]}" > "$TMP/err.txt" 2>&1; then
-  echo "❌ App 侧 Core/ 编译失败："
-  grep -E "error:" "$TMP/err.txt" | head -20 | sed 's/^/     /'
-  exit 1
-fi
-echo "✅ 编译通过（${#FILES[@]} 个文件）"
-
 # ⭐⭐⭐⭐⭐ **typecheck**（不只是 parse ⇒ 能抓类型错误）
 #   ⚠️⚠️ **为什么必须 typecheck**：`swiftc -parse` **只查语法** ⇒ 查不出
 #   `covariant 'Self' type cannot be referenced from a stored property initializer`
 #   这类**类型错误** ⇒ 而它**会让 CI 挂** ⇒ 沙盒必须能抓 ⭐⭐⭐
 #   （build254 CI 实证：沙盒全绿 ⇒ CI 挂 ⇒ 白等一轮）⭐⭐⭐
 echo "=== typecheck（抓类型错：parse 抓不到）==="
-if ! "$SWIFTC" -swift-version 5 -strict-concurrency=minimal -typecheck \
-      "$TMP/main.swift" "${FILES[@]}" > "$TMP/tc.txt" 2>&1; then
-  echo "❌ typecheck 失败："
-  grep -E "error:" "$TMP/tc.txt" | head -20 | sed 's/^/     /'
-  exit 1
+# ⭐⭐⭐ **要链【真引擎】**（`SourceService.swift` 也用 `LegadoEngineBackend`）
+#   ⇒ 找不到引擎产物 ⇒ **显式 SKIP**（不许假绿）⭐⭐⭐
+ENGINE_DIR="$(cd .. && pwd)/legado-engine"
+ENGINE_MODULES=""
+for d in "$ENGINE_DIR/.build/x86_64-unknown-linux-gnu/debug/Modules" \
+         "$ENGINE_DIR/.build/debug/Modules"; do
+  if [ -f "$d/LegadoCore.swiftmodule" ]; then ENGINE_MODULES="$d"; break; fi
+done
+if [ -z "$ENGINE_MODULES" ]; then
+  echo "  ⚠️ 跳过：没找到 legado-engine 的 SPM 产物（先在 legado-engine/ 跑 swift build）"
+  echo "     ⇒ 本组**没验到**（不等于通过）"
+else
+  if ! "$SWIFTC" -swift-version 5 -strict-concurrency=minimal -typecheck \
+        -I "$ENGINE_MODULES" "$TMP/main.swift" "${FILES[@]}" > "$TMP/tc.txt" 2>&1; then
+    echo "❌ typecheck 失败："
+    grep -E "error:" "$TMP/tc.txt" | head -20 | sed 's/^/     /'
+    exit 1
+  fi
+  echo "  ✅ typecheck 通过（链了真引擎）"
 fi
-echo "✅ typecheck 通过"
+
+# ⭐⭐⭐ **`LegadoEngineBackend.swift` 已并入上面那一组**（一起链真引擎编）⭐⭐⭐
 
 # ⭐⭐⭐⭐⭐ **一致性比对**：stub 里的「引擎版本片段」必须与 `RuleSandbox.swift` 里的**真代码一致**
 #   ⇒ 改了一边忘了另一边 ⇒ 门禁红（防止两边漂移 ⇒ 假的）⭐⭐⭐
