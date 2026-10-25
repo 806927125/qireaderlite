@@ -62,7 +62,11 @@ jobs:
           #   ⚠️⚠️ **别去 grep `b.log`**（那句 `Checking out main (...)` 在 **SPM resolve 的输出**里
           #   ⇒ 不在 b.log ⇒ 抓不到 ⇒ 注入成了空值 ⇒ 二进制里显示 unknown）⭐⭐⭐
           ENG_DIR="build/dd/SourcePackages/checkouts/legado-engine"
-          LEGADO_REV="$(git -C "$ENG_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)"
+          # ⭐⭐⭐ **用完整 40 位 sha**（不是 short=12）
+          #   ⚠️ **12 位会被 Swift 内联成 SmallString** ⇒ 二进制里**不连续** ⇒ **搜不到** ⇒
+          #   ⇒ 验包时以为「没注入」，其实是**注入成功了但搜不到** ⇒ 白查一轮 ⭐⭐⭐
+          #   ⇒ 40 位（40 字节）⇒ 不内联 ⇒ 连续存放 ⇒ **可搜、可验** ⭐⭐⭐
+          LEGADO_REV="$(git -C "$ENG_DIR" rev-parse HEAD 2>/dev/null || true)"
           if [ -z "$LEGADO_REV" ]; then LEGADO_REV="unknown"; fi
           echo "注入的引擎 revision = $LEGADO_REV"
           # ⭐⭐⭐⭐⭐ **生成 revision 文件**（2026-10-25 真机教训 ⇒ 不用 `-D` 宏）
