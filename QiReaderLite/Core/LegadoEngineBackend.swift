@@ -641,7 +641,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
         var rawMap: [String: String] = [:]
         for (k, v) in raw { if let s = v as? String { rawMap[k] = s } }
         let out = Self.bookPayload(info.name, author: info.author, intro: info.intro,
-                                   kind: info.kind, lastChapter: info.lastChapter,
+                                   kind: info.kind, group: info.group, lastChapter: info.lastChapter,
                                    coverUrl: info.coverUrl, bookUrl: info.bookUrl,
                                    wordCount: info.wordCount, tocUrl: info.tocUrl,
                                    raw: rawMap)
@@ -698,11 +698,12 @@ final class LegadoEngineBackend: @unchecked Sendable {
 
     /// ⭐ **一本书**（老引擎的形状）
     static func bookPayload(_ name: String, author: String, intro: String, kind: String,
-                            lastChapter: String, coverUrl: String, bookUrl: String,
+                            group: String = "", lastChapter: String, coverUrl: String, bookUrl: String,
                             wordCount: String, tocUrl: String,
                             raw: [String: String]) -> [String: Any] {
         var d: [String: Any] = [
             "name": name, "author": author, "intro": intro, "kind": kind,
+            "group": group,
             "lastChapter": lastChapter, "coverUrl": coverUrl, "bookUrl": bookUrl,
             "wordCount": wordCount, "tocUrl": tocUrl,
         ]
