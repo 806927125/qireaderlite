@@ -82,6 +82,7 @@ declare -a GATES=(
   "swift-bookdto:test/swift-bookdto.test.js"
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
+  "real-timeout-guard:test/real-timeout-guard.test.js"
 )
 
 TOTAL_PASS=0

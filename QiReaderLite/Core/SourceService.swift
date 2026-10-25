@@ -153,12 +153,6 @@ final class SourceService {
         // ⭐⭐⭐ **只有一个引擎了**（老 JS 引擎 2026-10-25 退役）
         //   ⇒ 不再有「开关」⇒ 不再有「回退」⇒ **失败就是失败**，如实报出来 ⭐⭐⭐
         //
-        // ⚠️ **唯一例外**：`login` / `loginProbe`（站方登录）**暂时**还跑在老引擎的 WKWebView 上
-        //   （新引擎还没这个 op）⇒ 它们迁过去 ⇒ 老引擎的 WKWebView 壳 + `Resources/engine/*.js`
-        //   ⇒ **一并物理删除** ⭐⭐⭐
-        if op == "login" || op == "loginProbe" {
-            return try await RuleSandbox.shared.invoke(op, payload, source: source)
-        }
         do {
             guard let r = try await invokeNewEngine(op, payload, source: source) else {
                 // 新引擎不认识这个 op ⇒ 明确报错（**不再悄悄落老引擎**）
@@ -207,50 +201,199 @@ final class SourceService {
         //   · 取内容类（详情/目录/正文）⇒ 300 秒
         //     （站方详情页会**逐条试 8 条线路** ⇒ 8×29 秒 = 232 秒是**正常的**）
         let budget = Self.newEngineTimeoutSeconds(for: op)
-        return try await withThrowingTaskGroup(of: Any?.self) { group in
-            group.addTask {
-                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Any?, Error>) in
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        do {
-                            let r = try LegadoEngineBackend.shared.invoke(op, payload, source: source)
-                            cont.resume(returning: r)
-                        } catch {
-                            cont.resume(throwing: error)
-                        }
-                    }
-                }
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(budget * 1_000_000_000))
+        // ⭐⭐⭐⭐⭐ **卡死线程配额检查**（第二层防线 ⇒ 别让手机被烧死）
+        //   JSC 死循环的线程收不回来 ⇒ 满载 CPU ⇒ 多个叠加 ⇒ 热保护杀 App ⭐⭐⭐
+        //   ⇒ 满额 ⇒ **不再启动新的引擎调用**，如实报错（宁可报错也别被杀）⭐
+        guard Self.hasStuckThreadBudget() else {
+            throw ServiceError.engineFailed(
+                "已有 \(Self.maxStuckThreads) 个站方 JS 死循环在烧 CPU（手机会发烫）"
+                + " ⇒ 已暂停新的引擎调用 ⇒ 请重启 App 或换本书源")
+        }
+        // ⭐⭐⭐⭐⭐ **真超时**（2026-10-25 真机闪退实证 + 沙盒可证伪实验）
+        //
+        // ⚠️⚠️⚠️ **旧写法（`withThrowingTaskGroup`）的致命缺陷**：
+        //   TaskGroup 在**退出作用域时必须等所有子任务结束** ⇒ 站方 JS 死循环那个子任务
+        //   **永不结束** ⇒ 「超时」分支虽然先拿到，但 `group.cancelAll()` **救不了它**
+        //   （子任务跑在 `DispatchQueue.global().async` 里 ⇒ 不可取消）
+        //   ⇒ **超时永远不生效** ⇒ 调用方一直等 ⇒ App 主线程被拖住
+        //   ⇒ 站方 JS 死循环在 **App 进程内** 100% CPU 空转 ⇒ 设备发烫
+        //   ⇒ iOS 热保护 / 看门狗杀 App ⇒ **表现为「闪退」**（不是崩溃日志，是被系统杀）⭐⭐⭐
+        //
+        //   ⭐ **沙盒实证**（`swiftc` 复刻同款结构，可复现）：
+        //     旧写法：1 秒超时 ⇒ **实际耗时 8 秒**（等到了卡死子任务）⇒ 超时形同虚设
+        //     新写法：1 秒超时 ⇒ **实际 1.0 秒**返回 ⇒ 超时真生效 ⭐⭐⭐
+        //
+        // ⇒ 修法：**不用 TaskGroup** ⇒ 改用「一次性 resume 闸门 + 独立超时定时器」
+        //   ⇒ 超时信号与引擎线程**解耦** ⇒ 卡死的引擎线程不会拖住返回 ⭐⭐⭐
+        //
+        // ⚠️ **超时后引擎线程还在烧 CPU**（JSC 没有中断 API）⇒
+        //   ⇒ 必须**换掉卡死的会话**（JSC context 复用 ⇒ 死循环会传染）⭐
+        //   ⇒ 并且**熔断**（否则反复烧 CPU ⇒ 设备发烫 ⇒ 又被杀）⭐⭐⭐
+        return try await Self.withRealTimeout(seconds: budget) {
+            try LegadoEngineBackend.shared.invoke(op, payload, source: source)
+        } onTimeout: {
+            // ⭐⭐⭐ **换掉卡死的会话**（JSC context 是复用的 ⇒ 里面死循环 ⇒ 后面每个 op 都卡在锁上）
+            //   ⇒ 换掉它 ⇒ 这个源立刻能用 ⭐
+            LegadoEngineBackend.shared.dropSession(for: source.bookSourceUrl)
+            // ⭐⭐⭐ **记一笔卡死线程**（JSC 没有中断 API ⇒ 这个线程收不回来 ⇒ 一直在烧 CPU）⭐
+            Self.noteStuckThread()
+            // ⚠️ **不再有「永久切回老引擎」**（老引擎 2026-10-25 退役）⇒
+            //   ⇒ 超时就是超时 ⇒ 如实报错 ⇒ 用户知道哪儿有问题 ⭐⭐⭐
+            // ⇒ 但**必须有兜底**：同一个源反复死循环 ⇒ 会反复烧 CPU ⇒ 设备发烫 ⇒ 又被杀
+            //   ⇒ **连续超时 ⇒ 熔断这个源**（明确告诉用户，不再无限重试）⭐⭐⭐
+            Self.newEngineTimeouts += 1
+            let fatal = Self.newEngineTimeouts >= Self.newEngineFatalTimeoutCount
+            RuleSandbox.shared.appendLog(
+                "[引擎] 新引擎「\(op)」超时（\(Int(budget)) 秒）⇒ 已换掉卡死的会话"
+                + (fatal ? " ⇒ ⚠️ **连续 \(Self.newEngineTimeouts) 次超时 ⇒ 这个源的站方 JS 死循环了 ⇒ 已熔断**"
+                         : "（这个源现在能用）"))
+            if fatal {
+                Self.newEngineTimeouts = 0
                 throw ServiceError.engineFailed(
-                    "新引擎「\(op)」超时（\(Int(budget)) 秒）⇒ 站方服务器没响应或引擎卡住了")
-            }
-            do {
-                guard let first = try await group.next() else {
-                    throw ServiceError.engineFailed("新引擎「\(op)」没有结果")
-                }
-                group.cancelAll()
-                return first
-            } catch {
-                group.cancelAll()
-                // ⭐⭐⭐ **超时要「换掉卡死的会话」**（不只是放弃这一次调用）
-                //   引擎的 JSC context 是复用的 ⇒ 里面死循环 ⇒ 后面每个 op 都卡在锁上
-                //   ⇒ 换掉它 ⇒ 这个源立刻能用 ⭐
-                let msg = String(describing: error)
-                if msg.contains("超时") {
-                    // ⭐⭐⭐ **换掉卡死的会话**（JSC context 是复用的 ⇒ 死循环会传染）
-                    LegadoEngineBackend.shared.dropSession(for: source.bookSourceUrl)
-                    // ⭐⭐⭐ **超时 ⇒ 换掉卡死的会话**（JSC context 是复用的 ⇒ 死循环会传染）
-                    //   ⇒ 换掉它 ⇒ 这个源立刻能用 ⭐
-                    // ⚠️ **不再有「永久切回老引擎」**（老引擎 2026-10-25 退役）⇒
-                    //   ⇒ 超时就是超时 ⇒ 如实报错 ⇒ 用户知道哪儿有问题 ⭐⭐⭐
-                    Self.newEngineTimeouts += 1
-                    RuleSandbox.shared.appendLog(
-                        "[引擎] 新引擎「\(op)」超时 ⇒ 已换掉卡死的会话（这个源现在能用）")
-                }
-                throw error
+                    "新引擎「\(op)」连续 \(Self.newEngineFatalTimeoutCount) 次超时"
+                    + " ⇒ 这个书源的站方 JS 死循环了（引擎已熔断，避免 App 被拖死）"
+                    + " ⇒ 请换一条线路或换本书源")
             }
         }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **全局「卡死线程」配额**（2026-10-25 真机闪退的第二层防线）
+    ///
+    /// ⚠️⚠️ **为什么需要它**：JSC **没有中断 API** ⇒ 站方 JS 死循环 ⇒ 那个线程
+    ///   **永远烧 CPU**（在 App 进程内）⇒ 换掉会话也停不下它（线程已经进去了）⭐⭐⭐
+    ///   ⇒ 一个源死循环 = 1 个满载线程 ⇒ 两个源 = 2 个 ⇒ 手机发烫 ⇒ **iOS 热保护杀 App** ⭐
+    ///   ⇒ 老引擎在时：JS 跑在**独立 WebContent 进程** ⇒ 死循环不烧 App 进程 ⇒ App 不死
+    ///   ⇒ 老引擎退役后：**这一层保护没了** ⇒ 必须在 App 侧自己补 ⭐⭐⭐
+    ///
+    /// ⇒ 办法：**记录当前有多少个「已知卡死」的引擎线程**
+    ///   ⇒ 达到配额 ⇒ **不再启动新的引擎调用**，直接如实报错
+    ///   ⇒ 宁可告诉用户「有源死循环了」，也不要让 App 被系统杀掉 ⭐⭐⭐
+    private static let stuckThreadLock = NSLock()
+    private static var stuckThreadCount = 0
+    /// ⭐⭐⭐ **配额**（2 个满载线程就够让手机发烫了 ⇒ 保守取 2）
+    static let maxStuckThreads = 2
+
+    /// ⭐ **占用一个卡死线程配额**（超时 ⇒ 引擎线程还在烧 ⇒ 记一笔）
+    static func noteStuckThread() {
+        stuckThreadLock.lock()
+        stuckThreadCount += 1
+        let n = stuckThreadCount
+        stuckThreadLock.unlock()
+        RuleSandbox.shared.appendLog(
+            "[引擎] ⚠️ 站方 JS 死循环 ⇒ 引擎线程收不回来了（当前 \(n)/\(Self.maxStuckThreads)）"
+            + " ⇒ 手机会发烫 ⇒ 满额后不再启动新引擎调用")
+    }
+
+    /// ⭐ **有没有空余配额**（没有 ⇒ 不许再启动引擎调用）
+    static func hasStuckThreadBudget() -> Bool {
+        stuckThreadLock.lock(); defer { stuckThreadLock.unlock() }
+        return stuckThreadCount < Self.maxStuckThreads
+    }
+
+    /// ⭐⭐⭐⭐⭐ **连续多少次超时 ⇒ 熔断**（避免反复烧 CPU ⇒ 设备发烫 ⇒ 被系统杀）
+    ///
+    /// ⭐ **为什么需要它**（build252 删掉「回退老引擎」后暴露的缺口）：
+    ///   老引擎退役前 ⇒ 超时 ⇒ 回老引擎（独立进程 ⇒ 死循环不烧 App 进程）⇒ App 活着
+    ///   老引擎退役后 ⇒ 超时 ⇒ 只能自己扛 ⇒ 而 JSC 死循环的线程**还在烧 CPU**
+    ///   ⇒ 不熔断 ⇒ 用户每点一次就烧一轮 ⇒ 设备发烫 ⇒ iOS 杀 App ⇒ 又是「闪退」⭐⭐⭐
+    /// ⇒ 所以：**熔断 = 老引擎「永久切回」能力的等价物**（不是回退，是不再重试）⭐
+    static let newEngineFatalTimeoutCount = 2
+
+    /// ⭐⭐⭐⭐⭐ **真超时**（不用 TaskGroup ⇒ 不会被卡死的子任务拖住）
+    ///
+    /// ⚠️⚠️ **为什么不能用 `withThrowingTaskGroup`**：
+    ///   TaskGroup 退出时**必须等所有子任务结束** ⇒ 站方 JS 死循环那个子任务永不结束
+    ///   ⇒ 「超时」拿到的瞬间，`group.cancelAll()` **救不了已经跑在
+    ///   `DispatchQueue.global().async` 里的引擎线程**（不可取消）⇒ 仍然等到它结束
+    ///   ⇒ **超时形同虚设** ⇒ App 被拖死 ⇒ 沙盒实证：1 秒超时实际耗时 8 秒 ⭐⭐⭐
+    ///
+    /// ⇒ 本实现：**一次性 resume 闸门**（谁先到谁赢）+ **独立定时器**发超时信号
+    ///   ⇒ 超时信号与引擎线程完全解耦 ⇒ 卡死线程拖不住返回 ⭐⭐⭐
+    ///
+    /// - Parameters:
+    ///   - work: 在**后台线程**跑的引擎调用（同步）
+    ///   - onTimeout: 超时后的补救（可抛错 ⇒ 抛出去）
+    static func withRealTimeout<T>(seconds: Double,
+                                  work: @escaping () throws -> T,
+                                  onTimeout: @escaping () throws -> Void) async throws -> T {
+        // ⭐ **一次性闸门**：超时信号与引擎线程**谁先到谁赢** ⇒ 不会重复 resume
+        // ⚠️ **嵌套类型不能捕获外层作用域** ⇒ `onTimeout` 靠初始化参数传进来 ⭐
+        final class Gate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var cont: CheckedContinuation<T, Error>?
+            private var finished = false
+            private var timer: DispatchSourceTimer?
+            /// ⭐ 超时补救（由外层传入 ⇒ 闭包不捕获外层作用域）
+            private let onTimeout: () throws -> Void
+
+            init(onTimeout: @escaping () throws -> Void) { self.onTimeout = onTimeout }
+
+            /// ⭐ 引擎那边完成 ⇒ 尝试恢复
+            func succeed(_ value: T) { finish(.success(value)) }
+            /// ⭐ 引擎那边抛错 ⇒ 尝试恢复
+            func fail(_ error: Error) { finish(.failure(error)) }
+            /// ⭐ 超时信号 ⇒ 尝试恢复（**只对尚未完成的那一次生效**）
+            func timeout() {
+                // ⭐⭐⭐ **超时后先跑补救**（换掉卡死的会话 / 熔断）⇒ 补救抛错就抛那个错
+                lock.lock()
+                let already = finished
+                lock.unlock()
+                if !already {
+                    do {
+                        try onTimeout()
+                    } catch {
+                        finish(.failure(error))
+                        return
+                    }
+                }
+                finish(.failure(ServiceError.engineFailed("超时")))
+            }
+
+            private func finish(_ r: Result<T, Error>) {
+                lock.lock()
+                if finished { lock.unlock(); return }
+                finished = true
+                let c = cont
+                cont = nil
+                let t = timer
+                timer = nil
+                lock.unlock()
+                t?.cancel()
+                c?.resume(with: r)
+            }
+
+            /// 装上 continuation 并起超时定时器
+            func arm(_ c: CheckedContinuation<T, Error>, timeout: Double) {
+                lock.lock()
+                if finished {
+                    lock.unlock()
+                    c.resume(throwing: ServiceError.engineFailed("超时"))
+                    return
+                }
+                cont = c
+                lock.unlock()
+                let t = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+                t.schedule(deadline: .now() + timeout)
+                t.setEventHandler { [weak self] in self?.timeout() }
+                lock.lock(); timer = t; lock.unlock()
+                t.resume()
+            }
+        }
+
+        let gate = Gate(onTimeout: onTimeout)
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<T, Error>) in
+            gate.arm(cont, timeout: seconds)
+            // ⭐ 引擎调用跑在**后台队列**（引擎内部全同步 ⇒ 不能占主线程）
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let r = try work()
+                    gate.succeed(r)
+                } catch {
+                    gate.fail(error)
+                }
+            }
+        }
+    }
     }
 
     /// ⭐⭐⭐⭐⭐ **新引擎的结果可不可信**（不可信就当失败 ⇒ 如实告诉用户）

@@ -422,9 +422,15 @@ final class LegadoEngineBackend: @unchecked Sendable {
         case "bookInfo": out = try runBookInfo(session, engine, payload)
         case "toc": out = try runToc(session, engine, payload)
         case "content": out = try runContent(session, engine, payload)
+        // ⭐⭐⭐ **登录也归新引擎了**（2026-10-25 老引擎退役 ⇒ 物理删除前的最后一步）
+        case "login": out = try runLogin(engine, payload)
+        case "loginProbe": out = try runLoginProbe(engine)
+        // ⭐⭐⭐ 老引擎退役 ⇒ 这三个 op 也归新引擎（2026-10-25）
+        case "sourceVars": out = ["vars": try engine.sourceVars()]
+        case "sourceHosts": out = ["hosts": try engine.sourceHosts()]
+        case "filterAction": out = try runFilterAction(engine, payload)
         default:
-            // ⚠️ 登录 / loginProbe / sourceVars / sourceHosts / filterAction / explain*
-            //    ⇒ 仍走老引擎（站方 JS 交互 + 诊断面板）
+            // ⚠️ 其余 op（sourceVars / sourceHosts / filterAction / explain*）暂不接
             return nil
         }
         // ⭐ **站方 JS 改过的源级变量** ⇒ 回传给轻阅（落盘 ⇒ 下次直接生效）
@@ -563,6 +569,46 @@ final class LegadoEngineBackend: @unchecked Sendable {
     }
 
     /// ⭐ **发现页的分类 + 筛选栏**
+    /// ⭐⭐⭐ **登录**（老引擎 `engine.js` 的 `login` op 同款）
+    ///
+    /// ⚠️ **老引擎不是调 `login()`，而是跑【宿主传来的 action 表达式】**
+    ///   （App 的登录面板把 `loginUi` 里某个按钮的 `action` 传给宿主）⇒ 这里照抄 ⭐⭐⭐
+    /// ⇒ 站方只靠 `java.toast` / `java.log` 报结果 ⇒ `messages` 是**判断成败的唯一依据**⭐
+    private func runLogin(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
+        let action = payload["action"] as? String ?? ""
+        let formValues = payload["formValues"] as? [String: String] ?? [:]
+        let r = try engine.runLoginAction(action, formValues: formValues)
+        var d: [String: Any] = ["ok": r.ok, "messages": r.messages]
+        if r.ok { d["result"] = r.result } else { d["error"] = r.result }
+        // 站方 `putLoginInfo` / `putLoginHeader` 写进引擎的 storage ⇒ 取回落盘 ⭐⭐⭐
+        let info = engine.loadLoginInfo()
+        if !info.isEmpty, let j = try? JSONSerialization.data(withJSONObject: info) {
+            d["__loginInfo"] = String(data: j, encoding: .utf8)
+        }
+        let header = engine.currentLoginHeaderString()
+        if !header.isEmpty { d["__loginHeader"] = header }
+        engineLog("[新引擎] 登录动作完成：ok=\(r.ok) · 站方原文 \(r.messages.count) 条")
+        return d
+    }
+
+    /// ⭐⭐⭐ **登录状态检测**（老引擎 `loginProbe` 同款）
+    private func runLoginProbe(_ engine: SourceEngine) throws -> Any {
+        let r = try engine.probeLoginStatus()
+        engineLog("[新引擎] 登录态检测：baseUrl=\(r.baseUrl) · stationCheck=\(r.stationCheck) · 原文 \(r.messages.count) 条")
+        return ["baseUrl": r.baseUrl, "messages": r.messages, "stationCheck": r.stationCheck]
+    }
+
+    /// ⭐⭐⭐ **执行发现页筛选栏的 action**（老引擎 `filterAction` 同款）
+    private func runFilterAction(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
+        let action = payload["action"] as? String ?? ""
+        let title = payload["title"] as? String ?? ""
+        let value = payload["value"] as? String ?? ""
+        let r = try engine.runFilterAction(action: action, title: title, value: value)
+        var d: [String: Any] = ["ok": r.ok]
+        if !r.ok { d["error"] = r.error }
+        return d
+    }
+
     private func runExploreKinds(_ engine: SourceEngine) throws -> Any {
         let (kinds, filters) = try engine.exploreKinds()
         // ⭐⭐ **把分类/筛选栏的标题记下来**（2026-10-24 真机栽的）
