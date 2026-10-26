@@ -54,6 +54,8 @@ FILES=(
   "QiReaderLite/Core/SourceRawArchive.swift"
   "QiReaderLite/Core/HostTools.swift"
   "QiReaderLite/Core/MemoryMeter.swift"
+  "QiReaderLite/Core/ByteCappedTransport.swift"   # ⭐⭐⭐ 按字节封顶的 HTTP 缓存（2026-10-26）
+  "QiReaderLite/Core/JSEngineFactory.swift"        # ⭐⭐⭐ JS 后端工厂（只有 WKWebView）
   "QiReaderLite/Core/LRUKeys.swift"        # ⭐⭐⭐ 内存水位（2026-10-26 build262）
   "QiReaderLite/Core/ServiceError.swift"      # ⭐⭐⭐ 错误类型独立文件 ⇒ 两组都能编
   # ⭐⭐⭐⭐⭐ **`AppPaths.swift` 也要编**（2026-10-26 从 `Store.swift` 拆出来的纯 Foundation 文件）

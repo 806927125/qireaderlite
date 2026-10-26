@@ -208,6 +208,12 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         // ⭐ 内存水位（**只报当前/峰值** ⇒ 熔断/限额/自动清理那套 2026-10-26 已拆）
         _ = MemoryMeter.sample()
         lines.append(MemoryMeter.panelLine)
+        // ⭐ 引擎会话数（新引擎的会话；当前用老引擎时是 0 ⇒ 看着不误导）
+        lines.append("引擎会话：\(LegadoEngineBackend.shared.liveSessionCount) 个"
+                     + "（上限 \(LegadoEngineBackend.shared.maxLiveSessions)）")
+        // ⭐⭐⭐ **本小时写盘**（iOS 的 diskwrites 限额 ≈ 1.07GB/天 ⇒ 写太多会被系统杀）
+        lines.append("本小时写盘：\(HostTools.DiskWriteMeter.hourBytes) B"
+                     + "（限额 \(HostTools.DiskWriteMeter.hourlyLimit) B）")
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))

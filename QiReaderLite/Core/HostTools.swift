@@ -564,6 +564,14 @@ enum DiskWriteMeter {
     /// ⇒ 就算 24 小时都在写也才 48 MB ⇒ **安全** ⭐⭐⭐
     static let hourlyLimit = 2 * 1024 * 1024
 
+    /// ⭐ 本小时已写字节（面板显示用）
+    static var hourBytes: Int {
+        lock.lock(); defer { lock.unlock() }
+        let now = Date()
+        if now.timeIntervalSince(hourStart) > 3600 { return 0 }
+        return bytesThisHour
+    }
+
     /// ⭐⭐⭐ **记一次写盘** ⇒ 返回**允许不允许继续写**
     @discardableResult
     static func record(_ bytes: Int) -> Bool {

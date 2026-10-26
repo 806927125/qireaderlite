@@ -231,6 +231,8 @@ if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
         QiReaderLite/Core/EngineBackend.swift \
         QiReaderLite/Core/ServiceError.swift \
         QiReaderLite/Core/LegadoEngineBackend.swift \
+        QiReaderLite/Core/ByteCappedTransport.swift \
+        QiReaderLite/Core/JSEngineFactory.swift \
   QiReaderLite/Core/LRUKeys.swift \
         "$LEGADO_BUILD"/LegadoCore.build/*.o \
         "$LEGADO_BUILD"/SwiftSoup.build/*.o \
