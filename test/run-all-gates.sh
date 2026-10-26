@@ -91,6 +91,10 @@ declare -a GATES=(
   #   ⇒ 一个源 = 一个 JSC context ⇒ 会话只增不减 ⇒ 内存随「用过的源数」涨
   #   ⇒ 钉：会话有上限（LRU）/ 全源搜索并发有上限 / 面板看得见
   "engine-session-cap:test/engine-session-cap.test.js"
+  # ⭐⭐⭐⭐⭐ 阅读器排版缓存上限（2026-10-26 jetsam 6.8GB 的**真凶**）
+  #   ⇒ renders 每章存一份 NSLayoutManager/NSTextContainer 排版对象 ⇒ 不封顶就 GB 级
+  #   ⇒ 钉：上限是个小数字 / 插入后真的淘汰 / 只动 renders（texts 是目录依赖）
+  "reader-render-cache:test/reader-render-cache.test.js"
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
   "real-timeout-guard:test/real-timeout-guard.test.js"
