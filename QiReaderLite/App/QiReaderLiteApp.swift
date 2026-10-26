@@ -46,6 +46,18 @@ struct QiReaderLiteApp: App {
             RootView()
                 .environmentObject(sources)
                 .environmentObject(library)
+                // ⭐⭐⭐ **文件 / 分享进来的书源**（2026-10-26）
+                //   ⇒ 以前**没有这个入口** ⇒ 文件送进来了没人接 ⇒ 静默无反应（「选中打不开」）⭐⭐⭐
+                .onOpenURL { url in
+                    Task { @MainActor in
+                        do {
+                            let n = try SourceFileImport.importFile(url, into: sources)
+                            Toast.show("从文件导入 \(n) 个书源")
+                        } catch {
+                            Toast.show("导入失败：\(error.localizedDescription)")
+                        }
+                    }
+                }
                 // 玻璃浓度注入 environment → 全站 25 处玻璃调用点自动跟随
                 // （0 = 纯玻璃，0.85 = 乳白玻璃 ≈ 栖阅的 rgba(255,255,255,.82)）
                 .environment(\.glassTint, glassTintPercent / 100 * GlassTintStore.maxVeil)

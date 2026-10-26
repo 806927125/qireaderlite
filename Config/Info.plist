@@ -74,6 +74,24 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- ⭐⭐⭐ 2026-10-26：声明 App 能打开书源文件（自签包没有这段 ⇒ iOS 不会把文件路由给我们
+	     ⇒ 「从文件 App 里点 json ⇒ 打不开轻阅」）⭐⭐⭐ -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>书源 JSON</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.json</string>
+				<string>public.plain-text</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

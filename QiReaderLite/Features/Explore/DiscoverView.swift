@@ -12,9 +12,17 @@ struct DiscoverView: View {
     @EnvironmentObject private var store: SourceStore
     @State private var search = ""
 
-    /// 只列「启用 + 有发现页」的源 —— 不能点的源摆在这儿没意义
+    /// 只列「启用 + **真的有**发现页」的源 —— 不能点的源摆在这儿没意义
+    ///
+    /// ⭐⭐⭐ **2026-10-26 用户反馈**：「发现页有些只有搜索的书源不应该出现在里面」
+    /// ⚠️⚠️ **旧写法 `$0.exploreUrl != nil` 是漏的** ⇒ 站方源里 `exploreUrl` 常写成**空串 `""`**
+    ///   （不是缺字段）⇒ `!= nil` 照样通过 ⇒ **等于没过滤** ⇒ 只有搜索的源全冒出来了 ⭐⭐⭐
+    /// ⇒ 现在的判据 = **去掉空白后还剩东西**才算「有发现页」⭐
     private var usable: [BookSource] {
-        let list = store.enabled.filter { $0.exploreUrl != nil }
+        let list = store.enabled.filter { s in
+            guard let u = s.exploreUrl else { return false }
+            return !u.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         guard !search.isEmpty else { return list }
         return list.filter {
             $0.name.localizedCaseInsensitiveContains(search)

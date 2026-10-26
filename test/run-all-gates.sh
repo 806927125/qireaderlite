@@ -87,6 +87,8 @@ declare -a GATES=(
   #   改了 SourceService.swift 沙盒却全绿 ⇒ 因为它**根本没被编过** ⇒ 多一个 } 就把 CI 挂了
   #   ⇒ 现在用 stub 让它**真被 swiftc 编译** ⇒ 3 秒抓到 ⇒ 不用等 5 分钟 CI
   "linux-compile:test/linux-compile-gate.test.js"
+  # ⭐⭐⭐ 发现页过滤 + 文件导入（2026-10-26 用户反馈三条）
+  "source-import-discover:test/source-import-discover.test.js"
   # ⭐⭐⭐⭐⭐ **op 结构一致性**（2026-10-25 真机 build253 实证）：
   #   runBookInfo 返回 ["book": {...}]（嵌套）而 isTrustworthy 读顶层 ⇒ 详情页 100% 失败
   #   ⇒ 沙盒对拍**直接调引擎** ⇒ 绕过 App 侧这层 ⇒ 永远抓不到 ⭐⭐⭐
