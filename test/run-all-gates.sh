@@ -91,6 +91,11 @@ declare -a GATES=(
   #   ⇒ 一个源 = 一个 JSC context ⇒ 会话只增不减 ⇒ 内存随「用过的源数」涨
   #   ⇒ 钉：会话有上限（LRU）/ 全源搜索并发有上限 / 面板看得见
   "engine-session-cap:test/engine-session-cap.test.js"
+  # ⭐⭐⭐⭐⭐ **引擎会话 retain cycle**（2026-10-26 jetsam 6.8GB 实证）
+  #   ⇒ `Session ⟷ EngineHostAPI` 互指成环 ⇒ 被 LRU 淘汰的会话**永不释放**
+  #   ⇒ 连带 JSC 上下文 / HTTP 缓存 / 整份源永久占着 ⇒ 会话封顶形同虚设 ⭐⭐⭐
+  #   ⇒ 钉：api 持有的 session 必须是 weak / 淘汰要真删 / 清会话要 invalidate
+  "engine-leak-cycle:test/engine-leak-cycle.test.js"
   # ⭐⭐⭐⭐⭐ 阅读器排版缓存上限（2026-10-26 jetsam 6.8GB 的**真凶**）
   #   ⇒ renders 每章存一份 NSLayoutManager/NSTextContainer 排版对象 ⇒ 不封顶就 GB 级
   #   ⇒ 钉：上限是个小数字 / 插入后真的淘汰 / 只动 renders（texts 是目录依赖）

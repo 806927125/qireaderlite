@@ -169,17 +169,27 @@ final class EngineDiagnosticLogger: EngineLogger, @unchecked Sendable {
 /// ⇒ 这里直接转发给引擎 ⇒ 不会出现「两套对象、内容不一致」。
 final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
 
-    private let session: LegadoEngineBackend.Session
+    /// ⭐⭐⭐ **必须 `weak`**（2026-10-26 · jetsam 6.8GB 闪退真凶之一）
+    ///
+    /// ⚠️⚠️⚠️ **强引用 = retain cycle**：
+    /// ```
+    /// Session ──▶ api（强）──▶ session（强）──▶ Session
+    /// ```
+    /// ⇒ `Session` **永远不会被释放** ⇒ 它连带的东西（JSC 上下文 / HTTP 缓存 / 整份源）**永久占着内存**
+    /// ⇒ ⭐ **`maxLiveSessions = 4` 的封顶因此完全失效**（LRU 踢掉的会话还活着）⭐
+    /// ⇒ 用户有 125 个源 ⇒ 每碰一个源就永久多一份 ⇒ 几十个源就能吃到 GB 级 ⇒ **jetsam 杀进程**（无 .ips）
+    /// ⇒ 老引擎免疫：它的 JS 跑在 **WebContent 独立进程** ⇒ 泄漏在那边 ⇒ App 进程不受影响 ⭐⭐⭐
+    private weak var session: LegadoEngineBackend.Session?
 
     init(session: LegadoEngineBackend.Session) { self.session = session }
 
     func hostObject(named name: String) -> HostObject? {
         switch name {
-        case "source": return session.engine?.sourceObject
-        case "book": return session.engine?.bookObject
-        case "chapter": return session.engine?.chapterObject
+        case "source": return session?.engine?.sourceObject
+        case "book": return session?.engine?.bookObject
+        case "chapter": return session?.engine?.chapterObject
         // ⭐⭐ **cookie 宿主对象**（站方 `cookie.*` —— 真实语料 205 处）
-        case "cookie": return session.engine?.cookieObject
+        case "cookie": return session?.engine?.cookieObject
         default: return nil
         }
     }
