@@ -304,13 +304,17 @@ final class SourceService {
     ///   ⇒ 只在**真的危险**时才动手 ⭐⭐⭐
     /// ⚠️ **为什么有冷却期**：清完还是高 ⇒ 再清一百次也没用 ⇒ 别刷屏、别连坐好会话 ⭐⭐⭐
     private static func checkMemoryWaterline(op: String) {
-        let bytes = MemoryMeter.sample()
+        MemoryMeter.configure(storeURL: AppPaths.memMeterFile)
+        // ⭐⭐⭐ **记一次采样 + 落盘**（op 名带上 ⇒ 被 jetsam 杀掉也能回看是哪个 op）
+        let bytes = MemoryMeter.measure()
+        MemoryMeter.note(bytes: bytes, op: op)
         guard MemoryMeter.record(bytes: bytes) else { return }   // 未超限 ⇒ 什么都不做
         guard MemoryMeter.canAutoResetNow else { return }        // 冷却期内 ⇒ 不重复清
         let beforeMB = MemoryMeter.currentMB
         // ⭐⭐⭐ **清空引擎会话 = 重建 JS context**（老引擎退役后，JSC context 就在会话里）
         LegadoEngineBackend.shared.dropAllSessions()
-        let after = MemoryMeter.sample()
+        let after = MemoryMeter.measure()
+        MemoryMeter.note(bytes: after, op: op + "(清后)")
         MemoryMeter.noteAutoReset(fromMB: beforeMB, toMB: after / (1024 * 1024))
         RuleSandbox.shared.appendLog(
             "[内存] 「\(op)」后占用 \(beforeMB) MB ≥ 限额 \(MemoryMeter.autoResetThresholdMB) MB"

@@ -77,6 +77,7 @@ echo "▶ 类型检查 Foundation 层…"
   QiReaderLite/Core/EngineBackend.swift \
   QiReaderLite/Core/HostTools.swift \
   QiReaderLite/Core/MemoryMeter.swift \
+  QiReaderLite/Core/LRUKeys.swift \
   QiReaderLite/Core/SourceRawArchive.swift \
   QiReaderLite/Core/AppPaths.swift \
   QiReaderLite/Core/SourceDictCache.swift \

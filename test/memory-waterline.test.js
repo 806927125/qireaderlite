@@ -108,6 +108,11 @@ console.log('\n── 2. 自检面板必须有内存项（之前没有 ⇒ 涨�
 const sb = fs.existsSync(sbPath) ? stripComments(fs.readFileSync(sbPath, 'utf8')) : '';
 ok(/MemoryMeter\.panelLine/.test(sb), 'diagnose() 里挂了内存那一行');
 ok(/MemoryMeter\.sample\(\)/.test(sb), '面板会先采样一次（拿的是实时水位）');
+// ⭐⭐⭐⭐⭐ build263：jetsam 杀进程 ⇒ 内存里的峰值/日志**一起没了**
+//   ⇒ 崩了再看面板啥也看不到 ⇒ 必须**落盘** + 面板要能回看「上次会话」
+ok(/MemoryMeter\.lastSessionText/.test(sb), '面板有「上次会话」那一行（崩了也能回看）');
+ok(/MemoryMeter\.configure\(storeURL:/.test(sb), '启动就注入落盘位置（面板立刻能读上次会话）');
+ok(/AppPaths\.memMeterFile/.test(sb), '落盘位置来自 AppPaths（单一真相）');
 
 console.log('\n── 3. 超限必须自己先清（清引擎会话 = 重建 JS context）──');
 const svc = fs.existsSync(svcPath) ? stripComments(fs.readFileSync(svcPath, 'utf8')) : '';

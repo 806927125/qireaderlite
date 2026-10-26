@@ -87,6 +87,10 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ 内存水位（2026-10-26 jetsam 6.8GB 实证 ⇒ 面板原来没有内存项）
   #   ⇒ 钉：量的是 phys_footprint（jetsam 口径）/ 面板有内存行 / 超限自己先清
   "memory-waterline:test/memory-waterline.test.js"
+  # ⭐⭐⭐⭐⭐ 引擎会话封顶（2026-10-26 jetsam 6.8GB 真凶 ⇒ 6.8GB 的真正来源）
+  #   ⇒ 一个源 = 一个 JSC context ⇒ 会话只增不减 ⇒ 内存随「用过的源数」涨
+  #   ⇒ 钉：会话有上限（LRU）/ 全源搜索并发有上限 / 面板看得见
+  "engine-session-cap:test/engine-session-cap.test.js"
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
   "real-timeout-guard:test/real-timeout-guard.test.js"

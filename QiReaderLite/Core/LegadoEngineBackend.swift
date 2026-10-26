@@ -328,6 +328,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
     static let shared = LegadoEngineBackend()
 
     private var sessions: [String: Session] = [:]
+    /// ⭐⭐⭐ **会话的 LRU 顺序**（最旧在前）—— 配合 `maxLiveSessions` 封顶
+    ///   ⚠️ 顺序逻辑单独放 `LRUKeys.swift`（纯 Foundation）⇒ 沙盒能真跑真测 ⭐⭐⭐
+    private var sessionOrder = LRUKeys(limit: LegadoEngineBackend.maxLiveSessions)
     private let lock = NSLock()
 
     // MARK: 会话
@@ -521,7 +524,11 @@ final class LegadoEngineBackend: @unchecked Sendable {
     private func session(for source: BookSource) throws -> Session {
         let key = source.bookSourceUrl
         lock.lock()
-        if let s = sessions[key] { lock.unlock(); return s }
+        if let s = sessions[key] {
+            sessionOrder.touch(key)          // ⭐ 命中 ⇒ 提到「最近使用」（LRU）
+            lock.unlock()
+            return s
+        }
         lock.unlock()
 
         let engineSource = Self.convert(source)
@@ -529,10 +536,42 @@ final class LegadoEngineBackend: @unchecked Sendable {
         let s = try Session(source: engineSource, jar: jar, jsLib: source.jsLib)
         lock.lock()
         // ⚠️ 可能有别的线程先建了 ⇒ 以先建的那个为准（本建的白扔）
-        if let exist = sessions[key] { lock.unlock(); return exist }
+        if let exist = sessions[key] {
+            sessionOrder.touch(key)
+            lock.unlock()
+            return exist
+        }
         sessions[key] = s
+        let evicted = sessionOrder.insert(key)        // ⭐⭐⭐ 会话数封顶
+        if let evictedKey = evicted { sessions.removeValue(forKey: evictedKey) }
         lock.unlock()
+        // ⚠️ 被淘汰的会话在**锁外**释放 ⇒ JSC context 的释放不占着锁
+        if let evictedKey = evicted {
+            NSLog("[engine] 会话数超上限 ⇒ 淘汰最久未用的：\(evictedKey)")
+        }
         return s
+    }
+
+    /// ⭐⭐⭐⭐⭐ **会话数封顶**（2026-10-26 jetsam 6.8GB 真凶）
+    ///
+    /// ⚠️⚠️⚠️ **为什么必须有（这才是「6.8GB」的真正来源）**：
+    ///   ① **一个源 = 一个会话 = 一个 JSC context**（引擎侧 contextLock 复用）⭐⭐⭐
+    ///   ② 站方 JS 往 `globalThis` 塞的东西（聚合源那套全局）⇒ **都活在这个 context 里** ⭐⭐⭐
+    ///   ③ 老引擎（WKWebView）的 JS 跑在**独立 WebContent 进程** ⇒ 这些内存**不算 App 的**
+    ///      ⇒ 所以**老引擎一点问题没有**；新引擎进 App 进程 ⇒ 全算 App 的 ⇒ jetsam 杀 App ⭐⭐⭐
+    ///   ④ 以前**只增不减**（只有超时/手动重置才清）⇒ **内存随「用过的源数」线性涨**
+    ///      ⇒ 用户有 **125 个源**、搜索默认**扫所有启用的源** ⇒ 一次搜索就建几十个 context ⭐⭐⭐
+    ///      ⇒ 6.8GB 完全对得上 ⭐⭐⭐
+    ///
+    /// ⭐ **修法**：只留**最近用的几个**会话 ⇒ 内存**不再随源数增长**
+    ///   ⇒ 淘汰 ⇒ JSC context 释放 ⇒ 内存回落 ⭐⭐⭐
+    ///   ⇒ 代价：换回一个被淘汰的源要**重建 context**（毫秒级）⇒ 用户无感 ⭐⭐⭐
+    static let maxLiveSessions = 4
+
+    /// ⭐⭐⭐ **当前活着的会话数**（自检面板显示 ⇒ 一眼看出「有没有在涨」）
+    var liveSessionCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return sessions.count
     }
 
     /// ⭐⭐⭐ **丢掉某个源的会话**（新引擎卡死时的急救）
@@ -548,6 +587,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
         lock.lock()
         let n = sessions.count
         sessions.removeAll()
+        sessionOrder.removeAll()
         lock.unlock()
         if n > 0 { NSLog("[engine] 清掉 \(n) 个会话") }
     }
@@ -555,6 +595,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
     func dropSession(for sourceUrl: String) {
         lock.lock()
         let existed = sessions.removeValue(forKey: sourceUrl) != nil
+        sessionOrder.remove(sourceUrl)
         lock.unlock()
         if existed {
             NSLog("[engine] 丢弃卡死的会话：\(sourceUrl)")

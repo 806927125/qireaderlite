@@ -20,6 +20,11 @@ import Foundation
 final class LegadoEngineBackend {
     static let shared = LegadoEngineBackend()
 
+    /// ⭐ 会话数上限（真身里是 4 ⇒ 签名要对齐；真身由 `linux-typecheck-engine.sh` 验）
+    static let maxLiveSessions = 4
+    /// ⭐ 当前活着的会话数（面板显示用）
+    var liveSessionCount: Int { 0 }
+
     func invoke(_ op: String, _ payload: [String: Any], source: BookSource) throws -> Any? { nil }
     func dropAllSessions() {}
     func dropSession(for sourceUrl: String) {}

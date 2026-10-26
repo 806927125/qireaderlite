@@ -25,6 +25,15 @@ import LegadoCore
 final class RuleSandbox: NSObject, ObservableObject {
     static let shared = RuleSandbox()
 
+    /// ⭐⭐⭐⭐⭐ **启动就把内存档案的落盘位置交出去**（build263）
+    ///
+    /// ⚠️ jetsam 杀进程 ⇒ 内存里的峰值/采样**一起没了** ⇒ 崩了再看面板啥也看不到
+    ///   ⇒ 所以采样必须**落盘** ⇒ 这里注入位置（App 起来就有）⇒ 面板立刻能回看上次会话 ⭐⭐⭐
+    override init() {
+        super.init()
+        MemoryMeter.configure(storeURL: AppPaths.memMeterFile)
+    }
+
     /// ⭐⭐⭐ **用系统浏览器打开**（站方 `java.startBrowser` / `startBrowserAwait` / `showBrowser` …）
     ///
     /// ⚠️ **为什么放这里**：要碰 `UIApplication` ⇒ 只能住在 import 了 UIKit 的文件
@@ -140,6 +149,20 @@ final class RuleSandbox: NSObject, ObservableObject {
         //   ⇒ 这一行 + 超限自动清（清引擎会话 = 重建 JS context）⇒ **抢在系统杀之前自救** ⭐⭐⭐
         _ = MemoryMeter.sample()
         lines.append(MemoryMeter.panelLine)
+        // ⭐⭐⭐⭐⭐ **引擎会话数**（2026-10-26 jetsam 6.8GB 实证）
+        //   ⇒ 一个源 = 一个会话 = 一个 JSC context ⇒ 以前**只增不减** ⇒ 内存随源数涨
+        //   ⇒ 现在封顶（≤4）⇒ 这一行能一眼看出「会话有没有在涨」⭐⭐⭐
+        lines.append("引擎会话：\(LegadoEngineBackend.shared.liveSessionCount) 个"
+                     + "（上限 \(LegadoEngineBackend.maxLiveSessions) · 超了就淘汰最久未用的）")
+        // ⭐⭐⭐⭐⭐ **上次会话的档案**（build263）
+        //   ⇒ jetsam 杀进程 ⇒ **内存里的峰值/日志一起没了** ⇒ 崩了再看面板啥也看不到
+        //   ⇒ 所以峰值 + 采样（带 op 名）**落盘** ⇒ 这一行能回看「被杀前涨到多少、最后一个 op 是啥」⭐⭐⭐
+        lines.append(MemoryMeter.lastSessionText)
+        let timeline = MemoryMeter.timelineText(6)
+        if !timeline.isEmpty {
+            lines.append("—— 内存采样（上次会话）——")
+            lines.append(timeline)
+        }
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))

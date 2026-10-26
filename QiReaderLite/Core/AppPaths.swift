@@ -33,6 +33,12 @@ enum AppPaths {
     /// 「3.6 (build 173)」这种一眼能看的写法
     static var appVersionLine: String { "\(appVersion) (build \(appBuild))" }
     static var libraryFile: URL { documents.appendingPathComponent("library.json") }
+    /// ⭐⭐⭐⭐⭐ **内存水位档案**（2026-10-26 build263）
+    ///
+    /// ⚠️⚠️ **为什么必须落盘**：jetsam 杀进程 ⇒ **内存里的峰值/日志一起没了**
+    ///   ⇒ 崩了之后再打开面板，**看不到「被杀前涨到多少」** ⇒ 白查一轮 ⭐⭐⭐
+    /// ⇒ ⇒ 峰值 + 采样（带 op 名）写到这个**小文件** ⇒ 下次打开面板就能看到 ⭐⭐⭐
+    static var memMeterFile: URL { documents.appendingPathComponent("memory-meter.json") }
     static var cacheDir: URL {
         let d = documents.appendingPathComponent("content_cache", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)

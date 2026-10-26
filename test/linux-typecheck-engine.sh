@@ -61,6 +61,7 @@ trap 'rm -rf "$OUT"' EXIT
   QiReaderLite/Core/AppPaths.swift \
   QiReaderLite/Core/HostTools.swift \
   QiReaderLite/Core/MemoryMeter.swift \
+  QiReaderLite/Core/LRUKeys.swift \
   2>&1 | tee "$OUT/log.txt"
 
 ERRS=$(grep -c "error:" "$OUT/log.txt" || true)
