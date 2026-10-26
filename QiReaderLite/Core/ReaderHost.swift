@@ -9,50 +9,6 @@ import WebKit
 ///                         tap / commentTap / commentLongPress / debugLog
 ///   原生 → JS（window.QiReader 5 个方法）：applySettings / setInitial / upsertChapter
 ///                                          refreshChapters / markChapterRequestFinished
-// MARK: - ⭐⭐⭐ 资源定位（**只服务阅读器** reader.html）
-//
-// ⚠️ 2026-10-25：老 JS 引擎物理删除后，这里**只**剩阅读器的 `reader.html` 需要定位
-//   ⇒ 原来的 `ResourceLocator`（在 `RuleSandbox.swift` 里，带老引擎的 11 个 JS 清单）
-//   ⇒ **拆成只找 reader.html 的精简版**，放在阅读器旁边 ⇒ 老引擎的痕迹彻底清零 ⭐⭐⭐
-enum ResourceLocator {
-    /// ⭐ 候选子目录（**只有阅读器**）
-    private static let subdirs = ["reader", "Resources/reader", ""]
-
-    /// ⭐⭐⭐ **定位一个资源文件**（阅读器用）
-    static func locate(_ name: String) -> URL? {
-        let base = (name as NSString).deletingPathExtension
-        let ext = (name as NSString).pathExtension
-
-        // 1) 常见子目录
-        for sub in subdirs {
-            if let u = Bundle.main.url(forResource: base, withExtension: ext, subdirectory: sub),
-               FileManager.default.fileExists(atPath: u.path) { return u }
-        }
-        // 2) bundle 根
-        if let u = Bundle.main.url(forResource: base, withExtension: ext),
-           FileManager.default.fileExists(atPath: u.path) { return u }
-        // 3) 递归兜底：把 bundle 树里所有同名文件都找出来
-        if let root = Bundle.main.resourceURL,
-           let hit = firstMatch(in: root, base: base, ext: ext) { return hit }
-        return nil
-    }
-
-    private static func firstMatch(in dir: URL, base: String, ext: String) -> URL? {
-        guard let items = try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil) else { return nil }
-        for item in items {
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) else { continue }
-            if isDir.boolValue {
-                if let hit = firstMatch(in: item, base: base, ext: ext) { return hit }
-            } else if item.lastPathComponent == "\(base).\(ext)" {
-                return item
-            }
-        }
-        return nil
-    }
-}
-
 @MainActor
 final class ReaderHost: NSObject, ObservableObject {
     private(set) var web: WKWebView!

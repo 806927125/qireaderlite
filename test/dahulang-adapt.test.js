@@ -18,7 +18,7 @@ const RAW = process.env.SRC_RAW ||
   '/workspace/attachments/39368aa564301d35/🍅大灰狼聚合5.9.30(vip完全版).json';
 const OUT = process.env.SRC_OUT ||
   '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json';
-const ENGINE = path.join(__dirname, '..', '..', 'legado-engine', 'Sources', 'LegadoCore');
+const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
@@ -83,53 +83,120 @@ if (!fs.existsSync(RAW) || !fs.existsSync(OUT)) {
 }
 
 // ───────── ② 引擎兼容层 ─────────
-// ───────── ② 引擎兼容层（新引擎） ─────────
-console.log('\n=== 2. 引擎侧兼容层（**新引擎**；老 JS 引擎已于 2026-10-25 物理删除）===');
-// ⭐⭐⭐⭐⭐ **老 JS 引擎已于 2026-10-25 物理删除** ⇒ 这里改成验**新引擎**（Swift）的等价能力
-//   ⇒ 验的是**真正在跑的那份代码**（不是参考实现）⭐⭐⭐
-//   ⇒ ⚠️ **「两遍跑 / 浏览器 / cookie 快照」这些是老引擎的实现机制**
-//   ⇒ 新引擎是**全同步**（`java.ajax` 直接发请求）⇒ **不需要两遍跑** ⭐⭐⭐
-const { engineSwiftSrc, engineSwiftRaw } = require('./engine-gate-helpers.js');
-const api = engineSwiftSrc('JS/JSHostAPI.swift');           // 宿主 API 契约（source/book/cookie/java）
-const analyzer = engineSwiftSrc('Rule/RuleParser.swift');    // 规则解析（整块 / 复合规则）
-const eng = engineSwiftSrc('Pipeline/SourceEngine.swift');  // 编排层（data: / 全局 / 登录）
-const javai = engineSwiftSrc('Support/Crypto.swift');       // 纯计算（hex/base64）
-const hostApi = engineSwiftSrc('Host/HostServices.swift');
+console.log('\n=== 2. 引擎侧 Legado 兼容层 ===');
+const api = stripComments(fs.readFileSync(path.join(ENGINE, 'source-api.js'), 'utf8'));
+const analyzer = stripComments(fs.readFileSync(path.join(ENGINE, 'rule-analyzer.js'), 'utf8'));
+const eng = stripComments(fs.readFileSync(path.join(ENGINE, 'engine.js'), 'utf8'));
+const javai = stripComments(fs.readFileSync(path.join(ENGINE, 'java-api.js'), 'utf8'));
 
-// ① 宿主对象：source/book/cookie 的 API 契约
-  // ⭐⭐⭐⭐⭐ **老引擎实现细节断言已退休**（2026-10-25 老 JS 引擎物理删除）
-  //   ⇒ 以前这些断言验的是**老引擎的函数名/代码片段**（如 `MAX_PASS` / `delete out[u]`）
-  //   ⇒ 那些是**实现细节**，不是语义 ⇒ 老引擎退役后**没有等价物** ⇒ 退休不损失语义覆盖 ⭐⭐⭐
-  //   ⇒ **语义覆盖在上面的【真跑段】**（现在跑的是【新引擎】）⇒ 覆盖不丢 ⭐⭐⭐
-  //   ⇒ 等价断言在【引擎仓的 swift test】（266 项）与真机上 ⭐⭐⭐
+ok(/function wrapSource/.test(api) && /getVariable/.test(api) && /setVariable/.test(api),
+   'source.getVariable / setVariable 有实现');
+ok(/getLoginInfoMap/.test(api) && /putLoginInfo/.test(api) && /getLoginInfo/.test(api),
+   'source.getLoginInfoMap / putLoginInfo / getLoginInfo 有实现');
+ok(/function wrapBook/.test(api) && /wrapped\.getVariable/.test(api),
+   'book.getVariable 有实现（站方会调 book.getVariable("custom")）');
+ok(/getCookie:\s*function/.test(api) && /setCookie:\s*function/.test(api) &&
+   /removeCookie:\s*function/.test(api) && /getKey:\s*function/.test(api),
+   'cookie.getCookie / setCookie / removeCookie / getKey 有实现');
+ok(/QR\.wrapSource \? QR\.wrapSource\(ctx\.source\)/.test(analyzer),
+   'jsScope 里的 source 是包过 API 的（裸对象 → TypeError → 规则静默失效）');
+ok(/QR\.wrapBook\(ctx\.book\)/.test(analyzer),
+   'jsScope 里的 book 是包过 API 的');
 
-// ② 规则解析：整块 / 复合规则 / **`@js:` 不被 `||` 拆**（2026-10-25 真机通用真凶）
+ok(/function isBlockRule/.test(analyzer) && /isBlockRule\(line\)/.test(analyzer),
+   '`<js>…</js>` 整块不按行切、也不按 || 拆（否则代码被腰斩 → Unexpected token <）');
+ok(/function splitJsWithTail/.test(analyzer) && /selectFromJsResult/.test(analyzer),
+   '支持复合规则 <js>代码</js>选择器（$.data / $.content）');
+ok(/function selectFromJsResult/.test(analyzer) && /evalJsonPath/.test(analyzer),
+   '复合规则的尾部选择器能取字段');
 
-// ③ 编排层：data: 伪 URL 不 fetch / jsLib 全局 / 登录
+ok(/dataUrlContent/.test(eng) && /indexOf\('data:'\) === 0/.test(eng),
+   'data: 伪 URL 不 fetch（聚合源用它塞参数）');
+ok(/g\.source = wrappedSrc/.test(eng),
+   'op 期间把 source 挂到全局（jsLib 里的函数在全局作用域）');
+ok(/\[URL 里的 JS 出错\]/.test(eng),
+   'URL 里的 JS 出错会打日志（不再默默吞掉 → 静默失效）');
 
-// ④ 纯计算：hex/base64 容错
+ok(/hexDecodeToString: function/.test(javai) && /b64decode\(s\)/.test(javai),
+   'hexDecodeToString 对 base64 串容错（站方写 base64 却按 hex 读）');
 
-// ⑤ ⭐⭐⭐⭐⭐ **新引擎是【全同步】⇒ 不需要「两遍跑」**（2026-10-25 真机实证）
-//   ⇒ 断言「有 ajax 的同步实现」而不是「有录制/缓存机制」⭐⭐⭐
+// 登录通道
+ok(/function ensureLoginLib/.test(eng), 'loginUrl 能像 jsLib 一样加载进全局');
+ok(/login: function \(p\)/.test(eng), '引擎有 login 操作');
+ok(/result: formValues/.test(eng), '表单值挂在 result 上（站方读 result[\'邮箱\']）');
+ok(/ensureJsLib\(source\)\.then/.test(eng), 'loginUrl 之前先加载 jsLib（它依赖 jsLib 的 host）');
+ok(/g\.result = scope\.result/.test(analyzer),
+   'jsLib 函数在全局作用域 → 全局要同步 source/result/book');
+ok(/setUseReplaceRule/.test(api) && /wrapped\[fn\]/.test(api),
+   'book 上补了 Legado 的 Book 方法（setUseReplaceRule 等）');
+ok(/var key: ''/.test(analyzer) || /key: ''/.test(analyzer), 'scope 里有 key（站方 jsLib 常用）');
 
-// ⑥ 浏览器（站方的 startBrowser / showBrowser）—— 宿主侧实现
+// 同步 ajax（两遍跑）—— Legado 的 java.ajax 是同步的，我们原生桥是异步的
+ok(/__qrAjaxRecord/.test(javai) && /__qrAjaxCache/.test(javai),
+   'java.ajax 支持录制/缓存（两遍跑的第一遍录 URL，第二遍同步返回正文）');
+ok(/__qrSuppressToast/.test(javai), '第一遍静音 toast（免得报「登录失败」假错）');
+ok(/function fetchRecorded/.test(analyzer) && /QR\.analyzeUrl/.test(analyzer),
+   '抓回来的 URL 认 ,{json} 后缀（method/headers/body 不丢）');
+ok(/QR\.analyzeUrl = analyzeUrl/.test(eng), 'engine.js 把 analyzeUrl 暴露给规则层');
+
+// 内嵌浏览器（番茄登录/注册/后台/教程 这些按钮全靠它）
+ok(/startBrowserAwait: function/.test(javai) && /showBrowser: function/.test(javai),
+   'startBrowser / startBrowserAwait / showBrowser 都有实现');
+ok(/mkBrowserLike/.test(javai) && /body: function/.test(javai),
+   '浏览器返回的页面对象有 .body()（站方这么用）');
+ok(/openBrowser: function/.test(javai), '浏览器走原生桥 openBrowser');
+ok(/rec\.kind === 'browser'/.test(analyzer), '两遍跑认得出浏览器类调用');
+ok(/QR\.java\.openBrowser/.test(analyzer), '浏览器 URL 由原生侧弹窗处理');
 const bsw = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Features', 'Browser', 'BrowserSheet.swift'), 'utf8');
 ok(/websiteDataStore = \.default\(\)/.test(bsw), '浏览器用共享 cookie 罐（登录态留得住）');
 ok(/HTTPCookieStorage\.shared\.setCookie/.test(bsw), '关掉时把 cookie 同步进 shared 罐（引擎请求要用）');
+const rbs = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');
+ok(/case "openBrowser"/.test(rbs) && /func openBrowser/.test(rbs), '原生桥有 openBrowser（弹浏览器等关闭）');
 
+// 浏览器登录后 cookie 必须合并回快照（否则「未获取到登录凭据」）
+ok(/__qrMergeCookie/.test(analyzer) && /__qrMergeCookie\(host, ck\)/.test(analyzer),
+   '浏览器关掉后 cookie 合并回快照');
+ok(/QR\.__qrCookieSnapshot/.test(javai) || /__qrCookieSnapshot/.test(javai) ||
+   /__qrCookieSnapshot/.test(fs.readFileSync(path.join(ENGINE, 'source-api.js'), 'utf8')),
+   'cookie 罐从可更新的快照读（中途能补新 cookie）');
 
-// ───────── ③ 引擎脚本清单（老引擎已退役 ⇒ 这段退休） ─────────
+// 同步 ajax 的循环机制（登录交接链）
+ok(/MAX_PASS/.test(analyzer), '循环有轮数上限（防死循环卡死 App）');
+ok(/function loop\(\)/.test(analyzer) && /fetchRecorded\(recorded, cache\)/.test(analyzer),
+   '两遍跑改成循环 + 顺序抓（浏览器在前 → 交接在后）');
+ok(/QR\.__qrAjaxCache && Object\.prototype\.hasOwnProperty\.call\(QR\.__qrAjaxCache, u\)[\s\S]{0,120}__qrAjaxRecord/.test(javai),
+   'ajax 是【缓存优先】再录制（反过来会死循环 + 浏览器反复弹）');
+ok(/__qrSuppressToast\) return Promise\.resolve\(''\);/.test(javai),
+   '第一遍的 toast / log 都静音（假报错别混进日志）');
+
+// 同步 ajax 的循环机制（登录交接链）
+ok(/MAX_PASS/.test(analyzer), '循环有轮数上限（防死循环卡死 App）');
+ok(/function loop\(\)/.test(analyzer) && /fetchRecorded\(recorded, cache\)/.test(analyzer),
+   '两遍跑改成循环 + 顺序抓（浏览器在前 → 交接在后）');
+ok(/QR\.__qrAjaxCache && Object\.prototype\.hasOwnProperty\.call\(QR\.__qrAjaxCache, u\)[\s\S]{0,120}__qrAjaxRecord/.test(javai),
+   'ajax 是【缓存优先】再录制（反过来会死循环 + 浏览器反复弹）');
+ok(/__qrSuppressToast\) return Promise\.resolve\(''\);/.test(javai),
+   '第一遍的 toast / log 都静音（假报错别混进日志）');
+
+// 同步 ajax 的循环机制（登录交接链）
+ok(/MAX_PASS/.test(analyzer), '循环有轮数上限（防死循环卡死 App）');
+ok(/function loop\(\)/.test(analyzer) && /fetchRecorded\(recorded, cache\)/.test(analyzer),
+   '两遍跑改成循环 + 顺序抓（浏览器在前 → 交接在后）');
+ok(/QR\.__qrAjaxCache && Object\.prototype\.hasOwnProperty\.call\(QR\.__qrAjaxCache, u\)[\s\S]{0,120}__qrAjaxRecord/.test(javai),
+   'ajax 是【缓存优先】再录制（反过来会死循环 + 浏览器反复弹）');
+ok(/__qrSuppressToast\) return Promise\.resolve\(''\);/.test(javai),
+   '第一遍的 toast / log 都静音（假报错别混进日志）');
+
+// ───────── ③ 脚本清单三处一致 ─────────
 console.log('\n=== 3. 引擎脚本清单三处一致 ===');
-// ⭐⭐⭐⭐⭐ **这段已退休**（2026-10-25 老 JS 引擎物理删除）
-//   ⇒ 以前验的是「老引擎的 11 个 JS 脚本在【RuleSandbox / harness.js / 门禁清单】三处一致」
-//   ⇒ 老引擎的 JS **已删** ⇒ 这份清单**不存在了** ⇒ 断言无意义 ⭐⭐⭐
-//   ⇒ 现在验的是**新引擎的等价保证**：
-//   ① 引擎**没有** JS 脚本依赖（规则解释器是 Swift 原生的）⭐⭐⭐
-//   ② 站方 jsLib 由**宿主**在 session 建立时加载（`loadJsLib`）⇒ 不需要脚本清单 ⭐⭐⭐
-const engineRaw = engineSwiftRaw('Pipeline/SourceEngine.swift');
-ok(/loadJsLib/.test(engineRaw),
-   '站方 jsLib 由宿主在 session 建立时加载（不需要脚本清单）');
-
+const swift = fs.readFileSync(path.join(__dirname, '..', 'QiReaderLite', 'Core', 'RuleSandbox.swift'), 'utf8');
+const harness = fs.readFileSync(path.join(__dirname, 'harness.js'), 'utf8');
+const toplevel = fs.readFileSync(path.join(__dirname, 'engine-script-toplevel.test.js'), 'utf8');
+ok(/"source-api\.js"/.test(swift), 'RuleSandbox.scripts 里有 source-api.js');
+ok(/'source-api\.js'/.test(harness), 'test/harness.js 的 FILES 里有 source-api.js');
+ok(/'source-api\.js'/.test(toplevel), 'engine-script-toplevel.test.js 的清单里有 source-api.js');
+ok(swift.indexOf('source-api.js') < swift.indexOf('rule-analyzer.js'),
+   'source-api.js 排在 rule-analyzer.js 前面（它要提供 wrapSource）');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

@@ -1,23 +1,23 @@
-// ⭐⭐⭐ **新引擎跑真实源** —— 用来跟新引擎做「真实源双实现对拍」
+// ⭐⭐⭐ **老引擎（Node）跑真实源** —— 用来跟新引擎做「真实源双实现对拍」
 //
 // ⚠️ 为什么要有它：
 //   132 条 fixture 对拍验的是「零件」⇒ 而「老引擎有的、新引擎没有的语义」
 //   往往藏在**真实源的整体链路**里（分类 → 书 → 目录 → 正文 的某一步）
 //   ⇒ 同一个源、同一套规则，两边各跑一遍 ⇒ **数字不一样的地方就是差异**⭐
 //
-// 用法：node test/new-engine-live.js <书源包.json> [源名关键字]
+// 用法：node test/old-engine-live.js <书源包.json> [源名关键字]
 // 输出：一行 JSON（分类数 / 书数 / 首本名 / 章节数 / 正文字数 / 每步错误）
 //
 // ⚠️ 原生请求走**真网络**（node fetch）⇒ 跟真机同条件
 
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 const packPath = process.argv[2];
 const keyword = process.argv[3] || '';
 if (!packPath) {
-  console.error('用法: node test/new-engine-live.js <pack.json> [源名关键字]');
+  console.error('用法: node test/old-engine-live.js <pack.json> [源名关键字]');
   process.exit(2);
 }
 let pack = JSON.parse(fs.readFileSync(packPath, 'utf8'));

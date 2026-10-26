@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================
-# ⭐⭐⭐ **真实源链路自检** —— 新引擎（Swift）单跑
+# ⭐⭐⭐ **真实源双实现对拍** —— 老引擎（Node）vs 新引擎（Swift）
 #
-# ⚠️⚠️ **2026-10-25：老引擎已物理删除** ⇒ 本脚本原来做的「老引擎 vs 新引擎」对拍
-#   **无法再做**（老的那一半没了）⭐⭐⭐
-# ⇒ 现在它做的是：**新引擎把真实源的整条链路跑一遍**（分类→发现→详情→目录→正文）
-#   ⇒ 每一步的「数量 / 错误」都打出来 ⇒ **一眼看出哪一步断了** ⭐⭐⭐
-# ⇒ **对拍能力没丢**：迁到了【引擎仓】的
-#   `Tests/LegadoCoreTests/StationDahulangChainParityTests.swift`
-#   （那边有老引擎的 Node 参考实现 + 真实响应 fixture）⭐⭐⭐
+# 验的是「老引擎有的、新引擎没有的语义」：
+#   同一个源、同一套规则、同一条链路（分类→发现→详情→目录→正文）
+#   两边各跑一遍 ⇒ **数字不一样的地方就是差异**⭐
 #
 # 用法：bash test/live-parity.sh <pack.json> [源名关键字]
-# ⚠️ 需要：node、本地已编译的 legado-engine（LegadoCore 模块）
+# ⚠️ 需要：node（+ jsdom）、本地已编译的 legado-engine（LegadoCore 模块）
 # ============================================================
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -47,37 +43,35 @@ echo "▶ 编译新引擎探针…"
   QiReaderLite/Core/SourceVariables.swift \
   QiReaderLite/Core/EngineBackend.swift \
   QiReaderLite/Core/LegadoEngineBackend.swift \
-  QiReaderLite/Core/LRUKeys.swift \
   "$LEGADO_BUILD"/LegadoCore.build/*.o \
   "$LEGADO_BUILD"/SwiftSoup.build/*.o \
   -o "$TMP/new-live" 2>"$TMP/err.txt"
 if [ $? -ne 0 ]; then echo "❌ 编译失败："; head -20 "$TMP/err.txt"; exit 1; fi
 echo "✓ 编译通过"
 
+echo "▶ 老引擎（Node）…"
+OLD=$(node test/old-engine-live.js "$PACK" "$KEYWORD" 2>/dev/null | tail -1)
+echo "  $OLD"
 echo "▶ 新引擎（Swift）…"
 NEW=$("$TMP/new-live" "$PACK" "$KEYWORD" 2>/dev/null | tail -1)
 echo "  $NEW"
 
 echo
-echo "=== 链路自检 ==="
-python3 - "$NEW" <<'PY'
+echo "=== 差异（老 vs 新）==="
+python3 - "$OLD" "$NEW" <<'PY'
 import json, sys
-try:
-    new = json.loads(sys.argv[1])
-except Exception as e:
-    print("  ⚠️ 解析失败：", e); sys.exit(0)
-steps = new.get('steps', {})
-bad = 0
-for s in sorted(steps):
-    v = steps[s]
-    err = v.get('error') if isinstance(v, dict) else None
-    if err:
-        bad += 1
-        print(f"  ❌ {s}: {err}")
+old = json.loads(sys.argv[1]); new = json.loads(sys.argv[2])
+steps = sorted(set(old.get('steps', {})) | set(new.get('steps', {})))
+diffs = 0
+for s in steps:
+    o = old.get('steps', {}).get(s, {})
+    n = new.get('steps', {}).get(s, {})
+    if o == n:
+        print(f"  ✅ {s}: {json.dumps(o, ensure_ascii=False)}")
     else:
-        print(f"  ✅ {s}: {json.dumps(v, ensure_ascii=False)}")
-print()
-print(f"  ⇒ {len(steps)} 步，{bad} 步有错")
-if bad:
-    print("  ⇒ ⚠️ **有断点** ⇒ 上面标 ❌ 的那一步就是断的")
+        diffs += 1
+        print(f"  ❌ {s}:")
+        print(f"       老 = {json.dumps(o, ensure_ascii=False)}")
+        print(f"       新 = {json.dumps(n, ensure_ascii=False)}")
+print(f"\n差异步骤：{diffs} / {len(steps)}")
 PY

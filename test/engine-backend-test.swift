@@ -92,14 +92,12 @@ ok(LegadoEngineBackend.paramKey(from: "show(infoMap['平台'],'find_source')") =
 ok(LegadoEngineBackend.paramKey(from: nil) == "", "没有 action ⇒ 空")
 
 print("\n=== ⑤ 引擎状态显示（2026-10-25：老引擎退役 ⇒ 只剩一个引擎）===")
-// ⭐⭐⭐ 2026-10-26：**老引擎（WKWebView）接回来了**（用户明确：「换回老引擎」「JSC 给我彻底删掉」）
-//   ⇒ **默认老引擎** ⇒ 状态行要说清「现在是谁在服务」⇒ 不能再写死「新引擎」⭐⭐⭐
+// ⭐⭐⭐ 2026-10-25：**老 JS 引擎已退役**（用户明确要求）⇒
+//   ⇒ 没有「开关」⇒ 没有「回退」⇒ **只剩新引擎** ⇒ 状态行也简化成一行 ⭐⭐⭐
 EngineBackend.lastError = nil
-EngineBackend.useNewEngine = false          // ⭐ 默认老引擎
 var lines = EngineBackend.statusLines()
 ok(lines.count == 1, "成功时只有一行（引擎），不该有失败原因")
-ok(lines.contains { $0.label == "引擎" && $0.value.contains("老") },
-   "引擎那行要说清现在是谁在服务（默认老引擎）")
+ok(lines.contains { $0.label == "引擎" && $0.value.contains("新") }, "引擎那行要有")
 ok(!lines.contains { $0.isError }, "没有失败就不该有错误行")
 
 // ⭐ 失败 ⇒ **两行**，第二行是错误（失败原因要看得见）
@@ -111,13 +109,10 @@ ok(errLine != nil, "⭐ 必须有「失败原因」行（不然用户看不出�
 ok(errLine?.isError == true, "失败原因那行要标成错误（UI 显示红色）")
 ok(errLine?.value.contains("emptyResult") == true, "失败原因要带原始错误")
 
-// ⭐⭐⭐ 2026-10-26：**老引擎回来了** ⇒ 状态里**应该**出现它（默认就是它）
-ok(lines.contains { $0.value.contains("老") }, "状态行里要说明当前是老引擎")
-// ⭐ 短版文案要说清用的是哪个引擎（老引擎 / 新引擎）
-ok(EngineBackend.description.contains("老"), "短版文案要说清用的是哪个引擎（默认老引擎）")
-EngineBackend.useNewEngine = true
-ok(EngineBackend.description.contains("新"), "切到新引擎后短版文案要跟着变")
-EngineBackend.useNewEngine = false
+// ⭐⭐⭐ **不再有「老引擎」这个概念**（2026-10-25 老引擎退役）⇒ 状态里不许出现它
+ok(!lines.contains { $0.value.contains("老") }, "状态行里不该再提老引擎")
+ok(EngineBackend.description.contains("legado-engine"), "短版文案要说清用的是哪个引擎")
+ok(!EngineBackend.description.contains("回退"), "短版文案不该再提回退（已经没有回退了）")
 
 // 复原
 EngineBackend.lastError = nil

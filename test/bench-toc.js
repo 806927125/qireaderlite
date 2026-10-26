@@ -15,7 +15,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 const args = process.argv.slice(2);
 function arg(name, dflt) {

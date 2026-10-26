@@ -16,11 +16,10 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./new-engine-harness');
-const { engineSwiftSrc, engineSwiftRaw } = require('./engine-gate-helpers.js');
+const { createSandbox } = require('./harness');
 const { looksServerSide, skipServerSide } = require('./live-helpers');
 
-const ENGINE = path.join(__dirname, '..', '..', 'legado-engine', 'Sources', 'LegadoCore');
+const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
 const SRC = process.env.SRC_OUT || [
   '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json',
   path.join(__dirname, '..', 'sources', '🍅大灰狼聚合5.9.30-轻阅适配版v2.json'),
@@ -87,32 +86,74 @@ async function nativeMock(fn, args) {
 
 (async () => {
   console.log('=== ① 源码里必须有「诊断走真实路径」的钩子 ===');
-  // ⭐⭐⭐⭐⭐ **老 JS 引擎已于 2026-10-25 物理删除** ⇒ 这里改成验**新引擎**的等价能力
-  //   ⇒ 验的是**真正在跑的那份代码**（不是参考实现）⭐⭐⭐
-  const eng = engineSwiftRaw('Pipeline/ExplainOps.swift');
-  const engCode = engineSwiftSrc('Pipeline/ExplainOps.swift');
-  // ⭐⭐⭐⭐⭐ **老引擎实现细节断言已退休**（2026-10-25 老 JS 引擎物理删除）
-  //   ⇒ 以前这些断言验的是**老引擎的函数名/代码片段**（如 `MAX_PASS` / `delete out[u]`）
-  //   ⇒ 那些是**实现细节**，不是语义 ⇒ 老引擎退役后**没有等价物** ⇒ 退休不损失语义覆盖 ⭐⭐⭐
-  //   ⇒ **语义覆盖在上面的【真跑段】**（现在跑的是【新引擎】）⇒ 覆盖不丢 ⭐⭐⭐
-  //   ⇒ 等价断言在【引擎仓的 swift test】（266 项）与真机上 ⭐⭐⭐
+  const eng = fs.readFileSync(path.join(ENGINE, 'engine.js'), 'utf8');
+  const ra = fs.readFileSync(path.join(ENGINE, 'rule-analyzer.js'), 'utf8');
+  // ⚠️ 断言要作用在**去掉注释后的代码**上（注释里会提到这句老话）
+  const engCode = eng.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  ok(/getJsonListDiag/.test(eng), 'engine.js 的 explainToc 调了 getJsonListDiag');
+  ok(/getJsonListDiag/.test(ra), 'rule-analyzer.js 导出了 getJsonListDiag');
   ok(!/chapterList 一个都没命中/.test(engCode),
      '代码里不再有「chapterList 一个都没命中」这句硬判（它对复合规则是假的）');
+  ok(/JS路径命中/.test(eng), '诊断输出里有「JS路径命中」');
+  ok(/JS报错/.test(eng), '诊断输出里有「JS报错」');
+  ok(/isJsRule/.test(engCode), '诊断先判规则类型（JS 规则不走 CSS 路径）');
 
   // Swift 侧要能把新字段显示出来
   const svc = fs.readFileSync(
     path.join(__dirname, '..', 'QiReaderLite', 'Core', 'SourceService.swift'), 'utf8');
-  ok(/chapterList规则/.test(svc), 'Swift 侧 explainToc 的字段白名单里有「chapterList规则」');
-  ok(/规则命中元素/.test(svc), 'Swift 侧 explainToc 的字段白名单里有「规则命中元素」');
-  ok(/结论/.test(svc), 'Swift 侧 explainToc 的字段白名单里有「结论」');
+  ok(/JS路径命中/.test(svc), 'Swift 侧 explainToc 的字段白名单里有「JS路径命中」');
+  ok(/JS报错/.test(svc), 'Swift 侧 explainToc 的字段白名单里有「JS报错」');
 
   console.log('\n=== ② 真跑一次：复合规则的诊断不能说「规则没命中」 ===');
-  // ⭐⭐⭐⭐⭐ **显式 SKIP（2026-10-25 老引擎物理删除）**
-  //   ⇒ 这条链要站方 JS 真发 HTTP（`java.ajax`）⇒ Node 后端的同步通道拿不到 ⇒ 沙盒跑不了
-  //   ⇒ **没验到 ≠ 验过了没问题** ⇒ 等价覆盖在引擎链对拍与真机上 ⭐⭐⭐
-  console.log('  ⏭️  跳过：要站方 JS 真发 HTTP（java.ajax）⇒ Node 同步通道拿不到 ⇒ 本段没验到');
-  // ⭐⭐⭐⭐⭐ **实跑段已 SKIP**（老引擎物理删除 ⇒ 这条链要站方 JS 真发 HTTP ⇒ 沙盒跑不了）
+  if (!fs.existsSync(SRC)) {
+    console.log('  ℹ️  聚合源不在本机 → 跳过实跑段（源码断言已跑）');
+  } else {
+    const list = JSON.parse(fs.readFileSync(SRC, 'utf8'));
+    const src = (Array.isArray(list) ? list : [list])
+      .find(s => s && s.bookSourceUrl && s.ruleExplore && s.ruleToc) || list[0];
+    const source = Object.assign({}, src, { __variables: '', __loginInfo: {} });
+    const { win } = createSandbox({ nativeMock });
 
-console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
-process.exit(fail ? 1 : 0);
+    const kinds = await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify({ source })})`);
+    const allKinds = kinds.kinds || [];
+    const picked = allKinds.find(k => /get_discover/.test(String(k.url || ''))) || allKinds.find(k => k.url);
+    const ex = await win.eval(`window.__qrInvoke('explore', ${JSON.stringify({
+      source, kindUrl: picked.url, page: 1,
+    })})`);
+    const books = ex.books || [];
+    // ⚠️ 站方限流（番茄免登录上限/未登录/线路故障）→ **跳过**，不是引擎的锅。
+    //   只认**明确的站方措辞**，不认「0 本」本身（那个是真 bug，build160 修过）。
+    if (!books.length && looksServerSide(logs, toasts)) {
+      skipServerSide('限流/未登录', logs.concat(toasts).join(' | ').slice(0, 160));
+    }
+    ok(books.length > 0, '探索到书了（' + books.length + ' 本）');
+    if (books.length) {
+      const book = books[0];
+      const d = await win.eval("window.__qrInvoke('explainToc', " + JSON.stringify({
+        source,
+        bookUrl: book.bookUrl,
+        book: Object.assign({}, book, { variable: 'custom' }),
+      }) + ")");
+      console.log('  诊断结论:', d['结论']);
+      console.log('  JS路径命中:', d['JS路径命中'], '| 规则命中元素:', d['规则命中元素']);
+      const concl = String(d['结论'] || '');
+      const jsErr = String(d['JS报错'] || '');
+      // ⚠️ 站方服务器会限流（番茄免登录上限/线路抽风）→ 活体门禁**会偶发红**。
+      //   ⇒ 这类**服务器侧**失败重试一次；还不行就跳过实跑断言（不是引擎的锅）。
+      //   源码断言（第 ① 段）是确定性的，照跑不误。
+      const serverSide = /上限|未登录|未查询到登录|超时|timeout|网络|线路|failed|Error:/.test(
+        jsErr + ' ' + concl);
+      if (Number(d['JS路径命中'] || 0) === 0 && serverSide) {
+        console.log('  ℹ️ 服务器侧失败（' + (jsErr || concl).slice(0, 60) + '）→ 跳过实跑断言');
+      } else {
+        ok(!/一个都没命中/.test(concl), '结论里没有「一个都没命中」（' + concl.slice(0, 40) + '）');
+        ok(Number(d['JS路径命中'] || 0) > 0,
+           'JS 路径真的解析出章节了（' + d['JS路径命中'] + ' 条）');
+        ok(String(d['取到的章节名'] || '').length > 0, '诊断里能看到第一章的章节名');
+      }
+    }
+  }
+
+  console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
+  process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('炸了：', e); process.exit(2); });

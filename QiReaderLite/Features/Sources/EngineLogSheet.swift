@@ -14,6 +14,7 @@ struct EngineLogSheet: View {
     @State private var copied = false
     @State private var resetNote = ""
     /// 同步通道（window.prompt）—— **默认关**：它有把 JS 线程卡死的风险
+    @AppStorage(EngineSyncChannel.key) private var syncChannel = false
 
     // MARK: - ⭐⭐ 当前引擎
     //
@@ -25,13 +26,6 @@ struct EngineLogSheet: View {
     private var currentBackendName: String {
         EngineBackend.Kind(rawValue: backendKind)?.rawValue ?? EngineBackend.Kind.swiftNew.rawValue
     }
-    /// ⭐⭐⭐⭐⭐ **JS 后端**（2026-10-26）—— 站方 JS 跑在**哪个进程**里
-    ///
-    /// ⭐ **WKWebView** ⇒ 站方 JS 在 **WebContent 独立进程** ⇒ 它一次吃几 GB 也**炸不到 App**
-    ///   （老引擎一直是这样 ⇒ 一直免疫闪退）⭐⭐⭐
-    /// ⭐ **JSC** ⇒ 跑在 **App 进程内** ⇒ 站方脚本的内存算我们的 ⇒ 6.8GB ⇒ jetsam 秒杀 ⭐
-    /// ⭐⭐⭐ **用哪个引擎**（默认老引擎）
-    @AppStorage("qr.useNewEngine") private var useNewEngine = false
     /// 主链路是不是走新引擎（**恒为真** ⇒ 只剩一个引擎）
     private var isNewEngine: Bool { true }
     /// 当前是不是新引擎在服务
@@ -89,37 +83,10 @@ struct EngineLogSheet: View {
                                 engineRow(line.label, line.value, isError: line.isError)
                             }
                         }
-                        Text("主链路（搜索 / 发现 / 详情 / 目录 / 正文）当前跑**\(EngineBackend.servingText)**。\n⭐ 默认老引擎（WKWebView 独立进程）⇒ App 进程不碰站方数据 ⇒ 免疫 jetsam 闪退。")
+                        Text("主链路（搜索 / 发现 / 详情 / 目录 / 正文）跑**新 Swift 引擎**（legado-engine）。\n⭐ 老 JS 引擎已于 2026-10-25 退役 ⇒ 没有开关、没有自动回退 ⇒ 失败会如实报出来。")
                             .font(.caption2)
                             .foregroundStyle(Theme.sub)
                             .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(12)
-                    .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
-
-                    // ── ⭐⭐⭐⭐⭐ JS 后端（2026-10-26 · 闪退真凶的方向性修法）──
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            Text("JS 后端")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Theme.ink)
-                            Spacer()
-                            Text(JSEngineFactory.Kind.webView.rawValue)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.accent)
-                        }
-                        Text("⭐ 站方 JS 跑在 WebContent **独立进程** ⇒ 它一次吃几 GB 也炸不到 App（老引擎一直这样 ⇒ 一直免疫闪退）。\n⚠️ **JSC 已彻底删除**（2026-10-26）⇒ App 里再没有「跑在 App 进程内」的 JS 运行时。")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.sub)
-                            .fixedSize(horizontal: false, vertical: true)
-                        // ⭐⭐⭐ **用哪个引擎**（老引擎 = 规则求值也住在 WebView 里 ⇒ App 进程彻底不碰站方数据）
-                        Toggle("用新 Swift 引擎（规则求值在 App 进程内）", isOn: $useNewEngine)
-                            .font(.caption)
-                            .onChange(of: useNewEngine) { _, newValue in
-                                EngineBackend.useNewEngine = newValue
-                                LegadoEngineBackend.shared.dropAllSessions()
-                                RuleSandbox.shared.resetEngine()
-                            }
                     }
                     .padding(12)
                     .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
@@ -149,8 +116,22 @@ struct EngineLogSheet: View {
                                     .foregroundStyle(Theme.sub)
                             }
                         }
-                        // ⭐⭐⭐⭐⭐ **老引擎的「Swift 同步通道」开关已删**（2026-10-25 老引擎物理删除）
-                        //   ⇒ 那个通道是**老 WKWebView 引擎**的 `window.prompt` 桥 ⇒ 引擎没了就没意义了 ⭐⭐⭐
+                        Toggle(isOn: $syncChannel) {
+                            Text("用 Swift 同步通道（实验）")
+                                .font(.system(size: 13))
+                        }
+                        .onChange(of: syncChannel) { _, on in
+                            // 立刻生效：不用重启引擎
+                            Task { @MainActor in
+                                _ = try? await RuleSandbox.shared.applySyncChannel(on)
+                            }
+                        }
+                        Text(syncChannel
+                             ? "已开：java.timeFormat 走 Swift 原生实现。若又卡了，先关掉它再「重置引擎」。"
+                             : "默认关：走纯 JS 兜底（语义跟 Swift 一致）。开着有把 JS 线程卡死的风险。")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.sub)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(12)
                     .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))

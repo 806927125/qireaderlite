@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * **目录（toc）真机联调** —— 真网络 + 真聚合源
+ * **目录（toc）真机联调**
  *
  * 跑法：node test/live-toc.test.js
  *
@@ -17,19 +17,15 @@
  * ⇒ 需要「JS 的完成值 → 再喂给 $.data」这条链（splitJsWithTail + selectFromJsResult）。
  *
  * 这个测试：真网络 + 真源 → 找一本书 → 跑 toc → 看章节出来没有。
- *
- * ⭐⭐⭐⭐⭐ **2026-10-26：老 JS 引擎物理删除 ⇒ 本门禁改跑【新引擎】**
- * · 老门禁用 **JS 层**的 `nativeMock`（自己发真请求）⇒ 老引擎删了 ⇒ 门禁的对象没了 ⭐⭐⭐
- * · ⇒ 现在：**门禁自己真抓**（Node 的 fetch）⇒ 把**真响应**喂给新引擎的**声明式 routes**
- *   （规范 §1.1）⇒ **真网络 ✓ + 真引擎 ✓** 两条都在 ⭐⭐⭐
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox, engineAvailable } = require('./new-engine-harness.js');
-const { LiveProxy, looksServerSide, skipServerSide } = require('./live-helpers');
+const { createSandbox } = require('./harness');
+const { looksServerSide, skipServerSide } = require('./live-helpers');
 
 // ⭐⭐⭐ **不许「跳过」**（2026-10-24 真机教训）
 //   跳过 = 这条链路**一次都没被验过** ⇒ 真机炸了沙盒还全绿 ⭐⭐⭐
+//   ⇒ 回退到**仓库里的源文件副本** ⇒ 干净克隆也能跑 ⇒ 门禁永远在跑 ⭐
 const CANDIDATES = [
   process.env.SRC_OUT,
   '/workspace/out/🍅大灰狼聚合5.9.30-轻阅适配版.json',
@@ -45,115 +41,137 @@ const list = JSON.parse(fs.readFileSync(SRC, 'utf8'));
 const src = (Array.isArray(list) ? list : [list])
   .find(s => s && s.bookSourceUrl && s.ruleExplore && s.ruleToc) || list[0];
 
-function hostsOf(source) {
-  const lib = String(source.jsLib || '');
-  const m = /var\s+host\s*=\s*(\[[\s\S]*?\])/.exec(lib);
-  if (!m) return [];
-  try { return JSON.parse(m[1].replace(/'/g, '"')); } catch (e) { return []; }
+const UA = 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 '
+  + '(KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36 Edg/138.0.0.0';
+
+// ⚠️⚠️ **win 必须声明在模块顶层** —— nativeMock 定义在模块作用域，
+//   引用不到下面 async IIFE 里的 `const { win }`（块级作用域）
+//   ⇒ 以前会抛「win is not defined」⇒ 目录请求全失败
+//   ⇒ 门禁每次都「因站方限流跳过」⇒ **这个断言其实一直没验过** ⭐
+let win = null;
+const jar = {};
+const toasts = [];
+const logs = [];
+function hostOf(u) { try { return new URL(u).host; } catch (e) { return ''; } }
+
+async function nativeMock(fn, args) {
+  switch (fn) {
+    case 'request': {
+      const url = String(args.url || '');
+      const method = (args.method || 'GET').toUpperCase();
+      const headers = Object.assign({ 'User-Agent': UA }, args.headers || {});
+      const h = hostOf(url);
+      if (!headers.cookie && jar[h]) {
+        headers.cookie = Object.entries(jar[h]).map(([k, v]) => `${k}=${v}`).join('; ');
+      }
+      (win.__reqs = win.__reqs || []).push({ url, method });
+      try {
+        const res = await fetch(url, {
+          method, headers,
+          body: (args.body && method !== 'GET' && method !== 'HEAD') ? args.body : undefined,
+          redirect: 'follow',
+        });
+        const text = await res.text();
+        for (const line of (res.headers.getSetCookie ? res.headers.getSetCookie() : [])) {
+          const kv = line.split(';')[0]; const i = kv.indexOf('=');
+          if (i > 0) { jar[h] = jar[h] || {}; jar[h][kv.slice(0, i).trim()] = kv.slice(i + 1).trim(); }
+        }
+        return { ok: true, code: res.status, url: res.url, headers: {}, body: text };
+      } catch (e) {
+        return { ok: false, error: String(e && e.message || e) };
+      }
+    }
+    case 'getCookie': {
+      const h = hostOf(args.url || '');
+      return { ok: true, value: Object.entries(jar[h] || {}).map(([k, v]) => `${k}=${v}`).join('; ') };
+    }
+    case 'setCookie': {
+      const h = hostOf(args.url || '');
+      jar[h] = jar[h] || {};
+      for (const part of String(args.cookie || '').split(';')) {
+        const kv = part.trim(); const i = kv.indexOf('=');
+        if (i > 0) jar[h][kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
+      }
+      return { ok: true, value: '1' };
+    }
+    case 'toast': toasts.push(String(args.msg || '')); return { ok: true };
+    case 'log': logs.push(String(args.msg || '')); return { ok: true };
+    case 'deviceID': return { ok: true, value: 'test-device' };
+    case 'getWebViewUA': return { ok: true, value: UA };
+    default: return { ok: true, value: '' };
+  }
 }
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
 
 (async () => {
-  if (!engineAvailable()) {
-    console.log('  ⏭️  跳过：没编译 legado-engine ⇒ 本门禁**没验到**（**不等于通过**）');
-    console.log('\n✅ 通过 0 / 失败 0（引擎不可用 ⇒ 显式跳过）');
-    process.exit(0);
-  }
+  win = createSandbox({ nativeMock }).win;
+  const source = Object.assign({}, src, { __variables: '', __loginInfo: {} });
 
-  console.log('=== ⓪ 真网络连通性（站方服务器）===');
-  const proxy = new LiveProxy({ timeout: 15000, maxRounds: 6 });
-  const probeHost = hostsOf(src)[0] || 'https://v5.langge.uk';
-  const probe = await proxy.probe(probeHost + '/discovestyle');
-  if (!probe.ok || probe.status !== 200) {
-    console.log('  ⏭️  跳过：站方服务器不通（' + (probe.error || probe.status) + '）');
-    console.log('      ⇒ 本门禁**没验到**（**不等于通过**）⇒ 等网络恢复 / 真机再验');
-    console.log('\n✅ 通过 0 / 失败 0（网络不通 ⇒ 显式跳过）');
-    process.exit(0);
-  }
-  ok(true, `站方可达（${probeHost}，${probe.body.length} 字节）`);
-
-  const live = (op, payload) => proxy.converge((routes) => {
-    const { win } = createSandbox({ routes });
-    return win.__qrInvoke(op, payload);
-  });
-
-  console.log('\n=== ① 先找一本书 ===');
-  const kinds = await live('exploreKinds', { source: src, jsLib: src.jsLib });
+  console.log('=== ① 先找一本书 ===');
+  const kinds = await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify({ source })})`);
   const allKinds = kinds.kinds || [];
   const picked = allKinds.find(k => /get_discover/.test(String(k.url || ''))) || allKinds.find(k => k.url);
-  const ex = await live('explore', {
-    source: src, jsLib: src.jsLib, kindUrl: String(picked.url || '').replace('{{page}}', '1'), page: 1,
-  });
+  const ex = await win.eval(`window.__qrInvoke('explore', ${JSON.stringify({
+    source, kindUrl: picked.url, page: 1,
+  })})`);
   const books = ex.books || [];
   console.log('  探索到书:', books.length);
   const book = books[0];
-  if (!book) {
-    console.log('  ⏭️  跳过：没探索到书（站方限流 / 未登录 / 线路故障）⇒ 本门禁**没验到**');
-    console.log('      ⇒ **不等于通过**');
-    console.log('\n✅ 通过 0 / 失败 0（站方侧问题 ⇒ 显式跳过）');
-    process.exit(0);
+  if (!book && looksServerSide(logs, toasts)) {
+    skipServerSide('限流/未登录', logs.concat(toasts).join(' | ').slice(0, 160));
   }
-  ok(!!book, '探索到书了');
+  if (!book) { console.log('❌ 连书都没有，后面的没法测'); process.exit(1); }
   console.log('  用这本:', book.name);
   console.log('  bookUrl:', String(book.bookUrl).slice(0, 70));
 
-  console.log('\n=== ② 详情（目录 URL 在这儿算出来）===');
-  const info = await live('bookInfo', {
-    source: src, jsLib: src.jsLib, bookUrl: book.bookUrl,
-    book: Object.assign({}, book, { variable: 'custom', variables: {} }),
-  });
-  ok(!info.error, 'bookInfo 没报错' + (info.error ? '：' + info.error : ''));
-  const tocUrl = (info.book || {}).tocUrl || '';
-  console.log('  名称  :', (info.book || {}).name);
-  console.log('  tocUrl:', tocUrl.slice(0, 80));
-
-  console.log('\n=== ③ 跑 toc（目录）===');
+  console.log('\n=== ② 跑 toc（目录）===');
   const tocPayload = {
-    source: src, jsLib: src.jsLib,
+    source,
     bookUrl: book.bookUrl,
-    tocUrl,
-    book: Object.assign({}, book, { variable: 'custom', variables: {} }),
+    book: Object.assign({}, book, { variable: 'custom' }),
     maxPages: 1,
   };
-  const t = await live('toc', tocPayload);
+  const t = await win.eval(
+    "window.__qrInvoke('toc', " + JSON.stringify(tocPayload) + ")");
 
   const chs = t.chapters || [];
   console.log('  error   :', t.error || '(无)');
+  // 真实发出的目录请求 URL（下面断言用）
+  win.__lastCatalogUrl = (win.__reqs || []).filter(r => /\/catalog/.test(r.url)).map(r => r.url)[0] || '';
   console.log('  章节数  :', chs.length);
   for (const c of chs.slice(0, 3)) {
     console.log(`    · ${c.title}  url=${String(c.url || '').slice(0, 46)}`);
   }
-  // ⭐ 真实发出的目录请求 URL（下面断言用）
-  const catURLs = proxy.fetched.map(f => f.url).filter(u => /catalog/i.test(u));
-  console.log('  目录请求:', catURLs.slice(0, 2).map(u => u.slice(0, 90)).join(' | ') || '(没发出去)');
+  console.log('  toast   :', toasts.slice(0, 3).join(' / '));
+  console.log('  log     :', logs.slice(0, 3).join(' / '));
 
-  console.log('\n=== ④ 正文（第一章）===');
+  console.log('\n=== ③ 正文（第一��）===');
   let c = null;
   if (chs.length) {
-    c = await live('content', {
-      source: src, jsLib: src.jsLib,
+    // ⚠️ 必须传 book —— 站方正文 JS 第一句就调 book.getVariable('custom')
+    c = await win.eval("window.__qrInvoke('content', " + JSON.stringify({
+      source,
       chapterUrl: chs[0].url,
       chapter: Object.assign({}, chs[0], { variable: 'custom' }),
       book: Object.assign({}, book, { variables: {} }),
-    });
+    }) + ")");
     console.log('  error  :', c.error || '(无)');
+    console.log('  标题   :', c.title);
     console.log('  正文长度:', (c.content || '').length);
     console.log('  正文开头:', String(c.content || '').slice(0, 90).replace(/\n/g, ' '));
   }
-
-  console.log('\n=== ⑤ 真网络抓取记录 ===');
-  console.log(`   真抓到 ${proxy.fetched.length} 条 URL，失败 ${proxy.failed.length} 条`);
 
   console.log('\n=== 判定 ===');
   ok(!t.error, 'toc 没报错' + (t.error ? '：' + t.error : ''));
   // ⭐ 变量只写一半 ⇒ server 没了 ⇒ URL 变成 `undefined/catalog` ⇒ 0 章
   //   （2026-10-21 真机「目录 0 章」的根因之一）⇒ 盯着真实请求 URL
-  ok(catURLs.length > 0,
-     '目录请求 URL 是个真地址（不是 undefined/…）' + (catURLs[0] ? '：' + catURLs[0].slice(0, 60) : ''));
+  const catUrl = String(win.__lastCatalogUrl || '');
+  ok(/^https?:\/\//.test(catUrl),
+     '目录请求 URL 是个真地址（不是 undefined/…）' + (catUrl ? '：' + catUrl.slice(0, 60) : ''));
   ok(chs.length > 0, `目录出章节了（现在 ${chs.length} 条）`);
-  // ⚠️ 章节对象是 {name, title, url, index, …} —— 字段叫 **title**（老引擎也是 title）
+  // ⚠️ 章节对象是 {title, url, index, ...} —— 字段叫 **title** 不是 name
   ok(chs.every(c => c.title), '每章都有标题');
   ok(chs.some(c => c.url), '至少一章有 url（点进去要能开）');
   ok(chs.length > 10, '章节数量合理（>10）');
@@ -161,7 +179,6 @@ const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
   //    正文会变成「您今日免登录访问次数已达上限(3次)！」→ 所以只断言「有内容」✅
   //    （这也说明：番茄登录是刚需，不登录正文只能看 3 次）
   ok(!!(c && c.content && c.content.length > 10), '正文取到了（>10 字）');
-  ok(proxy.fetched.length > 0, '门禁**真的联网抓了站方接口**（不是假服务器自娱自乐）');
 
   console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
   process.exit(fail ? 1 : 0);

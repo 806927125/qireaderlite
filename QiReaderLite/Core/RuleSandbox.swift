@@ -2,6 +2,8 @@ import Foundation
 import WebKit
 import SwiftUI
 import UIKit
+// ⭐⭐⭐ 引擎的**真实 revision**（CI 用 -DLEGADO_REVISION=<sha> 注入 ⇒ 显示的永远是真在跑的）
+import LegadoCore
 
 // MARK: - 资源定位
 
@@ -11,7 +13,7 @@ import UIKit
 /// 有的版本保留目录结构（engine/xxx.js），有的展平到 bundle 根。
 /// 这里不猜 —— 挨个候选路径找，找不到再在 bundle 里递归搜一遍。
 /// 找不到就明确报出缺哪个文件，而不是让首屏无声卡死。
-enum EngineResourceLocator {
+enum ResourceLocator {
     /// 引擎脚本的**注入顺序有依赖**，别改
     static let scripts = [
         "jsoup-compat.js",   // 选择器层
@@ -160,8 +162,6 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     var currentSource: BookSource?
 
     private override init() {
-        // ⭐⭐⭐ 内存水位计量（jetsam 同一个口径 · phys_footprint）
-        MemoryMeter.configure(storeURL: AppPaths.memMeterFile)
         super.init()
         // ⭐ 把真设备 ID 交给**不能 import UIKit 的层**（`LegadoEngineBackend`）⭐⭐⭐
         Self.cacheDeviceID()
@@ -170,6 +170,24 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     // MARK: 启动
 
     /// 引擎版本。改引擎时同步改这个，用户一眼能看出装的是新包还是旧包。
+    /// ⭐⭐⭐⭐⭐ build253：⭐⭐⭐⭐⭐ 修**「又崩溃了」** —— **超时是假的** ⇒ 站方 JS 死循环拖死 App
+    ///   · ⭐⭐⭐ **真凶（沙盒可证伪实验）**：旧写法用 `withThrowingTaskGroup`
+    ///     ⇒ TaskGroup 退出时**必须等所有子任务结束** ⇒ 站方 JS 死循环那个子任务**永不结束**
+    ///     ⇒ `group.cancelAll()` 救不了它（跑在 `DispatchQueue.global().async` 里 ⇒ 不可取消）
+    ///     ⇒ **超时永远不生效** ⇒ 沙盒实测：1 秒超时 ⇒ **实际耗时 8 秒** ⭐⭐⭐
+    ///   · ⇒ 站方 JS 死循环在 **App 进程内** 100% CPU 空转 ⇒ 设备发烫
+    ///   · ⇒ **iOS 热保护杀 App ⇒ 表现为「闪退」**（系统杀的 ⇒ 没有崩溃日志 ⇒ 之前一直查不到）⭐⭐⭐
+    ///   · ⚠️ **build252 恰好删掉了唯一的兜底**（「超时 ⇒ 回退老引擎」= 独立进程 ⇒ 死循环不烧 App 进程）
+    ///   · ⇒ 修法 ①：**真超时**（不用 TaskGroup ⇒ 一次性 resume 闸门 + 独立定时器 ⇒ 卡死线程拖不住返回）
+    ///   · ⇒ 修法 ②：**卡死线程配额**（JSC 无中断 API ⇒ 死循环线程收不回来 ⇒ 满额后不再启动新引擎调用）
+    ///   · ⇒ 修法 ③：**熔断**（连续 2 次超时 ⇒ 停止重试 ⇒ 不再反复烧 CPU）
+    ///   · ⇒ 新门禁 `real-timeout-guard`（16 项）⇒ 已挂总门禁 ⇒ **3 个变异全部能红**（证明真能抓）⭐⭐⭐
+    /// ⭐⭐⭐⭐⭐ build252：⭐⭐⭐ **老 JS 引擎（WKWebView）退役** —— App 里**只剩新引擎**
+    ///   · 「用哪个引擎」的开关 ⇒ **删除**；「失败自动回退老引擎」⇒ **删除**
+    ///   · 失败就是失败 ⇒ **如实报出来**（不再悄悄换引擎）
+    ///   · ⚠️ 唯一残留：`login` / `loginProbe`（站方登录）暂时还跑在老引擎上
+    ///     ⇒ 引擎侧**已有完整登录支持**（`loadLoginScript`/`loginUI`/`performLogin`/`checkLogin`）
+    ///     ⇒ 下一版把登录也切到新引擎 ⇒ 老引擎的 WKWebView 壳 + `Resources/engine/*.js` **物理删除**
     /// ⭐⭐⭐⭐⭐ build251：⭐⭐⭐ **发现页已与老引擎逐字一致**（沙盒整链对拍：5 分类 + 7 筛选栏）
     ///   · 引擎 `c28de9b`：`StationDahulangExploreParityTests` **PASSED**
     ///     ⇒ 新引擎的发现页 == 老引擎（同一份完整源 + 同一份假服务器响应，逐字比）⭐⭐⭐
@@ -187,9 +205,30 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///     ⇒ 真机症状：`java.longToast is undefined`（JSC 说的，不是引擎抛的）⭐⭐⭐
     ///     ⇒ 根因：Swift 多行字符串里 `//` 行注释把 `\` 续行后的整行吃掉
     ///   · ⭐⭐⭐ 「抛不抛」由「老引擎上存不存在」决定（实测 75 个不抛 ⇒ 新引擎也不抛）
-    /// ⭐⭐⭐ 引擎标识（老引擎：WKWebView 独立进程）
-    static let engineVersion = "老 JS 引擎（WKWebView · 规则求值在 WebContent 独立进程）"
-    /// ⭐⭐⭐ 引擎的真实 revision（CI 注入 ⇒ 不许手改）
+    /// ⭐⭐⭐⭐⭐ **引擎版本**（**真实 revision** ⇒ 不再手写）
+    ///
+    /// ⚠️⚠️ **2026-10-25 真机教训**：之前这里是**手写**的 revision
+    ///   ⇒ build253 实际跑 `8d206b5`，界面却显示 `c28de9b`（**老值**）⭐⭐⭐
+    ///   ⇒ **自证是假的** ⇒ 看日志的人会以为「引擎没变 ⇒ 不是引擎的锅」⇒ **排查被带偏** ⭐⭐⭐
+    /// ⇒ 现在：revision 由**引擎包自己**提供（`LegadoEngineInfo.version(revision:)`）⭐⭐⭐
+    ///   ⇒ 真实 revision 从**CI 生成的文件**读（`EngineRevision.generated`）⭐⭐⭐
+    static let engineVersion = LegadoEngineInfo.version(revision: RuleSandbox.engineRevision)
+
+    /// ⭐⭐⭐⭐⭐ **引擎的真实 revision**（**构建时生成的文件** ⇒ 绝不用手写的假值）
+    ///
+    /// ⚠️⚠️ **2026-10-25 真机教训**：之前这里是**手写**的 ⇒ build253 实际跑 `8d206b5`，
+    ///   界面却显示 `c28de9b`（老值）⇒ **假证据** ⇒ 把排查带偏了 ⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么不能用 `-D` 宏**（实测踩过）：
+    ///   Swift 的条件编译标志是**「有/无」**，**不带值**
+    ///   （`-DLEGADO_REVISION=xxx` ⇒ 编译告警 `flags do not have values in Swift`）⭐⭐⭐
+    ///   ⇒ 就算传进去也读不到值 ⇒ `#if` 分支里拿不到 revision ⭐⭐⭐
+    ///   ⇒ 而且 `LegadoCore` 是 **SPM 依赖 target** ⇒ App target 的 `OTHER_SWIFT_FLAGS`
+    ///   **根本传不进它**（实测：只出现在 App target 的 SwiftCompile 命令行里）⭐⭐⭐
+    ///
+    /// ⇒ 正解：**CI 生成一个 Swift 文件**（`EngineRevision.generated.swift`）
+    ///   ⇒ 里面写 `static let generated = "89de55f67e3d"` ⇒ 编译进去 ⇒ **真值** ⭐⭐⭐
+    ///   ⇒ 拿不到 ⇒ `"unknown"` ⇒ **明说不知道**（绝不含糊其辞）⭐⭐⭐
     static let engineRevision: String = EngineRevision.generated
 
     /// 给界面用的一行状态
@@ -205,15 +244,6 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         var lines: [String] = []
         lines.append("引擎版本：\(Self.engineVersion)")
         lines.append("App 版本：\(AppPaths.appVersionLine)")
-        // ⭐ 内存水位（**只报当前/峰值** ⇒ 熔断/限额/自动清理那套 2026-10-26 已拆）
-        _ = MemoryMeter.sample()
-        lines.append(MemoryMeter.panelLine)
-        // ⭐ 引擎会话数（新引擎的会话；当前用老引擎时是 0 ⇒ 看着不误导）
-        lines.append("引擎会话：\(LegadoEngineBackend.shared.liveSessionCount) 个"
-                     + "（上限 \(LegadoEngineBackend.maxLiveSessions)）")
-        // ⭐⭐⭐ **本小时写盘**（iOS 的 diskwrites 限额 ≈ 1.07GB/天 ⇒ 写太多会被系统杀）
-        lines.append("本小时写盘：\(DiskWriteMeter.hourBytes) B"
-                     + "（限额 \(DiskWriteMeter.hourlyLimit) B）")
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))
@@ -235,10 +265,10 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         }
         lines.append("就绪状态：\(ready ? "已就绪" : "未就绪")")
         if let e = lastError { lines.append("错误：\(e)") }
-        let missing = EngineResourceLocator.missingScripts()
+        let missing = ResourceLocator.missingScripts()
         if !missing.isEmpty { lines.append("缺少引擎文件：\(missing.joined(separator: ", "))") }
-        else { lines.append("引擎文件：\(EngineResourceLocator.scripts.count) 个全部就位") }
-        if let d = EngineResourceLocator.engineHTML() {
+        else { lines.append("引擎文件：\(ResourceLocator.scripts.count) 个全部就位") }
+        if let d = ResourceLocator.engineHTML() {
             lines.append("engine.html：已找到（\(d.html.count) 字符）")
         } else {
             lines.append("engine.html：**没找到**")
@@ -323,7 +353,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         guard webView == nil else { return }
         bootLog.removeAll()
         bootLog.append("查找 engine.html…")
-        guard let page = EngineResourceLocator.engineHTML() else {
+        guard let page = ResourceLocator.engineHTML() else {
             lastError = "找不到 engine.html —— 引擎资源没进 bundle"
             bootLog.append("失败：engine.html 不在 bundle 里")
             return
@@ -380,15 +410,15 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
 
     /// 按依赖顺序逐个注入引擎脚本，缺哪个直接报出来
     private func injectEngine() async {
-        let missing = EngineResourceLocator.missingScripts()
+        let missing = ResourceLocator.missingScripts()
         guard missing.isEmpty else {
             lastError = "引擎文件缺失: " + missing.joined(separator: ", ")
             bootLog.append("失败：缺 \(missing.count) 个文件")
             return
         }
-        bootLog.append("开始注入 \(EngineResourceLocator.scripts.count) 个引擎脚本…")
-        for name in EngineResourceLocator.scripts {
-            guard let code = EngineResourceLocator.text(name) else {
+        bootLog.append("开始注入 \(ResourceLocator.scripts.count) 个引擎脚本…")
+        for name in ResourceLocator.scripts {
+            guard let code = ResourceLocator.text(name) else {
                 lastError = "引擎文件读不到: \(name)"
                 return
             }
@@ -447,33 +477,17 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///   轻阅原来只有一坨字符串流水 ⇒ 排查「时好时坏」时**看不出哪一步断的**。
     ///   ⇒ 现在每行都带：① 毫秒时间戳 ② 步骤归属 ③ 原始内容
     ///   ⇒ 面板再按步骤分组成「诊断时间线」，一眼看出断在哪。
-    private static let maxLineLength = 2_048
-
     func appendLog(_ line: String) {
-        // ⭐⭐⭐ **先截断**（站方 `java.log` 可以打任意长 ⇒ 不截断 = 写盘炸弹）⭐⭐⭐
-        let clipped = line.count > Self.maxLineLength
-            ? String(line.prefix(Self.maxLineLength)) + "…（已截断，原长 \(line.count) 字）"
-            : line
         let stamped = "[\(Self.logTimeFormatter.string(from: Date()))] "
-            + "[\(Self.stepFor(clipped, fallback: currentStep))] " + clipped
+            + "[\(Self.stepFor(line, fallback: currentStep))] " + line
+        recentLogs.append(stamped)
+        if recentLogs.count > 300 { recentLogs.removeFirst(recentLogs.count - 300) }
         NSLog("%@", stamped)
-        // ⭐⭐⭐ **落盘：直接进后台队列**（内部 \`diskQueue.async\` ⇒ 不占主线程）
+        // ⭐⭐⭐ **同时落盘**（2026-10-24 真机：App 被 watchdog 杀掉 ⇒ 内存里的日志全丢
+        //   ⇒ 用户重启后什么都看不到 ⇒ 我拿不到任何证据 ⇒ 只能猜）
+        //   ⇒ 现在每行都写进 Documents/engine-log.txt（超过 1MB 就从头轮转）
+        //   ⇒ 崩溃后重启 ⇒ 「引擎日志」面板里照样能复制到**崩溃前**的日志 ⭐⭐⭐
         Self.persistToDisk(stamped)
-        // ⭐⭐⭐ **内存日志：必须主线程**（\`recentLogs\` 是 \`@Published\`）
-        //   ⇒ **已经在主线程就别再开 Task**（原来每次都开 ⇒ 白白一次调度）⭐⭐⭐
-        if Thread.isMainThread {
-            Self.applyMemoryLog(stamped)
-        } else {
-            Task { @MainActor in Self.applyMemoryLog(stamped) }
-        }
-    }
-
-    /// ⭐⭐⭐ **写进内存日志**（主线程）
-    private static func applyMemoryLog(_ stamped: String) {
-        shared.recentLogs.append(stamped)
-        if shared.recentLogs.count > 300 {
-            shared.recentLogs.removeFirst(shared.recentLogs.count - 300)
-        }
     }
 
     /// **日志落盘**（进程被杀也不丢）
@@ -483,110 +497,27 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         return docs.appendingPathComponent("engine-log.txt")
     }()
 
-    private nonisolated(unsafe) static let diskLogLock = NSLock()
-    /// ⭐⭐⭐⭐⭐ **待落盘的缓冲**（批量写 ⇒ 不再每行一次 IO）
-    ///
-    /// ⚠️⚠️⚠️ **为什么标 `nonisolated(unsafe)`**（2026-10-26 类型检查门禁撞到）：
-    ///   `RuleSandbox` 整体是 `@MainActor` ⇒ 它的 static 默认带**主 actor 隔离**
-    ///   ⇒ 而这个缓冲**故意**在 `diskQueue.async`（后台队列）里读写
-    ///   ⇒ Swift 6 的编译器会判「主 actor 隔离的量被 Sendable 闭包碰了」⇒ **报 error**
-    ///   ⇒ 但它**本来就由 `diskLogLock` 保护**（锁 ⇒ 跨线程安全）⇒ 与主 actor 无关 ⭐⭐⭐
-    ///   ⇒ ⇒ 标 `nonisolated(unsafe)`：**语义对**（锁才是保护者）+ **Swift 6 也能编** ⭐⭐⭐
-    ///   ⇒ ⚠️ 只能标在**有锁保护**的量上 ⇒ 没锁的量不许这样标 ⭐⭐⭐
-    private nonisolated(unsafe) static var diskBuffer: [String] = []
-    /// ⭐⭐⭐ **落盘队列**（后台 ⇒ 不占主线程）
-    private nonisolated(unsafe) static let diskQueue = DispatchQueue(label: "qr.disklog", qos: .utility)
+    private static let diskLogLock = NSLock()
 
-    /// ⭐⭐⭐⭐⭐ **日志文件上限**（256KB ⇒ 足够读完一次崩溃现场）
-    ///
-    /// ⚠️ 以前是 1MB + **每次轮转都 `.atomic` 重写 600KB**
-    ///   ⇒ 一次轮转 = 读 1MB + 写 600KB(临时) + rename ⇒ **写盘量放大好几倍** ⭐⭐⭐
-    private nonisolated(unsafe) static let diskLogLimit = 256 * 1024
-
-    /// ⭐⭐⭐⭐⭐ **批量落盘**
-    ///
-    /// ⭐⭐⭐ **三个修法一起**（2026-10-26 iOS「diskwrites」限额被杀）：
-    ///   ① **批量**：攒够 32 行或 2 秒才写一次 ⇒ IO 次数降一个数量级 ⭐⭐⭐
-    ///   ② **不用 `.atomic`**：`.atomic` = 写临时文件 + rename ⇒ **双倍写盘**
-    ///      ⇒ 改用 FileHandle 追加（真 append）⭐⭐⭐
-    ///   ③ **计量 + 限流**：`DiskWriteMeter` 记字节数 ⇒ 超上限就**停止落盘**
-    ///      ⇒ 内存日志还在（不丢证据）⇒ 但不再被系统杀 ⭐⭐⭐
     private static func persistToDisk(_ line: String) {
-        diskQueue.async {
-            diskLogLock.lock()
-            diskBuffer.append(line)
-            let count = diskBuffer.count
-            diskLogLock.unlock()
-            if count >= 32 { flushDiskLog() }
-            else if count == 1 {
-                // ⭐ 首次进缓冲 ⇒ 排一个 2 秒后的兜底 flush（保证最后几行也落盘）
-                diskQueue.asyncAfter(deadline: .now() + 2) { flushDiskLog() }
-            }
-        }
-    }
-
-    /// ⭐⭐⭐⭐⭐ **每小时最多落盘多少行**（防止再被刷爆）
-    ///
-    /// ⚠️ iOS 的 \`diskwrites\` 限额 ≈ 1.07 GB / 24h ⇒ 引擎诊断一多就吃光 ⭐⭐⭐
-    /// ⇒ 我们自己卡在 **2000 行 / 小时**（≈ 每行 100 字节 ⇒ 200KB/小时
-    ///   ⇒ 一天最多 4.8 MB ⇒ **远低于限额**）⭐⭐⭐
-    /// ⇒ 超了之后**内存日志照常**（面板还能看）⇒ 只是不再落盘 ⭐⭐⭐
-    private static let diskLinesPerHour = 2000
-    /// ⭐⭐ 同上：写盘限流计数由 `diskLogLock` 保护 ⇒ 不该带主 actor 隔离
-    private nonisolated(unsafe) static var diskLinesThisHour = 0
-    private nonisolated(unsafe) static var diskHourStart = Date()
-
-    /// ⭐⭐⭐ **把缓冲刷到磁盘**（后台队列内调用）
-    /// ⭐⭐⭐⭐⭐ **把缓冲刷到磁盘**（锁保护的量 ⇒ 与主 actor 无关 ⇒ 标 `nonisolated`）
-    ///
-    /// ⚠️ 同上：它在**后台队列**里被调 ⇒ 不能带 `@MainActor` 隔离
-    ///   ⇒ 数据由 `diskLogLock` 保护 ⇒ 语义上安全 ⭐⭐⭐
-    private nonisolated static func flushDiskLog() {
-        diskLogLock.lock()
-        let lines = diskBuffer
-        diskBuffer.removeAll()
-        diskLogLock.unlock()
-        guard !lines.isEmpty else { return }
-        let text = lines.joined(separator: "\n") + "\n"
-        guard let data = text.data(using: .utf8) else { return }
-
-        // ⭐⭐⭐⭐⭐ **行数限流**：超上限 ⇒ 停止落盘（内存日志还在）
-        let now = Date()
-        diskLogLock.lock()
-        if now.timeIntervalSince(diskHourStart) > 3600 {
-            diskHourStart = now
-            diskLinesThisHour = 0
-        }
-        diskLinesThisHour += lines.count
-        let overLines = diskLinesThisHour > diskLinesPerHour
-        diskLogLock.unlock()
-        if overLines { return }
-
-        // ⭐⭐⭐ **计量 + 限流**：超上限 ⇒ **停止落盘**（内存日志还在）
-        guard DiskWriteMeter.record(data.count) else { return }
-
+        diskLogLock.lock(); defer { diskLogLock.unlock() }
         let url = logFileURL
-        // ⭐⭐⭐ **轮转：超上限 ⇒ 只留尾部**（**不用 `.atomic`** ⇒ 不产生额外副本）
-        var existing = Data()
+        // 超过 1MB ⇒ 只留后半段（免得无限涨）
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? Int, size + data.count > diskLogLimit {
-            if let d = try? Data(contentsOf: url) { existing = Data(d.suffix(diskLogLimit / 2)) }
-        }
-        do {
-            let fh = try FileHandle(forWritingTo: url)
-            if !existing.isEmpty {
-                // ⭐⭐⭐ **截断 + 写尾部 + 追加新内容**（一次 truncate ⇒ 不留旧数据）
-                try fh.truncate(atOffset: 0)
-                try fh.write(contentsOf: existing)
-            } else {
-                try fh.seekToEndOfFile()
+           let size = attrs[.size] as? Int, size > 1_000_000 {
+            if let data = try? Data(contentsOf: url) {
+                let keep = data.suffix(600_000)
+                try? keep.write(to: url, options: .atomic)
             }
-            try fh.write(contentsOf: data)
-            try fh.close()
-        } catch {
-            // ⭐⭐⭐ 首次写（文件还不存在）⇒ 建一个
-            try? data.write(to: url)
-            DiskWriteMeter.record(data.count)
+        }
+        if let data = (line + "\n").data(using: .utf8) {
+            if let fh = try? FileHandle(forWritingTo: url) {
+                fh.seekToEndOfFile()
+                fh.write(data)
+                try? fh.close()
+            } else {
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
 
@@ -642,12 +573,11 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         return fallback.isEmpty ? "引擎" : fallback
     }
 
-
     private func markReady() {
         guard !ready else { return }
         ready = true
-        // ⭐ 标记当前引擎后端（用户能在「测书源」面板看到）
-        if !EngineBackend.useNewEngine { EngineBackend.current = .legacyJS }
+        // ⭐ 老 JS 引擎已退役 ⇒ 不再有「引擎选择」⇒ 这里不再标记后端
+        //   （老引擎现在**只**服务 `login` / `loginProbe` 两个 op ⇒ 见 SourceService.invokeEngine）⭐⭐⭐
         let ws = bootWaiters; bootWaiters = []
         ws.forEach { $0.resume() }
     }
@@ -961,19 +891,19 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             return ok()
 
         case "cachePut":
-            // 能力在 Swift（Core/HostTools.swift 的 Cache）→ 这里只转发
+            // 能力在 Swift（Core/LegadoCompat.swift 的 Cache）→ 这里只转发
             let k = args["key"] as? String ?? ""
             let v = args["value"] as? String ?? ""
-            HostTools.Cache.put(k, v)
+            LegadoCompat.Cache.put(k, v)
             return ok(["value": "1"])
 
         case "cacheGet":
             let k = args["key"] as? String ?? ""
-            return ok(["value": HostTools.Cache.get(k)])
+            return ok(["value": LegadoCompat.Cache.get(k)])
 
         case "cacheRemove":
             let k = args["key"] as? String ?? ""
-            HostTools.Cache.remove(k)
+            LegadoCompat.Cache.remove(k)
             return ok(["value": "1"])
 
         case "cacheText":
@@ -996,7 +926,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             return ok(["value": s])
 
         case "importScript":
-            guard let p = args["path"] as? String, let s = EngineResourceLocator.text(p) else { return err("importScript 找不到 " + (args["path"] as? String ?? "")) }
+            guard let p = args["path"] as? String, let s = ResourceLocator.text(p) else { return err("importScript 找不到 " + (args["path"] as? String ?? "")) }
             // 明确用 completion-handler 版本：直接写 evaluateJavaScript(s) 会被解析到
             // async 重载，那边少个 await 就是编译错误
             // 补 \n;void 0; 同 injectEngine：别把脚本完成值交给 WebKit 去桥接
@@ -1204,7 +1134,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         if let src = currentSource {
             let lh = SourceVariables.loginHeader(for: src.bookSourceUrl)
             if !lh.isEmpty {
-                for (name, value) in HostTools.parseLoginHeader(lh) {
+                for (name, value) in LegadoCompat.parseLoginHeader(lh) {
                     // 已有同名头就不覆盖（站方自己指定的优先）
                     if req.value(forHTTPHeaderField: name) == nil {
                         req.setValue(value, forHTTPHeaderField: name)
@@ -1420,7 +1350,7 @@ extension RuleSandbox: WKUIDelegate {
             return "{\"ok\":false,\"error\":\"同步请求解析失败\"}"
         }
         let args = obj["args"] as? [String: Any] ?? [:]
-        let result = HostTools.handle(fn: fn, args: args)
+        let result = LegadoCompat.handle(fn: fn, args: args)
         guard let out = try? JSONSerialization.data(withJSONObject: result),
               let s = String(data: out, encoding: .utf8) else {
             return "{\"ok\":false,\"error\":\"同步结果序列化失败\"}"
@@ -1428,6 +1358,139 @@ extension RuleSandbox: WKUIDelegate {
         return s
     }
 }
+
+// MARK: - 辅助
+
+enum HeaderCodec {
+    /// 解析书源 header 字符串：`key:value` 换行分隔，或 JSON。
+    static func decode(_ s: String) -> [String: String]? {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return nil }
+        if t.hasPrefix("{") {
+            if let d = try? JSONSerialization.jsonObject(with: Data(t.utf8)) as? [String: Any] {
+                return d.reduce(into: [:]) { acc, kv in
+                    if let v = kv.value as? String { acc[kv.key] = v }
+                    else if let v = kv.value as? NSNumber { acc[kv.key] = v.stringValue }
+                }
+            }
+        }
+        var out: [String: String] = [:]
+        for line in t.components(separatedBy: .newlines) {
+            let l = line.trimmingCharacters(in: .whitespaces)
+            guard let c = l.firstIndex(of: ":") else { continue }
+            let k = String(l[l.startIndex..<c]).trimmingCharacters(in: .whitespaces)
+            let v = String(l[l.index(after: c)...]).trimmingCharacters(in: .whitespaces)
+            if !k.isEmpty { out[k] = v }
+        }
+        return out.isEmpty ? nil : out
+    }
+}
+
+enum CookieJar {
+    static func cookieString(for url: String) -> String {
+        guard let u = URL(string: url) else { return "" }
+        let cookies = HTTPCookieStorage.shared.cookies(for: u) ?? []
+        return cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+    }
+
+    /// 全量 cookie 快照：**host → "k=v; k2=v2"**
+    ///
+    /// ⚠️ 为什么需要快照：Legado 的 `cookie.getCookie(url)` 是**同步** API，
+    ///    而原生桥只能 postMessage（异步）→ JS 里没法 await 一次同步调用。
+    ///    所以原生侧先把 cookie 罐拍成快照塞进 payload，引擎侧同步读。
+    static func snapshot() -> [String: String] {
+        var out: [String: String] = [:]
+        for c in HTTPCookieStorage.shared.cookies ?? [] {
+            var host = c.domain
+            if host.hasPrefix(".") { host.removeFirst() }
+            guard !host.isEmpty else { continue }
+            let pair = "\(c.name)=\(c.value)"
+            if let prev = out[host], !prev.isEmpty {
+                out[host] = prev + "; " + pair
+            } else {
+                out[host] = pair
+            }
+        }
+        // ⚠️⚠️ **番茄 sessionid 别名**（2026-10-21 真机「番茄登了还是说过期」）：
+        //   番茄新版登录的 cookie 键是 `sessionid_ss`，
+        //   而站方（🍅大灰狼）有一行老正则 `rawCookie.match(/sessionid=[^;]+/)` **只认 `sessionid=`**
+        //   ⇒ 站方抠不到 sessionid ⇒ 发现页一直 toast「您还未登陆番茄账号」
+        //   ⇒ `ssionid` 参数空 ⇒ 大灰狼服务器回「番茄登录过期」
+        //   ⇒ 这里补一条 `sessionid=<同值>` 别名（不覆盖已有的）⇒ 站方立刻能用 ✅
+        //   （逻辑在 LegadoCompat（纯 Foundation）→ 沙盒 swiftc 能真编真跑）
+        // ⚠️⚠️ **不能一边遍历一边改字典** ⇒ Swift 会崩
+        //   （Fatal error: Collection was mutated while being enumerated）
+        //   ⇒ 先收集要改的，再统一改
+        var updates: [String: String] = [:]
+        for (host, value) in out {
+            if LegadoCompat.isFanqieHost(host) {
+                let fixed = LegadoCompat.fanqieSessionAlias(value)
+                if fixed != value { updates[host] = fixed }
+            }
+        }
+        for (host, value) in updates { out[host] = value }
+        return out
+    }
+    static func set(_ cookie: String, for url: String) {
+        guard let u = URL(string: url) else { return }
+        // 新 SDK 的 setCookies 多了第三个参数 mainDocumentURL，不给编译不过
+        HTTPCookieStorage.shared.setCookies(cookies(from: cookie, host: u.host ?? ""),
+                                            for: u, mainDocumentURL: nil)
+    }
+
+    /// 删某个站点下的 cookie（站方的「退出登录」用）
+    ///
+    /// ⚠️ `HTTPCookieStorage.shared.setCookies([])` **不一定**会清掉已有的
+    ///    （实测不可靠）→ 这里显式遍历 deleteCookie。
+    ///    域匹配：cookie.domain 是 "v5.langge.uk" 或 ".langge.uk"，
+    ///    要把 **父域** 的 cookie 也删掉（站方 logout 会逐个清 host + langge.uk）。
+    static func remove(for url: String) {
+        guard let u = URL(string: url) else { return }
+        let host = (u.host ?? "").lowercased()
+        guard !host.isEmpty else { return }
+        for c in HTTPCookieStorage.shared.cookies ?? [] {
+            var d = c.domain.lowercased()
+            if d.hasPrefix(".") { d.removeFirst() }
+            if d.isEmpty { continue }
+            if d == host || host.hasSuffix("." + d) || d.hasSuffix("." + host) {
+                HTTPCookieStorage.shared.deleteCookie(c)
+            }
+        }
+    }
+    static func cookies(from header: String, host: String) -> [HTTPCookie] {
+        var out: [HTTPCookie] = []
+        for part in header.components(separatedBy: ";;") {
+            let p = part.trimmingCharacters(in: .whitespaces)
+            let kv = p.split(separator: "=", maxSplits: 1).map(String.init)
+            guard kv.count == 2, let c = HTTPCookie(properties: [
+                .name: kv[0], .value: kv[1], .domain: host, .path: "/",
+            ]) else { continue }
+            out.append(c)
+        }
+        return out
+    }
+}
+
+enum CacheFiles {
+    private static let root = AppPaths.cacheDir
+
+    /// Legado 的 `java.cacheFile(path, content)`，路径是书源自定的 key，不是真实路径
+    static func write(_ path: String, _ text: String) -> Bool {
+        let safe = safeName(path)
+        guard let d = text.data(using: .utf8) else { return false }
+        let p = root.appendingPathComponent(safe)
+        do { try d.write(to: p, options: .atomic); return true } catch { return false }
+    }
+    static func read(_ path: String) -> String? {
+        let p = root.appendingPathComponent(safeName(path))
+        return try? String(contentsOf: p, encoding: .utf8)
+    }
+    private static func safeName(_ s: String) -> String {
+        let h = abs(s.hashValue)
+        return "cf_\(h).cache"
+    }
+}
+
 enum SandboxFS {
     /// 允许 Documents 下的任意路径，挡掉目录穿越
     static func sanitize(_ p: String) -> URL? {

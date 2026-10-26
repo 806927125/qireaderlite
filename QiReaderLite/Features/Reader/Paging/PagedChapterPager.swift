@@ -36,7 +36,6 @@ final class PagedChapterPager: NSObject {
     /// 排版变了 → 丢掉按章缓存的页，重新排。
     private func invalidateLayout() {
         renders.removeAll()
-        renderOrder.removeAll()
         rebuildSpine(around: cursor)
         show(cursor: cursor, animated: false)
     }
@@ -74,21 +73,6 @@ final class PagedChapterPager: NSObject {
     /// ⚠️ 文本和页数**必须绑在一起缓存**：之前 pageCount 不带标题、makePage 带标题，
     ///    两边基准不一致 → 页边界和实际渲染对不上，标题页就错位了。
     private var renders: [Int: ChapterRender] = [:]
-    /// ⭐⭐⭐⭐⭐ **排版缓存上限**（2026-10-26 jetsam 6.8GB 实证 ⇒ 闪退的真凶）
-    ///
-    /// ⚠️⚠️⚠️ **为什么这是真凶**：
-    ///   `renders` 每章存一份 **`paginator`（排版后的页对象 / CoreText）**
-    ///   ⇒ 一章就是**几 MB** 的排版对象 ⇒ **读的书越多，内存越大** ⇒ **永不清**
-    ///   ⇒ 实测真机顶到 **6.2GB** ⇒ 任何 op 再涨一点就被 jetsam 杀
-    ///   ⇒ 现象 =「进发现页 / 搜索 / 登录都闪退」（其实是**内存早被读的书吃光了**）⭐⭐⭐
-    ///   ⇒ ⭐ **老引擎免疫的第二个机制**：老引擎（WKWebView）的排版在**独立进程**里 ⭐⭐⭐
-    ///
-    /// ⭐ **修法**：只留最近 N 章的排版结果 ⇒ 翻回去会**重排**（几十毫秒 ⇒ 用户无感）
-    ///   ⇒ 内存从 GB 级降到 MB 级 ⇒ **再也不会被 jetsam 杀** ⭐⭐⭐
-    ///   ⚠️ `texts`（整章正文）**不能清** ⇒ 目录/spine 逻辑依赖它 ⇒ 只清 `renders` ⭐⭐⭐
-    static let renderCacheLimit = 5
-    /// LRU 顺序（最旧在前）
-    private var renderOrder: [Int] = []
     private var loadingChapters: Set<Int> = []
     private var failedChapters: Set<Int> = []
     /// 当前在全书序列里的位置
@@ -156,8 +140,7 @@ final class PagedChapterPager: NSObject {
                 || abs(size.height - pageSize.height) > 0.5 else { return }
         pageSize = size
         guard chapterCount > 0 else { return }
-        renders.removeAll()
-        renderOrder.removeAll()          // 页宽变了，每章页数都得重算
+        renders.removeAll()          // 页宽变了，每章页数都得重算
         let at = cursor
         rebuildSpine(around: chapter)
         // 尽量落回原来那一页
@@ -259,10 +242,7 @@ final class PagedChapterPager: NSObject {
     /// 帧要带标题 —— 但页数必须按「带标题」那个基准算，否则页边界对不上。
     @discardableResult
     private func render(_ c: Int) -> ChapterRender? {
-        if let r = renders[c] {
-            touchRender(c)               // ⭐ 命中 ⇒ 提到「最近使用」
-            return r
-        }
+        if let r = renders[c] { return r }
         // ⚠️ 只能读**自己缓存的** texts。早前这里每次回头问上层
         //    （chapterTextProvider），而 provider 卡了「章号 == 当前章」，
         //    结果**邻章永远排不出页** → pageCount=1 → 翻过去卡在加载页。
@@ -276,25 +256,7 @@ final class PagedChapterPager: NSObject {
         let n = max(1, p.paginateJustified(attr, pageSize: pageSize, config: config).count)
         let r = ChapterRender(title: t.title, pageCount: n, paginator: p)
         renders[c] = r
-        touchRender(c)
-        evictRenders()
         return r
-    }
-
-    /// ⭐ 命中时把它挪到「最近使用」端
-    private func touchRender(_ c: Int) {
-        renderOrder.removeAll { $0 == c }
-        renderOrder.append(c)
-    }
-
-    /// ⭐⭐⭐ **淘汰最旧的排版缓存**（**当前章永不淘汰** ⇒ 翻页不会突然重排）
-    private func evictRenders() {
-        let current = spine.indices.contains(cursor) ? spine[cursor].chapter : nil
-        while renderOrder.count > Self.renderCacheLimit {
-            let oldest = renderOrder.removeFirst()
-            if oldest == current { renderOrder.append(oldest); continue }
-            renders.removeValue(forKey: oldest)
-        }
     }
 
     private func firstIndex(ofChapter c: Int) -> Int {

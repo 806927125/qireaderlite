@@ -16,14 +16,18 @@ enum Toast {
     static func show(_ message: String) {}
 }
 
-// ⭐⭐⭐⭐⭐ **`CookieJar` / `CacheFiles` 的替身删掉了**（2026-10-26 实证）
-//
-// ⚠️⚠️⚠️ **为什么必须删**（这正是本文件自己记的教训）：
-//   「沙盒 stub 里**同名类型**会把真类型遮住 ⇒ 门禁假绿」⭐⭐⭐⭐⭐
-//   ⇒ 现在这一组**编译真的那份** `QiReaderLite/Core/HostTools.swift`
-//     ⇒ 真的那份里就有 `CookieJar` / `CacheFiles`
-//     ⇒ stub 里再留一份 ⇒ **invalid redeclaration** ⇒ 门禁直接红 ⭐⭐⭐
-//   ⇒ ⇒ **stub 里不许再声明真文件里已有的类型** ⇒ 只留「真文件里没有的」⭐⭐⭐
+enum CookieJar {
+    static func cookieString(for url: String) -> String { "" }
+    static func snapshot() -> [String: String] { [:] }
+    // ⚠️ 真机的 `CookieJar`（RuleSandbox.swift）有这两个 ⇒ stub 必须照抄
+    static func set(_ cookie: String, for url: String) {}
+    static func remove(for url: String) {}
+}
+
+enum CacheFiles {
+    static func write(_ path: String, _ text: String) -> Bool { true }
+    static func read(_ path: String) -> String? { nil }
+}
 
 // ⚠️⚠️ **必须标 `@MainActor`** —— 真机的 `RuleSandbox` 就是 `@MainActor`
 //   ⇒ 适配层在后台线程调 `appendLog` 会被编译器拦下
@@ -50,6 +54,6 @@ enum AppDecoder {
     }
 }
 
-// ⭐ 2026-10-24：`HostTools` 的**替身删掉了** —— 现在这一组**编译真的那份**
-//   （`QiReaderLite/Core/HostTools.swift`）⇒ cookie 解析等新能力能在沙盒里真编真跑
+// ⭐ 2026-10-24：`LegadoCompat` 的**替身删掉了** —— 现在这一组**编译真的那份**
+//   （`QiReaderLite/Core/LegadoCompat.swift`）⇒ cookie 解析等新能力能在沙盒里真编真跑
 //   ⇒ 真的那份自带 `pingHosts` ⇒ 替身不再需要

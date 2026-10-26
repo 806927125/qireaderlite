@@ -2,7 +2,7 @@
    跑法：node test/compat-corpus.js */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 const { QR } = createSandbox();
 
 const DIR = process.env.LEGADO_DIR || '/tmp/legado/sources';

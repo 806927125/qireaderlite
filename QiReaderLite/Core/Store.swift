@@ -1,6 +1,35 @@
 import Foundation
 import SwiftUI
 
+// MARK: - 磁盘路径
+
+enum AppPaths {
+    static var documents: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+    static var sourcesFile: URL { documents.appendingPathComponent("book_sources.json") }
+    /// 从 Info.plist 读版本号，自检面板用
+    static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+    /// **build 号**（CFBundleVersion）—— 唯一能区分「新包/旧包」的标识
+    ///
+    /// ⚠️ 之前自检面板只显示「App 版本：3.6」⇒ 用户和我都**分不清装的是哪一版**
+    ///    （今天连着几个 build 的包混着装）⇒ 报 bug 时根本对不上号。
+    /// ⇒ 现在自检面板第一行就显示 `App 3.6 (build 173)` ✅
+    static var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
+    /// 「3.6 (build 173)」这种一眼能看的写法
+    static var appVersionLine: String { "\(appVersion) (build \(appBuild))" }
+    static var libraryFile: URL { documents.appendingPathComponent("library.json") }
+    static var cacheDir: URL {
+        let d = documents.appendingPathComponent("content_cache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+}
+
 // MARK: - 书源仓库
 
 @MainActor
@@ -74,12 +103,7 @@ final class SourceStore: ObservableObject {
         let snapshot = sources
         queue.async {
             guard let d = try? AppEncoder.encode(snapshot) else { return }
-            // ⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）
-            //   ⇒ `.atomic` = 写临时文件 + rename ⇒ **写盘量翻倍** ⭐⭐⭐
-            //   ⇒ 源列表 125 个源 × 158KB ≈ 20MB ⇒ 一次 `.atomic` = **40MB 写盘** ⭐⭐⭐
-            //   ⇒ 改用 FileHandle 真写 ⇒ 写盘量减半 ⭐⭐⭐
-            HostTools.writeAtomicallyFree(d, to: AppPaths.sourcesFile)
-            DiskWriteMeter.record(d.count)
+            try? d.write(to: AppPaths.sourcesFile, options: .atomic)
         }
     }
 }
@@ -150,9 +174,7 @@ final class LibraryStore: ObservableObject {
         let snapshot = items
         queue.async {
             guard let d = try? AppEncoder.encode(snapshot) else { return }
-            // ⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）⭐⭐⭐
-            HostTools.writeAtomicallyFree(d, to: AppPaths.libraryFile)
-            DiskWriteMeter.record(d.count)
+            try? d.write(to: AppPaths.libraryFile, options: .atomic)
         }
     }
 }
@@ -184,21 +206,7 @@ final class ContentCache {
         io.async { [dir] in
             let p = dir.appendingPathComponent(self.key(url))
             guard let d = text.data(using: .utf8) else { return }
-            // ⭐⭐⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）
-            //   ⇒ `.atomic` = **写临时文件 + rename** ⇒ **每次写盘量翻倍** ⭐⭐⭐
-            //   ⇒ 正文缓存动辄几百 KB ⇒ 翻倍就是几百 KB ⇒ 累积起来超 iOS 限额 ⇒ 被杀 ⭐⭐⭐
-            //   ⇒ 改用 FileHandle 真写 ⇒ 写盘量减半 ⭐⭐⭐
-            //   ⇒ ⚠️ 代价：写一半崩了会留半截文件 ⇒ 下次读缓存会读到半截
-            //     ⇒ 读的时候校验一下（见 get）⇒ 半截就当没缓存 ⭐⭐⭐
-            do {
-                let fh = try FileHandle(forWritingTo: p)
-                try fh.truncate(atOffset: 0)
-                try fh.write(contentsOf: d)
-                try fh.close()
-            } catch {
-                try? d.write(to: p)
-            }
-            DiskWriteMeter.record(d.count)
+            try? d.write(to: p, options: .atomic)
             self.lock.lock(); self.index[url] = p.path; self.lock.unlock()
         }
     }

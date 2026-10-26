@@ -27,7 +27,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const ENGINE_DIR = path.join(__dirname, '..', '..', 'legado-engine', 'Sources', 'LegadoCore');
+const ENGINE_DIR = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
 
 function loadEngine() {
   const ctx = { console, setTimeout, clearTimeout, TextEncoder, TextDecoder };

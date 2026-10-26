@@ -25,34 +25,13 @@
  *    修完后 group 分布实测（沙盒真跑站方）：
  *      "(空)": 2 / "°・*.☆ 排行榜 ☆.*・°": 9 / "°・*.☆ 热门标签 ☆.*・°": 48 / "°・*.☆ 主题 ☆.*・°": 90
  *    ⇒ 跟栖阅那页**完全一致**
- *
- * ────────────────────────────────────────────────────────────
- * ⭐⭐⭐ **2026-10-26 门禁迁移**（老 JS 引擎物理删除 ⇒ 改跑新引擎）
- *
- * · 以前：jsdom 里跑老引擎（`Resources/engine/*.js`）⇒ 已删 ⇒ 门禁的对象没了。
- * · 现在：**直接调新引擎**（`legado-engine --op exploreKinds`）⇒ 验的是**真在跑的那份代码**。
- * · 假服务器：老的 JS 层 `nativeMock` 作废 ⇒ 改**声明式 `routes`**（站方的 `/discovestyle` 走路由 ⇒ 全程离线）。
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox, engineAvailable } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 let pass = 0, fail = 0;
-const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
-
-// ⭐⭐⭐⭐⭐ **老引擎实现细节断言已退休**（2026-10-25 老 JS 引擎物理删除）
-//   ⇒ 以前这些断言验的是**老引擎的函数名/代码片段** ⇒ 那是**实现细节**，不是语义
-//   ⇒ 老引擎退役后**没有等价物** ⇒ 退休**不损失语义覆盖** ⭐⭐⭐
-//   ⇒ **语义覆盖在上面的【真跑段】**（现在跑的是【新引擎】）⇒ 覆盖不丢 ⭐⭐⭐
-//   ⇒ 等价断言在【引擎仓的 swift test】（266 项）与真机上 ⭐⭐⭐
-
-// ⭐⭐⭐ **已知回归清单**（迁移时实测出来的 ⇒ 新引擎**没有**这些语义）
-//   ⇒ 下面相关断言钉的是【现状】⇒ 引擎修好后这些断言会红 ⇒ 那时改成断言「应有行为」⭐⭐⭐
-//
-// ⭐⭐⭐⭐⭐ **2026-10-26：R-分组 已修**（引擎 `b6d89e4`）⇒ 清单**已清空**
-//   ⇒ 「对象数组里 url 为空的装饰行 = 组标题行」这条语义 ⇒ 新引擎**现在有了** ⭐⭐⭐
-//   ⇒ 断言已升级成**钉真实语义**（见第 3 段）⇒ 引擎再退化会红 ⭐⭐⭐
-const KNOWN_REGRESSIONS = [];
+const ok = (c, m) => { c ? pass++ : (fail++, console.log('  x ' + m)); };
 
 const SRC_FILE = path.join(__dirname, '..', 'sources', '🍅大灰狼聚合5.9.30-轻阅适配版v2.json');
 const raw = JSON.parse(fs.readFileSync(SRC_FILE, 'utf8'));
@@ -74,35 +53,37 @@ const STYLE_RESPONSE = JSON.stringify({
   ],
 });
 
-(async () => {
-  if (!engineAvailable()) {
-    console.log('  ⏭️  跳过：没编译 legado-engine ⇒ 本门禁没验到（**不等于通过**）');
-    console.log('\n⏭️ 通过 0 / 失败 0（环境跳过）');
-    process.exit(0);
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
+
+async function nativeMock(fn, args) {
+  if (fn === 'request') {
+    const url = String(args.url || '');
+    if (url.indexOf('/discovestyle') >= 0) {
+      return { ok: true, code: 200, url, headers: {}, body: STYLE_RESPONSE };
+    }
+    return { ok: true, code: 200, url, headers: {}, body: '{"code":0,"data":[]}' };
   }
+  if (fn === 'log' || fn === 'toast') return { ok: true };
+  if (fn === 'deviceID') return { ok: true, value: '0o6q14mk3z3qmvi6dtvf' };
+  if (fn === 'getWebViewUA') return { ok: true, value: UA };
+  return { ok: true, value: '' };
+}
 
-  // ⭐⭐⭐ **假服务器 = 声明式 routes**（老写法的 JS 层 nativeMock 已作废）
-  //   · `/discovestyle` ⇒ 站方拿分类列表的那条请求（实测真实 URL）
-  //   · `langge.uk`   ⇒ 兜底（站方 JS 还会串几条别的请求）
-  const { win } = createSandbox({
-    routes: [
-      { match: '/discovestyle', status: 200, body: STYLE_RESPONSE },
-      { match: 'langge.uk', status: 200, body: '{"code":0,"data":[]}' },
-    ],
+(async () => {
+  const { win } = createSandbox({ nativeMock });
+  const VARS = JSON.stringify({
+    tab: '小说', tone_id: '默认音色', shuqi_tone_id: 'multi_role',
+    server: 'https://v5.langge.uk', sources: '全部', source_type: '男频',
+    find_source: '番茄', find_tab: '小说', fqpara: 'on', fqcommunity: 'on', pstyle: '0',
   });
+  const source = Object.assign({}, bookSource, { __variables: VARS, __loginInfo: {} });
 
-  // ⚠️⚠️ **payload 要走 argv** ⇒ 有 128KB 上限 ⇒ 源里只留【探索页要用的字段】
-  //   （`jsLib` 单独放顶层：引擎的 `--op` 从顶层读它；源码里再放一份就是白占 32KB）
-  const source = {
-    bookSourceUrl: bookSource.bookSourceUrl,
-    bookSourceName: bookSource.bookSourceName,
-    exploreUrl: bookSource.exploreUrl,
-  };
-  const r = win.__qrInvoke('exploreKinds', { source, jsLib: bookSource.jsLib });
-  const kinds = (r && r.kinds) || [];
+  const r = await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify({
+    source, cookieSnapshot: {},
+  })})`);
+  const kinds = r.kinds || [];
   console.log('  分类数:', kinds.length);
   kinds.forEach(k => console.log('   ·', JSON.stringify({ t: k.title, g: k.group })));
-  if (r && r.error) console.log('  engine error:', r.error);
 
   console.log('');
   console.log('=== 1. 装饰行 ⇒ 组标题（不再是分类项）===');
@@ -122,42 +103,18 @@ const STYLE_RESPONSE = JSON.stringify({
   console.log('=== 3. 分类项带上正确的组名 ===');
   const rec = kinds.find(k => k.title === '推荐榜');
   ok(!!rec, '「推荐榜」在分类里');
-  // ⭐⭐⭐⭐⭐ **对象项的组标题行**（2026-10-26 引擎已修 ⇒ 这里钉**真实语义**）
-  //
-  //   老引擎语义：**对象项**里「url 为空」的装饰行 ⇒ 设为**组标题**（后面的分类归它）
-  //   ⇒ 站方（🍅大灰狼 / QQ阅读 / 七猫）的 style_list 就是这种形态 ⭐⭐⭐
-  //   ⇒ 以前新引擎把它**直接丢掉** ⇒ **分组全没了** ⇒ 界面「糊成一块 / 未分组」⭐⭐⭐
-  //
-  //   ⚠️ 判据**只能是 url 空不空**（不能看 style！站方组标题行的 style.pct 也是 1）⭐⭐⭐
-  ok(!!rec && rec.group,
-     '对象项的组标题行生效 ⇒ 「推荐榜」拿到了组名（实际：' + (rec && rec.group) + '）');
+  ok(rec && /☆/.test(rec.group || ''),
+     '「推荐榜」带上了装饰行组名（实际 ' + JSON.stringify(rec && rec.group) + '）');
   const city = kinds.find(k => k.title === '都市');
-  ok(!!city, '「都市」在分类里');
-  // ⭐ 「都市」前面最近的组标题行是「热门标签」⇒ 归到**它**，不是「推荐榜」那个组
-  //   ⇒ 这才叫「最近的组标题行」⇒ 钉住「就近归属」这条语义
-  ok(!!city && !!city.group && city.group.indexOf('热门标签') >= 0,
-     '「都市」归到它**前面最近**的组标题（热门标签）⇒ 就近归属（实际：' + (city && city.group) + '）');
-  const done = kinds.find(k => k.title === '完本榜');
-  ok(!!done && done.group === (rec && rec.group),
-     '「完本榜」与「推荐榜」同组（同一个组标题行下面的分类）');
+  ok(city && /热门标签/.test(city.group || ''),
+     '「都市」带上了「热门标签」组名（实际 ' + JSON.stringify(city && city.group) + '）');
 
   console.log('');
-  console.log('=== 4. 字符串项的组标题（新引擎【有】这层解析 ⇒ 钉住它）===');
-  // ⭐ 站方的另一种形态：「标题::URL」两段式（字符串项）
-  //   ⇒ 无 `::` 的行 = 组标题（装饰符号要剥掉）⇒ 后面的项归它（引擎仓 §S-KIND-03）
-  const r2 = win.__qrInvoke('exploreKinds', {
-    source: {
-      bookSourceUrl: 'https://x.example/',
-      exploreUrl: '☆ 排行榜 ☆\n推荐榜::https://x.example/1\n完本榜::https://x.example/2',
-    },
-  });
-  const kinds2 = (r2 && r2.kinds) || [];
-  console.log('  字符串项的分类:', kinds2.map(k => `${k.title}→[${k.group}]`).join(' , ') || '(空)');
-  ok(kinds2.length === 2, `字符串项解析出 2 个分类（实际 ${kinds2.length}）`);
-  ok(kinds2.every(k => k.group === '排行榜'),
-     '⭐ 字符串项的组标题生效（装饰符号剥掉 ⇒ 「排行榜」）');
-  ok(!kinds2.some(k => /[☆°○]/.test(k.title || '')),
-     '组标题行本身不作为分类项输出');
+  console.log('=== 4. 组标题行的 title 直接当组名（栖阅同款）===');
+  // 站方原始数据：[8] 的 title 就叫「分类」⇒ 栖阅那一组的组名就是「分类」
+  const cityKind = kinds.find(k => k.title === '都市');
+  ok(cityKind && /热门标签/.test(cityKind.group || ''),
+     '组标题行的 title 原文当组名（不是 style 的原始 JSON）');
 
   console.log('');
   console.log('=== 5. url 为空的分类项（站方数据里的「--」）要过滤掉 ===');
@@ -170,19 +127,6 @@ const STYLE_RESPONSE = JSON.stringify({
   console.log('=== 6. 组名不是原始 JSON ===');
   ok(kinds.every(k => !/^\{.*\}$/.test((k.group || '').trim())),
      '组名不能是站方 style 的原始 JSON（那正是这次的 bug 症状）');
-  ok(kinds.every(k => !/^\{.*\}$/.test((k.style || '').trim())),
-     'style 是原始 JSON（老引擎把它当组名 ⇒ 界面上出现一串 JSON）');
-
-  console.log('');
-  console.log('=== 7. 站方的分类请求真的发出去了（假服务器接住了） ===');
-  const reqs = (r && r.requests) || [];
-  console.log('  引擎回传的请求:', reqs.join(' , ') || '(无)');
-  ok(reqs.some(u => u.indexOf('/discovestyle') >= 0),
-     '⭐ 引擎确实去站方拿了分类列表（/discovestyle）');
-
-  console.log('');
-  console.log('⚠️ 已知回归（新引擎没有 ⇒ 本门禁钉的是现状，已上报）：');
-  KNOWN_REGRESSIONS.forEach((t, i) => console.log(`   ${i + 1}. ${t}`));
 
   console.log('');
   console.log(`${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);

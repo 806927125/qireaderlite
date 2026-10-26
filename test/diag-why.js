@@ -1,6 +1,6 @@
 /* 诊断：发现能出书、但搜索搜不到的源，到底是引擎没匹配还是站方挡了 */
 const fs = require('fs');
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 const list = JSON.parse(fs.readFileSync('/workspace/发现可用书源.json', 'utf8'));
 const det = JSON.parse(fs.readFileSync('/workspace/发现可用书源-清单.json', 'utf8'));

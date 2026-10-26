@@ -3,7 +3,7 @@
    跑法：node test/explore-sweep.js [并发数] [上限] */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 const DIR = process.env.LEGADO_DIR || '/tmp/legado/sources';
 const CONC = parseInt(process.argv[2] || '12', 10);

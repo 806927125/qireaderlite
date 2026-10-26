@@ -1,291 +1,108 @@
 #!/usr/bin/env node
 /**
- * ⭐⭐⭐⭐⭐ **栖阅引擎 ↔ 新引擎 的能力面对账**（2026-10-26 重写）
+ * 栖阅引擎 ↔ 轻阅引擎 的 API 面对表
  *
- * ────────────────────────────────────────────────────────────
- * 为什么要重写（老门禁在老引擎退役后**直接崩了**）
- * ─────────────────────────────────────────────────────────────
- *   老门禁读的是**老 JS 引擎**的文件（`org-jsoup.js` / `jsoup-compat.js` / `packages_stub.js`）
- *   ⇒ 那些文件在「老引擎物理删除」后**不存在** ⇒ 门禁 ENOENT 崩 ⇒ 被判「跳过」
- *   ⇒ ⇒ **最后一个「没验到」的门禁** ⇒ ⇒ 等于这条能力面对账**一直没在跑** ⭐⭐⭐
+ * 起因：我一直以为「栖阅的引擎我搬完了」，其实只搬了 packages_stub.js 一个文件。
+ * 栖阅的引擎能力分散在**两个**文件：
+ *     packages_stub.js  → 125 个 Packages.* / java.* ，我整份搬了
+ *     jsoup_bridge.js   → org.seimicrawler.xpath.{JXDocument,JXNode}
+ *                         + Jsoup Document/Element/Elements 的完整 Java API
+ *                         我以「依赖 Swift/Kanna live DOM 句柄，搬不动」为由跳过了
+ * 结果 Doc.xpath() / JXDocument 全是 undefined。
  *
- * ────────────────────────────────────────────────────────────
- * ⭐⭐⭐ **新门禁钉的是什么（更准）**
- * ─────────────────────────────────────────────────────────────
- *   ① **参考面**：栖阅的 `jsoup_bridge.js` 暴露了哪些类型（`Packages.org.*` / `JXDocument`…）
- *   ② **真实用量**：**125 源语料**里，站方**规则代码**（不是注释！）真的用了哪些
- *   ③ **新引擎面**：这些类型在**新引擎的 JS 环境**里到底存不存在（**运行时**查，不是 grep 源码）
- *   ⇒ ⇒ 判定：
- *      · 语料用得到 + 引擎没有 ⇒ **红**（真缺口 ⇒ 必须补）
- *      · 语料没用 + 引擎没有   ⇒ **绿，但显式列成「已知缺口（0 用量）」**（看得见，不装作没有）⭐⭐⭐
- *      · 语料用得到 + 引擎有   ⇒ **绿** ✅
- *
- * ⚠️⚠️⚠️ **第 ② 步只扫【规则代码】，不扫说明字段**
- *   （`bookSourceComment` / `ruleSearch.bookList` 的注释里满是 `org.jsoup.Jsoup.parse`）
- *   ⇒ 扫全文会得到「47 处用到」的**假结论** ⇒ ⇒ **必须按字段挑**⭐⭐⭐
- *   （实测：47 处全在注释里 ⇒ **真实用量 = 0** ⇒ 缺口是「理论上的」）
+ * 这个门禁把栖阅那份文件的**方法名逐个抠出来**跟轻阅对账，
+ * 以后再漏会当场红，不用等用户拿书源撞上来才发现。
  */
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.join(__dirname, '..');
 const QY_JS = process.env.QY_JS || '/workspace/qy2027/Payload/栖阅.app/jsoup_bridge.js';
-const ENGINE_DIR = process.env.ENGINE_DIR || path.join(ROOT, '..', 'legado-engine');
-const SOURCES_DIR = path.join(ROOT, 'sources');
+const ENGINE = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : (fail++, console.log('  ✗ ' + m)); };
-const note = (m) => console.log('  · ' + m);
 
-// ────────────────────────────────────────────────────────────
-// ① 参考面：栖阅那份 jsoup_bridge.js 暴露了什么
-// ────────────────────────────────────────────────────────────
-let qyTypes = [];
-if (fs.existsSync(QY_JS)) {
-  const qy = fs.readFileSync(QY_JS, 'utf8');
-  qyTypes = [...new Set((qy.match(/Packages\.org\.[A-Za-z0-9_.]+/g) || [])
-    .filter(t => !/\.__javaClassName$/.test(t)))];
-  qyTypes = qyTypes.map(t => t.replace(/^Packages\./, ''));
-  // 栖阅的 Xpath 类型（不是 Packages.*，单独抠）
-  for (const m of qy.matchAll(/\b(org\.seimicrawler\.xpath\.[A-Za-z0-9_]+)/g)) {
-    if (!qyTypes.includes(m[1])) qyTypes.push(m[1]);
-  }
-} else {
-  console.log(`⚠️  栖阅 jsoup_bridge.js 不在 ${QY_JS} ⇒ ① 参考面没验到（**不等于通过**）`);
+if (!fs.existsSync(QY_JS)) {
+  console.log(`⚠️  栖阅 jsoup_bridge.js 不在 ${QY_JS}，跳过对照（拆包后再跑）`);
+  process.exit(0);
 }
 
-// ────────────────────────────────────────────────────────────
-// ② 真实用量：**只扫规则代码字段**（注释不算）
-// ────────────────────────────────────────────────────────────
-/** ⭐⭐⭐ **书源里【是代码】的字段**（其余都是说明文字） */
-const CODE_FIELDS = new Set([
-  'jsLib', 'loginUrl', 'loginUi', 'header', 'url',
-  'searchUrl', 'exploreUrl', 'ruleSearch', 'ruleExplore', 'ruleBookInfo',
-  'ruleToc', 'ruleContent', 'bookUrl', 'tocUrl', 'chapterUrl', 'chapterList',
-  'name', 'author', 'intro', 'kind', 'lastChapter', 'coverUrl', 'wordCount',
-  'nextTocUrl', 'preUpdateJs', 'updateTime', 'sourceRegex', 'charset',
-]);
+const qy = fs.readFileSync(QY_JS, 'utf8');
+const mine = ['org-jsoup.js', 'jsoup-compat.js', 'packages_stub.js']
+  .map(f => fs.readFileSync(path.join(ENGINE, f), 'utf8')).join('\n');
 
-/**
- * ⭐⭐⭐⭐⭐ **规则代码的收集**（**别再漏字段了** —— 这是 2026-10-26 抓到的「平凡通过」）
- *
- * ⚠️⚠️⚠️ **原来的 bug**：只认一张**手写白名单**（`CODE_FIELDS`）⇒ **漏了 `bookList`**
- *   ⇒ 列表规则（`ruleExplore.bookList` / `ruleSearch.bookList`）**根本没被扫**
- *   ⇒ ⇒ 「语料在用 org.jsoup」这条**根本测不到** ⇒ 门禁恒绿 ⭐⭐⭐
- *   ⇒ ⇒ **「断言里的内容压根不存在 ⇒ 恒真」**的典型 ⭐⭐⭐
- *
- * ⭐ **正解**：**`rule*` 对象里的东西一律是代码**（规则对象的字段全是规则）
- *   ⇒ 不靠手写清单 ⇒ **新加的规则字段自动被扫到** ⇒ 不会漏 ⭐⭐⭐
- */
-function collectCode(node, out, inRule) {
-  if (node == null) return;
-  if (typeof node === 'string') { out.push(node); return; }
-  if (Array.isArray(node)) { node.forEach(n => collectCode(n, out, inRule)); return; }
-  if (typeof node === 'object') {
-    for (const [k, v] of Object.entries(node)) {
-      if (k.startsWith('rule')) collectCode(v, out, true);       // 规则对象 ⇒ 里面全是代码
-      else if (inRule) collectCode(v, out, true);                // 规则对象的子字段 ⇒ 也是代码
-      else if (CODE_FIELDS.has(k)) collectCode(v, out, false);    // 顶层代码字段
-    }
-  }
+const methods = (src, cls) => new Set(
+  (src.match(new RegExp(cls.replace(/[$]/g, '\\$') + '\\.prototype\\.([A-Za-z0-9_]+)\\s*=', 'g')) || [])
+    .map(m => m.match(/\.([A-Za-z0-9_]+)\s*=/)[1])
+);
+
+const missing = [];
+function diff(cls, myName) {
+  const want = methods(qy, cls);
+  const have = methods(mine, myName);
+  ok(want.size > 0, `${cls} 在栖阅那边能抠出方法名`);
+  const gap = [...want].filter(m => !have.has(m));
+  ok(gap.length === 0, `${cls} 缺 ${gap.length} 个方法：${gap.join(', ') || '无'}`);
+  if (gap.length) missing.push(`${cls}: ${gap.join(', ')}`);
 }
 
-const corpus = [];
-if (fs.existsSync(SOURCES_DIR)) {
-  for (const f of fs.readdirSync(SOURCES_DIR).filter(n => n.endsWith('.json'))) {
-    let raw;
-    try { raw = JSON.parse(fs.readFileSync(path.join(SOURCES_DIR, f), 'utf8')); } catch (e) { continue; }
-    const list = Array.isArray(raw) ? raw : [raw];
-    for (const src of list) {
-      const code = [];
-      collectCode(src, code, false);
-      // ⭐⭐⭐ **记下这个源自己的 bookList**（自检要**按源配对**，不能按文件）⭐⭐⭐
-      const bl = (src && src.ruleExplore && src.ruleExplore.bookList)
-        || (src && src.ruleSearch && src.ruleSearch.bookList);
-      corpus.push({ file: f, code: code.join('\n'),
-                    bookList: typeof bl === 'string' ? bl : null });
-    }
-  }
-}
-ok(corpus.length > 0, `扫到 ${corpus.length} 个书源的规则代码`);
-
-/** ⭐⭐⭐ **自检：收集器不许再漏字段**（2026-10-26 的「平凡通过」实证）⭐⭐⭐ */
+diff('_JsoupDoc', 'Doc');
+diff('_JsoupElement', 'El');
+diff('_JXDocument', 'JXDocument');
+diff('_JXNode', 'JXNode');
+// ⚠️ Elements 那一类我一开始**漏了**（32 个方法，门禁只对了上面 4 个）。
+// 轻阅这边方法名是挂在数组变量上的 e.xxx = function，不是 prototype，得单独抠。
 {
-  // ⭐⭐⭐ **自检：收集器不许再漏字段**（2026-10-26 的「平凡通过」实证）
-  //   ⇒ 判据 = **每个源自己的 `ruleExplore.bookList` 文本，必须出现在它自己的收集结果里**
-  //   ⚠️⚠️ **计数口径**：一个文件里有 N 个源 ⇒ 收集结果有 N 条 ⇒ **只能按「源」配对**
-  //     （以前按「文件」再遍历一遍全部源 ⇒ N×N ⇒ 报出上万条假漏 ⇒ 自己把自己骗了）⭐⭐⭐
-  //  ⚠️⚠️ **按【源】配对**（不是按文件）⇒ 一个文件里 N 个源 ⇒ N 条自检样本 ⭐⭐⭐
-  //  ⇒ 以前按文件归拢 ⇒ 43 个「没有 bookList 的源」也被算成「漏了」⇒ 报出上万条假漏 ⭐⭐⭐
-  let missed = 0;
-  let checked = 0;
-  for (const { code, bookList } of corpus) {
-    if (!bookList || bookList.length <= 20) continue;
-    checked++;
-    if (!code.includes(bookList.slice(0, 40))) missed++;
-  }
-  ok(checked > 0, `自检样本够（${checked} 个源自带 bookList 规则）`);
-  ok(missed === 0, `收集器不许漏字段（检了 ${checked} 个源，漏了 ${missed} 个的 bookList）`);
-}
+  const want = methods(qy, '_JsoupElements');
+  const src = fs.readFileSync(path.join(ENGINE, 'org-jsoup.js'), 'utf8');
+  const have = new Set((src.match(/\be\.([A-Za-z0-9_]+)\s*=\s*function/g) || [])
+    .map(m => m.match(/e\.([A-Za-z0-9_]+)\s*=/)[1]));
+  ok(want.size > 0, '_JsoupElements 在栖阅那边能抠出方法名');
+  // 下划线开头的是栖阅自己的内部方法（_syncIndexes 是它在内部刷新索引用的），
+  // 书源不会调，不纳入对账。
+  const PRIVATE = new Set(['_syncIndexes']);
+  // Array.prototype 自带的方法（轻阅的 Elements 是真数组）源码里本来就没有
+  const ARRAY_NATIVE = new Set(['forEach', 'map', 'filter', 'slice', 'indexOf', 'join', 'concat']);
+  const gap = [...want].filter(m => !have.has(m) && !PRIVATE.has(m) && !ARRAY_NATIVE.has(m));
+  ok(gap.length === 0, `_JsoupElements 缺 ${gap.length} 个方法：${gap.join(', ') || '无'}`);
+  if (gap.length) missing.push(`_JsoupElements: ${gap.join(', ')}`);
 
-/** ⭐⭐⭐ **站方代码里真正用到的【JS 侧类型名】** */
-const USED_PATTERNS = [
-  /\borg\.jsoup\.[A-Za-z0-9_.]+/g,          // 轻阅老引擎的 org.jsoup.*
-  /\borg\.seimicrawler\.xpath\.[A-Za-z0-9_]+/g, // 栖阅的 xpath 类型
-  /\bJXDocument\b/g, /\bJXNode\b/g,
-  /\bPackages\.org\.[A-Za-z0-9_.]+/g,
-  // ⭐⭐⭐⭐⭐ **`document.*`**（2026-10-26 补）
-  //   · 站方 jsLib 99 处 + loginUrl 54 处用 `document.` ⇒ **老引擎有、新引擎原本没有**
-  //   · 现在新引擎有 `document` 替身 ⇒ 这里必须**盯着** ⇒ 引擎哪天把它删了 ⇒ 本门禁红 ⭐⭐⭐
-  /\bdocument\.[A-Za-z0-9_]+/g,
-];
-const used = new Map();   // 类型名 → 出现在哪些源
-for (const { file, code } of corpus) {
-  for (const pat of USED_PATTERNS) {
-    for (const m of code.match(pat) || []) {
-      if (!used.has(m)) used.set(m, new Set());
-      used.get(m).add(file);
-    }
+  // ⚠️ 静态名集合会误报：轻阅的 Elements 是**真数组**，forEach/map/filter 这些
+  //    是 Array.prototype 自带的，源码里当然找不到 e.forEach = function。
+  //    所以最终以**运行时**为准。
+  {
+    const { createSandbox } = require('./harness');
+    const { win } = createSandbox({ origin: 'https://example.com/' });
+    const els = win.org.jsoup.Jsoup.parse('<html><body><p class="c">a</p><p class="c">b</p></body></html>')
+      .select('p.c');
+    // 下划线开头的是栖阅内部私有方法，书源调不到，不纳入
+    const gone = [...want].filter(m => !m.startsWith('_') && typeof els[m] !== 'function');
+    ok(gone.length === 0, `Elements 运行时缺 ${gone.length} 个：${gone.join(', ') || '无'}`);
   }
 }
 
-/** ⭐⭐⭐ **反向自检**：全文里的用法（**含注释**）必须明显多于规则代码里的用法**
- *   ⇒ 证明「只扫规则代码」这个筛子**真的在筛**（不是把筛选写坏了导致 0）⭐⭐⭐ */
+// 栖阅 jsoup_bridge.js 里暴露到全局的类型名。
+// ⚠️ 必须**运行时**查，不能拿源码字符串 includes —— 我源码里写的是 `P.org.…`
+//    变量名 P，字符串里根本没有 "Packages.org.…"，静态匹配必然全灭。
+const exposed = [...new Set((qy.match(/Packages\.org\.[A-Za-z0-9_.]+/g) || [])
+  .filter(t => !/\.__javaClassName$/.test(t)))];
 {
-  const allText = corpus.map(c => c.code).join('\n');
-  const allFiles = fs.existsSync(SOURCES_DIR)
-    ? fs.readdirSync(SOURCES_DIR).filter(n => n.endsWith('.json'))
-      .map(f => fs.readFileSync(path.join(SOURCES_DIR, f), 'utf8')).join('\n')
-    : '';
-  const rawHits = (allFiles.match(/org\.jsoup\.[A-Za-z0-9_.]+/g) || []).length;
-  const codeHits = (allText.match(/org\.jsoup\.[A-Za-z0-9_.]+/g) || []).length;
-  ok(rawHits >= codeHits, `全文里的 org.jsoup 用法(${rawHits}) ≥ 规则代码里的(${codeHits})`);
-  if (rawHits > codeHits) {
-    note(`注释里有 ${rawHits - codeHits} 处 org.jsoup 用法 ⇒ **不是代码** ⇒ 不算缺口（否则 47 处全是误报）`);
-  }
-}
-
-// ────────────────────────────────────────────────────────────
-// ③ 新引擎面：**运行时**查（新引擎的 JS 环境里到底有没有）
-// ────────────────────────────────────────────────────────────
-// ⭐⭐⭐⭐⭐ **老引擎（轻阅老 JS 引擎）的能力面** —— 用户的明确要求：
-//   「老引擎有的、新引擎没有的 ⇒ 吸收进新的」⇒ ⇒ ⇒ **老引擎 = 能力基线** ⭐⭐⭐
-const LEGACY_JS = path.join(ENGINE_DIR, 'reference', 'js', 'org-jsoup.js');
-let legacyHas = new Set();
-if (fs.existsSync(LEGACY_JS)) {
-  const ljs = fs.readFileSync(LEGACY_JS, 'utf8');
-  // 抠出老引擎支持的能力名（Jsoup.parse / select / attr / text / size / get …）
-  for (const m of ljs.matchAll(/\b([A-Za-z][A-Za-z0-9_]*)\s*[:=]\s*function/g)) legacyHas.add(m[1]);
-  for (const m of ljs.matchAll(/\.([A-Za-z][A-Za-z0-9_]*)\s*=\s*function/g)) legacyHas.add(m[1]);
-  ok(legacyHas.size > 0, `老引擎能力面抠到了 ${legacyHas.size} 个方法名`);
-} else {
-  console.log('  ⏭️  没找到老引擎的 reference/js/org-jsoup.js ⇒ 「老引擎能力面」没验到');
-}
-
-/** ⭐⭐⭐ **已知的「待吸收」清单**（老引擎有 · 语料在用 · 新引擎还没有）**
- *  ⚠️⚠️ **白名单不许悄悄长大** ⇒ 新增缺口 ⇒ 门禁红 ⇒ 必须人工决策（要么补、要么明确记一笔）⭐⭐⭐
- *  ⇒ 依据：NovelHub 聚合源自己的注释实证 ——「org.jsoup.Jsoup.parse/select 在栖阅 iOS 的 JSC 上不工作」
- *  ⇒ ⇒ 栖阅自己就不支持 ⇒ 但**轻阅老引擎支持** ⇒ ⇒ **老引擎退役时丢了这份能力** ⇒ ⇒ 待吸收 ⭐⭐⭐ */
-// ⭐⭐⭐⭐⭐ **「待吸收」清单**（老引擎有 · 语料在用 · 新引擎还没有）
-//
-// ⚠️⚠️ **2026-10-26：`org.jsoup.Jsoup.parse` 已补上 ⇒ 从清单里移除了**（清白名单，防腐烂）⭐⭐⭐
-//   · 引擎仓新增 `Resources/org-jsoup.js`（**纯 JS** ⇒ JSC / Node 共用同一份 ⇒ 沙盒验的就是真机跑的）
-//   · 语义照抄老引擎 `reference/js/org-jsoup.js`（Element 46 / Doc 22 / Elements 39 个方法逐条对账）
-//   · 站方 43 处真实用法（剥注释后统计）全部覆盖
-// ⇒ ⇒ 现在**清单是空的** ⇒ 语料里再出现「新引擎没有的能力」⇒ **直接红**（不许悄悄长大）⭐⭐⭐
-const KNOWN_PENDING = new Set();
-
-/**
- * ⭐⭐⭐⭐⭐ **「名字在、但只是替身」的能力面**（2026-10-26 补 `document` 时立起来的）
- *
- * ⚠️ **为什么单独列**：
- *   · 探针是 `typeof` 探针 ⇒ **替身也算「有」** ⇒ 「有名字」≠「有真能力」⭐⭐⭐
- *   · `document.getElementById` / `document.querySelectorAll` 现在是**替身**
- *     （`getElementById` ⇒ null（**与老引擎真机行为一致**）；`querySelectorAll` ⇒ **空数组**（真 DOM 解析待吸收））
- *   ⇒ ⇒ 显式登记 ⇒ 「真 DOM 能力待吸收」**可见** ⇒ 不许悄悄长大 ⭐⭐⭐
- */
-const STUB_ONLY = new Set(['document.getElementById', 'document.querySelectorAll']);
-
-const { createSandbox, engineAvailable } = require('./new-engine-harness');
-const engineHas = {};
-if (engineAvailable()) {
+  const { createSandbox } = require('./harness');
   const { win } = createSandbox({ origin: 'https://example.com/' });
-  const probe = (expr) => {
-    try { return win.eval(expr); } catch (e) { return 'ERR: ' + e; }
-  };
-  for (const t of [...new Set([...qyTypes, ...used.keys()])]) {
-    // ⭐⭐⭐ **安全探针**：`org.jsoup.X` 在引擎里会**抛 ReferenceError**（org 整个不存在）
-    //   ⇒ 探针返回 'ERR: …' ⇒ **不能当成「有」** ⇒ 否则缺口被自己骗过去 ⭐⭐⭐
-    //   ⇒ 判据 = 「既不是 undefined、也没报错」才算是有
-    const expr = t.includes('.')
-      ? `(typeof ${t.split('.')[0]} === 'undefined' ? 'undefined' : typeof (${t}))`
-      : `typeof ${t}`;
-    const r = String(probe(expr));
-    engineHas[t] = (r !== 'undefined' && !r.startsWith('ERR:'));
-  }
-  ok(probe('typeof java') === 'object', '新引擎的 JS 环境里有 java（宿主 API 通道在）');
-  ok(probe('typeof Packages') === 'object', '新引擎的 JS 环境里有 Packages（Java 兼容层在）');
-  // ⭐⭐⭐⭐⭐ **`document` 必须在新引擎的 JS 环境里**（2026-10-26 补）
-  //   · 站方 jsLib 99 处 + loginUrl 54 处直接用 `document.` ⇒ 老引擎有
-  //   · 缺了 ⇒ jsLib **整个加载失败** ⇒ 规则链半残 ⇒ 症状离根因十万八千里 ⭐⭐⭐
-  ok(probe('typeof document') === 'object', '新引擎的 JS 环境里有 document（站方 jsLib/loginUrl 直接用 ⇒ 缺了整条链死）');
-  ok(probe('typeof document.getElementById') === 'function', 'document.getElementById 必须在（站方 117 处在用）');
-} else {
-  console.log('  ⏭️  没编译 legado-engine ⇒ ③ 新引擎面没验到（**不等于通过**）');
+  const get = p => exposed
+    .filter(t => t.endsWith(p))
+    .map(t => t.split('.').reduce((o, k) => (o == null ? o : o[k]), win));
+  const gone = exposed.filter(t => {
+    const v = get(t)[0];
+    return v === undefined || v === null;
+  });
+  ok(gone.length === 0, `Packages.* 运行时挂了 ${gone.length} 个：${gone.join(', ') || '无'}`);
 }
 
-// ────────────────────────────────────────────────────────────
-// ④ 判定
-// ────────────────────────────────────────────────────────────
-const realGaps = [];
-const knownGaps = [];
-for (const [type, files] of used) {
-  const has = engineHas[type] !== undefined ? engineHas[type] : true;
-  if (has) {
-    ok(true, `语料用到的 ${type} 新引擎有 ✅`);
-  } else {
-    realGaps.push(`${type}（${[...files].length} 个源在用）`);
-  }
-}
-for (const t of qyTypes) {
-  if (used.has(t)) continue;              // 上面判过了
-  if (engineHas[t] === false) knownGaps.push(t);
-}
+// 反向：该有的能力不能只是「注释里写了」
+ok(!/^\s*\/\/.*JXDocument/m.test(mine) || mine.includes('org.seimicrawler.xpath.JXDocument = JXDocument'),
+   'JXDocument 是真挂上去了，不是只有注释');
 
-const pending = [];
-const hardGaps = [];
-for (const g of realGaps) {
-  const type = g.split('（')[0];
-  if (KNOWN_PENDING.has(type)) pending.push(g);
-  else hardGaps.push(g);
-}
-if (hardGaps.length) {
-  ok(false, `⭐⭐⭐ 真能力缺口 ${hardGaps.length} 个（语料在用、新引擎没有、也不在待吸收清单里）：${hardGaps.join(', ')}`);
-} else {
-  ok(true, '语料用到的类型：新引擎要么有、要么在【待吸收清单】里 ✅');
-}
-if (pending.length) {
-  note(`⭐ 待吸收（老引擎有 · 语料在用 · 新引擎还没有）：${pending.join(', ')}`);
-  note('  ⇒ ⇒ 「老引擎有的、新引擎没有的 ⇒ 吸收进新的」⇒ 这条在清单上 ⇒ 不算红，但**不许悄悄长大**⭐⭐⭐');
-}
-
-// ⭐⭐⭐ **替身级能力面**（有名字、但只是替身 ⇒ 真能力待吸收）
-{
-  const stubbed = [...used.keys()].filter(t => STUB_ONLY.has(t) && engineHas[t] !== false);
-  if (stubbed.length) {
-    note(`⭐ 替身级能力（**名字在、但只是替身** ⇒ 真能力待吸收）：${stubbed.join(', ')}`);
-    note('  ⇒ `document.getElementById` 的 null 语义**与老引擎真机一致**（不是缺口）'
-       + '；`document.querySelectorAll` 的**真 DOM 解析**才是缺口（现在返回空数组）⭐⭐⭐');
-  } else {
-    ok(true, '语料里没有「只有替身」的能力（要么真有能力，要么没被用到）');
-  }
-}
-
-if (knownGaps.length) {
-  note(`已知缺口（栖阅有 / 新引擎没有 / **125 源语料里 0 处真实用量**）：${knownGaps.join(', ')}`);
-  note('  ⇒ ⇒ 它们是**理论缺口** ⇒ 现在不补；一旦语料里真出现 ⇒ 上一条就会红 ⭐⭐⭐');
-}
-
-console.log('');
-console.log(`${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
+console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
+if (missing.length) console.log('\n对不上的：\n  ' + missing.join('\n  '));
 process.exit(fail ? 1 : 0);

@@ -115,45 +115,19 @@ if let fdata = FileManager.default.contents(atPath: fixturePath),
 }
 
 // 汇总行放最后
-print("\n=== ⑤ 请求构造必须走 URLBuilder（2026-10-21 真机「目录 0 章」的根因之二）===")
+print("\n=== ⑤ 原生请求层必须走 AnalyzeUrl（2026-10-21 真机「目录 0 章」的根因之二）===")
 // ⚠️ 以前 Core/AnalyzeUrl.swift 写好了（build166/167 的 `+`→`%2B`、`/`→`%2F` 修复），
 //    **在 App 里一次都没被调用** ⇒ 原生请求只做 Foundation 的百分号编码
 //    ⇒ query 里的 `+` 原样保留 ⇒ 服务器 form 解码成空格
 //    ⇒ 🍅大灰狼的 book_id 是 base64 ⇒ **book_id 被损坏** ⇒ 「有的书能开、有的书开不了」。
-//
-// ⭐⭐⭐ **2026-10-25 迁移**（老 JS 引擎物理退役）：
-//    App 侧**已经不自建请求层**了（`RuleSandbox.swift` 的 WKWebView 壳已删 ⇒ 调用点也没了）
-//    ⇒ 请求构造**整体搬进引擎仓**（`legado-engine/Sources/LegadoCore`）
-//    ⇒ 断言**跟着语义走**（不是退休覆盖）：语义还在，只是住址变了 ⭐⭐⭐
-//      ① 请求路径走 `URLBuilder.parse`（query 语义 = 参考实现 AnalyzeUrl）
-//      ② `URLBuilder` 能拆站方选项后缀 `,{json}`（method / body / headers）
-//      ③ 站方 `java.ajax(url, options)` 把 options 转成规则后缀
-//         ⇒ **两条链复用同一套编码**（老 App 侧靠 `hasOptionSuffix` 切这两条链）
-//      ④ 引擎的 URLBuilder 与参考实现 AnalyzeUrl **有对拍**（Conformance 目标）
-if let path = ProcessInfo.processInfo.environment["QR_REPO_DIR"] {
-    let engineDir = path + "/../legado-engine/Sources/LegadoCore"
-    let read = { (p: String) in
-        ((try? String(contentsOfFile: p, encoding: .utf8)) ?? "")
-            .replacingOccurrences(of: "//.*\n", with: "\n", options: .regularExpression)
-    }
-    let ub = read(engineDir + "/Host/URLBuilder.swift")
-    let tr = read(engineDir + "/Host/HTTPTransport.swift")
-    let en = read(engineDir + "/Pipeline/SourceEngine.swift")
-    let cf = read(path + "/../legado-engine/Sources/Conformance/main.swift")
-
-    ok(ub.contains("public static func parse("), "引擎有 URLBuilder.parse（URL 规则入口）")
-    ok(tr.contains("URLBuilder.parse("), "请求路径走 URLBuilder.parse（query 语义跟参考实现一致）")
-    ok(ub.contains("splitOptions")
-       && ub.contains("options[\"method\"]")
-       && ub.contains("options[\"body\"]")
-       && ub.contains("options[\"headers\"]"),
-       "URLBuilder 能拆站方选项后缀（method / body / headers）")
-    ok(en.contains("rule = u + \",\" + text"),
-       "站方 java.ajax 的 options 转成 URL 规则后缀（两条链同语义）")
-    ok(cf.contains("URLBuilder.parse(") && cf.contains("AnalyzeUrl.parse("),
-       "引擎的 URL 规则与参考实现 AnalyzeUrl 有对拍（Conformance）")
+// ⇒ 断言：**原生请求代码里必须有 AnalyzeUrl.parse**，别让它退回死代码。
+if let path = ProcessInfo.processInfo.environment["QR_REPO_DIR"],
+   let text = try? String(contentsOfFile: path + "/QiReaderLite/Core/RuleSandbox.swift", encoding: .utf8) {
+    let code = text.replacingOccurrences(of: "//.*\n", with: "\n", options: .regularExpression)
+    ok(code.contains("AnalyzeUrl.parse("), "原生请求层调了 AnalyzeUrl.parse（query 语义跟沙盒一致）")
+    ok(code.contains("AnalyzeUrl.hasOptionSuffix("), "原生请求层用 hasOptionSuffix 区分两条链")
 } else {
-    ok(false, "拿不到引擎仓源码（QR_REPO_DIR 没设）")
+    ok(false, "拿不到 RuleSandbox.swift（QR_REPO_DIR 没设）")
 }
 // data: 伪 URL 必须原样（载荷是 base64，百分号编码会改掉里面的 + /）
 let dataParsed = AnalyzeUrl.parse("data:;base64,eyJib29rX2lkIjoiTnpBNE5qYzQ+,{\"type\":\"qingtian3\"}", baseUrl: "")

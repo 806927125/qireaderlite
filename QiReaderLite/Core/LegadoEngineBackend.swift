@@ -35,9 +35,6 @@ typealias EngineCookieJar = LegadoCore.CookieJar
 /// ③ **源级请求头**由引擎塞进 `request.headers`（54 个源在用 ⇒ 缺了就 403）
 final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
 
-    /// ⭐⭐⭐ **单个响应体上限**（32MB）—— 超了明确失败，不许撑爆 App 进程
-    static let maxResponseBytes = 32 * 1024 * 1024
-
     private let session: URLSession
 
     init() {
@@ -85,22 +82,9 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
                 guard let k = k as? String else { continue }
                 headers[k] = (v as? String) ?? String(describing: v)
             }
-            // ⭐⭐⭐ **单个响应体封顶**（2026-10-26 jetsam 4.2GB 实证）
-            //   ⇒ 站方偶尔会回一个巨大的响应（聚合源把十几个平台的列表塞一起）⇒
-            //   ⇒ 它还要被 JSON 转义一份、再穿过 JS 桥搬一份 ⇒ 放大好几倍 ⇒ **撑爆 App 进程** ⭐⭐⭐
-            //   ⇒ 超过上限 ⇒ **明确失败**（比撑爆好一百倍）⭐
-            let body = data ?? Data()
-            if body.count > Self.maxResponseBytes {
-                box.fail(SourceError.requestFailed(
-                    request.url,
-                    "响应体 \(body.count / 1024 / 1024)MB 超过上限 "
-                    + "\(Self.maxResponseBytes / 1024 / 1024)MB ⇒ 已拒绝（避免撑爆内存）"))
-                sem.signal()
-                return
-            }
             box.succeed(HTTPResponse(statusCode: http?.statusCode ?? 0,
                                       headers: headers,
-                                      body: body,
+                                      body: data ?? Data(),
                                       finalURL: http?.url?.absoluteString))
             sem.signal()
         }.resume()
@@ -185,27 +169,17 @@ final class EngineDiagnosticLogger: EngineLogger, @unchecked Sendable {
 /// ⇒ 这里直接转发给引擎 ⇒ 不会出现「两套对象、内容不一致」。
 final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
 
-    /// ⭐⭐⭐ **必须 `weak`**（2026-10-26 · jetsam 6.8GB 闪退真凶之一）
-    ///
-    /// ⚠️⚠️⚠️ **强引用 = retain cycle**：
-    /// ```
-    /// Session ──▶ api（强）──▶ session（强）──▶ Session
-    /// ```
-    /// ⇒ `Session` **永远不会被释放** ⇒ 它连带的东西（JSC 上下文 / HTTP 缓存 / 整份源）**永久占着内存**
-    /// ⇒ ⭐ **`maxLiveSessions = 4` 的封顶因此完全失效**（LRU 踢掉的会话还活着）⭐
-    /// ⇒ 用户有 125 个源 ⇒ 每碰一个源就永久多一份 ⇒ 几十个源就能吃到 GB 级 ⇒ **jetsam 杀进程**（无 .ips）
-    /// ⇒ 老引擎免疫：它的 JS 跑在 **WebContent 独立进程** ⇒ 泄漏在那边 ⇒ App 进程不受影响 ⭐⭐⭐
-    private weak var session: LegadoEngineBackend.Session?
+    private let session: LegadoEngineBackend.Session
 
     init(session: LegadoEngineBackend.Session) { self.session = session }
 
     func hostObject(named name: String) -> HostObject? {
         switch name {
-        case "source": return session?.engine?.sourceObject
-        case "book": return session?.engine?.bookObject
-        case "chapter": return session?.engine?.chapterObject
+        case "source": return session.engine?.sourceObject
+        case "book": return session.engine?.bookObject
+        case "chapter": return session.engine?.chapterObject
         // ⭐⭐ **cookie 宿主对象**（站方 `cookie.*` —— 真实语料 205 处）
-        case "cookie": return session?.engine?.cookieObject
+        case "cookie": return session.engine?.cookieObject
         default: return nil
         }
     }
@@ -354,9 +328,6 @@ final class LegadoEngineBackend: @unchecked Sendable {
     static let shared = LegadoEngineBackend()
 
     private var sessions: [String: Session] = [:]
-    /// ⭐⭐⭐ **会话的 LRU 顺序**（最旧在前）—— 配合 `maxLiveSessions` 封顶
-    ///   ⚠️ 顺序逻辑单独放 `LRUKeys.swift`（纯 Foundation）⇒ 沙盒能真跑真测 ⭐⭐⭐
-    private var sessionOrder = LRUKeys(limit: LegadoEngineBackend.maxLiveSessions)
     private let lock = NSLock()
 
     // MARK: 会话
@@ -387,12 +358,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
             self.api = EngineHostAPI(session: self)
             // ⭐ JSC 后端（iOS/macOS 有 JavaScriptCore ⇒ 站方 JS 规则能跑）
             #if canImport(JavaScriptCore)
-            // ⭐⭐⭐⭐⭐ **JS 后端由工厂决定**（2026-10-26）
-            //   · `WKWebView`（默认）⇒ 站方 JS 跑在 **WebContent 独立进程** ⇒ 跟老引擎一样 ⇒
-            //     站方脚本一次吃几 GB 也**炸不到 App 进程** ⇒ jetsam 秒杀不了我们 ⭐⭐⭐
-            //   · `JSC` ⇒ 跑在 App 进程内 ⇒ 站方脚本的内存算我们的 ⇒ 6.8GB 实证会闪退 ⭐
-            //   ⇒ Core 不能 import WebKit ⇒ 实现由 UI 层注册进 `JSEngineFactory` ⭐
-            let js: JSExecutor? = JSEngineFactory.make(api)
+            let js: JSExecutor? = JSCExecutor(api: api)
             #else
             let js: JSExecutor? = nil
             #endif
@@ -405,11 +371,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
             //   ⇒ 现在：60 秒 TTL 的缓存 ⇒ 同一个响应 60 秒内只请求一次 ⭐
             //
             // ⚠️ TTL 别太长（书源内容会变）⇒ 60 秒刚好够「一次发现页」复用 ⭐
-            // ⭐⭐⭐⭐⭐ **按【字节】封顶**（2026-10-26 jetsam 4.2GB 实证）
-            //   ⇒ 原来按「条数」封顶（64 条）⇒ 站方那种几 MB~几十 MB 的响应 × 64 = 几百 MB~GB 级 ⇒ 秒杀
-            //   ⇒ 改成按**总字节**封顶（48MB）⇒ 跟源的大小/个数都无关 ⇒ 内存有界 ⭐
-            let transport = ByteCappedTransport(inner: URLSessionTransport(), ttl: 60,
-                                               maxBytes: 48 * 1024 * 1024)
+            let transport = CachedTransport(inner: URLSessionTransport(), ttl: 60, capacity: 64)
             let engine = SourceEngine(source: source,
                                       fetcher: PageFetcher(transport: transport, cookieJar: jar),
                                       js: js,
@@ -443,19 +405,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
     ///
     /// - Returns: `nil` = **「这个 op 新引擎不支持」** ⇒ 调用方回退老引擎
     ///   （登录 / 诊断 / 站方变量那几类还留在老引擎上）
-    /// ⭐⭐⭐ **当前正在跑的 op**（桥接层/内存日志靠它说清「是哪个 op 在搬大东西」）
-    private static let opLock = NSLock()
-    private static var _currentOp: String = "—"
-    static var currentOp: String {
-        opLock.lock(); defer { opLock.unlock() }
-        return _currentOp
-    }
-    static func setCurrentOp(_ op: String) {
-        opLock.lock(); _currentOp = op; opLock.unlock()
-    }
-
     func invoke(_ op: String, _ payload: [String: Any], source: BookSource) throws -> Any? {
-        Self.setCurrentOp(op)
         let session = try session(for: source)
         guard let engine = session.engine else { return nil }
         // ⭐⭐⭐ **源级变量**（站方 `server` / `tab` / `sources` / `find_source` …）
@@ -479,10 +429,6 @@ final class LegadoEngineBackend: @unchecked Sendable {
         case "sourceVars": out = ["vars": try engine.sourceVars()]
         case "sourceHosts": out = ["hosts": try engine.sourceHosts()]
         case "filterAction": out = try runFilterAction(engine, payload)
-        // ⭐⭐⭐⭐⭐ **诊断 op**（2026-10-25 真机：老引擎退役 ⇒ 诊断迁到新引擎）
-        //   ⇒ 字段名与老引擎**逐字一致** ⇒ App 侧拼人话的代码不用改 ⭐⭐⭐
-        case "explain": out = try runExplain(engine, payload)
-        case "explainToc": out = try runExplainToc(engine, payload)
         default:
             // ⚠️ 其余 op（sourceVars / sourceHosts / filterAction / explain*）暂不接
             return nil
@@ -517,8 +463,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
     static func seedCookies(from payload: [String: Any], into jar: LegadoCore.CookieJar?) {
         guard let jar else { return }
         guard let snap = payload["cookieSnapshot"] as? [String: String] else { return }
-        // ⭐ 解析在纯 Foundation 层（HostTools）⇒ 沙盒里能真编真跑 ⇒ 有门禁
-        for c in HostTools.cookiePairs(from: snap) {
+        // ⭐ 解析在纯 Foundation 层（LegadoCompat）⇒ 沙盒里能真编真跑 ⇒ 有门禁
+        for c in LegadoCompat.cookiePairs(from: snap) {
             // ⭐ domain 写 host ⇒ 该域**及其子域**都能带上（引擎的 Cookie.matches 语义）
             jar.set(LegadoCore.CookieJar.Cookie(name: c.name, value: c.value,
                                                 domain: c.host, host: c.host))
@@ -559,40 +505,11 @@ final class LegadoEngineBackend: @unchecked Sendable {
     }
 
     /// ⭐ **源级变量：引擎 → 轻阅**（一个 JSON 串）
-    /// ⭐⭐⭐⭐⭐ **变量表回传的上限**（2026-10-26 jetsam 4.2GB 实证）
-    ///
-    /// ⚠️⚠️⚠️ **这里原来没有上限** ⇒ 站方把大块数据缓存进源变量（聚合源把几百个分类的载荷塞进去）
-    /// ⇒ ⇒ 序列化一次 = **好几份拷贝**（字典 + Data + String）⇒ 一个 GB 级变量能撑到 **几个 GB** ⇒ jetsam 秒杀 ⭐⭐⭐
-    /// ⇒ 而且 JSC 的 **VM 会抓着跑过脚本的 context** ⇒ `invalidate()` 放不掉 ⇒ **「清会话后内存不降」** ⭐⭐⭐
-    /// ⇒ ⇒ **超过上限的条目直接不往外传**（站方缓存丢了只是多抓一次 ⇒ 不会崩）⭐
-    static let maxVarsEntryBytes = 256 * 1024
-
     static func varsJSON(_ box: VarBox) -> String {
         let all = box.all
-        guard !all.isEmpty else { return "" }
-        // ⭐⭐⭐ **逐条量大小 + 丢弃超大条目**（取证日志：谁在撑爆）
-        var kept: [String: String] = [:]
-        var big: [(String, Int)] = []
-        for (key, value) in all {
-            let size = value.utf8.count
-            if size > maxVarsEntryBytes {
-                big.append((key, size))
-            } else {
-                kept[key] = value
-            }
-        }
-        if !big.isEmpty {
-            let detail = big.map { "\($0.0)=\(String(format: "%.1f", Double($0.1) / 1048576.0))MB" }
-                .joined(separator: ", ")
-            engineLog("[变量表] ⛔️ 丢弃超大条目（op=\(currentOp)）：\(detail) ⇒ 站方缓存会丢，但 App 不会撑爆")
-        }
-        guard let data = try? JSONSerialization.data(withJSONObject: kept),
+        guard !all.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: all),
               let text = String(data: data, encoding: .utf8) else { return "" }
-        // ⭐ 兜底：序列化完还是太大 ⇒ 整个丢掉（宁可变量全丢，也不能撑爆）
-        if text.utf8.count > maxVarsEntryBytes {
-            engineLog("[变量表] ⛔️ 变量表整体 \(text.utf8.count / 1024 / 1024)MB ⇒ 整个丢弃")
-            return ""
-        }
         return text
     }
 
@@ -600,11 +517,7 @@ final class LegadoEngineBackend: @unchecked Sendable {
     private func session(for source: BookSource) throws -> Session {
         let key = source.bookSourceUrl
         lock.lock()
-        if let s = sessions[key] {
-            sessionOrder.touch(key)          // ⭐ 命中 ⇒ 提到「最近使用」（LRU）
-            lock.unlock()
-            return s
-        }
+        if let s = sessions[key] { lock.unlock(); return s }
         lock.unlock()
 
         let engineSource = Self.convert(source)
@@ -612,42 +525,10 @@ final class LegadoEngineBackend: @unchecked Sendable {
         let s = try Session(source: engineSource, jar: jar, jsLib: source.jsLib)
         lock.lock()
         // ⚠️ 可能有别的线程先建了 ⇒ 以先建的那个为准（本建的白扔）
-        if let exist = sessions[key] {
-            sessionOrder.touch(key)
-            lock.unlock()
-            return exist
-        }
+        if let exist = sessions[key] { lock.unlock(); return exist }
         sessions[key] = s
-        let evicted = sessionOrder.insert(key)        // ⭐⭐⭐ 会话数封顶
-        if let evictedKey = evicted { sessions.removeValue(forKey: evictedKey) }
         lock.unlock()
-        // ⚠️ 被淘汰的会话在**锁外**释放 ⇒ JSC context 的释放不占着锁
-        if let evictedKey = evicted {
-            NSLog("[engine] 会话数超上限 ⇒ 淘汰最久未用的：\(evictedKey)")
-        }
         return s
-    }
-
-    /// ⭐⭐⭐⭐⭐ **会话数封顶**（2026-10-26 jetsam 6.8GB 真凶）
-    ///
-    /// ⚠️⚠️⚠️ **为什么必须有（这才是「6.8GB」的真正来源）**：
-    ///   ① **一个源 = 一个会话 = 一个 JSC context**（引擎侧 contextLock 复用）⭐⭐⭐
-    ///   ② 站方 JS 往 `globalThis` 塞的东西（聚合源那套全局）⇒ **都活在这个 context 里** ⭐⭐⭐
-    ///   ③ 老引擎（WKWebView）的 JS 跑在**独立 WebContent 进程** ⇒ 这些内存**不算 App 的**
-    ///      ⇒ 所以**老引擎一点问题没有**；新引擎进 App 进程 ⇒ 全算 App 的 ⇒ jetsam 杀 App ⭐⭐⭐
-    ///   ④ 以前**只增不减**（只有超时/手动重置才清）⇒ **内存随「用过的源数」线性涨**
-    ///      ⇒ 用户有 **125 个源**、搜索默认**扫所有启用的源** ⇒ 一次搜索就建几十个 context ⭐⭐⭐
-    ///      ⇒ 6.8GB 完全对得上 ⭐⭐⭐
-    ///
-    /// ⭐ **修法**：只留**最近用的几个**会话 ⇒ 内存**不再随源数增长**
-    ///   ⇒ 淘汰 ⇒ JSC context 释放 ⇒ 内存回落 ⭐⭐⭐
-    ///   ⇒ 代价：换回一个被淘汰的源要**重建 context**（毫秒级）⇒ 用户无感 ⭐⭐⭐
-    static let maxLiveSessions = 4
-
-    /// ⭐⭐⭐ **当前活着的会话数**（自检面板显示 ⇒ 一眼看出「有没有在涨」）
-    var liveSessionCount: Int {
-        lock.lock(); defer { lock.unlock() }
-        return sessions.count
     }
 
     /// ⭐⭐⭐ **丢掉某个源的会话**（新引擎卡死时的急救）
@@ -658,26 +539,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
     ///   ⇒ 后面每一个 op 都卡在锁上 ⇒ 整个源永久报废
     ///   ⇒ 所以**超时的时候必须把会话整个换掉**（不只是放弃这一次调用）⭐
     ///   ⇒ 新的 context 是干净的 ⇒ 源立刻能用
-    /// ⭐⭐⭐⭐⭐ **清掉所有会话**（老引擎退役后「重置引擎」⇒ 清新引擎的会话）
-    func dropAllSessions() {
-        lock.lock()
-        let n = sessions.count
-        let old = Array(sessions.values)
-        sessions.removeAll()
-        sessionOrder.removeAll()
-        lock.unlock()
-        // ⭐⭐⭐⭐⭐ **连 JS 上下文一起作废**（2026-10-26 jetsam 实证）
-        //   ⇒ 光把会话从字典里删掉，**JSC 的堆未必立刻还给系统**
-        //   ⇒ 引擎的 `evaluator.js?.invalidate()` 会**丢掉整个 context**（含它的 VM）⭐⭐⭐
-        //   ⇒ 站方在 globalThis 里攒的东西（GB 级）⇒ 一次性还回去 ⭐⭐⭐
-        for s in old { s.engine?.evaluator.js?.invalidate() }
-        if n > 0 { NSLog("[engine] 清掉 \(n) 个会话（并作废 JS 上下文）") }
-    }
-
     func dropSession(for sourceUrl: String) {
         lock.lock()
         let existed = sessions.removeValue(forKey: sourceUrl) != nil
-        sessionOrder.remove(sourceUrl)
         lock.unlock()
         if existed {
             NSLog("[engine] 丢弃卡死的会话：\(sourceUrl)")
@@ -760,20 +624,6 @@ final class LegadoEngineBackend: @unchecked Sendable {
         return d
     }
 
-    /// ⭐⭐⭐⭐⭐ **发现页诊断**（对应老引擎的 `explain` op）
-    private func runExplain(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
-        let kindUrl = (payload["kindUrl"] as? String) ?? ""
-        let page = (payload["page"] as? Int) ?? 1
-        return ExplainOps.explain(engine: engine, kindUrl: kindUrl, page: page)
-    }
-
-    /// ⭐⭐⭐⭐⭐ **目录诊断**（对应老引擎的 `explainToc` op）
-    private func runExplainToc(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
-        let tocUrl = (payload["tocUrl"] as? String) ?? ""
-        let bookUrl = (payload["bookUrl"] as? String) ?? ""
-        return ExplainOps.explainToc(engine: engine, tocUrl: tocUrl, bookUrl: bookUrl)
-    }
-
     private func runExploreKinds(_ engine: SourceEngine) throws -> Any {
         // ⭐⭐⭐ 失败时带诊断（见 runExplore 的说明）⭐⭐⭐
         let kinds: [SourceCategory]; let filters: [SourceFilter]
@@ -815,9 +665,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
             // ⭐⭐⭐⭐⭐ **失败时把引擎的诊断带出来**（2026-10-25 真机教训）
             //   以前错误只说「书名/书 URL 是空的」⇒ 用户**完全不知道该查哪** ⇒ 白等一轮 ⭐⭐⭐
             //   ⇒ 引擎明明知道「哪条规则走的哪个分支、为什么失败」⇒ 把它带出来 ⭐⭐⭐
+            let lines = engine.failureDiagnosticLines
             // ⚠️ `ServiceError` 现在在**文件顶层**（不依赖 `@MainActor` 类）⇒ 两边都能引用 ⭐⭐⭐
-            // ⚠️ `diagnose` 内部自己取 `engine.failureDiagnosticLines` ⇒ 这里**别再取一遍**
-            //   （取两遍 ⇒ 一份没人用 ⇒ swiftc 报「never used」warning ⇒ 门禁噪音）⭐⭐⭐
             throw Self.diagnose(engine, "详情页", error)
         }
         var rawMap: [String: String] = [:]

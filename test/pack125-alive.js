@@ -3,7 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 const ROOT = path.join(__dirname, '..');
 const PACK = process.env.PACK125 || path.join(ROOT, 'sources', '配置文件125个-轻阅适配版.json');

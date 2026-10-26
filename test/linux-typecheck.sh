@@ -5,16 +5,7 @@
 # 覆盖不到：各 SwiftUI 页面（SwiftUI 的泛型修饰符链没法用假模块验）。
 set -uo pipefail
 
-# ⭐ swiftc 找法**统一一份**（跟 run-swift-tests.sh / linux-typecheck-engine.sh 一样）
-#   ⇒ 以前这里写死 /opt/swift/... ⇒ 新沙盒（toolchain 装在 workspace）⇒ 门禁**静默跳过**
-#   ⇒ 静默跳过 = 假绿 ⇒ 没人发现「其实一行都没编」⭐⭐⭐
-SWIFT_BIN="${SWIFT_BIN:-}"
-if [ -z "$SWIFT_BIN" ]; then
-  for c in /workspace/.toolchain/swift/usr/bin/swiftc /workspace/.toolchain/swift-6.3-RELEASE-ubuntu22.04/usr/bin/swiftc \
-           /opt/swift/swift-6.1.2-RELEASE-debian12/usr/bin/swiftc /usr/bin/swiftc /usr/local/bin/swiftc; do
-    [ -x "$c" ] && { SWIFT_BIN="$c"; break; }
-  done
-fi
+SWIFT_BIN="${SWIFT_BIN:-/opt/swift/swift-6.1.2-RELEASE-debian12/usr/bin/swiftc}"
 if [[ ! -x "$SWIFT_BIN" ]]; then
   echo "❌ 找不到 swiftc: $SWIFT_BIN"
   exit 1
@@ -28,9 +19,9 @@ echo "▶ 工具链: $("$SWIFT_BIN" --version 2>/dev/null | head -1)"
 
 # Linux 上没有 SwiftUI / WebKit / UIKit 模块，把 import 剥掉，用 shim 提供符号
 sed 's/^import SwiftUI$//' QiReaderLite/Core/Store.swift > "$OUT/Store.swift"
-# ⭐⭐⭐⭐⭐ **RuleSandbox.swift 不再进 Linux 类型检查**（2026-10-26 老引擎恢复）
-#   ⇒ 它现在**又**是那台 WKWebView 壳（1700+ 行 WebKit/UIKit）⇒ Linux 的 shim 覆盖不到
-#   ⇒ ⇒ 这一层**验不到它**（明说，不装作全绿）⇒ 真正的门禁 = **macOS CI**（真编整个 App）⭐⭐⭐
+sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' -e 's/^import SwiftUI$//' \
+    -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
+    QiReaderLite/Core/RuleSandbox.swift > "$OUT/RuleSandbox.swift"
 
 # 阅读界面的桥也要真检查：它是 WebKit 层，Linux 上有 shim，能抓类型错
 sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' \
@@ -53,40 +44,24 @@ LEGADO_MODULES="${LEGADO_MODULES:-../legado-engine/.build/debug/Modules}"
 EXTRA=()
 if [[ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]]; then
   echo "▶ 找到 LegadoCore 模块：$LEGADO_MODULES"
-  # ⚠️⚠️ **适配层（LegadoEngineBackend）不在本门禁里编** ⇒ 它有**独立门禁**：
-  #   `test/linux-typecheck-engine.sh`（本来就写好的）
-  #   ⇒ 原因：适配层用 `URLSession`（Linux 的 FoundationNetworking 缺 `dataTask(with:completionHandler:)`）
-  #     ⇒ 塞进本门禁 ⇒ 本门禁永远红 ⇒ 没人用 ⇒ 反而害（2026-10-26 修）⭐⭐⭐
-  #   ⇒ 而适配层恰恰是最需要真类型检查的地方 ⇒ 所以它那条门禁必须**一直跑**
-  #     ⇒ 已把它加进 `run-all-gates.sh` 的清单 ⭐⭐⭐
-  EXTRA=(-I "$LEGADO_MODULES")
+  EXTRA=(-I "$LEGADO_MODULES" QiReaderLite/Core/LegadoEngineBackend.swift)
 else
   echo "⚠️  没找到 LegadoCore 模块（先在 ../legado-engine 跑 swift build）⇒ 跳过新引擎后端的类型检查"
 fi
 
 echo "▶ 类型检查 Foundation 层…"
-"$SWIFT_BIN" -typecheck -swift-version 5 -strict-concurrency=minimal \
+"$SWIFT_BIN" -typecheck -swift-version 5 \
   test/linux-shims/CombineShim.swift \
   test/linux-shims/WebKitUIKitShim.swift \
   test/linux-shims/URLSessionConfigShim.swift \
-  test/linux-shims/FoundationCookieShim.swift \
-  test/linux-shims/LegadoEngineBackendStub.swift \
-  test/linux-shims/RuleSandboxStub.swift \
   QiReaderLite/Core/BookSource.swift \
   QiReaderLite/Core/Book.swift \
   QiReaderLite/Core/SourceVariables.swift \
   QiReaderLite/Core/EngineBackend.swift \
-  QiReaderLite/Core/HostTools.swift \
-  QiReaderLite/Core/MemoryMeter.swift \
-  QiReaderLite/Core/LRUKeys.swift \
-  QiReaderLite/Core/SourceRawArchive.swift \
-  QiReaderLite/Core/AppPaths.swift \
-  QiReaderLite/Core/SourceDictCache.swift \
-  QiReaderLite/Core/ServiceError.swift \
-  QiReaderLite/Core/EngineRevision.generated.swift \
-  QiReaderLite/Core/EngineLogTimeline.swift \
+  QiReaderLite/Core/LegadoCompat.swift \
   "$OUT/Store.swift" \
   QiReaderLite/Core/SourceService.swift \
+  "$OUT/RuleSandbox.swift" \
   "$OUT/ReaderHost.swift" \
   "$OUT/ReaderSession.swift" \
   "${EXTRA[@]}" \
@@ -103,5 +78,4 @@ if [[ "$ERRS" -gt 0 ]]; then
   grep -n "error:" "$OUT/log.txt" | sed 's/^/  /'
   exit 1
 fi
-echo "⚠️  **没验到**：Core/RuleSandbox.swift（老引擎 WKWebView 壳 ⇒ Linux 编不了 ⇒ 由 macOS CI 真编）"
 echo "✅ Foundation 层类型检查通过（0 错误，$WARNS 警告）"

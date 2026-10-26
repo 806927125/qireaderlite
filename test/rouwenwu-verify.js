@@ -1,6 +1,6 @@
 /* 用诊断拿到的**真实 HTML 片段**造测试页，验证新写的规则
    跑法：node test/rouwenwu-verify.js */
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 const fs = require('fs');
 
 // ↓ 这段结构是从 App 诊断里原样抄出来的（肉文屋 m.powenxue15.com 的书单条目）

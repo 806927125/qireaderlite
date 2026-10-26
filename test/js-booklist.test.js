@@ -14,24 +14,17 @@
  * ⇒ **Legado 的语义**：`bookList` 求值结果 = **字符串列表**（getStringList）
  *   · JS 返回**数组** ⇒ 每项就是一行
  *   · JS 返回**字符串** ⇒ **按行切**
- *   然后**每一行**再各自套 name/author/… 子规则 ⇒ 一行一本书
+ *   · 然后**每一行**再各自套 name/author/… 子规则 ⇒ 一行一本书
  *
  * ⇒ 以前宿主**没有这条路**（只有 JSON / 正则 / DOM 选择器三条）
  *   ⇒ 站方那 83KB 的 JS 被当成 DOM 规则 ⇒ 整页文档当一本书
  *   ⇒ `name` 子规则抠不出来 ⇒ 全被 `if (b && b.name)` 过滤掉 ⇒ **0 本** ⭐
  *
  * ⚠️ 本门禁**完全离线**（不连站方）⇒ 站方波动时不会假绿。
- *
- * ────────────────────────────────────────────────────────────
- * ⭐⭐⭐ **2026-10-26 门禁迁移**（老 JS 引擎物理删除 ⇒ 改跑新引擎）
- *
- * · 以前：jsdom 里跑老引擎（`Resources/engine/engine.js`）⇒ 已删 ⇒ 门禁的对象没了。
- * · 现在：**直接调新引擎**（`legado-engine --op explore`）⇒ 验的是**真在跑的那份代码**。
- * · 假服务器：老的 JS 层 `nativeMock` 作废 ⇒ 改**声明式 `routes`**（列表页走路由 ⇒ 全程离线）。
  */
 const fs = require('fs');
 const path = require('path');
-const { createSandbox, engineAvailable } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 let pass = 0, fail = 0;
 const ok = (c, m, extra) => {
@@ -39,27 +32,9 @@ const ok = (c, m, extra) => {
   else { fail++; console.log('  x ' + m + (extra ? ' — ' + extra : '')); }
 };
 
-// ⭐⭐⭐⭐⭐ **老引擎实现细节断言已退休**（2026-10-25 老 JS 引擎物理删除）
-//   ⇒ 以前这些断言验的是**老引擎的函数名/代码片段**（如 `rule.jsScope` / `MAX_PASS` /
-////     `delete out[u]` / `hexDecodeToString 挑人话`）⇒ 那些是**实现细节**，不是语义
-//   ⇒ 老引擎退役后**没有等价物** ⇒ 退休**不损失语义覆盖** ⭐⭐⭐
-//   ⇒ **语义覆盖在下面的【真跑段】**（现在跑的是【新引擎】）⇒ 覆盖不丢 ⭐⭐⭐
-//   ⇒ 等价断言在【引擎仓的 swift test】（266 项）与真机上 ⭐⭐⭐
-//   ⭐ 「scope 用引擎内部那套」这条**语义**没丢 ⇒ 改写成下面【真跑段】的
-//     「站方 JS 跑在引擎里（能调 java.*）」+「result 是当前页原文」两条活体断言 ⭐⭐⭐
-
-// ⭐⭐⭐ **已知回归清单**（迁移时实测出来的 ⇒ 新引擎**没有**这些语义）
-const KNOWN_REGRESSIONS = [
-  'R-按行切：站方 `@js:` 的 bookList 返回**多行字符串**时 ⇒ 新引擎把整串当**一条**'
-  + '（老引擎/Legado 的 getStringList：按行切 ⇒ 一行一本书）',
-  'R-documentDOM：站方 `@js:` 里直接 `document.querySelectorAll` ⇒ 新引擎**有** `document` 了（2026-10-26 补）'
-  + '，但**真 DOM 解析能力待吸收**（现在返回空数组 ⇒ 节点数 = 0 ⇒ 站方靠 DOM 解析的列表仍是空）',
-  'R-hexLatin1（**只影响沙盒**）：沙盒的 Node 后端把 `java.hexDecodeToString` 的 **hex 路径**'
-  + '实现成了 Latin-1（`String.fromCharCode`）⇒ 中文变乱码；真机 JSC 走引擎 `Crypto`（UTF-8）⇒ 不乱码'
-  + ' ⇒ **沙盒 ≠ 真机** ⇒ 验 hex 路径的门禁在沙盒里会假红（本门禁因此改用 base64 载荷）',
-];
-
-const HTML = '<html><body><div class="book-like"><a href="/book/1/">x</a></div></body></html>';
+const root = path.join(__dirname, '..');
+const engineSrc = fs.readFileSync(
+  path.join(root, 'QiReaderLite', 'Resources', 'engine', 'engine.js'), 'utf8');
 
 /** 造一个「bookList 是 @js:」的假书源（结构照抄站方整合源） */
 function fakeSource(bookListJs) {
@@ -78,141 +53,99 @@ function fakeSource(bookListJs) {
   };
 }
 
-/** ⭐⭐⭐ **假服务器 = 声明式 routes**（老写法的 JS 层 nativeMock 已作废） */
-function run(bookListJs) {
-  const { win } = createSandbox({
-    routes: [{ match: 'fake.example.com', status: 200, body: HTML }],
-  });
-  return win.__qrInvoke('explore', {
-    source: fakeSource(bookListJs), kindUrl: 'https://fake.example.com/list', page: 1,
-  });
-}
+const HTML = '<html><body><div class="book-like"><a href="/book/1/" title="x">'
+  + '<img src="https://x/c1.jpg"><h4>书名一</h4><span>作者一</span></a></div></body></html>';
+const nativeMock = async (fn, args) => {
+  if (fn === 'request') {
+    return { ok: true, code: 200, url: String(args.url || ''), headers: {}, body: HTML };
+  }
+  if (fn === 'log' || fn === 'toast') return { ok: true };
+  return { ok: true, value: '' };
+};
 
 (async () => {
-  if (!engineAvailable()) {
-    console.log('  ⏭️  跳过：没编译 legado-engine ⇒ 本门禁没验到（**不等于通过**）');
-    console.log('\n⏭️ 通过 0 / 失败 0（环境跳过）');
-    process.exit(0);
-  }
+console.log('=== 1. 源码：bookList 是 @js: 的通路要存在 ===');
+ok(/bookList 是 `@js:`/.test(engineSrc), 'engine.js 里有「bookList 是 @js:」这条通路');
+ok(/rule\.jsScope/.test(engineSrc),
+   '**scope 用引擎内部那套**（rule.jsScope）——自己造 scope 会漏 document / 包过 API 的 source');
+ok(/jsScope: jsScope/.test(
+     fs.readFileSync(path.join(root, 'QiReaderLite', 'Resources', 'engine', 'rule-analyzer.js'), 'utf8')),
+   'rule-analyzer.js 导出了 jsScope');
 
-  console.log('=== 1. 活体（离线）：@js: 返回数组 ⇒ 每项套子规则 ⇒ 一行一本书 ===');
-  {
-    const r = run(
-      '@js: (function(){ return [' +
-      '"https://x.example/1|||书名一|||作者一|||https://x.example/c1.jpg|||简介一",' +
-      '"https://x.example/2|||书名二|||作者二|||https://x.example/c2.jpg|||简介二"' +
-      ']; })()');
-    const books = (r && r.books) || [];
-    console.log('  出书 =', books.length, '| error:', (r && r.error) || '(无)');
-    ok(books.length === 2, '**两本书都出来了**（@js: 数组 ⇒ 逐项套 name/bookUrl 子规则）',
-       '实际 ' + books.length);
-    ok(books[0] && books[0].name === '书名一', '书名从 ||| 串里抠对了',
-       books[0] && books[0].name);
-    ok(books[0] && books[0].author === '作者一', '作者抠对了', books[0] && books[0].author);
-    ok(books[0] && books[0].bookUrl === 'https://x.example/1', '详情 URL 抠对了',
-       books[0] && books[0].bookUrl);
-    ok(books[0] && books[0].coverUrl === 'https://x.example/c1.jpg', '封面抠对了',
-       books[0] && books[0].coverUrl);
-  }
+const { win } = createSandbox({ nativeMock });
 
-  console.log('\n=== 2. 活体（离线）：@js: 返回字符串 ⇒ 按行切（Legado getStringList） ===');
-  {
-    const r = run(
-      '@js: (function(){ return ' +
-      '"https://x.example/1|||行一|||作者一\\nhttps://x.example/2|||行二|||作者二"; })()');
-    const books = (r && r.books) || [];
-    console.log('  出书 =', books.length, '| 名字:', books.map(b => b.name).join(' , ') || '(空)');
-    // ⚠️⚠️ **已知回归**：新引擎**不按行切**（整串当一条）⇒ 老引擎/Legado 的 getStringList 语义丢了
-    //   ⇒ 这里钉的是【现状】⇒ 引擎补上「按行切」后本条会红 ⇒ 那时改成断言「切成 2 本」⭐⭐⭐
-    ok(books.length === 1,
-       '【已知回归·已上报】新引擎**没按行切**（整串当一条书）⇒ 老引擎/Legado 的 getStringList 语义丢了');
-    ok(books[0] && books[0].name === '行一',
-       '（现状）第一行的书名对（说明确实吃到了整串的开头）', books[0] && books[0].name);
-  }
+console.log('\n=== 2. 活体（离线）：@js: 返回数组 ⇒ 每项套子规则 ⇒ 一行一本书 ===');
+{
+  const src = fakeSource(
+    '@js: (function(){ return [' +
+    '"https://x.example/1|||书名一|||作者一|||https://x.example/c1.jpg|||简介一",' +
+    '"https://x.example/2|||书名二|||作者二|||https://x.example/c2.jpg|||简介二"' +
+    ']; })()');
+  const r = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+    source: src, kindUrl: 'https://fake.example.com/list', page: 1
+  }) + ")");
+  const books = (r && r.books) || [];
+  console.log('  出书 =', books.length, '| error:', (r && r.error) || '(无)');
+  ok(books.length === 2, '**两本书都出来了**（@js: 数组 ⇒ 逐项套 name/bookUrl 子规则）',
+     '实际 ' + books.length);
+  ok(books[0] && books[0].name === '书名一', '书名从 ||| 串里抠对了',
+     books[0] && books[0].name);
+  ok(books[0] && books[0].author === '作者一', '作者抠对了', books[0] && books[0].author);
+  ok(books[0] && books[0].bookUrl === 'https://x.example/1', '详情 URL 抠对了',
+     books[0] && books[0].bookUrl);
+  ok(books[0] && books[0].coverUrl === 'https://x.example/c1.jpg', '封面抠对了',
+     books[0] && books[0].coverUrl);
+}
 
-  console.log('\n=== 3. 活体（离线）：JS 规则的 `result` 要是【当前页原文】 ===');
-  {
-    // 站方（🍒NovelHub 整合源）是从 `result` 取当前页内容的：
-    //     try { var raw = (typeof result !== "undefined" && result != null) ? result : ""; }
-    //     var s = String(raw);
-    //     var mb = s.match(/<div class="book-like">([\s\S]*?)<\/div>/);
-    // ⇒ 轻阅以前给的 result 是 `dom.textOf(node)`（**纯文本**）⇒ 正则匹配不上 ⇒ 0 本 ⭐
-    // ⇒ 这条门禁：站方 JS 里直接查 result 里有没有 HTML 标记
-    // 判据用「result 里有没有 `<`」：HTML 原文有、dom.textOf 的纯文本没有 ⇒ 能区分
-    const r = run(
-      '@js: (function(){ var s = String(result || "");' +
-      '  if (s.indexOf("<") < 0) { return []; }' +
-      '  return ["https://x.example/1|||书名一|||作者一|||https://x.example/c1.jpg|||简介一"]; })()');
-    const books = (r && r.books) || [];
-    console.log('  出书 =', books.length);
-    ok(books.length === 1,
-       '**result 是当前页原文**（站方 JS 能在 result 里查到 HTML 标记）',
-       'result 里没有 HTML ⇒ 站方正则永远匹配不上');
-    ok(books[0] && books[0].name === '书名一', '书名抠对了');
-  }
+console.log('\n=== 3. 活体（离线）：@js: 返回字符串 ⇒ 按行切（Legado getStringList） ===');
+{
+  const src = fakeSource(
+    '@js: (function(){ return ' +
+    '"https://x.example/1|||行一|||作者一\\nhttps://x.example/2|||行二|||作者二"; })()');
+  const r = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+    source: src, kindUrl: 'https://fake.example.com/list', page: 1
+  }) + ")");
+  const books = (r && r.books) || [];
+  console.log('  出书 =', books.length);
+  ok(books.length === 2, '**按行切成两本书**', '实际 ' + books.length);
+  ok(books[0] && books[0].name === '行一', '第一行的书名对', books[0] && books[0].name);
+  ok(books[1] && books[1].name === '行二', '第二行的书名对', books[1] && books[1].name);
+}
 
-  console.log('\n=== 4. 活体（离线）：站方 JS 跑在【引擎的 scope】里（能调引擎的 java.*） ===');
-  {
-    // ⭐ 这条**替掉**老门禁里退休的「scope 用引擎内部那套（rule.jsScope）」那条静态断言：
-    //   ⇒ 语义不是「用哪个函数造 scope」，而是「**站方 JS 跑在引擎里**」⇒ 能调引擎的宿主 API ⭐⭐⭐
-    //
-    // ⚠️ **为什么用 base64 载荷**（而不是 hex）：
-    //   · 站方（大灰狼）实际就是拿 **base64** 喂 `java.hexDecodeToString` 的（载荷是 base64）
-    //   · 而**沙盒的 Node 后端**把「纯 hex」那条路实现成了 **Latin-1**（`String.fromCharCode`）
-    //     ⇒ hex 路径在沙盒里会出乱码（真机 JSC 走引擎的 `Crypto` ⇒ UTF-8 ⇒ 不乱码）
-    //     ⇒ **沙盒 ≠ 真机** ⇒ 这里必须用 base64 载荷（两边语义一致）才能真验「java.* 可用」⭐⭐⭐
-    //   （hex 路径的沙盒/真机差异已上报 ⇒ 见文件末尾「已知回归」第 3 条）
-    const r = run(
-      '@js: (function(){ var d = java.hexDecodeToString("6KGM5LiA");' +
-      '  return ["https://x.example/1|||" + d + "|||作者一|||https://x.example/c1.jpg|||简介一"]; })()');
-    const books = (r && r.books) || [];
-    console.log('  出书 =', books.length, '| 书名 =', books[0] && books[0].name);
-    ok(books.length === 1, '站方 JS 调引擎的 `java.hexDecodeToString` ⇒ 规则跑起来了',
-       '实际 ' + books.length);
-    ok(books[0] && books[0].name === '行一',
-       '⭐⭐ 引擎的 java.* 真的在站方 JS 里可用（base64 载荷解出来的中文进了书名）',
-       books[0] && books[0].name);
-  }
+console.log('\n=== 3b. 活体（离线）：JS 规则的 `result` 要是【当前页原文】 ===');
+{
+  // 站方（🍒NovelHub 整合源）是从 `result` 取当前页内容的：
+  //     try { var raw = (typeof result !== "undefined" && result != null) ? result : ""; }
+  //     var s = String(raw);
+  //     var mb = s.match(/<div class="book-like">([\s\S]*?)<\/div>/);
+  // ⇒ 轻阅以前给的 result 是 `dom.textOf(node)`（**纯文本**）⇒ 正则匹配不上 ⇒ 0 本 ⭐
+  // ⇒ 这条门禁：站方 JS 里直接查 result 里有沒有 HTML 标记
+  // 判据用「result 里有没有 `<`」：HTML 原文有、dom.textOf 的纯文本没有 ⇒ 能区分
+  const src = fakeSource(
+    '@js: (function(){ var s = String(result || "");' +
+    '  if (s.indexOf("<") < 0) { return []; }' +
+    '  return ["https://x.example/1|||书名一|||作者一|||https://x.example/c1.jpg|||简介一"]; })()');
+  const r = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+    source: src, kindUrl: 'https://fake.example.com/list', page: 1
+  }) + ")");
+  const books = (r && r.books) || [];
+  console.log('  出书 =', books.length);
+  ok(books.length === 1,
+     '**result 是当前页原文**（站方 JS 能在 result 里查到 HTML 标记）',
+     'result 里没有 HTML ⇒ 站方正则永远匹配不上');
+  ok(books[0] && books[0].name === '书名一', '书名抠对了');
+}
 
-  console.log('\n=== 5. 活体（离线）：@js: 返回空 ⇒ 引擎按规格报「空结果」（不是崩） ===');
-  {
-    const r = run('@js: (function(){ return []; })()');
-    const books = (r && r.books) || [];
-    console.log('  出书 =', books.length, '| error:', (r && r.error) || '(无)');
-    // ⚠️ **这是【规格差异】，不是回归**：新引擎的规格（引擎仓 §S-EVAL「列表规则没命中 ⇒ 抛
-    //   `SourceError.emptyResult(字段名)`」）就是**空列表 ⇒ 报错**（老引擎是「静默 0 本」）
-    //   ⇒ 这里断言的是【新引擎的规格行为】（⇒ 语义等价在哪：引擎仓 swift test + 规格文档）⭐⭐⭐
-    ok(books.length === 0, '空数组 ⇒ 0 本');
-    ok(!!(r && r.error) && /emptyResult/.test(String(r.error)),
-       '⭐ 空列表按引擎规格报 `emptyResult`（不是崩、也不是静默空）', r && r.error);
-  }
+console.log('\n=== 4. 活体（离线）：@js: 返回空 ⇒ 0 本（不是崩） ===');
+{
+  const src = fakeSource('@js: (function(){ return []; })()');
+  const r = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+    source: src, kindUrl: 'https://fake.example.com/list', page: 1
+  }) + ")");
+  ok((r && (r.books || []).length === 0) && !(r && r.error),
+     '空数组 ⇒ 0 本且不报错', r && r.error);
+}
 
-  console.log('\n=== 6. 活体（离线）：站方 `@js:` 用 `document.querySelectorAll` ⇒ document 必须存在 ===');
-  {
-    const r = run(
-      '@js: (function(){ var n = document.querySelectorAll("div.book-like");' +
-      '  return ["https://x.example/1|||" + n.length + "|||作者一|||https://x.example/c1.jpg|||简介一"]; })()');
-    const books = (r && r.books) || [];
-    console.log('  出书 =', books.length, '| 书名 =', JSON.stringify((books[0] || {}).name),
-                '| error:', (r && r.error) || '(无)');
-    // ⭐⭐⭐⭐⭐ **已修好（2026-10-26）**：引擎补了 `document` 全局替身
-    //   · 之前：`document is not defined` ⇒ 整条规则抛 ⇒ **0 本 + emptyResult** ⇒ 门禁钉的是【现状】⭐⭐⭐
-    //   · 现在：`document` **存在** ⇒ `querySelectorAll` 返回**空数组**（**真 DOM 能力待吸收**）
-    //     ⇒ `n.length === 0` ⇒ 书名 = "0" ⇒ **书能出来**（不再是 0 本）⭐⭐⭐
-    //   ⇒ 断言的是【语义】不是【实现】：`document` 在 + 规则能跑完 + 不是 0 本
-    ok(books.length === 1 && !(r && r.error),
-       '⭐⭐⭐ `document` 必须在 JS 作用域里（站方 `@js:` 直接用它 ⇒ 缺了整条规则死 ⇒ 0 本）',
-       'books=' + books.length + ' error=' + (r && r.error));
-    ok((books[0] || {}).name === '0',
-       '⭐⭐ `querySelectorAll` 现在返回**空数组**（真 DOM 解析能力**待吸收** ⇒ 节点数 = 0）',
-       'name=' + JSON.stringify((books[0] || {}).name));
-  }
-
-  console.log('');
-  console.log('⚠️ 已知回归（新引擎没有 ⇒ 本门禁钉的是现状，已上报）：');
-  KNOWN_REGRESSIONS.forEach((t, i) => console.log(`   ${i + 1}. ${t}`));
-
-  console.log('');
-  console.log('\n' + (fail === 0 ? '✅' : '❌') + ' 通过 ' + pass + ' / 失败 ' + fail);
-  process.exit(fail ? 1 : 0);
+console.log('\n' + (fail === 0 ? '✅' : '❌') + ' 通过 ' + pass + ' / 失败 ' + fail);
+process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('炸了：', e); process.exit(2); });

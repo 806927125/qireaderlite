@@ -1,6 +1,6 @@
 /* 快速诊断：某个源的搜索为什么搜不到 */
 const fs = require('fs');
-const { createSandbox } = require('./new-engine-harness');
+const { createSandbox } = require('./harness');
 
 const list = JSON.parse(fs.readFileSync('/workspace/发现可用书源.json', 'utf8'));
 const det = JSON.parse(fs.readFileSync('/workspace/发现可用书源-清单.json', 'utf8'));

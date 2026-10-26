@@ -4,13 +4,6 @@ struct SearchView: View {
     @EnvironmentObject private var sources: SourceStore
     @EnvironmentObject private var library: LibraryStore
 
-    /// ⭐⭐⭐⭐⭐ **同时最多搜几个源**（2026-10-26 jetsam 6.8GB 实证）
-    ///
-    /// ⚠️ 原来 = **所有启用的源一起搜**（用户有 125 个源）⇒ 125 个并发 op
-    ///   ⇒ 每个 op 建一个**会话 = 一个 JSC context** ⇒ 峰值内存冲到 GB 级 ⇒ jetsam 杀 App ⭐⭐⭐
-    /// ⇒ 现在 4 个 ⇒ 峰值降一个数量级（引擎侧会话也封顶 ≤4 ⇒ 不会累积）⭐⭐⭐
-    static let maxConcurrentSearches = 4
-
     @State private var keyword = ""
     @State private var sourceId: String?
     @State private var results: [Book] = []
@@ -106,22 +99,10 @@ struct SearchView: View {
         }
         // 多源同时搜，单个源失败不影响其它源的结果。
         // 注意：引擎跑在单个 WKWebView 里，HTTP 本身是串行的，别指望真的并发。
-        //
-        // ⭐⭐⭐⭐⭐ **同时最多搜 N 个源**（2026-10-26 jetsam 6.8GB 实证）
-        //
-        // ⚠️⚠️⚠️ **原来这里是「所有源一起搜」（125 个并发 op！）**：
-        //   ⇒ 每个 op 会给**那个源建一个会话 = 一个 JSC context**（引擎侧复用）
-        //   ⇒ 125 个并发 ⇒ **125 个 JSC context 同时活着** ⇒ 每个都带站方 JS 的全局
-        //   ⇒ 峰值内存直接冲到 GB 级 ⇒ **jetsam 杀 App**（老引擎的 JS 在别的进程里 ⇒ 没事）⭐⭐⭐
-        // ⇒ 现在：**滑动窗口** ⇒ 同时最多 4 个 ⇒ 其余排队
-        //   ⇒ 峰值内存降一个数量级；会话数也被引擎侧封顶（≤4）⇒ 不会累积 ⭐⭐⭐
-        //   ⇒ ⚠️ 代价：全源搜索变慢（串行度提高）⇒ 但**不闪退**才是第一位的 ⭐⭐⭐
         var collected: [Book] = []
         var firstError: String?
-        let limit = max(1, min(Self.maxConcurrentSearches, targets.count))
         await withTaskGroup(of: Result<[Book], Error>.self) { group in
-            var next = 0
-            func addTask(_ s: BookSource) {
+            for s in targets {
                 group.addTask {
                     // Result{...} 的初始化器收的是**同步**闭包，里面不能 await。
                     // 所以先 await 拿到值，再包成 Result。
@@ -133,18 +114,10 @@ struct SearchView: View {
                     }
                 }
             }
-            // 先塞满窗口
-            while next < limit {
-                addTask(targets[next]); next += 1
-            }
-            // 每完成一个 ⇒ 补一个（⇒ 并发数恒定 ≤ limit）
             for await r in group {
                 switch r {
                 case .success(let list): collected.append(contentsOf: list)
                 case .failure(let e): if firstError == nil { firstError = e.localizedDescription }
-                }
-                if next < targets.count {
-                    addTask(targets[next]); next += 1
                 }
             }
         }

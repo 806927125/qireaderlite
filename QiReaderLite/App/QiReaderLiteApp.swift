@@ -1,5 +1,4 @@
 import SwiftUI
-import LegadoCore
 
 @main
 struct QiReaderLiteApp: App {
@@ -9,36 +8,14 @@ struct QiReaderLiteApp: App {
     @AppStorage(GlassTintStore.key) private var glassTintPercent: Double = 45
 
     init() {
-        // ⭐⭐⭐⭐⭐ **老引擎回来了**（2026-10-26 用户明确：「换回老引擎」「JSC 给我彻底删掉」）
-        //   ⇒ **默认老引擎**（WKWebView · 独立进程 ⇒ App 进程不碰站方数据 ⇒ 闪退免疫）⭐⭐⭐
-        //   ⇒ `qr.useNewEngine` **必须留着**（用户要能切到新引擎）⇒ 不许再在启动时删它 ⭐⭐⭐
-        //   ⇒ 旧的「一次性迁移键」（曾把主链路强制切回老引擎）⇒ 彻底清掉（它会一直把开关写回 false）⭐
+        // ⭐⭐⭐ **build252：老 JS 引擎（WKWebView）退役**（用户明确要求：「老引擎给我去掉先」）
+        //   · 现在**只有一个引擎**（新 Swift 引擎 `legado-engine`）⇒ 没有开关、没有回退
+        //   · 旧的一次性迁移键（曾把主链路强制切回老引擎）⇒ **彻底清掉**（否则会一直把开关写回 false）⭐⭐⭐
+        UserDefaults.standard.removeObject(forKey: "qr.useNewEngine")
+        UserDefaults.standard.removeObject(forKey: "qr.fallbackLegacy")
         UserDefaults.standard.removeObject(forKey: "qr.engine.legacy240")
         // 引擎沙盒尽早起来，首个界面就要用到
-        Task { @MainActor in
-            RuleSandbox.shared.boot()
-            // ⭐⭐⭐⭐⭐ **JS 后端**（2026-10-26）：站方 JS 跑在 WKWebView 的**独立进程**（跟老引擎一样）
-            Self.installJSBackend()
-        }
-    }
-
-    /// ⭐⭐⭐⭐⭐ **装 JS 后端**（Core 不能 import WebKit ⇒ 由这里注册实现）
-    @MainActor
-    static func installJSBackend() {
-        let raw = UserDefaults.standard.string(forKey: JSEngineFactory.Kind.storageKey)
-            ?? JSEngineFactory.Kind.webView.storageValue
-        let kind = JSEngineFactory.Kind(storageValue: raw) ?? .webView
-        JSEngineFactory.setKind(kind)
-        switch kind {
-        case .webView:
-            // ⭐ 站方 JS 跑在 **WebContent 独立进程** ⇒ 它吃多少内存都炸不到 App
-            WebViewJSHost.shared.boot()
-            // ⭐ 同步通道装一次（老引擎同款：JS 用 prompt 同步问原生）
-            WebViewJSHost.shared.syncHandler = { payload in
-                WebViewJSBridge.shared.handleSync(payload)
-            }
-            JSEngineFactory.install { api in WebViewJSExecutor(api: api) }
-        }
+        Task { @MainActor in RuleSandbox.shared.boot() }
     }
 
     var body: some Scene {

@@ -35,7 +35,7 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await callRaw("login", p, source: source)
+        let raw = try await RuleSandbox.shared.invoke("login", p, source: source)
         // 登录动作会改书籍变量 / 登录信息 → 落盘
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
@@ -71,7 +71,7 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         var p: [String: Any] = ["source": srcDict]
         p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await callRaw("loginProbe", p, source: source)
+        let raw = try await RuleSandbox.shared.invoke("loginProbe", p, source: source)
         let dict = raw as? [String: Any] ?? [:]
         if let e = dict["error"] as? String, !e.isEmpty {
             throw ServiceError.engineFailed(e)
@@ -122,35 +122,6 @@ final class SourceService {
         return try await Self.decodeAsync(T.self, from: raw)
     }
 
-    /// ⭐⭐⭐⭐⭐ **跑一个 op 并拿【原始字典】**（新引擎）
-    ///
-    /// ⚠️⚠️⚠️ **为什么要有这个**（2026-10-25 真机实证）：
-    ///   老引擎退役后，有 **7 处** 还在**直接调 `RuleSandbox.shared.invoke(...)`** ⇒ **走的还是老引擎**！⭐⭐⭐
-    ///   ⇒ **新旧两套引擎行为不一致** ⇒ 「很多书源都是这样」的**真正根源** ⭐⭐⭐
-    ///   ⇒ 本方法 = `call` 的原始字典版 ⇒ **统一走新引擎** ⇒ 老引擎可以彻底删 ⭐⭐⭐
-    private func callRaw(_ op: String, _ payload: [String: Any],
-                         source: BookSource) async throws -> [String: Any] {
-        var p = payload
-        // ⭐ 与 `call` 完全同一套组装（源字典 / 变量 / 登录信息 / 登录头 / cookie 快照）⭐
-        var srcDict = await SourceDictCache.dict(for: source)
-        srcDict["__variables"] = await effectiveVars(for: source)
-        srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
-        srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
-        p["source"] = srcDict
-        p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await Self.invokeEngine(op, p, source: source)
-        // 站方 JS 改过的变量 / 登录信息 → 落盘
-        if let obj = raw as? [String: Any] {
-            if let v = obj["__sourceVars"] as? String {
-                SourceVariables.setVars(v, for: source.bookSourceUrl)
-            }
-            if let l = obj["__loginInfo"] as? String {
-                SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
-            }
-        }
-        return raw as? [String: Any] ?? [:]
-    }
-
     // MARK: - ⭐⭐⭐ 引擎分流
 
     /// ⭐⭐⭐ **跑一个 op**：**新引擎优先**，失败才回退老引擎。
@@ -175,19 +146,6 @@ final class SourceService {
         // ⭐⭐⭐ **只有一个引擎了**（老 JS 引擎 2026-10-25 退役）
         //   ⇒ 不再有「开关」⇒ 不再有「回退」⇒ **失败就是失败**，如实报出来 ⭐⭐⭐
         //
-        // ⭐⭐⭐⭐⭐ **老引擎优先**（2026-10-26 用户明确：「换回老引擎」「JSC 给我彻底删掉」）
-        //   ⇒ 老引擎的**规则求值全在 WKWebView 的 WebContent 独立进程**里
-        //   ⇒ **App 进程压根不碰站方数据** ⇒ 内存有界 ⇒ 一直免疫 jetsam 闪退 ⭐⭐⭐
-        //   ⇒ 代价：老引擎是异步桥（postMessage + 两遍跑）⇒ 慢一点，但**稳** ⭐
-        if !EngineBackend.useNewEngine {
-            let raw = try await RuleSandbox.shared.invoke(op, payload, source: source)
-            if let dict = raw as? [String: Any],
-               let v = dict["__sourceVars"] as? String {
-                SourceVariables.setVars(v, for: source.bookSourceUrl)
-            }
-            EngineBackend.lastError = nil
-            return raw
-        }
         do {
             guard let r = try await invokeNewEngine(op, payload, source: source) else {
                 // 新引擎不认识这个 op ⇒ 明确报错（**不再悄悄落老引擎**）
@@ -226,14 +184,6 @@ final class SourceService {
     /// ⇒ 丢到后台队列 ⇒ 主线程只等结果。
     private static func invokeNewEngine(_ op: String, _ payload: [String: Any],
                                          source: BookSource) async throws -> Any? {
-        // ⭐⭐⭐⭐⭐ **内存熔断**（2026-10-26 jetsam 6.8GB 实证）
-        //
-        // ⚠️⚠️ **为什么必须有**：
-        //   实测：某个 op 一次把进程撑到 **11.7GB** ⇒ jetsam 杀 ⇒ **App 死、证据全没**
-        //   ⇒ 下次启动又不知道是哪个源炸的 ⇒ **再炸一次** ⇒ 反复闪退 ⭐⭐⭐
-        //   ⇒ 所以「超限」必须**落盘**（采样器在 op 期间就写）⇒
-        //     ⇒ 下次启动读到 ⇒ **直接拒绝跑这个源** ⇒ **不再闪退** ⭐⭐⭐
-        //   ⇒ 代价：这个源暂时不可用（可手动解除熔断）⇒ **比反复闪退划算得多** ⭐⭐⭐
         // ⭐⭐⭐ **新引擎的 op 也必须有超时**（2026-10-24 真机「app 死机」）
         //   以前**完全没有** ⇒ 站方服务器不通 / 引擎里死循环 ⇒ **永远不返回**
         //   ⇒ UI 永远转圈 ⇒ 用户以为 App 死了
@@ -272,7 +222,7 @@ final class SourceService {
         // ⚠️ **超时后引擎线程还在烧 CPU**（JSC 没有中断 API）⇒
         //   ⇒ 必须**换掉卡死的会话**（JSC context 复用 ⇒ 死循环会传染）⭐
         //   ⇒ 并且**熔断**（否则反复烧 CPU ⇒ 设备发烫 ⇒ 又被杀）⭐⭐⭐
-        let out = try await Self.withRealTimeout(seconds: budget) {
+        return try await Self.withRealTimeout(seconds: budget) {
             try LegadoEngineBackend.shared.invoke(op, payload, source: source)
         } onTimeout: {
             // ⭐⭐⭐ **换掉卡死的会话**（JSC context 是复用的 ⇒ 里面死循环 ⇒ 后面每个 op 都卡在锁上）
@@ -298,14 +248,7 @@ final class SourceService {
                     + " ⇒ 请换一条线路或换本书源")
             }
         }
-        // ⭐⭐⭐⭐⭐ **内存水位自检 + 超限自救**（2026-10-26 jetsam 6.8GB 实证）
-        //
-        // ⚠️ 为什么放在**这里**（op 跑完之后，而不是 op 里面）：
-        //   · 放 op 里面 ⇒ 正在跑的引擎调用会被中途掀掉（结果丢失 ⇒ 用户白等）
-        //   · 放 op 外面 ⇒ 每次引擎调用都测一次 ⇒ 涨上来的**第一时间**就能看见 ⭐⭐⭐
-        return out
     }
-
 
     /// ⭐⭐⭐⭐⭐ **全局「卡死线程」配额**（2026-10-25 真机闪退的第二层防线）
     ///
@@ -856,8 +799,8 @@ final class SourceService {
         //   ⇒ 之后 fquser / group_name 反复超时重试
         //   ⇒ **一次 exploreKinds 要 40 秒**，而且结果不稳（时好时坏）⭐
         //   ⇒ 现在测两轮：**两轮都通 > 只通一轮**，同档再比延迟
-        let results = await HostTools.pingHosts(hosts, timeout: 5)
-        let results2 = await HostTools.pingHosts(hosts, timeout: 5)
+        let results = await LegadoCompat.pingHosts(hosts, timeout: 5)
+        let results2 = await LegadoCompat.pingHosts(hosts, timeout: 5)
         var score: [String: (okCount: Int, ms: Int)] = [:]
         for r in results + results2 {
             let h = (r["host"] as? String) ?? ""
@@ -931,7 +874,7 @@ final class SourceService {
         // ⚠️ 这里不能用 effectiveVars(for:)（会递归）⇒ 用原始变量
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
-        guard let raw = try? await callRaw("sourceVars", ["source": srcDict], source: source),
+        guard let raw = try? await RuleSandbox.shared.invoke("sourceVars", ["source": srcDict], source: source),
               let dict = raw as? [String: Any],
               let vars = dict["vars"] as? [String: Any], !vars.isEmpty else { return [:] }
         SourceVariables.setDefaultVars(vars, for: source.bookSourceUrl)
@@ -961,7 +904,7 @@ final class SourceService {
             return cached.host
         }
         guard let hosts = try? await sourceHosts(source: source), !hosts.isEmpty else { return "" }
-        let results = await HostTools.pingHosts(hosts, timeout: timeout)
+        let results = await LegadoCompat.pingHosts(hosts, timeout: timeout)
         guard let best = results.first(where: { ($0["ok"] as? Bool) == true }),
               let host = best["host"] as? String, !host.isEmpty else { return "" }
         // ⭐ 写进书源变量（**以站方默认表做底**）
@@ -983,7 +926,7 @@ final class SourceService {
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
-        let raw = try await callRaw("sourceHosts", ["source": srcDict], source: source)
+        let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
         let dict = raw as? [String: Any] ?? [:]
         return (dict["hosts"] as? [String]) ?? []
     }
@@ -1073,7 +1016,7 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await callRaw("filterAction", p, source: source)
+        let raw = try await RuleSandbox.shared.invoke("filterAction", p, source: source)
         // 站方自己写的源级变量 → 落盘（下次 exploreKinds 直接生效）
         if let obj = raw as? [String: Any],
            let v = obj["__sourceVars"] as? String {
@@ -1097,7 +1040,7 @@ final class SourceService {
         // ⚠️ 必须带 book：站方 chapterList 第一句就调 book.getVariable('custom')
         //   → 不给就抛异常 → 目录一条不剩 → 诊断还误报「规则没命中」。
         if let b = book { payload["book"] = b.rawJSON }
-        let raw = try await callRaw("explainToc", payload, source: source)
+        let raw = try await RuleSandbox.shared.invoke("explainToc", payload, source: source)
         guard let dict = raw as? [String: Any] else { return "引擎没有返回诊断数据" }
         var out: [String] = []
         for k in ["请求URL", "最终URL", "状态码", "响应字节", "页面标题",
@@ -1117,7 +1060,7 @@ final class SourceService {
 
     /// 诊断一次发现页请求，把 URL / 状态码 / 字节数 / 命中元素数拼成人话。
     func explain(source: BookSource, kindUrl: String, page: Int = 1) async throws -> String {
-        let raw = try await callRaw("explain",
+        let raw = try await RuleSandbox.shared.invoke("explain",
             ["kindUrl": kindUrl, "page": page], source: source)
         guard let dict = raw as? [String: Any] else { return "引擎没有返回诊断数据" }
         var out: [String] = []

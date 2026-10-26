@@ -44,10 +44,7 @@ enum SourceRawArchive {
               JSONSerialization.isValidJSONObject(raw),
               let data = try? JSONSerialization.data(withJSONObject: raw) else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // ⭐⭐⭐ **不用 `.atomic`**（2026-10-26 iOS「diskwrites」限额被杀）⭐⭐⭐
-        let target = dir.appendingPathComponent(fileName(sourceUrl))
-        HostTools.writeAtomicallyFree(data, to: target)
-        DiskWriteMeter.record(data.count)
+        try? data.write(to: dir.appendingPathComponent(fileName(sourceUrl)), options: .atomic)
     }
 
     /// 取某个源的原始 JSON（没有存档 = nil）

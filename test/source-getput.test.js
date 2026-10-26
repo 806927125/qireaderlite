@@ -25,229 +25,177 @@
  *      ② `unlockAll()` 里 `source.put("nhAuthed", hash)` 抛 ⇒ 被吞
  *         ⇒ **解锁状态压根没存下来** ⇒ 但站方照样弹「🔓 已解锁」⇒ **假成功** ⭐
  *
- * 修法（引擎侧）
+ * 修法（source-api.js）
  *
  *   `source.get(key)`  → 读「书籍变量」里的某一项（没有 ⇒ 空串）
- *   `source.put(k, v)` → 写某一项 ⇒ 引擎回传 `__sourceVars` ⇒ 原生落盘
+ *   `source.put(k, v)`  → 写某一项 ⇒ 标 dirty ⇒ 引擎回传 `__sourceVars` ⇒ 原生落盘
  *
  *   ⚠️ **不能实现成「返回整份 vars」** —— 站方是
  *      `String(source.get("nhAuthed") || "")` 这样比对的，
  *      拿到整份 JSON 的话哈希对不上 ⇒ 还是不解锁。
- *
- * ────────────────────────────────────────────────────────────
- * ⭐⭐⭐ **2026-10-25 迁移说明**（老 JS 引擎物理删除）
- *   · 老门禁在 jsdom 里跑老引擎的 `window.QR.wrapSource(...)` ⇒ 老引擎删了 ⇒ 对象没了
- *   ⇒ 现在改成**跑新引擎**（`legado-engine` 的 `--op` 模式）
- *   ⇒ **语义等价在哪**：
- *     · 老门禁验的是「站方 JS 里的 `source.get` / `source.put` 是不是那一把钥匙」
- *       ⇒ 新架构里那把钥匙是**引擎的 `SourceEngine.makeSourceObject`**（真机 JSC 走它，
- *         沙盒 Node 后端走同语义的一份实现）⇒ **断言对象换成引擎，语义一模一样** ⭐⭐⭐
- *     · 老门禁的 `QR.__qrDirtyVars`（老引擎的 dirty 标记）⇒ 那是**老引擎私有细节**
- *       ⇒ 退休；**等价语义**是「写进变量盒 ⇒ 引擎回传 `__sourceVars` ⇒ 原生落盘」
- *       ⇒ 新架构里 `__sourceVars` 就是**引擎回传的变量表** ⇒ 改验它 ⭐⭐⭐
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const crypto = require('crypto');
-// ⭐⭐⭐⭐⭐ **老 JS 引擎已物理删除（2026-10-25）⇒ 门禁改验【新引擎】**（`legado-engine` 的 Swift 实现）
-const { engineAvailable } = require('./engine-bridge.js');
+const { createSandbox } = require('./harness');
 
-let pass = 0, fail = 0; const failures = [];
+let pass = 0, fail = 0;
 const ok = (c, m, extra) => {
   if (c) { pass++; console.log('  ✓ ' + m); }
-  else { fail++; failures.push(m + (extra ? '\n    ' + extra : '')); console.log('  x ' + m + (extra ? ' — ' + extra : '')); }
+  else { fail++; console.log('  x ' + m + (extra ? ' — ' + extra : '')); }
 };
-const skip = (m) => console.log('  ⏭️  跳过：' + m + '（**没验到 ≠ 通过**）');
 
 const root = path.join(__dirname, '..');
-const ENGINE_SRC = path.join(root, '..', 'legado-engine', 'Sources', 'LegadoCore');
-const readEngine = (rel) => fs.readFileSync(path.join(ENGINE_SRC, rel), 'utf8');
+const apiSrc = fs.readFileSync(
+  path.join(root, 'QiReaderLite', 'Resources', 'engine', 'source-api.js'), 'utf8');
 
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
 const PWD = 'nhub2026';
 const PWD_HASH = crypto.createHash('md5').update(PWD).digest('hex');
 
-/** ⭐⭐⭐ **跑引擎的 `--op`**（payload 太大 ⇒ 走文件形式 ⇒ 命令行放不下） */
-function runOp(payload) {
-  // ⭐⭐⭐ **站方 jsLib 要单独传给引擎**（引擎的 `BookSource` 模型里**没有** jsLib 字段
-  //   ⇒ 站方 jsLib 由宿主单独带进来 ⇒ 真机也是这么做的 ⇒ 门禁照抄这个口径）⭐⭐⭐
-  if (payload.source && payload.source.jsLib && !payload.jsLib) {
-    payload = Object.assign({}, payload, { jsLib: payload.source.jsLib });
+const nativeMock = async (fn, args) => {
+  if (fn === 'request') {
+    const url = String(args.url || '');
+    const method = (args.method || 'GET').toUpperCase();
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: Object.assign({ 'User-Agent': UA }, args.headers || {}),
+        body: (args.body && method !== 'GET' && method !== 'HEAD') ? args.body : undefined,
+        redirect: 'follow',
+      });
+      return { ok: true, code: res.status, url, headers: {}, body: await res.text() };
+    } catch (e) { return { ok: false, error: String(e.message) }; }
   }
-  const bin = process.env.ENGINE_BIN
-    || path.join(root, '..', 'legado-engine', '.build', 'debug', 'conformance');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qr-op-'));
-  const file = path.join(tmp, 'payload.json');
-  try {
-    fs.writeFileSync(file, JSON.stringify(payload));
-    // ⚠️ **重试**：引擎正在被重编时 ⇒ 这次调用会退出异常 ⇒ 重试几次（同步忙等）⭐⭐⭐
-    for (let i = 0; i < 5; i++) {
-      const r = spawnSync(bin, ['--op', file], { encoding: 'utf8', timeout: 180000, maxBuffer: 64 * 1024 * 1024 });
-      if (r.status === 0 && r.stdout) {
-        const line = r.stdout.trim().split('\n').filter(Boolean).pop();
-        try { return JSON.parse(line); }
-        catch (e) { return { ok: false, error: '引擎输出解析失败' }; }
-      }
-      const until = Date.now() + 3000;
-      while (Date.now() < until) { /* 忙等 3 秒 */ }
-    }
-    return { ok: false, error: '引擎跑不起来（正在重编？）' };
-  } finally {
-    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  if (fn === 'log' || fn === 'toast') return { ok: true };
+  if (fn === 'deviceID') return { ok: true, value: '0o6q14mk3z3qmvi6dtvf' };
+  if (fn === 'getWebViewUA') return { ok: true, value: UA };
+  if (fn === 'md5Encode') {
+    return { ok: true, value: crypto.createHash('md5').update(String(args.text || args.str || '')).digest('hex') };
   }
-}
-
-/** ⭐⭐⭐ **能力探针**：沙盒能不能让站方 JS 真的调到 `source.get` / `source.put`
- *  （Linux 沙盒没有 JSC ⇒ 引擎走 Node 后端 ⇒ 宿主对象通道是 Node 侧的一份实现）
- *  ⇒ 探针不过 ⇒ 本门禁的【真跑段】**显式 SKIP**（**没验到 ≠ 通过**）⭐⭐⭐ */
-function probeSourceAPI() {
-  const r = runOp({
-    op: 'exploreKinds',
-    source: {
-      bookSourceUrl: 'https://probe.example.com/', bookSourceName: '探针',
-      // ⭐ `__variables`（源级变量）要**放在 source 里**（宿主就是从那儿喂进去的）
-      __variables: JSON.stringify({ probeKey: 'PROBE_OK' }),
-      exploreUrl: '@js:JSON.stringify([{title:String(source.get("probeKey")),url:"https://x/1"}])',
-    },
-  });
-  const kinds = (r && r.kinds) || [];
-  return !!(kinds.length && kinds[0].title === 'PROBE_OK');
-}
+  return { ok: true, value: '' };
+};
 
 (async () => {
-  console.log('=== 1. 源码：source.get / source.put 要存在（契约 + 实现）===');
-  // ⭐⭐⭐⭐⭐ **老引擎实现细节断言已退休**（2026-10-25 老 JS 引擎物理删除）
-  //   ⇒ 以前这些断言验的是**老引擎的函数名/代码片段**（如 `wrapped.getVariable` / `MAX_PASS`）
-  //   ⇒ 那些是**实现细节**，不是语义 ⇒ 老引擎退役后**没有等价物** ⇒ 退休不损失语义覆盖 ⭐⭐⭐
-  //   ⇒ **语义覆盖在下面的【真跑段】**（现在跑的是【新引擎】）⇒ 覆盖不丢 ⭐⭐⭐
-  //   ⇒ 等价断言在【引擎仓的 swift test】（309 项）与真机上 ⭐⭐⭐
+console.log('=== 1. 源码：source.get / source.put 要存在 ===');
+ok(/wrapped\.get\s*=\s*function/.test(apiSrc), 'source-api.js 里有 wrapped.get');
+ok(/wrapped\.put\s*=\s*function/.test(apiSrc), 'source-api.js 里有 wrapped.put');
+ok(/wrapped\.getVariable/.test(apiSrc) && /wrapped\.setVariable/.test(apiSrc),
+   '原来的 getVariable/setVariable 还在（不能破）');
+
+const { win } = createSandbox({ nativeMock });
+
+console.log('\n=== 2. 语义：get 取单项、put 写单项、put 完能落盘 ===');
+const sem = JSON.parse(await win.eval(`(function () {
+  var s = window.QR.wrapSource({ __variables: JSON.stringify({ a: '1', b: '2' }) });
+  var gotA = s.get('a');
+  var gotMissing = s.get('zz');
+  var whole = s.getVariable();
+  s.put('c', '3');
+  return JSON.stringify({
+    gotA: gotA, gotMissing: gotMissing, whole: whole,
+    afterPut: s.getVariable(), getC: s.get('c'),
+    dirty: (window.QR.__qrDirtyVars || '')
+  });
+})()`));
+ok(sem.gotA === '1', "get('a') 返回单项的值", '实际 ' + JSON.stringify(sem.gotA));
+ok(sem.gotMissing === '', "get('zz')（没有的项）返回空串", '实际 ' + JSON.stringify(sem.gotMissing));
+ok(sem.whole && sem.whole.indexOf('"a"') >= 0, 'getVariable() 仍返回整份 JSON');
+ok(sem.afterPut && sem.afterPut.indexOf('"c":"3"') >= 0,
+   "put('c','3') 写进了整份 JSON", '实际 ' + sem.afterPut);
+ok(sem.getC === '3', "put 之后 get('c') 能读回来");
+ok(sem.dirty && sem.dirty.indexOf('"c":"3"') >= 0,
+   'put 标了 dirty（QR.__qrDirtyVars）⇒ 引擎会回传 __sourceVars', '实际 ' + sem.dirty);
+
+console.log('\n=== 3. 活体端到端：解锁 → 落盘 → 分类出来 ===');
+const NH = path.join(root, 'sources', 'NovelHub聚合小说-轻阅版.json');
+if (!fs.existsSync(NH)) {
+  console.log('  (跳过：本地没有 NovelHub 源文件)');
+} else {
+  const src = JSON.parse(fs.readFileSync(NH, 'utf8'))[0];
+
+  // ① 未解锁 ⇒ 站方 nhAuth() 恒 false ⇒ 分类 0（= 用户截图的现象）
+  const before = await win.eval("window.__qrInvoke('exploreKinds', " + JSON.stringify({
+    source: Object.assign({}, src, { __variables: '', __loginInfo: {} }),
+    cookieSnapshot: {},
+  }) + ")");
+  const beforeKinds = (before && before.kinds) || [];
+  console.log('  未解锁时 kinds =', beforeKinds.length);
+  ok(beforeKinds.length === 0, '未解锁 ⇒ 分类 0（复现真机现象）');
+
+  // ② 点「解锁整个源」⇒ 站方 unlockAll() 里 source.put("nhAuthed", hash)
+  const lgin = await win.eval("window.__qrInvoke('login', " + JSON.stringify({
+    source: Object.assign({}, src, { __variables: '', __loginInfo: {} }),
+    action: 'unlockAll()',
+    formValues: { '整源解锁密码': PWD },
+    cookieSnapshot: {},
+  }) + ")");
+  const dirtyVars = (lgin && lgin.__sourceVars) || '';
+  ok(lgin && lgin.ok, '解锁动作跑通了', lgin && lgin.error);
+  ok(dirtyVars.indexOf('nhAuthed') >= 0,
+     '**解锁状态真的落盘了**（__sourceVars 里有 nhAuthed）', '实际 ' + dirtyVars.slice(0, 160));
+  ok(dirtyVars.indexOf(PWD_HASH) >= 0,
+     '落盘的是 md5(密码)（站方比对的就是这个）', '实际 ' + dirtyVars.slice(0, 160));
+
+  // ③ 把落盘的变量喂回去 ⇒ 分类应该出来（这才是用户要的效果）
+  const after = await win.eval("window.__qrInvoke('exploreKinds', " + JSON.stringify({
+    source: Object.assign({}, src, { __variables: dirtyVars, __loginInfo: {} }),
+    cookieSnapshot: {},
+  }) + ")");
+  const afterKinds = (after && after.kinds) || [];
+  const afterFilters = (after && after.filters) || [];
+  console.log('  解锁后 kinds =', afterKinds.length, '| filters =', afterFilters.length,
+              '| error:', (after && after.error) || '(无)');
+  ok(afterKinds.length > 0,
+     '**解锁后能解析出分类**（之前是 0 —— nhAuth 恒 false ⇒ 规则字段全 return ""）');
+  ok(afterFilters.length > 0, '筛选栏项也能出来');
+
+  // ④ ⭐⭐⭐ **发现页要能出书**（这条以前**完全没有断言** ⇒
+  //      「分类有了但一个平台都出不了书」才能一路溜到真机才发现）
   //
-  // ⭐ 下面这几条是**新引擎的等价描述**（能力必须还在，只是实现换了地方）：
-  const api = readEngine('JS/JSHostAPI.swift');
-  const eng = readEngine('Pipeline/SourceEngine.swift');
-  ok(/object: "source", name: "get"/.test(api) && /object: "source", name: "put"/.test(api),
-     '宿主 API 契约登记了 source.get / source.put（⇒ 包装函数会生成 ⇒ 站方不会报「不是函数」）');
-  ok(/methods\["get"\]/.test(eng) && /methods\["put"\]/.test(eng),
-     '引擎的 source 对象实现了 get / put');
-  ok(/varBox\.get\(key\)/.test(eng),
-     'get 读的是「变量盒里的某一项」（**不是**返回整份 vars —— 否则站方比对哈希对不上）');
-  ok(/varBox\.set\(key, value\)/.test(eng),
-     'put 写的是「变量盒里的某一项」（⇒ 引擎回传 __sourceVars ⇒ 原生落盘）');
-  ok(/methods\["getVariable"\]/.test(eng) && /methods\["setVariable"\]/.test(eng),
-     '原来的 getVariable/setVariable 还在（不能破）');
-  // ⭐⭐⭐ **落盘链路的等价语义**：引擎回传的 `__sourceVars` 与 `source.getVariable()` 是**同一份**
-  //   ⇒ 站方 put 了 ⇒ 回传里就带得上 ⇒ 原生落盘 ⇒ 下次喂回来还是解锁态 ⭐⭐⭐
-  const backend = fs.readFileSync(path.join(root, 'QiReaderLite', 'Core', 'LegadoEngineBackend.swift'), 'utf8');
-  ok(/__sourceVars/.test(backend) && /varsJSON\(engine\.varBox\)/.test(backend),
-     'App 侧把引擎的变量盒回传成 __sourceVars（⇒ 站方改过的变量会落盘）');
-  ok(/seedVars/.test(backend) && /__variables/.test(backend),
-     'App 侧把落盘的变量喂回引擎（⇒ 下次打开还是解锁态）');
-
-  // ⭐⭐⭐ **探活**（引擎跑不起来 ⇒ 显式 SKIP，不算门禁的锅）⭐⭐⭐
-  const _alive = runOp({ op: 'exploreKinds',
-    source: { bookSourceUrl: 'https://probe.example.com/', bookSourceName: '探针',
-              exploreUrl: '@js:JSON.stringify([{title:"T",url:"https://x/1"}])' } });
-  if (!engineAvailable() || !_alive || !_alive.kinds || !_alive.kinds.length) {
-    skip('引擎跑不起来（没编译 / 正在重编 / 崩了）⇒ 下面的【真跑段】没验到（**不等于通过**）');
-    console.log('\n' + (fail === 0 ? '✅' : '❌') + ' 通过 ' + pass + ' / 失败 ' + fail);
-    process.exit(fail ? 1 : 0);
-  }
-
-  console.log('\n=== 2. 能力探针：沙盒能不能让站方 JS 真的调到 source.get / source.put ===');
-  const canRun = probeSourceAPI();
-  if (!canRun) {
-    // ⚠️⚠️ **不假绿**：探针不过 ⇒ 下面的真跑段**一条都没验到** ⇒ 明说 ⭐⭐⭐
-    skip('沙盒（Linux ⇒ 引擎走 Node 后端）还没接上宿主对象通道 ⇒ '
-       + '站方 JS 调 source.get 拿不到值 ⇒ 下面的【真跑段】没验到（**不等于通过**）');
-    console.log('\n' + (fail === 0 ? '✅' : '❌') + ' 通过 ' + pass + ' / 失败 ' + fail);
-    if (failures.length) { console.log(''); failures.forEach(f => console.log('  ✗ ' + f)); }
-    process.exit(fail ? 1 : 0);
-  }
-  ok(true, '沙盒能跑站方 JS 的 source.get（能力探针过了）');
-
-  console.log('\n=== 3. 语义：get 取单项、put 写单项、put 完能落盘 ===');
-  {
-    // ⭐⭐⭐ 用**引擎自己的 op**跑一段站方 JS ⇒ 把结果编码进分类标题里读回来
-    const r = runOp({
-      op: 'exploreKinds',
-      source: {
-        bookSourceUrl: 'https://probe.example.com/', bookSourceName: '探针',
-        // ⭐ `__variables`（源级变量）要**放在 source 里**（宿主就是从那儿喂进去的）
-        __variables: JSON.stringify({ a: '1' }),
-        exploreUrl: '@js:(function(){'
-          + 'var got=String(source.get("a"));'
-          + 'var miss=String(source.get("zz"));'
-          + 'source.put("c","3");'
-          + 'var back=String(source.get("c"));'
-          + 'var whole=String(source.getVariable());'
-          + 'return JSON.stringify([{title:got+"|"+miss+"|"+back+"|"+whole,url:"https://x/1"}]);'
-          + '})()',
-      },
-    });
-    const kinds = (r && r.kinds) || [];
-    const title = kinds.length ? String(kinds[0].title || '') : '';
-    const parts = title.split('|');
-    console.log('  站方 JS 看到的 =', JSON.stringify(parts));
-    ok(parts[0] === '1', "get('a') 返回单项的值", '实际 ' + JSON.stringify(parts[0]));
-    ok(parts[1] === '', "get('zz')（没有的项）返回空串", '实际 ' + JSON.stringify(parts[1]));
-    ok(parts[2] === '3', "put('c','3') 之后 get('c') 能读回来", '实际 ' + JSON.stringify(parts[2]));
-    ok(parts[3] && parts[3].indexOf('"a"') >= 0 && parts[3].indexOf('"c":"3"') >= 0,
-       'getVariable() 仍返回整份 JSON（含 put 进去的那一项）', '实际 ' + parts[3]);
-    // ⭐⭐⭐ **「put 标了 dirty ⇒ 引擎回传 __sourceVars ⇒ 原生落盘」的等价语义**⭐⭐⭐
-    const vars = String((r && r.__sourceVars) || '');
-    ok(vars.indexOf('"c":"3"') >= 0,
-       '**put 写进去的那一项被引擎回传了**（__sourceVars ⇒ 原生落盘）', '实际 ' + vars.slice(0, 160));
-    ok(vars.indexOf('"a":"1"') >= 0,
-       '回传里连原有那一项都在（⇒ 落盘的是整份变量，不是只回传变化项）', '实际 ' + vars.slice(0, 160));
-  }
-
-  console.log('\n=== 4. 活体端到端（真书源）：解锁 → 落盘 → 分类出来 ===');
-  const NH = path.join(root, 'sources', 'NovelHub聚合小说-轻阅版.json');
-  if (!fs.existsSync(NH)) {
-    skip('本地没有 NovelHub 源文件 ⇒ 本段没验到（**不等于通过**）');
+  //   根因：站方的 `ruleExplore.bookList` 是 **83KB 的 `@js:`**，
+  //   站方 JS 把十几个平台的列表统一成 `url|||name|||author|||cover|||intro…` 一行，
+  //   再用 `name`/`bookUrl` 等 `##正则##` 子规则从每行里抠字段
+  //   ⇒ 宿主必须有「bookList 是 @js: ⇒ 字符串列表 ⇒ 逐项套子规则」这条通路
+  const firstKind = afterKinds.find(k => k.url);
+  if (!firstKind) {
+    ok(false, '有可请求的分类（才能测出书）');
   } else {
-    const NHsrc = JSON.parse(fs.readFileSync(NH, 'utf8'))[0];
+    const ex = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+      source: Object.assign({}, src, { __variables: dirtyVars, __loginInfo: {} }),
+      kindUrl: firstKind.url, page: 1,
+    }) + ")");
+    const books = (ex && ex.books) || [];
+    console.log('  explore 出书 =', books.length, '| error:', (ex && ex.error) || '(无)');
+    ok(books.length > 0,
+       '**发现页能出书**（分类有但书出不来 ⇒ bookList 是 @js: 的通路断了）',
+       '分类「' + firstKind.title + '」出 0 本');
+    ok(!!(books[0] && books[0].name), '书名非空');
+    ok(!!(books[0] && books[0].author), '作者非空（子规则从 ||| 串里抠的）');
+    ok(!!(books[0] && books[0].bookUrl), '详情 URL 非空');
+    ok(!/undefined|NaN/.test(JSON.stringify(books[0] || {})), '第一条没有 undefined/NaN 污染',
+       JSON.stringify(books[0] || {}).slice(0, 160));
 
-    // ① 未解锁 ⇒ 站方 nhAuth() 恒 false ⇒ 分类 0（= 用户截图的现象）
-    const before = runOp({
-      op: 'exploreKinds',
-      source: Object.assign({}, NHsrc, { __variables: '', __loginInfo: '{}' }),
-    });
-    const beforeKinds = (before && before.kinds) || [];
-    console.log('  未解锁时 kinds =', beforeKinds.length);
-    ok(beforeKinds.length === 0, '未解锁 ⇒ 分类 0（复现真机现象）');
-
-    // ② 点「解锁整个源」⇒ 站方 unlockAll() 里 source.put("nhAuthed", hash)
-    const lgin = runOp({
-      op: 'login',
-      source: Object.assign({}, NHsrc, {
-        __variables: '',
-        __loginInfo: JSON.stringify({ '整源解锁密码': PWD }),
-      }),
-      action: 'unlockAll()',
-      formValues: { '整源解锁密码': PWD },
-    });
-    const dirtyVars = String((lgin && lgin.__sourceVars) || '');
-    console.log('  解锁回传变量 =', dirtyVars.slice(0, 160));
-    ok(lgin && lgin.ok, '解锁动作跑通了', lgin && lgin.error);
-    ok(dirtyVars.indexOf('nhAuthed') >= 0,
-       '**解锁状态真的落盘了**（__sourceVars 里有 nhAuthed）', dirtyVars.slice(0, 160));
-    ok(dirtyVars.indexOf(PWD_HASH) >= 0,
-       '落盘的是 md5(密码)（站方比对的就是这个）', dirtyVars.slice(0, 160));
-
-    // ③ 把落盘的变量喂回去 ⇒ 分类应该出来（这才是用户要的效果）
-    const after = runOp({
-      op: 'exploreKinds',
-      source: Object.assign({}, NHsrc, { __variables: dirtyVars, __loginInfo: '{}' }),
-    });
-    const afterKinds = (after && after.kinds) || [];
-    console.log('  解锁后 kinds =', afterKinds.length, '| error:', (after && after.error) || '(无)');
-    ok(afterKinds.length > 0,
-       '**解锁后能解析出分类**（之前是 0 —— nhAuth 恒 false ⇒ 规则字段全 return ""）');
+    // ⑤ ⭐⭐ **站方多平台分支也要能出书**（真机用户点的是「都市」= www.aaccoo.com 那条线）
+    //   这一条单独挑一个**别的平台**的分类 ⇒ 验「baseUrl 判断平台 + result 取当前页原文」都成立
+    const acKind = afterKinds.find(k => /aaccoo/.test(k.url || ''));
+    if (!acKind) {
+      console.log('  (跳过：没有 aaccoo 分类)');
+    } else {
+      const ex2 = await win.eval("window.__qrInvoke('explore', " + JSON.stringify({
+        source: Object.assign({}, src, { __variables: dirtyVars, __loginInfo: {} }),
+        kindUrl: acKind.url, page: 1,
+      }) + ")");
+      const acBooks = (ex2 && ex2.books) || [];
+      console.log('  aaccoo 分类「' + acKind.title + '」出书 =', acBooks.length);
+      ok(acBooks.length > 0,
+         '**别的平台分支也能出书**（站方靠 baseUrl 判断平台 + 从 result 取当前页原文）',
+         '0 本 ⇒ 要么 baseUrl 不是当前页 URL，要么 result 不是原文');
+      ok(!!(acBooks[0] && acBooks[0].name), 'aaccoo 那条线的书名非空');
+    }
   }
+}
 
-  console.log('\n' + (fail === 0 ? '✅' : '❌') + ' 通过 ' + pass + ' / 失败 ' + fail);
-  if (failures.length) { console.log(''); failures.forEach(f => console.log('  ✗ ' + f)); }
-  process.exit(fail ? 1 : 0);
-})().catch(e => { console.error('炸了：', e && e.message); process.exit(2); });
+console.log('\n' + (fail === 0 ? '✅' : '❌') + ' 通过 ' + pass + ' / 失败 ' + fail);
+process.exit(fail ? 1 : 0);
+})().catch(e => { console.error('炸了：', e); process.exit(2); });

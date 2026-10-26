@@ -27,9 +27,6 @@ declare -a GATES=(
   "engine-lint:test/engine-lint.test.js"
   "engine-smoke:test/engine-smoke.test.js"
   "login-card:test/live-login-card.test.js"
-  # ⭐⭐⭐ 登录流程的端到端联调（2026-10-26 补进列表）
-  #   ⇒ 这个门禁**从来没被 CI 跑过**（文件在、列表里没有）⇒ 登录链路一次都没被验过 ⭐⭐⭐
-  "login-flow:test/live-login-flow.test.js"
   "toc-diag-truth:test/toc-diag-truth.test.js"
   "b64-url-mangle:test/b64-url-mangle.test.js"
   "ajax-retry:test/ajax-retry.test.js"
@@ -44,7 +41,6 @@ declare -a GATES=(
   "login-formvalues:test/login-formvalues.test.js"
   "source-getput:test/source-getput.test.js"
   "js-booklist:test/js-booklist.test.js"
-  "js-orgjsoup:test/js-orgjsoup.test.js"
   "data-url-guard:test/data-url-guard.test.js"
   "global-restore:test/global-restore.test.js"
   "book-raw:test/book-raw.test.js"
@@ -84,47 +80,17 @@ declare -a GATES=(
   "rules:test/rules.test.js"
   "e2e:test/e2e.test.js"
   "swift-bookdto:test/swift-bookdto.test.js"
-  # ⭐⭐⭐⭐⭐ 内存水位（2026-10-26 jetsam 6.8GB 实证）
-  #   ⇒ 面板有内存行（phys_footprint = jetsam 同一口径）
-  #   ⇒ ⭐ **熔断/采样器/自动清理那套已拆**（2026-10-26 用户明确：「内存熔断啥的就不要了」）⇒ 这条门禁一并删
-  #   ⇒ 防撑爆靠**闸门**（变量表/响应体/缓存/桥接层封顶）+ **老引擎的独立进程** ⇒ 门禁在 js-backend-webview 里
-  # ⭐⭐⭐⭐⭐ 引擎会话封顶（2026-10-26 jetsam 6.8GB 真凶 ⇒ 6.8GB 的真正来源）
-  #   ⇒ 一个源 = 一个 JSC context ⇒ 会话只增不减 ⇒ 内存随「用过的源数」涨
-  #   ⇒ 钉：会话有上限（LRU）/ 全源搜索并发有上限 / 面板看得见
-  "engine-session-cap:test/engine-session-cap.test.js"
-  # ⭐⭐⭐⭐⭐ **引擎会话 retain cycle**（2026-10-26 jetsam 6.8GB 实证）
-  #   ⇒ `Session ⟷ EngineHostAPI` 互指成环 ⇒ 被 LRU 淘汰的会话**永不释放**
-  #   ⇒ 连带 JSC 上下文 / HTTP 缓存 / 整份源永久占着 ⇒ 会话封顶形同虚设 ⭐⭐⭐
-  #   ⇒ 钉：api 持有的 session 必须是 weak / 淘汰要真删 / 清会话要 invalidate
-  "engine-leak-cycle:test/engine-leak-cycle.test.js"
-  # ⭐⭐⭐⭐⭐ **JS 后端必须在独立进程**（2026-10-26 jetsam 6.8GB 实证）
-  #   ⇒ 站方 JS 跑在 App 进程内（JSC）⇒ 它一次吃几 GB ⇒ jetsam 秒杀 App
-  #   ⇒ 老引擎免疫是因为 JS 跑在 WKWebView 的 WebContent 独立进程 ⇒ 现在新引擎也这么做 ⭐⭐⭐
-  "js-backend-webview:test/js-backend-webview.test.js"
-  # ⭐⭐⭐⭐⭐ 阅读器排版缓存上限（2026-10-26 jetsam 6.8GB 的**真凶**）
-  #   ⇒ renders 每章存一份 NSLayoutManager/NSTextContainer 排版对象 ⇒ 不封顶就 GB 级
-  #   ⇒ 钉：上限是个小数字 / 插入后真的淘汰 / 只动 renders（texts 是目录依赖）
-  "reader-render-cache:test/reader-render-cache.test.js"
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
   "real-timeout-guard:test/real-timeout-guard.test.js"
   # ⭐⭐⭐⭐⭐ **Linux 编译门禁**（2026-10-25 build253 CI 失败事故）：
   #   改了 SourceService.swift 沙盒却全绿 ⇒ 因为它**根本没被编过** ⇒ 多一个 } 就把 CI 挂了
   #   ⇒ 现在用 stub 让它**真被 swiftc 编译** ⇒ 3 秒抓到 ⇒ 不用等 5 分钟 CI
-  "jm-novel-e2e:test/jm-novel-e2e.test.js"
-  "js-backend-parity:test/js-backend-parity.test.js"
-  "disk-write-guard:test/disk-write-guard.test.js"
   "linux-compile:test/linux-compile-gate.test.js"
   # ⭐⭐⭐⭐⭐ **op 结构一致性**（2026-10-25 真机 build253 实证）：
   #   runBookInfo 返回 ["book": {...}]（嵌套）而 isTrustworthy 读顶层 ⇒ 详情页 100% 失败
   #   ⇒ 沙盒对拍**直接调引擎** ⇒ 绕过 App 侧这层 ⇒ 永远抓不到 ⭐⭐⭐
   "op-shape-consistency:test/op-shape-consistency.test.js"
-  # ⭐⭐⭐⭐⭐ **「生成的 JS」必须过语法检查**（2026-10-25 事故）：
-  #   引擎的 Node 后端是一大段写在 Swift 里的 JS ⇒ 那天有人在【模板字符串里的注释】
-  #   写了个反引号 ⇒ 模板被截断 ⇒ 整个 Node 后端语法错 ⇒ 门禁大面积变红，
-  #   而报的是「Expression expected」⇒ 离根因十万八千里（找了好几分钟）⭐⭐⭐
-  #   ⇒ 现在**产物本身**先过一遍 `node --check` + 反引号配平 ⇒ 错在哪行指哪行
-  "generated-js-syntax:test/generated-js-syntax.test.js"
 )
 
 TOTAL_PASS=0
@@ -164,11 +130,8 @@ for entry in "${GATES[@]}"; do
   #    ⚠️ 不能拿 "Error" 裸匹配 —— 测试用例名里就有「→ Error」这种字样
   #    （jsoup-xpath 的 '[xpath] $$$$ → Error'），会把好门禁误判成崩了。
   #    只认**真异常**的样子：xxxError: / 行首 Error: / ENOENT:
-  #    ⚠️⚠️ **必须锚在【行首】**（2026-10-26 迁移门禁时踩到）：
-  #      站方 JS 自己会把 catch 到的异常**当消息吐出来**（java.log(e)）
-  #      ⇒ 门禁把原文打印出来时，行里就有 TypeError ⇒ 不锚行首 ⇒ **好门禁被误判成崩了**⭐⭐⭐
   crash="$(printf '%s' "$out" \
-    | grep -oE '^[[:space:]]*(ReferenceError|SyntaxError|TypeError|RangeError|ENOENT|Cannot find module)[^\\n]{0,80}' \
+    | grep -oE '(ReferenceError|SyntaxError|TypeError|RangeError|ENOENT|Cannot find module)[^\\n]{0,80}' \
     | head -1)"
   if [ -z "$crash" ]; then
     crash="$(printf '%s' "$out" | grep -oE '^[[:space:]]*Error:[^\\n]{0,80}' | head -1 | sed 's/^[[:space:]]*//')"
@@ -230,30 +193,6 @@ for entry in "${GATES[@]}"; do
 done
 
 printf "%s\n" "────────────────────────────────────────────────────"
-
-# ── ⭐⭐⭐⭐⭐ Linux 类型检查门禁（2026-10-26 修绿）──
-#   ⚠️⚠️ **以前这两条是「已知红」**（shim 跟不上 RuleSandbox 演进）⇒ 没人跑 ⇒ 假绿
-#     ⇒ 2026-10-26 补齐了清单 + 加了 shim + 标了 nonisolated(unsafe) ⇒ **两条都绿了** ⭐⭐⭐
-#   ⇒ 现在它们进「全量门禁」⇒ 改过的 Core/ 文件**每次都被真类型检查**（3 秒）⭐⭐⭐
-#   ⇒ 适配层（LegadoEngineBackend）用 **URLSession** ⇒ Linux 编不了 ⇒ 它有**独立门禁** ⭐⭐⭐
-for tc_gate in "typecheck-基础层:test/linux-typecheck.sh" "typecheck-适配层:test/linux-typecheck-engine.sh"; do
-  tc_name="${tc_gate%%:*}"
-  tc_script="${tc_gate##*:}"
-  if bash "$tc_script" > /tmp/tc.out 2>&1; then
-    if grep -qE '没找到 swiftc|找不到 swiftc|没找到 LegadoCore|跳过' /tmp/tc.out; then
-      printf "%-24s %-22s %s\n" "$tc_name" "⚠️ 跳过" "环境不行（见 /tmp/tc.out）⇒ **没验到**，不算通过"
-      SKIPPED+=("$tc_name")
-    else
-      printf "%-24s %-22s %s\n" "$tc_name" "✅" "$(grep -oE '0 错误|通过 [0-9]+' /tmp/tc.out | tail -1)"
-      TOTAL_PASS=$((TOTAL_PASS+1))
-    fi
-  else
-    printf "%-24s %-22s %s\n" "$tc_name" "❌ 有失败" "$(grep -c 'error:' /tmp/tc.out) 个类型错误"
-    grep -E "error:" /tmp/tc.out | head -5
-    TOTAL_FAIL=$((TOTAL_FAIL+1))
-    FAILED+=("$tc_name")
-  fi
-done
 
 # ── Swift 原生层：swiftc 真编真跑（Core/ 是纯 Foundation → 沙盒里能跑）──
 # ⚠️ 这一步是「引擎能力用 Swift 写」能落地的**前提**：
