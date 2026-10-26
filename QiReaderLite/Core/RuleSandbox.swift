@@ -11,7 +11,7 @@ import UIKit
 /// 有的版本保留目录结构（engine/xxx.js），有的展平到 bundle 根。
 /// 这里不猜 —— 挨个候选路径找，找不到再在 bundle 里递归搜一遍。
 /// 找不到就明确报出缺哪个文件，而不是让首屏无声卡死。
-enum ResourceLocator {
+enum EngineResourceLocator {
     /// 引擎脚本的**注入顺序有依赖**，别改
     static let scripts = [
         "jsoup-compat.js",   // 选择器层
@@ -110,6 +110,8 @@ enum ResourceLocator {
 final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     static let shared = RuleSandbox()
 
+    private var bootWaiters: [CheckedContinuation<Void, Never>] = []
+
     /// ⭐⭐⭐ **用系统浏览器打开**（站方 `java.startBrowser` / `startBrowserAwait` / `showBrowser` …）
     ///
     /// ⚠️ **为什么放这里**：要碰 `UIApplication` ⇒ 只能住在 import 了 UIKit 的文件
@@ -187,8 +189,8 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     ///     ⇒ 真机症状：`java.longToast is undefined`（JSC 说的，不是引擎抛的）⭐⭐⭐
     ///     ⇒ 根因：Swift 多行字符串里 `//` 行注释把 `\` 续行后的整行吃掉
     ///   · ⭐⭐⭐ 「抛不抛」由「老引擎上存不存在」决定（实测 75 个不抛 ⇒ 新引擎也不抛）
-    /// ⭐⭐⭐ 引擎版本（CI 生成 ⇒ 真值）
-    static let engineVersion = LegadoEngineInfo.version(revision: RuleSandbox.engineRevision)
+    /// ⭐⭐⭐ 引擎标识（老引擎：WKWebView 独立进程）
+    static let engineVersion = "老 JS 引擎（WKWebView · 规则求值在 WebContent 独立进程）"
     /// ⭐⭐⭐ 引擎的真实 revision（CI 注入 ⇒ 不许手改）
     static let engineRevision: String = EngineRevision.generated
 
@@ -235,10 +237,10 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         }
         lines.append("就绪状态：\(ready ? "已就绪" : "未就绪")")
         if let e = lastError { lines.append("错误：\(e)") }
-        let missing = ResourceLocator.missingScripts()
+        let missing = EngineResourceLocator.missingScripts()
         if !missing.isEmpty { lines.append("缺少引擎文件：\(missing.joined(separator: ", "))") }
-        else { lines.append("引擎文件：\(ResourceLocator.scripts.count) 个全部就位") }
-        if let d = ResourceLocator.engineHTML() {
+        else { lines.append("引擎文件：\(EngineResourceLocator.scripts.count) 个全部就位") }
+        if let d = EngineResourceLocator.engineHTML() {
             lines.append("engine.html：已找到（\(d.html.count) 字符）")
         } else {
             lines.append("engine.html：**没找到**")
@@ -323,7 +325,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         guard webView == nil else { return }
         bootLog.removeAll()
         bootLog.append("查找 engine.html…")
-        guard let page = ResourceLocator.engineHTML() else {
+        guard let page = EngineResourceLocator.engineHTML() else {
             lastError = "找不到 engine.html —— 引擎资源没进 bundle"
             bootLog.append("失败：engine.html 不在 bundle 里")
             return
@@ -380,15 +382,15 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
 
     /// 按依赖顺序逐个注入引擎脚本，缺哪个直接报出来
     private func injectEngine() async {
-        let missing = ResourceLocator.missingScripts()
+        let missing = EngineResourceLocator.missingScripts()
         guard missing.isEmpty else {
             lastError = "引擎文件缺失: " + missing.joined(separator: ", ")
             bootLog.append("失败：缺 \(missing.count) 个文件")
             return
         }
-        bootLog.append("开始注入 \(ResourceLocator.scripts.count) 个引擎脚本…")
-        for name in ResourceLocator.scripts {
-            guard let code = ResourceLocator.text(name) else {
+        bootLog.append("开始注入 \(EngineResourceLocator.scripts.count) 个引擎脚本…")
+        for name in EngineResourceLocator.scripts {
+            guard let code = EngineResourceLocator.text(name) else {
                 lastError = "引擎文件读不到: \(name)"
                 return
             }
@@ -642,6 +644,20 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         return fallback.isEmpty ? "引擎" : fallback
     }
 
+
+    private func markReady() {
+        guard !ready else { return }
+        ready = true
+        // ⭐ 标记当前引擎后端（用户能在「测书源」面板看到）
+        if !EngineBackend.useNewEngine { EngineBackend.current = .legacyJS }
+        let ws = bootWaiters; bootWaiters = []
+        ws.forEach { $0.resume() }
+    }
+
+    func waitReady() async {
+        if ready { return }
+        await withCheckedContinuation { bootWaiters.append($0) }
+    }
 
     // MARK: 原生 → JS
 
@@ -982,7 +998,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             return ok(["value": s])
 
         case "importScript":
-            guard let p = args["path"] as? String, let s = ResourceLocator.text(p) else { return err("importScript 找不到 " + (args["path"] as? String ?? "")) }
+            guard let p = args["path"] as? String, let s = EngineResourceLocator.text(p) else { return err("importScript 找不到 " + (args["path"] as? String ?? "")) }
             // 明确用 completion-handler 版本：直接写 evaluateJavaScript(s) 会被解析到
             // async 重载，那边少个 await 就是编译错误
             // 补 \n;void 0; 同 injectEngine：别把脚本完成值交给 WebKit 去桥接

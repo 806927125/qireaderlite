@@ -69,7 +69,7 @@ enum MemoryMeter {
         )
         let kr: kern_return_t = withUnsafeMutablePointer(to: &info) { p in
             p.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { r in
-                task_info(mach_task_self(), task_flavor_t(TASK_VM_INFO), r, &count)
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), r, &count)
             }
         }
         guard kr == KERN_SUCCESS else { return 0 }

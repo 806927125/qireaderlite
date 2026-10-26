@@ -104,9 +104,9 @@ struct EngineLogSheet: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Theme.ink)
                             Spacer()
-                            Text(JSEngineFactory.Kind(storageValue: jsBackend)?.rawValue ?? "WKWebView（独立进程·跟老引擎一样）")
+                            Text(JSEngineFactory.Kind.webView.rawValue)
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(jsBackend == JSEngineFactory.Kind.jsc.storageValue ? .orange : Theme.accent)
+                                .foregroundStyle(Theme.accent)
                         }
                         Text("⭐ 站方 JS 跑在 WebContent **独立进程** ⇒ 它一次吃几 GB 也炸不到 App（老引擎一直这样 ⇒ 一直免疫闪退）。\n⚠️ **JSC 已彻底删除**（2026-10-26）⇒ App 里再没有「跑在 App 进程内」的 JS 运行时。")
                             .font(.caption2)
