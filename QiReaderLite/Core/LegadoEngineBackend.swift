@@ -358,7 +358,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
             self.api = EngineHostAPI(session: self)
             // ⭐ JSC 后端（iOS/macOS 有 JavaScriptCore ⇒ 站方 JS 规则能跑）
             #if canImport(JavaScriptCore)
-            let js: JSExecutor? = JSCExecutor(api: api)
+            // ⭐⭐⭐ **JSC 已从 App 里删除**（2026-10-26 用户明确：「JSC 给我彻底删掉哈」）
+            //   ⇒ 站方 JS 改由 **WKWebView 独立进程** 跑（跟老引擎一样）⇒ 它吃多少内存都炸不到 App ⭐⭐⭐
+            let js: JSExecutor? = JSEngineFactory.make(api)
             #else
             let js: JSExecutor? = nil
             #endif
