@@ -231,6 +231,7 @@ if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
         QiReaderLite/Core/EngineBackend.swift \
         QiReaderLite/Core/ServiceError.swift \
         QiReaderLite/Core/LegadoEngineBackend.swift \
+  QiReaderLite/Core/LRUKeys.swift \
         "$LEGADO_BUILD"/LegadoCore.build/*.o \
         "$LEGADO_BUILD"/SwiftSoup.build/*.o \
         -o "$TMP/engine-test" 2>"$TMP/err5.txt"; then

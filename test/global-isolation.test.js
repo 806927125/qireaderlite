@@ -128,8 +128,13 @@ function probeGlobals(sandbox, jsLib, expr) {
        '会话的 key 是**书源 URL**（⇒ 换源 = 换会话 = 换上下文）');
     ok(/let s = try Session\(source: engineSource, jar: jar, jsLib: source\.jsLib\)/.test(app),
        '每个会话带**自己的 jsLib**（⇒ 站方全局按源隔离）');
-    ok(/if let s = sessions\[key\] \{ lock\.unlock\(\); return s \}/.test(app),
-       '会话会被**复用**（切回 A 时 A 的全局还在，不用重新加载 jsLib）');
+    // ⚠️⚠️ **别把代码形状写死**（2026-10-26 build263 踩到）：
+    //   加了 LRU 之后这一行多了个 `sessionOrder.touch(key)` ⇒ 旧正则直接红
+    //   ⇒ 但**意图没变**：命中 ⇒ 复用 ⇒ 不重新加载 jsLib ⇒ 站方全局还在 ⭐⭐⭐
+    ok(/if let s = sessions\[key\]/.test(app) && /sessionOrder\.touch\(key\)/.test(app),
+       '会话会被**复用**（切回 A 时 A 的全局还在，不用重新加载 jsLib；命中时顺便更新 LRU 顺序）');
+    ok(/maxLiveSessions\s*=\s*\d+/.test(app),
+       '会话数有上限（超出才淘汰 ⇒ 内存不随源数涨）');
     ok(/case "sourceHosts": out = \["hosts": try engine\.sourceHosts\(\)\]/.test(app),
        '线路列表走的是**当次源**的会话（不是全局共享的那份）');
 

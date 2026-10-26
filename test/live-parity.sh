@@ -47,6 +47,7 @@ echo "▶ 编译新引擎探针…"
   QiReaderLite/Core/SourceVariables.swift \
   QiReaderLite/Core/EngineBackend.swift \
   QiReaderLite/Core/LegadoEngineBackend.swift \
+  QiReaderLite/Core/LRUKeys.swift \
   "$LEGADO_BUILD"/LegadoCore.build/*.o \
   "$LEGADO_BUILD"/SwiftSoup.build/*.o \
   -o "$TMP/new-live" 2>"$TMP/err.txt"

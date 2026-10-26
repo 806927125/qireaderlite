@@ -126,8 +126,11 @@ const C_JS = "var host = ['C1','C2']; function getArguments(v,k){ return 'C-SERV
        '有「按源缓存的会话表」（⇒ 每个源一个引擎 = 一个 JS 上下文）');
     ok(/let key = source\.bookSourceUrl/.test(app),
        '会话的 key 是**书源 URL**（⇒ 换源 = 换上下文 ⇒ 同名全局不互相覆盖）');
-    ok(/if let s = sessions\[key\] \{ lock\.unlock\(\); return s \}/.test(app),
+    // ⚠️ 别把代码形状写死（build263 加了 LRU ⇒ 旧正则会假红；**意图没变**）
+    ok(/if let s = sessions\[key\]/.test(app) && /sessionOrder\.touch\(key\)/.test(app),
        '会话会被**复用**（切回 A 时 A 的全局还在 ⇒ 不用重新加载 jsLib）');
+    ok(/maxLiveSessions\s*=\s*\d+/.test(app),
+       '会话数有上限（超出才淘汰 ⇒ 内存不随源数涨）');
     const se = engineSwiftSrc('Pipeline/SourceEngine.swift');
     ok(/public func loadJsLib\(_ code: String\) throws/.test(se),
        '引擎的 loadJsLib 是 **throws**（抛异常 ⇒ 宿主能拒绝这个源）');
