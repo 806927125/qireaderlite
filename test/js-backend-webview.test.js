@@ -71,7 +71,7 @@ ok(/__hostJSON/.test(host), '必须在 WebView 里提供 __hostJSON（引擎的 
 // ④ ⭐⭐⭐ 形态链必须用引擎的同一份真相（两个后端不许漂）
 ok(/JSEvalShape\.scripts\(for:/.test(exec), '必须用 JSEvalShape.scripts(for:scope:)（与 JSC 版同一份形态链）');
 ok(/JSScopeBuilder\.build\(/.test(exec), '必须用 JSScopeBuilder.build(_:)（与 JSC 版同一份 scope 前导）');
-ok(/JSHostAPI\.hostWrappers\(\)/.test(host), '必须注入引擎的宿主对象包装 JSHostAPI.hostWrappers()');
+ok(/JSScopeBuilder\.hostWrappers()/.test(host), '必须注入引擎的宿主对象包装 JSScopeBuilder.hostWrappers()');
 ok(/JavaCompat\.sources/.test(host), '必须注入引擎的 Java 兼容层 JavaCompat.sources');
 ok(/JSScopeBuilder\.documentStub/.test(host), '必须注入 document 替身（站方 jsLib 有 117 处 document.）');
 
