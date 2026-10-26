@@ -251,7 +251,7 @@ final class SourceService {
         // ⚠️ **超时后引擎线程还在烧 CPU**（JSC 没有中断 API）⇒
         //   ⇒ 必须**换掉卡死的会话**（JSC context 复用 ⇒ 死循环会传染）⭐
         //   ⇒ 并且**熔断**（否则反复烧 CPU ⇒ 设备发烫 ⇒ 又被杀）⭐⭐⭐
-        return try await Self.withRealTimeout(seconds: budget) {
+        let out = try await Self.withRealTimeout(seconds: budget) {
             try LegadoEngineBackend.shared.invoke(op, payload, source: source)
         } onTimeout: {
             // ⭐⭐⭐ **换掉卡死的会话**（JSC context 是复用的 ⇒ 里面死循环 ⇒ 后面每个 op 都卡在锁上）
@@ -277,6 +277,44 @@ final class SourceService {
                     + " ⇒ 请换一条线路或换本书源")
             }
         }
+        // ⭐⭐⭐⭐⭐ **内存水位自检 + 超限自救**（2026-10-26 jetsam 6.8GB 实证）
+        //
+        // ⚠️ 为什么放在**这里**（op 跑完之后，而不是 op 里面）：
+        //   · 放 op 里面 ⇒ 正在跑的引擎调用会被中途掀掉（结果丢失 ⇒ 用户白等）
+        //   · 放 op 外面 ⇒ 每次引擎调用都测一次 ⇒ 涨上来的**第一时间**就能看见 ⭐⭐⭐
+        Self.checkMemoryWaterline(op: op)
+        return out
+    }
+
+    /// ⭐⭐⭐⭐⭐ **内存水位自检 + 超限自救**（2026-10-26 jetsam 6.8GB 实证）
+    ///
+    /// ⚠️⚠️⚠️ **真机事故**：
+    ///   jetsam 记录：`QingYue` **单进程** `rpages = 425984` ⇒ ×16KB = **6.8GB**
+    ///   ⇒ **被系统内存杀** ⇒ 现象 =「闪退」+ **没有 .ips 崩溃日志**⭐⭐⭐
+    ///   ⇒ 也就是说：**在被杀之前，App 自己完全不知道内存已经涨到多少** ⭐⭐⭐
+    ///
+    /// ⭐⭐⭐ **本函数的策略（先自救，再观察）**：
+    ///   ① 采样 `phys_footprint`（**jetsam 同一个口径**）⇒ 记峰值
+    ///   ② 超阈值（600MB）⇒ **清空引擎会话**（= **重建 JS context**）
+    ///      ⇒ 站方 jsLib 往 globalThis 塞的东西、解析出来的 DOM 树 ⇒ **一次性还回去** ⭐⭐⭐
+    ///   ③ 记一笔「清理前 → 清理后」的水位 ⇒ **清得有没有用**一眼可见 ⭐⭐⭐
+    ///      ⇒ 若清完还是很高 ⇒ 说明累积点**不在引擎会话里**（面板会如实显示）⭐⭐⭐
+    ///
+    /// ⚠️ **为什么不在低于阈值时也清**：低水位就清 ⇒ 白白丢会话（登录态/变量要重建）
+    ///   ⇒ 只在**真的危险**时才动手 ⭐⭐⭐
+    /// ⚠️ **为什么有冷却期**：清完还是高 ⇒ 再清一百次也没用 ⇒ 别刷屏、别连坐好会话 ⭐⭐⭐
+    private static func checkMemoryWaterline(op: String) {
+        let bytes = MemoryMeter.sample()
+        guard MemoryMeter.record(bytes: bytes) else { return }   // 未超限 ⇒ 什么都不做
+        guard MemoryMeter.canAutoResetNow else { return }        // 冷却期内 ⇒ 不重复清
+        let beforeMB = MemoryMeter.currentMB
+        // ⭐⭐⭐ **清空引擎会话 = 重建 JS context**（老引擎退役后，JSC context 就在会话里）
+        LegadoEngineBackend.shared.dropAllSessions()
+        let after = MemoryMeter.sample()
+        MemoryMeter.noteAutoReset(fromMB: beforeMB, toMB: after / (1024 * 1024))
+        RuleSandbox.shared.appendLog(
+            "[内存] 「\(op)」后占用 \(beforeMB) MB ≥ 限额 \(MemoryMeter.autoResetThresholdMB) MB"
+            + " ⇒ 已清空引擎会话（重建 JS context）⇒ 现在 \(after / (1024 * 1024)) MB")
     }
 
     /// ⭐⭐⭐⭐⭐ **全局「卡死线程」配额**（2026-10-25 真机闪退的第二层防线）

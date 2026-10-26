@@ -174,6 +174,13 @@ public class UIWindowScene: UIScene { public var keyWindow: UIWindow? { UIWindow
 public class UIApplication: NSObject {
     public static let shared = UIApplication()
     public var connectedScenes: Set<UIScene> = []
+    /// ⭐ Linux 沙盒补 `open`（真机有 ⇒ RuleSandbox 的「用浏览器打开」用得到）
+    @discardableResult
+    public func open(_ url: URL, options: [String: Any] = [:],
+                     completionHandler: ((Bool) -> Void)? = nil) -> Bool {
+        completionHandler?(false)
+        return false
+    }
 }
 
 public class UIDevice: NSObject {

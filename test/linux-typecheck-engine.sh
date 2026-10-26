@@ -44,16 +44,23 @@ echo "▶ LegadoCore: $LEGADO_MODULES"
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
-"$SWIFTC" -typecheck -swift-version 5 \
+"$SWIFTC" -typecheck -swift-version 5 -strict-concurrency=minimal \
   -I "$LEGADO_MODULES" \
   test/linux-shims/CombineShim.swift \
   test/linux-shims/EngineBackendStubs.swift \
+  test/linux-shims/FoundationCookieShim.swift \
   QiReaderLite/Core/BookSource.swift \
   QiReaderLite/Core/Book.swift \
   QiReaderLite/Core/SourceVariables.swift \
   QiReaderLite/Core/EngineBackend.swift \
   QiReaderLite/Core/LegadoEngineBackend.swift \
   QiReaderLite/Core/SourceService.swift \
+  QiReaderLite/Core/ServiceError.swift \
+  QiReaderLite/Core/SourceDictCache.swift \
+  QiReaderLite/Core/SourceRawArchive.swift \
+  QiReaderLite/Core/AppPaths.swift \
+  QiReaderLite/Core/HostTools.swift \
+  QiReaderLite/Core/MemoryMeter.swift \
   2>&1 | tee "$OUT/log.txt"
 
 ERRS=$(grep -c "error:" "$OUT/log.txt" || true)

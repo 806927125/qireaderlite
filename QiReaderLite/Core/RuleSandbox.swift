@@ -117,8 +117,10 @@ final class RuleSandbox: NSObject, ObservableObject {
     ///
     /// ⚠️ 之前是「重建 WKWebView」⇒ 现在是「清新引擎的会话」⇒ 语义对等 ⭐⭐⭐
     func resetEngine() {
+        let beforeMB = MemoryMeter.currentMB
         LegadoEngineBackend.shared.dropAllSessions()
-        appendLog("[宿主] 引擎已重置（新引擎会话已清空）")
+        let after = MemoryMeter.sample()
+        appendLog("[宿主] 引擎已重置（新引擎会话已清空 · 内存 \(beforeMB) → \(after / (1024 * 1024)) MB）")
     }
 
     /// 给界面用的一行状态
@@ -132,6 +134,12 @@ final class RuleSandbox: NSObject, ObservableObject {
         //   ⇒ 自己卡在 2 MB/小时 ⇒ 超了就停落盘 ⇒ **再也不会被系统杀** ⭐⭐⭐
         //   ⇒ 这一行让「谁在写盘」一眼可见（不用再猜）⭐⭐⭐
         lines.append("本小时写盘：\(DiskWriteMeter.currentHourText)（限额 2.00 MB/小时 · iOS 约 1.07 GB/天）")
+        // ⭐⭐⭐⭐⭐ **内存水位**（2026-10-26 jetsam 6.8GB 实证 ⇒ 之前面板没有这一项）
+        //   ⇒ jetsam 记录：`QingYue` 单进程 425984 页 ×16KB = **6.8GB** ⇒ 被系统内存杀
+        //   ⇒ 现象 =「闪退」+ **没有 .ips 崩溃日志** ⇒ 之前完全看不见内存水位 ⭐⭐⭐
+        //   ⇒ 这一行 + 超限自动清（清引擎会话 = 重建 JS context）⇒ **抢在系统杀之前自救** ⭐⭐⭐
+        _ = MemoryMeter.sample()
+        lines.append(MemoryMeter.panelLine)
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))
@@ -292,17 +300,25 @@ final class RuleSandbox: NSObject, ObservableObject {
         return docs.appendingPathComponent("engine-log.txt")
     }()
 
-    private static let diskLogLock = NSLock()
+    private nonisolated(unsafe) static let diskLogLock = NSLock()
     /// ⭐⭐⭐⭐⭐ **待落盘的缓冲**（批量写 ⇒ 不再每行一次 IO）
-    private static var diskBuffer: [String] = []
+    ///
+    /// ⚠️⚠️⚠️ **为什么标 `nonisolated(unsafe)`**（2026-10-26 类型检查门禁撞到）：
+    ///   `RuleSandbox` 整体是 `@MainActor` ⇒ 它的 static 默认带**主 actor 隔离**
+    ///   ⇒ 而这个缓冲**故意**在 `diskQueue.async`（后台队列）里读写
+    ///   ⇒ Swift 6 的编译器会判「主 actor 隔离的量被 Sendable 闭包碰了」⇒ **报 error**
+    ///   ⇒ 但它**本来就由 `diskLogLock` 保护**（锁 ⇒ 跨线程安全）⇒ 与主 actor 无关 ⭐⭐⭐
+    ///   ⇒ ⇒ 标 `nonisolated(unsafe)`：**语义对**（锁才是保护者）+ **Swift 6 也能编** ⭐⭐⭐
+    ///   ⇒ ⚠️ 只能标在**有锁保护**的量上 ⇒ 没锁的量不许这样标 ⭐⭐⭐
+    private nonisolated(unsafe) static var diskBuffer: [String] = []
     /// ⭐⭐⭐ **落盘队列**（后台 ⇒ 不占主线程）
-    private static let diskQueue = DispatchQueue(label: "qr.disklog", qos: .utility)
+    private nonisolated(unsafe) static let diskQueue = DispatchQueue(label: "qr.disklog", qos: .utility)
 
     /// ⭐⭐⭐⭐⭐ **日志文件上限**（256KB ⇒ 足够读完一次崩溃现场）
     ///
     /// ⚠️ 以前是 1MB + **每次轮转都 `.atomic` 重写 600KB**
     ///   ⇒ 一次轮转 = 读 1MB + 写 600KB(临时) + rename ⇒ **写盘量放大好几倍** ⭐⭐⭐
-    private static let diskLogLimit = 256 * 1024
+    private nonisolated(unsafe) static let diskLogLimit = 256 * 1024
 
     /// ⭐⭐⭐⭐⭐ **批量落盘**
     ///
@@ -333,11 +349,16 @@ final class RuleSandbox: NSObject, ObservableObject {
     ///   ⇒ 一天最多 4.8 MB ⇒ **远低于限额**）⭐⭐⭐
     /// ⇒ 超了之后**内存日志照常**（面板还能看）⇒ 只是不再落盘 ⭐⭐⭐
     private static let diskLinesPerHour = 2000
-    private static var diskLinesThisHour = 0
-    private static var diskHourStart = Date()
+    /// ⭐⭐ 同上：写盘限流计数由 `diskLogLock` 保护 ⇒ 不该带主 actor 隔离
+    private nonisolated(unsafe) static var diskLinesThisHour = 0
+    private nonisolated(unsafe) static var diskHourStart = Date()
 
     /// ⭐⭐⭐ **把缓冲刷到磁盘**（后台队列内调用）
-    private static func flushDiskLog() {
+    /// ⭐⭐⭐⭐⭐ **把缓冲刷到磁盘**（锁保护的量 ⇒ 与主 actor 无关 ⇒ 标 `nonisolated`）
+    ///
+    /// ⚠️ 同上：它在**后台队列**里被调 ⇒ 不能带 `@MainActor` 隔离
+    ///   ⇒ 数据由 `diskLogLock` 保护 ⇒ 语义上安全 ⭐⭐⭐
+    private nonisolated static func flushDiskLog() {
         diskLogLock.lock()
         let lines = diskBuffer
         diskBuffer.removeAll()

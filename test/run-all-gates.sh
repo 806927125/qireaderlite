@@ -84,6 +84,9 @@ declare -a GATES=(
   "rules:test/rules.test.js"
   "e2e:test/e2e.test.js"
   "swift-bookdto:test/swift-bookdto.test.js"
+  # ⭐⭐⭐⭐⭐ 内存水位（2026-10-26 jetsam 6.8GB 实证 ⇒ 面板原来没有内存项）
+  #   ⇒ 钉：量的是 phys_footprint（jetsam 口径）/ 面板有内存行 / 超限自己先清
+  "memory-waterline:test/memory-waterline.test.js"
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
   "real-timeout-guard:test/real-timeout-guard.test.js"
@@ -209,6 +212,30 @@ for entry in "${GATES[@]}"; do
 done
 
 printf "%s\n" "────────────────────────────────────────────────────"
+
+# ── ⭐⭐⭐⭐⭐ Linux 类型检查门禁（2026-10-26 修绿）──
+#   ⚠️⚠️ **以前这两条是「已知红」**（shim 跟不上 RuleSandbox 演进）⇒ 没人跑 ⇒ 假绿
+#     ⇒ 2026-10-26 补齐了清单 + 加了 shim + 标了 nonisolated(unsafe) ⇒ **两条都绿了** ⭐⭐⭐
+#   ⇒ 现在它们进「全量门禁」⇒ 改过的 Core/ 文件**每次都被真类型检查**（3 秒）⭐⭐⭐
+#   ⇒ 适配层（LegadoEngineBackend）用 **URLSession** ⇒ Linux 编不了 ⇒ 它有**独立门禁** ⭐⭐⭐
+for tc_gate in "typecheck-基础层:test/linux-typecheck.sh" "typecheck-适配层:test/linux-typecheck-engine.sh"; do
+  tc_name="${tc_gate%%:*}"
+  tc_script="${tc_gate##*:}"
+  if bash "$tc_script" > /tmp/tc.out 2>&1; then
+    if grep -qE '没找到 swiftc|找不到 swiftc|没找到 LegadoCore|跳过' /tmp/tc.out; then
+      printf "%-24s %-22s %s\n" "$tc_name" "⚠️ 跳过" "环境不行（见 /tmp/tc.out）⇒ **没验到**，不算通过"
+      SKIPPED+=("$tc_name")
+    else
+      printf "%-24s %-22s %s\n" "$tc_name" "✅" "$(grep -oE '0 错误|通过 [0-9]+' /tmp/tc.out | tail -1)"
+      TOTAL_PASS=$((TOTAL_PASS+1))
+    fi
+  else
+    printf "%-24s %-22s %s\n" "$tc_name" "❌ 有失败" "$(grep -c 'error:' /tmp/tc.out) 个类型错误"
+    grep -E "error:" /tmp/tc.out | head -5
+    TOTAL_FAIL=$((TOTAL_FAIL+1))
+    FAILED+=("$tc_name")
+  fi
+done
 
 # ── Swift 原生层：swiftc 真编真跑（Core/ 是纯 Foundation → 沙盒里能跑）──
 # ⚠️ 这一步是「引擎能力用 Swift 写」能落地的**前提**：
