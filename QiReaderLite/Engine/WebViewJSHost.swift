@@ -77,6 +77,12 @@ final class WebViewJSHost: NSObject, WKNavigationDelegate, WKUIDelegate {
     private func injectBootJS() {
         var parts: [String] = []
         // ① Java 兼容层（`JavaImporter` / `Packages.*` / 站方 jsLib 的地基）
+        // ⭐⭐⭐ **壳全局**（必须排在包装函数**之前**）
+        //   JSC 路径的 `makeContext` 里有这一行：`var source={},book={},…`
+        //   ⇒ 少了它 ⇒ `JSHostAPI.hostWrappers()` 里的 `source.getVariable = function(){…}`
+        //     全部落进 `try{…}catch(e){}` 被**静默吞掉** ⇒ 站方 JS 拿到 undefined
+        //     ⇒ 抛「source.getVariable is not a function」⇒ 真机只看到「发生了 JavaScript 异常」⭐⭐⭐
+        parts.append("var source={},book={},chapter={},cookie={},cache={},java={};")
         parts.append(contentsOf: JavaCompat.sources)
         // ② 宿主对象包装（`source.getVariable` / `java.*` … 全部走 `__hostJSON`）
         parts.append(contentsOf: JSScopeBuilder.hostWrappers())
@@ -126,7 +132,19 @@ final class WebViewJSHost: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
         wv.evaluateJavaScript(js) { value, error in
             if let error {
-                completion(.failure(error))
+                // ⭐⭐⭐ **把 WebKit 的通用文案换成真错误**（「发生了 JavaScript 异常」什么都说明不了）
+                let ns = error as NSError
+                var msg = ns.localizedDescription
+                if let wk = ns.userInfo[WKError.javaScriptExceptionMessage] as? String, !wk.isEmpty {
+                    msg = wk
+                }
+                let line = ns.userInfo[WKError.javaScriptExceptionLine] as? Int
+                let col = ns.userInfo[WKError.javaScriptExceptionColumn] as? Int
+                if let line {
+                    msg += "（第 \(line) 行\(col.map { "，第 \($0) 列" } ?? "")）"
+                }
+                completion(.failure(NSError(domain: "WebViewJSHost", code: ns.code,
+                                          userInfo: [NSLocalizedDescriptionKey: msg])))
             } else {
                 completion(.success(value as? String))
             }

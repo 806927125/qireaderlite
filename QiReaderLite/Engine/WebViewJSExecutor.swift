@@ -58,6 +58,24 @@ final class WebViewJSExecutor: JSExecutor {
         baselineGlobals = boot
     }
 
+    /// ⭐⭐⭐ **刷新宿主对象的属性**（JSC 路径 `injectHostProperties` 的等价物）
+    ///
+    /// ⚠️ **为什么必须有**：JSC 每次 op 前都把 `source.name` / `source.bookSourceUrl` 这类
+    ///   **属性值**重新写进 JS（不只方法）⇒ WebView 若只在启动时写一次 ⇒ **属性是过期的**
+    ///   ⇒ 站方 JS 读到上一次的 source ⇒ 静默出错（不报错、结果不对）⭐⭐⭐
+    /// ⇒ 方法走 `__hostJSON`（每次都新）⇒ **只有属性需要刷新** ⭐
+    private func refreshHostProperties() {
+        var lines: [String] = []
+        for name in ["source", "book", "chapter", "cookie", "cache"] {
+            guard let obj = api.hostObject(named: name) else { continue }
+            for (prop, value) in obj.properties {
+                lines.append("try{\(name).\(prop)=\(JSScopeBuilder.jsonLiteral(value));}catch(e){}")
+            }
+        }
+        guard !lines.isEmpty else { return }
+        _ = try? evaluateSync(lines.joined(separator: "\n"))
+    }
+
     func run(_ code: String, context: JSRunContext) throws -> JSONValue {
         // ⭐⭐⭐ **全局串行**（所有源共用一台 WebView ⇒ 一条 JS 线程 ⇒ 只能一个一个来）
         //   ⇒ 同时也是「同步通道不会串」的保证（当前上下文唯一）⭐
@@ -69,6 +87,8 @@ final class WebViewJSExecutor: JSExecutor {
         // ⭐ 同步通道的「当前上下文」= 本执行器（同步通道在主线程回调 ⇒ 必须能拿到它）
         WebViewJSBridge.shared.current = self
 
+        // ⭐⭐⭐ 刷新宿主属性（属性是值 ⇒ 必须每次 op 刷新）★
+        refreshHostProperties()
         // ⭐⭐ 清理站方残留的全局（复用 context 的代价 ⇒ 必须治）★ 语义与 JSC 版一致
         WebViewJSBridge.shared.removeGlobals(notIn: baselineGlobals)
 
