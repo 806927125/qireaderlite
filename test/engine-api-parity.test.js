@@ -186,7 +186,14 @@ if (fs.existsSync(LEGACY_JS)) {
  *  ⚠️⚠️ **白名单不许悄悄长大** ⇒ 新增缺口 ⇒ 门禁红 ⇒ 必须人工决策（要么补、要么明确记一笔）⭐⭐⭐
  *  ⇒ 依据：NovelHub 聚合源自己的注释实证 ——「org.jsoup.Jsoup.parse/select 在栖阅 iOS 的 JSC 上不工作」
  *  ⇒ ⇒ 栖阅自己就不支持 ⇒ 但**轻阅老引擎支持** ⇒ ⇒ **老引擎退役时丢了这份能力** ⇒ ⇒ 待吸收 ⭐⭐⭐ */
-const KNOWN_PENDING = new Set(['org.jsoup.Jsoup.parse']);
+// ⭐⭐⭐⭐⭐ **「待吸收」清单**（老引擎有 · 语料在用 · 新引擎还没有）
+//
+// ⚠️⚠️ **2026-10-26：`org.jsoup.Jsoup.parse` 已补上 ⇒ 从清单里移除了**（清白名单，防腐烂）⭐⭐⭐
+//   · 引擎仓新增 `Resources/org-jsoup.js`（**纯 JS** ⇒ JSC / Node 共用同一份 ⇒ 沙盒验的就是真机跑的）
+//   · 语义照抄老引擎 `reference/js/org-jsoup.js`（Element 46 / Doc 22 / Elements 39 个方法逐条对账）
+//   · 站方 43 处真实用法（剥注释后统计）全部覆盖
+// ⇒ ⇒ 现在**清单是空的** ⇒ 语料里再出现「新引擎没有的能力」⇒ **直接红**（不许悄悄长大）⭐⭐⭐
+const KNOWN_PENDING = new Set();
 
 /**
  * ⭐⭐⭐⭐⭐ **「名字在、但只是替身」的能力面**（2026-10-26 补 `document` 时立起来的）

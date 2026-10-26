@@ -44,6 +44,7 @@ declare -a GATES=(
   "login-formvalues:test/login-formvalues.test.js"
   "source-getput:test/source-getput.test.js"
   "js-booklist:test/js-booklist.test.js"
+  "js-orgjsoup:test/js-orgjsoup.test.js"
   "data-url-guard:test/data-url-guard.test.js"
   "global-restore:test/global-restore.test.js"
   "book-raw:test/book-raw.test.js"
