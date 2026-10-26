@@ -15,7 +15,39 @@ struct QiReaderLiteApp: App {
         UserDefaults.standard.removeObject(forKey: "qr.fallbackLegacy")
         UserDefaults.standard.removeObject(forKey: "qr.engine.legacy240")
         // 引擎沙盒尽早起来，首个界面就要用到
-        Task { @MainActor in RuleSandbox.shared.boot() }
+        Task { @MainActor in
+            RuleSandbox.shared.boot()
+            // ⭐⭐⭐⭐⭐ **JS 后端**（2026-10-26）：站方 JS 跑在 WKWebView 的**独立进程**（跟老引擎一样）
+            Self.installJSBackend()
+        }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **装 JS 后端**（Core 不能 import WebKit ⇒ 由这里注册实现）
+    @MainActor
+    static func installJSBackend() {
+        let raw = UserDefaults.standard.string(forKey: JSEngineFactory.Kind.storageKey)
+            ?? JSEngineFactory.Kind.webView.storageValue
+        let kind = JSEngineFactory.Kind(storageValue: raw) ?? .webView
+        JSEngineFactory.setKind(kind)
+        switch kind {
+        case .webView:
+            // ⭐ 站方 JS 跑在 **WebContent 独立进程** ⇒ 它吃多少内存都炸不到 App
+            WebViewJSHost.shared.boot()
+            // ⭐ 同步通道装一次（老引擎同款：JS 用 prompt 同步问原生）
+            WebViewJSHost.shared.syncHandler = { payload in
+                WebViewJSBridge.shared.handleSync(payload)
+            }
+            JSEngineFactory.install { api in WebViewJSExecutor(api: api) }
+        case .jsc:
+            // ⚠️ 跑在 **App 进程内** ⇒ 站方脚本的内存算我们的 ⇒ 有闪退风险（留作对照）
+            JSEngineFactory.install { api in
+                #if canImport(JavaScriptCore)
+                return JSCExecutor(api: api)
+                #else
+                return nil
+                #endif
+            }
+        }
     }
 
     var body: some Scene {

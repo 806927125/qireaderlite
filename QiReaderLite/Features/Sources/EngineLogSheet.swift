@@ -25,6 +25,12 @@ struct EngineLogSheet: View {
     private var currentBackendName: String {
         EngineBackend.Kind(rawValue: backendKind)?.rawValue ?? EngineBackend.Kind.swiftNew.rawValue
     }
+    /// ⭐⭐⭐⭐⭐ **JS 后端**（2026-10-26）—— 站方 JS 跑在**哪个进程**里
+    ///
+    /// ⭐ **WKWebView** ⇒ 站方 JS 在 **WebContent 独立进程** ⇒ 它一次吃几 GB 也**炸不到 App**
+    ///   （老引擎一直是这样 ⇒ 一直免疫闪退）⭐⭐⭐
+    /// ⭐ **JSC** ⇒ 跑在 **App 进程内** ⇒ 站方脚本的内存算我们的 ⇒ 6.8GB ⇒ jetsam 秒杀 ⭐
+    @AppStorage(JSEngineFactory.Kind.storageKey) private var jsBackend = JSEngineFactory.Kind.webView.storageValue
     /// 主链路是不是走新引擎（**恒为真** ⇒ 只剩一个引擎）
     private var isNewEngine: Bool { true }
     /// 当前是不是新引擎在服务
@@ -83,6 +89,40 @@ struct EngineLogSheet: View {
                             }
                         }
                         Text("主链路（搜索 / 发现 / 详情 / 目录 / 正文）跑**新 Swift 引擎**（legado-engine）。\n⭐ 老 JS 引擎已于 2026-10-25 退役 ⇒ 没有开关、没有自动回退 ⇒ 失败会如实报出来。")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+
+                    // ── ⭐⭐⭐⭐⭐ JS 后端（2026-10-26 · 闪退真凶的方向性修法）──
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Text("JS 后端")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.ink)
+                            Spacer()
+                            Text(JSEngineFactory.Kind(storageValue: jsBackend)?.rawValue ?? "WKWebView（独立进程·跟老引擎一样）")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(jsBackend == JSEngineFactory.Kind.jsc.storageValue ? .orange : Theme.accent)
+                        }
+                        Picker("JS 后端", selection: $jsBackend) {
+                            ForEach(JSEngineFactory.Kind.allCases, id: \.self) { k in
+                                Text(k == .webView ? "WKWebView" : "JSC").tag(k.storageValue)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: jsBackend) { _, newValue in
+                            let kind = JSEngineFactory.Kind(storageValue: newValue) ?? .webView
+                            JSEngineFactory.setKind(kind)
+                            // ⭐ 换后端 ⇒ 旧会话里的执行器还是老的 ⇒ 全部作废（新建的才用新后端）
+                            LegadoEngineBackend.shared.dropAllSessions()
+                            if kind == .webView {
+                                Task { @MainActor in WebViewJSHost.shared.boot() }
+                            }
+                        }
+                        Text("⭐ **WKWebView**：站方 JS 跑在 WebContent **独立进程** ⇒ 它一次吃几 GB 也炸不到 App（老引擎一直这样 ⇒ 一直免疫闪退）。\n⚠️ **JSC**：跑在 App 进程内 ⇒ 站方脚本的内存算我们的 ⇒ 有闪退风险。")
                             .font(.caption2)
                             .foregroundStyle(Theme.sub)
                             .fixedSize(horizontal: false, vertical: true)

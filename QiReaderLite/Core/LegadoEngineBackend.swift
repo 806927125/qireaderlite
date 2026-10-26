@@ -371,7 +371,12 @@ final class LegadoEngineBackend: @unchecked Sendable {
             self.api = EngineHostAPI(session: self)
             // ⭐ JSC 后端（iOS/macOS 有 JavaScriptCore ⇒ 站方 JS 规则能跑）
             #if canImport(JavaScriptCore)
-            let js: JSExecutor? = JSCExecutor(api: api)
+            // ⭐⭐⭐⭐⭐ **JS 后端由工厂决定**（2026-10-26）
+            //   · `WKWebView`（默认）⇒ 站方 JS 跑在 **WebContent 独立进程** ⇒ 跟老引擎一样 ⇒
+            //     站方脚本一次吃几 GB 也**炸不到 App 进程** ⇒ jetsam 秒杀不了我们 ⭐⭐⭐
+            //   · `JSC` ⇒ 跑在 App 进程内 ⇒ 站方脚本的内存算我们的 ⇒ 6.8GB 实证会闪退 ⭐
+            //   ⇒ Core 不能 import WebKit ⇒ 实现由 UI 层注册进 `JSEngineFactory` ⭐
+            let js: JSExecutor? = JSEngineFactory.make(api)
             #else
             let js: JSExecutor? = nil
             #endif

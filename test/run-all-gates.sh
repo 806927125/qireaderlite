@@ -96,6 +96,10 @@ declare -a GATES=(
   #   ⇒ 连带 JSC 上下文 / HTTP 缓存 / 整份源永久占着 ⇒ 会话封顶形同虚设 ⭐⭐⭐
   #   ⇒ 钉：api 持有的 session 必须是 weak / 淘汰要真删 / 清会话要 invalidate
   "engine-leak-cycle:test/engine-leak-cycle.test.js"
+  # ⭐⭐⭐⭐⭐ **JS 后端必须在独立进程**（2026-10-26 jetsam 6.8GB 实证）
+  #   ⇒ 站方 JS 跑在 App 进程内（JSC）⇒ 它一次吃几 GB ⇒ jetsam 秒杀 App
+  #   ⇒ 老引擎免疫是因为 JS 跑在 WKWebView 的 WebContent 独立进程 ⇒ 现在新引擎也这么做 ⭐⭐⭐
+  "js-backend-webview:test/js-backend-webview.test.js"
   # ⭐⭐⭐⭐⭐ 阅读器排版缓存上限（2026-10-26 jetsam 6.8GB 的**真凶**）
   #   ⇒ renders 每章存一份 NSLayoutManager/NSTextContainer 排版对象 ⇒ 不封顶就 GB 级
   #   ⇒ 钉：上限是个小数字 / 插入后真的淘汰 / 只动 renders（texts 是目录依赖）
