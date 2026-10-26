@@ -495,10 +495,17 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   //   ⇒ 新架构里**根本没有 WKWebView** ⇒ 这两个失败模式**物理上不可能发生**
   //   ⇒ 等价语义 = 「App 侧拿到的是**解出来的 JSON**，失败时**带原因**而不是静默空」⭐⭐⭐
 
-  // ① 老桥接不许有残留（老引擎删干净的**可执行证据**）
-  ok(!/invokeTail/.test(sb), 'RuleSandbox 里没有 invokeTail（老 WKWebView 串行链已退役）');
-  ok(!/callAsyncJavaScript/.test(sb), 'RuleSandbox 里没有 callAsyncJavaScript（老桥接已退役）');
-  ok(!/typeof s !== 'string'/.test(sb), 'RuleSandbox 里没有老桥接的「再判一次 typeof」');
+  // ① ⭐⭐⭐ **老桥接【回来了】**（2026-10-26 用户明确：「换回老引擎」「JSC 给我彻底删掉」）
+  //   ⇒ 以前这几条断言的是「老桥接不许有残留」（那时老引擎被物理删了）
+  //   ⇒ ⇒ 现在**翻过来钉**：老桥接必须在 ⇒ 而且它带的那几道保护也必须���
+  //   （`invokeTail` 串行链 / `callAsyncJavaScript` / 「再判一次 typeof」/ `WKError` 分类）
+  //   ⇒ 这些正是**防 WebKit code 5 白屏**的那几道 ⭐⭐⭐
+  ok(/invokeTail/.test(sb), 'RuleSandbox 里有 invokeTail（老 WKWebView 串行链已恢复）');
+  ok(/callAsyncJavaScript/.test(sb), 'RuleSandbox 里有 callAsyncJavaScript（老桥接已恢复）');
+  ok(/typeof s !== 'string'/.test(sb), 'RuleSandbox 里有老桥接的「再判一次 typeof」（防 code 5 白屏）');
+  ok(/WKError/.test(sb), 'RuleSandbox 里有 WKError 分支（老桥接的错误分类已恢复）');
+  // ⭐⭐⭐ **JSC 必须从 App 里消失**（用户明确要求）
+  ok(!/JSCExecutor\(/.test(backend), 'App 侧不许再 new JSCExecutor（JSC 已彻底删除 ⇒ 只走 WKWebView）');
 
   // ② 新边界：值是**从 JSON 解出来的**（不是活的 JS 对象）
   ok(/JSONSerialization\.jsonObject|JSONDecoder/.test(backend),

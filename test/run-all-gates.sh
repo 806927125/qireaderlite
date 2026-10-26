@@ -84,9 +84,10 @@ declare -a GATES=(
   "rules:test/rules.test.js"
   "e2e:test/e2e.test.js"
   "swift-bookdto:test/swift-bookdto.test.js"
-  # ⭐⭐⭐⭐⭐ 内存水位（2026-10-26 jetsam 6.8GB 实证 ⇒ 面板原来没有内存项）
-  #   ⇒ 钉：量的是 phys_footprint（jetsam 口径）/ 面板有内存行 / 超限自己先清
-  "memory-waterline:test/memory-waterline.test.js"
+  # ⭐⭐⭐⭐⭐ 内存水位（2026-10-26 jetsam 6.8GB 实证）
+  #   ⇒ 面板有内存行（phys_footprint = jetsam 同一口径）
+  #   ⇒ ⭐ **熔断/采样器/自动清理那套已拆**（2026-10-26 用户明确：「内存熔断啥的就不要了」）⇒ 这条门禁一并删
+  #   ⇒ 防撑爆靠**闸门**（变量表/响应体/缓存/桥接层封顶）+ **老引擎的独立进程** ⇒ 门禁在 js-backend-webview 里
   # ⭐⭐⭐⭐⭐ 引擎会话封顶（2026-10-26 jetsam 6.8GB 真凶 ⇒ 6.8GB 的真正来源）
   #   ⇒ 一个源 = 一个 JSC context ⇒ 会话只增不减 ⇒ 内存随「用过的源数」涨
   #   ⇒ 钉：会话有上限（LRU）/ 全源搜索并发有上限 / 面板看得见

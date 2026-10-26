@@ -28,9 +28,9 @@ echo "▶ 工具链: $("$SWIFT_BIN" --version 2>/dev/null | head -1)"
 
 # Linux 上没有 SwiftUI / WebKit / UIKit 模块，把 import 剥掉，用 shim 提供符号
 sed 's/^import SwiftUI$//' QiReaderLite/Core/Store.swift > "$OUT/Store.swift"
-sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' -e 's/^import SwiftUI$//' \
-    -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
-    QiReaderLite/Core/RuleSandbox.swift > "$OUT/RuleSandbox.swift"
+# ⭐⭐⭐⭐⭐ **RuleSandbox.swift 不再进 Linux 类型检查**（2026-10-26 老引擎恢复）
+#   ⇒ 它现在**又**是那台 WKWebView 壳（1700+ 行 WebKit/UIKit）⇒ Linux 的 shim 覆盖不到
+#   ⇒ ⇒ 这一层**验不到它**（明说，不装作全绿）⇒ 真正的门禁 = **macOS CI**（真编整个 App）⭐⭐⭐
 
 # 阅读界面的桥也要真检查：它是 WebKit 层，Linux 上有 shim，能抓类型错
 sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' \
@@ -71,6 +71,7 @@ echo "▶ 类型检查 Foundation 层…"
   test/linux-shims/URLSessionConfigShim.swift \
   test/linux-shims/FoundationCookieShim.swift \
   test/linux-shims/LegadoEngineBackendStub.swift \
+  test/linux-shims/RuleSandboxStub.swift \
   QiReaderLite/Core/BookSource.swift \
   QiReaderLite/Core/Book.swift \
   QiReaderLite/Core/SourceVariables.swift \
@@ -86,7 +87,6 @@ echo "▶ 类型检查 Foundation 层…"
   QiReaderLite/Core/EngineLogTimeline.swift \
   "$OUT/Store.swift" \
   QiReaderLite/Core/SourceService.swift \
-  "$OUT/RuleSandbox.swift" \
   "$OUT/ReaderHost.swift" \
   "$OUT/ReaderSession.swift" \
   "${EXTRA[@]}" \
@@ -103,4 +103,5 @@ if [[ "$ERRS" -gt 0 ]]; then
   grep -n "error:" "$OUT/log.txt" | sed 's/^/  /'
   exit 1
 fi
+echo "⚠️  **没验到**：Core/RuleSandbox.swift（老引擎 WKWebView 壳 ⇒ Linux 编不了 ⇒ 由 macOS CI 真编）"
 echo "✅ Foundation 层类型检查通过（0 错误，$WARNS 警告）"

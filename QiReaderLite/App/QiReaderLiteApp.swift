@@ -9,11 +9,10 @@ struct QiReaderLiteApp: App {
     @AppStorage(GlassTintStore.key) private var glassTintPercent: Double = 45
 
     init() {
-        // ⭐⭐⭐ **build252：老 JS 引擎（WKWebView）退役**（用户明确要求：「老引擎给我去掉先」）
-        //   · 现在**只有一个引擎**（新 Swift 引擎 `legado-engine`）⇒ 没有开关、没有回退
-        //   · 旧的一次性迁移键（曾把主链路强制切回老引擎）⇒ **彻底清掉**（否则会一直把开关写回 false）⭐⭐⭐
-        UserDefaults.standard.removeObject(forKey: "qr.useNewEngine")
-        UserDefaults.standard.removeObject(forKey: "qr.fallbackLegacy")
+        // ⭐⭐⭐⭐⭐ **老引擎回来了**（2026-10-26 用户明确：「换回老引擎」「JSC 给我彻底删掉」）
+        //   ⇒ **默认老引擎**（WKWebView · 独立进程 ⇒ App 进程不碰站方数据 ⇒ 闪退免疫）⭐⭐⭐
+        //   ⇒ `qr.useNewEngine` **必须留着**（用户要能切到新引擎）⇒ 不许再在启动时删它 ⭐⭐⭐
+        //   ⇒ 旧的「一次性迁移键」（曾把主链路强制切回老引擎）⇒ 彻底清掉（它会一直把开关写回 false）⭐
         UserDefaults.standard.removeObject(forKey: "qr.engine.legacy240")
         // 引擎沙盒尽早起来，首个界面就要用到
         Task { @MainActor in
@@ -39,15 +38,6 @@ struct QiReaderLiteApp: App {
                 WebViewJSBridge.shared.handleSync(payload)
             }
             JSEngineFactory.install { api in WebViewJSExecutor(api: api) }
-        case .jsc:
-            // ⚠️ 跑在 **App 进程内** ⇒ 站方脚本的内存算我们的 ⇒ 有闪退风险（留作对照）
-            JSEngineFactory.install { api in
-                #if canImport(JavaScriptCore)
-                return JSCExecutor(api: api)
-                #else
-                return nil
-                #endif
-            }
         }
     }
 

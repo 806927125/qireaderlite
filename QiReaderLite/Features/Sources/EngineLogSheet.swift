@@ -30,7 +30,8 @@ struct EngineLogSheet: View {
     /// ⭐ **WKWebView** ⇒ 站方 JS 在 **WebContent 独立进程** ⇒ 它一次吃几 GB 也**炸不到 App**
     ///   （老引擎一直是这样 ⇒ 一直免疫闪退）⭐⭐⭐
     /// ⭐ **JSC** ⇒ 跑在 **App 进程内** ⇒ 站方脚本的内存算我们的 ⇒ 6.8GB ⇒ jetsam 秒杀 ⭐
-    @AppStorage(JSEngineFactory.Kind.storageKey) private var jsBackend = JSEngineFactory.Kind.webView.storageValue
+    /// ⭐⭐⭐ **用哪个引擎**（默认老引擎）
+    @AppStorage("qr.useNewEngine") private var useNewEngine = false
     /// 主链路是不是走新引擎（**恒为真** ⇒ 只剩一个引擎）
     private var isNewEngine: Bool { true }
     /// 当前是不是新引擎在服务
@@ -88,7 +89,7 @@ struct EngineLogSheet: View {
                                 engineRow(line.label, line.value, isError: line.isError)
                             }
                         }
-                        Text("主链路（搜索 / 发现 / 详情 / 目录 / 正文）跑**新 Swift 引擎**（legado-engine）。\n⭐ 老 JS 引擎已于 2026-10-25 退役 ⇒ 没有开关、没有自动回退 ⇒ 失败会如实报出来。")
+                        Text("主链路（搜索 / 发现 / 详情 / 目录 / 正文）当前跑**\(EngineBackend.servingText)**。\n⭐ 默认老引擎（WKWebView 独立进程）⇒ App 进程不碰站方数据 ⇒ 免疫 jetsam 闪退。")
                             .font(.caption2)
                             .foregroundStyle(Theme.sub)
                             .fixedSize(horizontal: false, vertical: true)
@@ -107,25 +108,18 @@ struct EngineLogSheet: View {
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(jsBackend == JSEngineFactory.Kind.jsc.storageValue ? .orange : Theme.accent)
                         }
-                        Picker("JS 后端", selection: $jsBackend) {
-                            ForEach(JSEngineFactory.Kind.allCases, id: \.self) { k in
-                                Text(k == .webView ? "WKWebView" : "JSC").tag(k.storageValue)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: jsBackend) { _, newValue in
-                            let kind = JSEngineFactory.Kind(storageValue: newValue) ?? .webView
-                            JSEngineFactory.setKind(kind)
-                            // ⭐ 换后端 ⇒ 旧会话里的执行器还是老的 ⇒ 全部作废（新建的才用新后端）
-                            LegadoEngineBackend.shared.dropAllSessions()
-                            if kind == .webView {
-                                Task { @MainActor in WebViewJSHost.shared.boot() }
-                            }
-                        }
-                        Text("⭐ **WKWebView**：站方 JS 跑在 WebContent **独立进程** ⇒ 它一次吃几 GB 也炸不到 App（老引擎一直这样 ⇒ 一直免疫闪退）。\n⚠️ **JSC**：跑在 App 进程内 ⇒ 站方脚本的内存算我们的 ⇒ 有闪退风险。")
+                        Text("⭐ 站方 JS 跑在 WebContent **独立进程** ⇒ 它一次吃几 GB 也炸不到 App（老引擎一直这样 ⇒ 一直免疫闪退）。\n⚠️ **JSC 已彻底删除**（2026-10-26）⇒ App 里再没有「跑在 App 进程内」的 JS 运行时。")
                             .font(.caption2)
                             .foregroundStyle(Theme.sub)
                             .fixedSize(horizontal: false, vertical: true)
+                        // ⭐⭐⭐ **用哪个引擎**（老引擎 = 规则求值也住在 WebView 里 ⇒ App 进程彻底不碰站方数据）
+                        Toggle("用新 Swift 引擎（规则求值在 App 进程内）", isOn: $useNewEngine)
+                            .font(.caption)
+                            .onChange(of: useNewEngine) { _, newValue in
+                                EngineBackend.useNewEngine = newValue
+                                LegadoEngineBackend.shared.dropAllSessions()
+                                RuleSandbox.shared.resetEngine()
+                            }
                     }
                     .padding(12)
                     .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
@@ -149,17 +143,6 @@ struct EngineLogSheet: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(Theme.accent)
-                            // ⭐⭐⭐⭐⭐ **解除内存熔断**（2026-10-26 jetsam 实证）
-                            //   ⇒ 熔断 = 「这个源上次把内存撑爆了」⇒ 手动放开让用户再试一次 ⭐⭐⭐
-                            Button {
-                                MemoryMeter.clearTrips()
-                                RuleSandbox.shared.appendLog("[内存] 已手动解除内存熔断（可以再试那些源了）")
-                                resetNote = "已解除内存熔断"
-                            } label: {
-                                Label("解除内存熔断", systemImage: "bolt.slash")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                            .buttonStyle(.bordered)
                             if !resetNote.isEmpty {
                                 Text(resetNote)
                                     .font(.caption)

@@ -50,14 +50,22 @@ const backendSwift = readCode(path.join(ROOT, 'QiReaderLite', 'Core', 'LegadoEng
 // ───────── ① 老桥接不许有残留（老引擎物理删除的可执行证据）─────────
 console.log('=== 1. 老 WKWebView 桥接不许有残留 ===');
 
-ok(!/callAsyncJavaScript/.test(sandboxSwift),
-   'RuleSandbox 里没有 callAsyncJavaScript（老 WKWebView 桥接已退役）');
-ok(!/WKError/.test(sandboxSwift),
-   'RuleSandbox 里没有 WKError 分支（老桥接的错误分类已退役）');
-ok(!/bridgeJSON/.test(sandboxSwift),
-   'RuleSandbox 里没有 bridgeJSON（老桥接的 JSON 解析器已退役）');
-ok(!/evaluateJavaScript/.test(sandboxSwift),
-   'RuleSandbox 里没有 evaluateJavaScript（老引擎的求值入口已退役）');
+// ⭐⭐⭐ **老桥接【回来了】**（2026-10-26：「换回老引擎」「JSC 给我彻底删掉」）
+//   ⇒ 这几条以前断言「老桥接不许有残留」⇒ 现在**翻过来钉**：老桥接必须在
+//   ⇒ 它带的「返回值边界」保护（typeof 再判 / WKError 分类 / bridgeJSON / 串行链）也必须���
+//   ⇒ 这些正是**防 WebKit code 5 白屏**的那几道 ⭐⭐⭐
+ok(/callAsyncJavaScript/.test(sandboxSwift),
+   'RuleSandbox 里有 callAsyncJavaScript（老 WKWebView 桥接已恢复）');
+ok(/WKError/.test(sandboxSwift),
+   'RuleSandbox 里有 WKError 分支（老桥接的错误分类已恢复 ⇒ 防白屏）');
+ok(/bridgeJSON/.test(sandboxSwift),
+   'RuleSandbox 里有 bridgeJSON（老桥接的 JSON 解析器已恢复）');
+ok(/evaluateJavaScript/.test(sandboxSwift),
+   'RuleSandbox 里有 evaluateJavaScript（老引擎的求值入口已恢复）');
+ok(/invokeTail/.test(sandboxSwift),
+   'RuleSandbox 里有 invokeTail（老 WKWebView 串行链已恢复 ⇒ 并发不会 code 5）');
+// ⭐⭐⭐ **JSC 从 App 里彻底消失**
+ok(!/JSCExecutor\(/.test(backendSwift), 'App 侧不许再 new JSCExecutor（JSC 只准待在引擎仓库里）');
 
 // ⚠️ 老门禁的「反例说明」曾经写在注释里 ⇒ 剥完注释再查（同一个坑踩过两次）
 ok(!/\\\([^)]*privacy\s*:/.test(sandboxSwift),

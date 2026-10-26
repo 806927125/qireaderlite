@@ -175,6 +175,19 @@ final class SourceService {
         // ⭐⭐⭐ **只有一个引擎了**（老 JS 引擎 2026-10-25 退役）
         //   ⇒ 不再有「开关」⇒ 不再有「回退」⇒ **失败就是失败**，如实报出来 ⭐⭐⭐
         //
+        // ⭐⭐⭐⭐⭐ **老引擎优先**（2026-10-26 用户明确：「换回老引擎」「JSC 给我彻底删掉」）
+        //   ⇒ 老引擎的**规则求值全在 WKWebView 的 WebContent 独立进程**里
+        //   ⇒ **App 进程压根不碰站方数据** ⇒ 内存有界 ⇒ 一直免疫 jetsam 闪退 ⭐⭐⭐
+        //   ⇒ 代价：老引擎是异步桥（postMessage + 两遍跑）⇒ 慢一点，但**稳** ⭐
+        if !EngineBackend.useNewEngine {
+            let raw = try await RuleSandbox.shared.invoke(op, payload, source: source)
+            if let dict = raw as? [String: Any],
+               let v = dict["__sourceVars"] as? String {
+                SourceVariables.setVars(v, for: source.bookSourceUrl)
+            }
+            EngineBackend.lastError = nil
+            return raw
+        }
         do {
             guard let r = try await invokeNewEngine(op, payload, source: source) else {
                 // 新引擎不认识这个 op ⇒ 明确报错（**不再悄悄落老引擎**）
@@ -221,21 +234,6 @@ final class SourceService {
         //   ⇒ 所以「超限」必须**落盘**（采样器在 op 期间就写）⇒
         //     ⇒ 下次启动读到 ⇒ **直接拒绝跑这个源** ⇒ **不再闪退** ⭐⭐⭐
         //   ⇒ 代价：这个源暂时不可用（可手动解除熔断）⇒ **比反复闪退划算得多** ⭐⭐⭐
-        MemoryMeter.configure(storeURL: AppPaths.memMeterFile)   // 熔断清单要落盘位置
-        if MemoryMeter.isTripped(source: source.bookSourceUrl) {
-            throw ServiceError.engineFailed(
-                "这个书源在刚才的「\(op)」里把内存撑爆了（jetsam 会杀 App）"
-                + " ⇒ 已熔断，先不跑它了 ⇒ 请换一条线路或换本书源"
-                + "（自检面板 →「解除内存熔断」可手动放开）")
-        }
-        // ⭐⭐⭐ **预算不够就别开始**（上次刚超限 ⇒ 别再叠一个 op 上去）⭐⭐⭐
-        if MemoryMeter.currentMB >= MemoryMeter.autoResetThresholdMB {
-            LegadoEngineBackend.shared.dropAllSessions()   // 作废会话 + 作废 JS 上下文
-            _ = MemoryMeter.sample()
-        }
-        // ⭐⭐⭐ **op 期间持续采样**（爆了能立刻落盘 ⇒ 下次启动就能熔断）⭐⭐⭐
-        MemoryMeter.startWatch(op: op, source: source.bookSourceUrl)
-        defer { MemoryMeter.stopWatch() }
         // ⭐⭐⭐ **新引擎的 op 也必须有超时**（2026-10-24 真机「app 死机」）
         //   以前**完全没有** ⇒ 站方服务器不通 / 引擎里死循环 ⇒ **永远不返回**
         //   ⇒ UI 永远转圈 ⇒ 用户以为 App 死了
@@ -305,46 +303,7 @@ final class SourceService {
         // ⚠️ 为什么放在**这里**（op 跑完之后，而不是 op 里面）：
         //   · 放 op 里面 ⇒ 正在跑的引擎调用会被中途掀掉（结果丢失 ⇒ 用户白等）
         //   · 放 op 外面 ⇒ 每次引擎调用都测一次 ⇒ 涨上来的**第一时间**就能看见 ⭐⭐⭐
-        Self.checkMemoryWaterline(op: op, source: source)
         return out
-    }
-
-    /// ⭐⭐⭐⭐⭐ **内存水位自检 + 超限自救**（2026-10-26 jetsam 6.8GB 实证）
-    ///
-    /// ⚠️⚠️⚠️ **真机事故**：
-    ///   jetsam 记录：`QingYue` **单进程** `rpages = 425984` ⇒ ×16KB = **6.8GB**
-    ///   ⇒ **被系统内存杀** ⇒ 现象 =「闪退」+ **没有 .ips 崩溃日志**⭐⭐⭐
-    ///   ⇒ 也就是说：**在被杀之前，App 自己完全不知道内存已经涨到多少** ⭐⭐⭐
-    ///
-    /// ⭐⭐⭐ **本函数的策略（先自救，再观察）**：
-    ///   ① 采样 `phys_footprint`（**jetsam 同一个口径**）⇒ 记峰值
-    ///   ② 超阈值（600MB）⇒ **清空引擎会话**（= **重建 JS context**）
-    ///      ⇒ 站方 jsLib 往 globalThis 塞的东西、解析出来的 DOM 树 ⇒ **一次性还回去** ⭐⭐⭐
-    ///   ③ 记一笔「清理前 → 清理后」的水位 ⇒ **清得有没有用**一眼可见 ⭐⭐⭐
-    ///      ⇒ 若清完还是很高 ⇒ 说明累积点**不在引擎会话里**（面板会如实显示）⭐⭐⭐
-    ///
-    /// ⚠️ **为什么不在低于阈值时也清**：低水位就清 ⇒ 白白丢会话（登录态/变量要重建）
-    ///   ⇒ 只在**真的危险**时才动手 ⭐⭐⭐
-    /// ⚠️ **为什么有冷却期**：清完还是高 ⇒ 再清一百次也没用 ⇒ 别刷屏、别连坐好会话 ⭐⭐⭐
-    private static func checkMemoryWaterline(op: String, source: BookSource) {
-        MemoryMeter.configure(storeURL: AppPaths.memMeterFile)
-        // ⭐⭐⭐ **记一次采样 + 落盘**（op 名带上 ⇒ 被 jetsam 杀掉也能回看是哪个 op）
-        let bytes = MemoryMeter.measure()
-        MemoryMeter.note(bytes: bytes, op: op)
-        guard MemoryMeter.record(bytes: bytes) else { return }   // 未超限 ⇒ 什么都不做
-        guard MemoryMeter.canAutoResetNow else { return }        // 冷却期内 ⇒ 不重复清
-        let beforeMB = MemoryMeter.currentMB
-        // ⭐⭐⭐⭐⭐ **落盘一条「这个源炸过」** ⇒ 下次启动就熔断它 ⇒ **不再闪退** ⭐⭐⭐
-        MemoryMeter.noteTrip(op: op, source: source.bookSourceUrl, peakMB: beforeMB)
-        // ⭐⭐⭐ **清空引擎会话 = 重建 JS context**（含 `invalidate()` ⇒ JSC 堆还回去）
-        LegadoEngineBackend.shared.dropAllSessions()
-        let after = MemoryMeter.measure()
-        MemoryMeter.note(bytes: after, op: op + "(清后)")
-        MemoryMeter.noteAutoReset(fromMB: beforeMB, toMB: after / (1024 * 1024))
-        RuleSandbox.shared.appendLog(
-            "[内存] 「\(op)」后占用 \(beforeMB) MB ≥ 限额 \(MemoryMeter.autoResetThresholdMB) MB"
-            + " ⇒ 已清空引擎会话（重建 JS context）⇒ 现在 \(after / (1024 * 1024)) MB"
-            + " ⇒ 并已**记下这个源** ⇒ 下次直接熔断它 ⇒ 不再闪退")
     }
 
 

@@ -12,29 +12,23 @@ import LegadoCore
 ///   ⇒ 这里只放**工厂 + 开关**；真正的实现由 UI 层注册进来 ⭐
 public enum JSEngineFactory {
 
-    /// 后端种类
+    /// ⭐⭐⭐ **后端只有一种**：WKWebView（独立进程）
+    ///
+    /// ⚠️⚠️⚠️ **JSC 已彻底删除**（2026-10-26 用户明确：「JSC 给我彻底删掉哈」）
+    ///   ⇒ JSC 跑在 **App 进程内** ⇒ 站方脚本的每次分配都算我们的 ⇒ 一次 op 就能顶到 GB 级
+    ///   ⇒ jetsam 秒杀（闪退 + 没有 .ips）⇒ **老引擎一直免疫**（它的 JS 在 WebContent 独立进程）⭐⭐⭐
+    /// ⇒ 这里**不再有第二种后端** ⇒ 新引擎的 JS 也只能走 WKWebView ⭐⭐⭐
     public enum Kind: String, CaseIterable, Sendable {
-        /// ⭐ WKWebView（独立进程）—— 跟老引擎一样 ⇒ 站方 JS 再野也炸不到 App
+        /// WKWebView（独立进程·跟老引擎一样）⇒ 站方 JS 再野也炸不到 App
         case webView = "WKWebView（独立进程·跟老引擎一样）"
-        /// JSC（App 进程内）—— 快，但站方脚本的内存算 App 的
-        case jsc = "JSC（App 进程内）"
 
         /// UserDefaults 里的键
         public static let storageKey = "qr.jsBackend"
 
-        public var storageValue: String {
-            switch self {
-            case .webView: return "webview"
-            case .jsc: return "jsc"
-            }
-        }
+        public var storageValue: String { "webview" }
 
         public init?(storageValue: String) {
-            switch storageValue {
-            case "webview": self = .webView
-            case "jsc": self = .jsc
-            default: return nil
-            }
+            if storageValue == "webview" { self = .webView } else { return nil }
         }
     }
 
