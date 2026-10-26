@@ -407,7 +407,19 @@ final class LegadoEngineBackend: @unchecked Sendable {
     ///
     /// - Returns: `nil` = **「这个 op 新引擎不支持」** ⇒ 调用方回退老引擎
     ///   （登录 / 诊断 / 站方变量那几类还留在老引擎上）
+    /// ⭐⭐⭐ **当前正在跑的 op**（日志/桥接层要它 ⇒ 「是哪个 op 在搬大东西」一眼可见）
+    private static let opLock = NSLock()
+    private static var _currentOp: String = "—"
+    static var currentOp: String {
+        opLock.lock(); defer { opLock.unlock() }
+        return _currentOp
+    }
+    static func setCurrentOp(_ op: String) {
+        opLock.lock(); _currentOp = op; opLock.unlock()
+    }
+
     func invoke(_ op: String, _ payload: [String: Any], source: BookSource) throws -> Any? {
+        Self.setCurrentOp(op)
         let session = try session(for: source)
         guard let engine = session.engine else { return nil }
         // ⭐⭐⭐ **源级变量**（站方 `server` / `tab` / `sources` / `find_source` …）
