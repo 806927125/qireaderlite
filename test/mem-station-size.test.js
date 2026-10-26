@@ -37,10 +37,11 @@ const SRC = path.join(ROOT, 'sources', '🍅大灰狼聚合5.9.30-轻阅适配�
   dumpRoutes(proxy, 'exploreKinds 后');
 
   console.log('\n=== ② explore（真跑发现页列表）===');
-  const first = (kinds.find(k => k.url) || {}).url || '';
-  if (!first) { console.log('  没有可用的分类 url ⇒ 结束'); return; }
-  const url = first.replace(/\{\{page\}\}/g, '1');
-  const exRes = await live('explore', { source: src, jsLib: src.jsLib, url });
+  const picked = kinds.find(k => /get_discover/.test(String(k.url || '')));
+  const kindUrl = (picked && picked.url) || '';
+  console.log('  用分类:', picked && picked.title, '→', String(kindUrl).slice(0, 80));
+  if (!kindUrl) { console.log('  没有 get_discover 分类 ⇒ 结束'); return; }
+  const exRes = await live('explore', { source: src, jsLib: src.jsLib, kindUrl, page: 1 });
   const books = exRes.books || exRes.list || [];
   console.log('  书数:', Array.isArray(books) ? books.length : '?');
   dumpRoutes(proxy, 'explore 后');

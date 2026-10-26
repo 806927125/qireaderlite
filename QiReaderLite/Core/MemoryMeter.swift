@@ -44,6 +44,9 @@ enum MemoryMeter {
     /// ⚠️ 为什么要有：**op 内部爆掉时，op 结束后的采样可能已经晚了**（App 已被 jetsam 杀）
     ///   ⇒ 必须在 op **期间**采样 ⇒ 才知道是哪个 op ⭐⭐⭐
     private static var watchTimer: DispatchSourceTimer?
+    /// ⭐⭐⭐ **op 期间的采样曲线**（每 250ms 一点 ⇒ 只在内存里，op 结束时一次性落盘）
+    /// ⇒ 4KB 的文件写 4 次/秒 = 1.4GB/天 ⇒ **绝不能每次都落盘** ⭐⭐⭐
+    private static var watchSamples: [(t: Double, mb: Int)] = []
     private static var watchOp: String = ""
     private static var watchSource: String = ""
     private static var watchPeakBytes: Int = 0
@@ -55,6 +58,7 @@ enum MemoryMeter {
         watchOp = op
         watchSource = source
         watchPeakBytes = 0
+        watchSamples.removeAll()
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         t.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250))
         // ⚠️ `MemoryMeter` 是 enum（不是类）⇒ 不能 `[weak self]` ⇒ 直接静态调 ⭐⭐⭐
@@ -65,10 +69,23 @@ enum MemoryMeter {
         t.resume()
     }
 
-    /// ⭐⭐⭐ **op 结束 ⇒ 停采样器**
+    /// ⭐⭐⭐ **op 结束 ⇒ 停采样器 + 把曲线一次性落盘**
     static func stopWatch() {
         lock.lock(); defer { lock.unlock() }
         stopWatchLocked()
+        flushWatchSamplesLocked()
+    }
+
+    /// ⭐⭐⭐ **把 op 期间的曲线写进档案**（一次写 ⇒ 不碰写盘限额）
+    private static func flushWatchSamplesLocked() {
+        guard !watchSamples.isEmpty, let url = storeURL else { return }
+        let op = watchOp
+        for s in watchSamples {
+            sessionSamples.append(Sample(t: s.t, mb: s.mb, op: op))
+        }
+        if sessionSamples.count > 24 { sessionSamples.removeFirst(sessionSamples.count - 24) }
+        watchSamples.removeAll()
+        writeArchiveLocked()
     }
 
     private static func stopWatchLocked() {
@@ -81,6 +98,8 @@ enum MemoryMeter {
         let bytes = footprintBytes()
         lock.lock()
         watchPeakBytes = max(watchPeakBytes, bytes)
+        watchSamples.append((Date().timeIntervalSince1970, bytes / (1024 * 1024)))
+        if watchSamples.count > 240 { watchSamples.removeFirst(watchSamples.count - 240) }
         if bytes > peakBytes { peakBytes = bytes }
         let over = bytes > 0 && bytes >= autoResetThresholdMB * 1024 * 1024
         let op = watchOp
