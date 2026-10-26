@@ -35,6 +35,9 @@ typealias EngineCookieJar = LegadoCore.CookieJar
 /// ③ **源级请求头**由引擎塞进 `request.headers`（54 个源在用 ⇒ 缺了就 403）
 final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
 
+    /// ⭐⭐⭐ **单个响应体上限**（32MB）—— 超了明确失败，不许撑爆 App 进程
+    static let maxResponseBytes = 32 * 1024 * 1024
+
     private let session: URLSession
 
     init() {
@@ -82,9 +85,22 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
                 guard let k = k as? String else { continue }
                 headers[k] = (v as? String) ?? String(describing: v)
             }
+            // ⭐⭐⭐ **单个响应体封顶**（2026-10-26 jetsam 4.2GB 实证）
+            //   ⇒ 站方偶尔会回一个巨大的响应（聚合源把十几个平台的列表塞一起）⇒
+            //   ⇒ 它还要被 JSON 转义一份、再穿过 JS 桥搬一份 ⇒ 放大好几倍 ⇒ **撑爆 App 进程** ⭐⭐⭐
+            //   ⇒ 超过上限 ⇒ **明确失败**（比撑爆好一百倍）⭐
+            let body = data ?? Data()
+            if body.count > Self.maxResponseBytes {
+                box.fail(SourceError.requestFailed(
+                    request.url,
+                    "响应体 \(body.count / 1024 / 1024)MB 超过上限 "
+                    + "\(Self.maxResponseBytes / 1024 / 1024)MB ⇒ 已拒绝（避免撑爆内存）"))
+                sem.signal()
+                return
+            }
             box.succeed(HTTPResponse(statusCode: http?.statusCode ?? 0,
                                       headers: headers,
-                                      body: data ?? Data(),
+                                      body: body,
                                       finalURL: http?.url?.absoluteString))
             sem.signal()
         }.resume()
@@ -389,7 +405,11 @@ final class LegadoEngineBackend: @unchecked Sendable {
             //   ⇒ 现在：60 秒 TTL 的缓存 ⇒ 同一个响应 60 秒内只请求一次 ⭐
             //
             // ⚠️ TTL 别太长（书源内容会变）⇒ 60 秒刚好够「一次发现页」复用 ⭐
-            let transport = CachedTransport(inner: URLSessionTransport(), ttl: 60, capacity: 64)
+            // ⭐⭐⭐⭐⭐ **按【字节】封顶**（2026-10-26 jetsam 4.2GB 实证）
+            //   ⇒ 原来按「条数」封顶（64 条）⇒ 站方那种几 MB~几十 MB 的响应 × 64 = 几百 MB~GB 级 ⇒ 秒杀
+            //   ⇒ 改成按**总字节**封顶（48MB）⇒ 跟源的大小/个数都无关 ⇒ 内存有界 ⭐
+            let transport = ByteCappedTransport(inner: URLSessionTransport(), ttl: 60,
+                                               maxBytes: 48 * 1024 * 1024)
             let engine = SourceEngine(source: source,
                                       fetcher: PageFetcher(transport: transport, cookieJar: jar),
                                       js: js,
@@ -423,7 +443,19 @@ final class LegadoEngineBackend: @unchecked Sendable {
     ///
     /// - Returns: `nil` = **「这个 op 新引擎不支持」** ⇒ 调用方回退老引擎
     ///   （登录 / 诊断 / 站方变量那几类还留在老引擎上）
+    /// ⭐⭐⭐ **当前正在跑的 op**（桥接层/内存日志靠它说清「是哪个 op 在搬大东西」）
+    private static let opLock = NSLock()
+    private static var _currentOp: String = "—"
+    static var currentOp: String {
+        opLock.lock(); defer { opLock.unlock() }
+        return _currentOp
+    }
+    static func setCurrentOp(_ op: String) {
+        opLock.lock(); _currentOp = op; opLock.unlock()
+    }
+
     func invoke(_ op: String, _ payload: [String: Any], source: BookSource) throws -> Any? {
+        Self.setCurrentOp(op)
         let session = try session(for: source)
         guard let engine = session.engine else { return nil }
         // ⭐⭐⭐ **源级变量**（站方 `server` / `tab` / `sources` / `find_source` …）
@@ -527,11 +559,40 @@ final class LegadoEngineBackend: @unchecked Sendable {
     }
 
     /// ⭐ **源级变量：引擎 → 轻阅**（一个 JSON 串）
+    /// ⭐⭐⭐⭐⭐ **变量表回传的上限**（2026-10-26 jetsam 4.2GB 实证）
+    ///
+    /// ⚠️⚠️⚠️ **这里原来没有上限** ⇒ 站方把大块数据缓存进源变量（聚合源把几百个分类的载荷塞进去）
+    /// ⇒ ⇒ 序列化一次 = **好几份拷贝**（字典 + Data + String）⇒ 一个 GB 级变量能撑到 **几个 GB** ⇒ jetsam 秒杀 ⭐⭐⭐
+    /// ⇒ 而且 JSC 的 **VM 会抓着跑过脚本的 context** ⇒ `invalidate()` 放不掉 ⇒ **「清会话后内存不降」** ⭐⭐⭐
+    /// ⇒ ⇒ **超过上限的条目直接不往外传**（站方缓存丢了只是多抓一次 ⇒ 不会崩）⭐
+    static let maxVarsEntryBytes = 256 * 1024
+
     static func varsJSON(_ box: VarBox) -> String {
         let all = box.all
-        guard !all.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: all),
+        guard !all.isEmpty else { return "" }
+        // ⭐⭐⭐ **逐条量大小 + 丢弃超大条目**（取证日志：谁在撑爆）
+        var kept: [String: String] = [:]
+        var big: [(String, Int)] = []
+        for (key, value) in all {
+            let size = value.utf8.count
+            if size > maxVarsEntryBytes {
+                big.append((key, size))
+            } else {
+                kept[key] = value
+            }
+        }
+        if !big.isEmpty {
+            let detail = big.map { "\($0.0)=\(String(format: "%.1f", Double($0.1) / 1048576.0))MB" }
+                .joined(separator: ", ")
+            engineLog("[变量表] ⛔️ 丢弃超大条目（op=\(currentOp)）：\(detail) ⇒ 站方缓存会丢，但 App 不会撑爆")
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: kept),
               let text = String(data: data, encoding: .utf8) else { return "" }
+        // ⭐ 兜底：序列化完还是太大 ⇒ 整个丢掉（宁可变量全丢，也不能撑爆）
+        if text.utf8.count > maxVarsEntryBytes {
+            engineLog("[变量表] ⛔️ 变量表整体 \(text.utf8.count / 1024 / 1024)MB ⇒ 整个丢弃")
+            return ""
+        }
         return text
     }
 

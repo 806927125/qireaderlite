@@ -145,6 +145,11 @@ final class WebViewJSExecutor: JSExecutor {
                 ?? api.hostObject(named: object)?.call(method, args)
         }
         guard let result else { return #"{"__qrNotImplemented":true}"# }
+        // ⭐⭐⭐ **取证**：宿主调用返回了多大的东西？（站方的 `java.ajax` 会把整个响应体搬回来）⭐
+        if let any = result.foundationValue as? String, any.utf8.count > WebViewJSBridge.logThresholdBytes {
+            engineLog("[桥接] op=\(LegadoEngineBackend.currentOp) 宿主返回 \(object).\(method) = "
+                      + "\(any.utf8.count / 1024)KB")
+        }
         return Self.wrapResult(result)
     }
 
@@ -197,6 +202,17 @@ final class WebViewJSBridge: @unchecked Sendable {
     // MARK: - 求值（同步：后台线程等主线程回话）
 
     func evaluateSync(_ js: String) throws -> String? {
+        // ⭐⭐⭐ **脚本大小闸门**（2026-10-26 jetsam 4.2GB 实证）
+        //   ⇒ 站方偶尔产出巨大的脚本/结果 ⇒ 搬进 App 进程就是撑爆 ⇒ 明确拒绝 + 记录长度 ⭐⭐⭐
+        let jsBytes = js.utf8.count
+        if jsBytes > Self.maxScriptBytes {
+            let msg = "脚本 \(jsBytes / 1024 / 1024)MB 超过上限 ⇒ 已拒绝（op=\(LegadoEngineBackend.currentOp)）"
+            engineLog("[桥接] ⛔️ " + msg)
+            throw WebViewJSError(message: msg)
+        }
+        if jsBytes > Self.logThresholdBytes {
+            engineLog("[桥接] op=\(LegadoEngineBackend.currentOp) 脚本 \(jsBytes / 1024)KB")
+        }
         if Thread.isMainThread {
             // ⭐ 绝不阻塞主线程等自己（那叫死锁）⇒ 明确报错
             throw WebViewJSError(message: "引擎调用不能在主线程执行（WKWebView 后端要等主线程回话）")
@@ -221,8 +237,27 @@ final class WebViewJSBridge: @unchecked Sendable {
             let msg = (error as NSError).localizedDescription
             throw WebViewJSError(message: msg, isSyntaxError: Self.looksLikeSyntaxError(msg))
         }
+        // ⭐⭐⭐ **返回体大小闸门**：站方 JS 的返回值要搬回 App 进程 ⇒ 巨大返回体 = 撑爆 App
+        if let text = box.text {
+            let outBytes = text.utf8.count
+            if outBytes > Self.maxResultBytes {
+                let msg = "站方 JS 返回体 \(outBytes / 1024 / 1024)MB 超过上限 ⇒ 已拒绝（op=\(LegadoEngineBackend.currentOp)）"
+                engineLog("[桥接] ⛔️ " + msg)
+                throw WebViewJSError(message: msg)
+            }
+            if outBytes > Self.logThresholdBytes {
+                engineLog("[桥接] op=\(LegadoEngineBackend.currentOp) 返回 \(outBytes / 1024)KB")
+            }
+        }
         return box.text
     }
+
+    /// ⭐ 日志阈值（超过就记一笔 ⇒ 下次崩了能直接看出「谁在搬大东西」）
+    static let logThresholdBytes = 256 * 1024
+    /// ⭐ 脚本上限（8MB）
+    static let maxScriptBytes = 8 * 1024 * 1024
+    /// ⭐ 返回体上限（32MB）
+    static let maxResultBytes = 32 * 1024 * 1024
 
     /// ⭐ 同步通道的入口（老引擎 `handleSync` 同款 ⇒ 语义同源）
     func handleSync(_ payload: String) -> String {

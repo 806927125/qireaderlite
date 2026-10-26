@@ -83,5 +83,12 @@ ok(/syncHandler\s*=/.test(app), '必须装上同步通道的 Swift 侧分发');
 // ⑥ 主线程不许阻塞（会死锁）
 ok(/Thread\.isMainThread/.test(exec), '必须挡掉「主线程调用引擎」（否则 WebView 回话死锁）');
 
+// ⑦ ⭐⭐⭐ **内存闸门**（2026-10-26 jetsam 4.2GB 实证：一次 op 涨 4.1GB ⇒ 撑爆 App 进程）
+ok(/maxResponseBytes/.test(backend), '必须有单响应体上限（超大响应 ⇒ 明确失败，不许撑爆）');
+ok(/maxVarsEntryBytes/.test(backend), '变量表回传必须有上限（GB 级变量 = 好几份拷贝 ⇒ 撑爆）');
+ok(/ByteCappedTransport/.test(backend), 'HTTP 缓存必须按【字节】封顶（按条数封顶 = 隐形放大器）');
+ok(/maxScriptBytes/.test(exec), '桥接层必须有脚本大小闸门');
+ok(/maxResultBytes/.test(exec), '桥接层必须有返回体大小闸门');
+
 console.log(`\n通过 ${pass} / 失败 ${fail}`);
 if (fail > 0) process.exit(1);

@@ -55,6 +55,7 @@ trap 'rm -rf "$OUT"' EXIT
   QiReaderLite/Core/EngineBackend.swift \
   QiReaderLite/Core/LegadoEngineBackend.swift \
   QiReaderLite/Core/JSEngineFactory.swift \
+  QiReaderLite/Core/ByteCappedTransport.swift \
   QiReaderLite/Core/SourceService.swift \
   QiReaderLite/Core/ServiceError.swift \
   QiReaderLite/Core/SourceDictCache.swift \
