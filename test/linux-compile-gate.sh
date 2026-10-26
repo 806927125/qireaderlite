@@ -53,6 +53,7 @@ FILES=(
   "QiReaderLite/Core/SourceDictCache.swift"
   "QiReaderLite/Core/SourceRawArchive.swift"
   "QiReaderLite/Core/HostTools.swift"
+  "QiReaderLite/Core/MemoryMeter.swift"        # ⭐⭐⭐ 内存水位（2026-10-26 build262）
   "QiReaderLite/Core/ServiceError.swift"      # ⭐⭐⭐ 错误类型独立文件 ⇒ 两组都能编
   # ⭐⭐⭐⭐⭐ **`AppPaths.swift` 也要编**（2026-10-26 从 `Store.swift` 拆出来的纯 Foundation 文件）
   #   ⇒ `HostTools.swift` 的 `CacheFiles` 用到 `AppPaths.cacheDir`
