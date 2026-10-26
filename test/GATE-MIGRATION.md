@@ -151,3 +151,32 @@ bash test/run-all-gates.sh        # 全量
 ⭐ **`toJSON` 把数组/对象内容全丢了**（`as? JSValue` 永远失败）⇒ 真机「0 本书 / 字段全空」
 ⭐ **JSC 顶层脚本的 `let` 是全局词法声明** ⇒ 第二次跑重复声明 ⇒ **静默空** ⇒ 改用直接 eval
 ⭐ **形态链自创了** ⇒ 换成**老引擎同款三形态 + 只在语法错时换形态** ⇒ 两个后端**同一份脚本文本**
+
+### 5.4 ⭐⭐⭐⭐⭐ 补 `document` 全局替身（2026-10-26）
+
+**老引擎有、新引擎没有 ⇒ 站方 JS 直接 ReferenceError**
+
+| 证据 | 数字 |
+|---|---|
+| 站方 `jsLib` 里的 `document.` | **99 处** |
+| 站方 `loginUrl` 里的 `document.` | **54 处** |
+| 其中 `document.getElementById` | **117 处 / 6 个源**（大灰狼、番茄小说TS…） |
+| 规则代码里的 `document.querySelectorAll` / `querySelector` | **0 处**（真 DOM 能力 125 源里没人真用） |
+
+#### ⭐⭐⭐ 语义**对齐老引擎**，不是「随便造个假对象」
+- 站方那 117 处拿的都是**站方 App 自己的 UI 元素**（`logList` / `loading` / `container` / `playBtn`…）
+- 老引擎在真机上也**拿不到**（当前页是 API 响应/列表页 ⇒ 没有那些 id）⇒ ⇒ **`getElementById` 返回 `null` 就是正解** ⭐⭐⭐
+- `querySelectorAll` ⇒ **空数组**（真 DOM 解析**待吸收**；栖阅自己也没有 ⇒ 相对栖阅不算缺口）
+
+#### ⭐⭐⭐ **注入位置有两个坑**（都是变异测试抓到的）
+1. **只放 scope 前导 ⇒ jsLib 拿不到**（jsLib 走 `runGlobal` = **全局作用域**）⇒ 必须注入**全局上下文** ⭐
+2. **scope 前导里放 `var document` ⇒ 顶层 var 会泄漏成全局** ⇒
+   - 被**全局治理**（`removeGlobals(notIn: baseline)`）当垃圾清掉 ⇒ 「先跑规则、后加载 jsLib」就炸 ⭐⭐⭐
+   - 而且**掩盖门禁**（全局注入删了也测不出来 ⇒ 平凡通过）⭐⭐⭐
+   ⇒ ⇒ **只在全局上下文注入一次**（JSC `makeContext` / Node `init`）⇒ **单点注入 ⇒ 不会漂移**
+
+#### 门禁
+- 引擎仓 `ScopeDocumentStubTests`：**JSC / Node 跑同一份契约**（`DocumentStubContract`）
+- 轻阅侧 `js-booklist` 第 6 条：从「钉现状（0 本 + emptyResult）」**翻过来**钉「已修好（1 本、无 error、节点数 = 0）」
+- 轻阅侧 `engine-api-parity`：把 `document.*` 纳入语料扫描 + 新增「**替身级能力**」这一档
+  （`typeof` 探针**分不出替身和真能力** ⇒ 单独登记 ⇒ 真 DOM 解析的缺口**可见**）⭐⭐⭐

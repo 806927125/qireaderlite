@@ -134,6 +134,10 @@ const USED_PATTERNS = [
   /\borg\.seimicrawler\.xpath\.[A-Za-z0-9_]+/g, // 栖阅的 xpath 类型
   /\bJXDocument\b/g, /\bJXNode\b/g,
   /\bPackages\.org\.[A-Za-z0-9_.]+/g,
+  // ⭐⭐⭐⭐⭐ **`document.*`**（2026-10-26 补）
+  //   · 站方 jsLib 99 处 + loginUrl 54 处用 `document.` ⇒ **老引擎有、新引擎原本没有**
+  //   · 现在新引擎有 `document` 替身 ⇒ 这里必须**盯着** ⇒ 引擎哪天把它删了 ⇒ 本门禁红 ⭐⭐⭐
+  /\bdocument\.[A-Za-z0-9_]+/g,
 ];
 const used = new Map();   // 类型名 → 出现在哪些源
 for (const { file, code } of corpus) {
@@ -184,6 +188,17 @@ if (fs.existsSync(LEGACY_JS)) {
  *  ⇒ ⇒ 栖阅自己就不支持 ⇒ 但**轻阅老引擎支持** ⇒ ⇒ **老引擎退役时丢了这份能力** ⇒ ⇒ 待吸收 ⭐⭐⭐ */
 const KNOWN_PENDING = new Set(['org.jsoup.Jsoup.parse']);
 
+/**
+ * ⭐⭐⭐⭐⭐ **「名字在、但只是替身」的能力面**（2026-10-26 补 `document` 时立起来的）
+ *
+ * ⚠️ **为什么单独列**：
+ *   · 探针是 `typeof` 探针 ⇒ **替身也算「有」** ⇒ 「有名字」≠「有真能力」⭐⭐⭐
+ *   · `document.getElementById` / `document.querySelectorAll` 现在是**替身**
+ *     （`getElementById` ⇒ null（**与老引擎真机行为一致**）；`querySelectorAll` ⇒ **空数组**（真 DOM 解析待吸收））
+ *   ⇒ ⇒ 显式登记 ⇒ 「真 DOM 能力待吸收」**可见** ⇒ 不许悄悄长大 ⭐⭐⭐
+ */
+const STUB_ONLY = new Set(['document.getElementById', 'document.querySelectorAll']);
+
 const { createSandbox, engineAvailable } = require('./new-engine-harness');
 const engineHas = {};
 if (engineAvailable()) {
@@ -203,6 +218,11 @@ if (engineAvailable()) {
   }
   ok(probe('typeof java') === 'object', '新引擎的 JS 环境里有 java（宿主 API 通道在）');
   ok(probe('typeof Packages') === 'object', '新引擎的 JS 环境里有 Packages（Java 兼容层在）');
+  // ⭐⭐⭐⭐⭐ **`document` 必须在新引擎的 JS 环境里**（2026-10-26 补）
+  //   · 站方 jsLib 99 处 + loginUrl 54 处直接用 `document.` ⇒ 老引擎有
+  //   · 缺了 ⇒ jsLib **整个加载失败** ⇒ 规则链半残 ⇒ 症状离根因十万八千里 ⭐⭐⭐
+  ok(probe('typeof document') === 'object', '新引擎的 JS 环境里有 document（站方 jsLib/loginUrl 直接用 ⇒ 缺了整条链死）');
+  ok(probe('typeof document.getElementById') === 'function', 'document.getElementById 必须在（站方 117 处在用）');
 } else {
   console.log('  ⏭️  没编译 legado-engine ⇒ ③ 新引擎面没验到（**不等于通过**）');
 }
@@ -240,6 +260,18 @@ if (hardGaps.length) {
 if (pending.length) {
   note(`⭐ 待吸收（老引擎有 · 语料在用 · 新引擎还没有）：${pending.join(', ')}`);
   note('  ⇒ ⇒ 「老引擎有的、新引擎没有的 ⇒ 吸收进新的」⇒ 这条在清单上 ⇒ 不算红，但**不许悄悄长大**⭐⭐⭐');
+}
+
+// ⭐⭐⭐ **替身级能力面**（有名字、但只是替身 ⇒ 真能力待吸收）
+{
+  const stubbed = [...used.keys()].filter(t => STUB_ONLY.has(t) && engineHas[t] !== false);
+  if (stubbed.length) {
+    note(`⭐ 替身级能力（**名字在、但只是替身** ⇒ 真能力待吸收）：${stubbed.join(', ')}`);
+    note('  ⇒ `document.getElementById` 的 null 语义**与老引擎真机一致**（不是缺口）'
+       + '；`document.querySelectorAll` 的**真 DOM 解析**才是缺口（现在返回空数组）⭐⭐⭐');
+  } else {
+    ok(true, '语料里没有「只有替身」的能力（要么真有能力，要么没被用到）');
+  }
 }
 
 if (knownGaps.length) {

@@ -52,8 +52,8 @@ const ok = (c, m, extra) => {
 const KNOWN_REGRESSIONS = [
   'R-按行切：站方 `@js:` 的 bookList 返回**多行字符串**时 ⇒ 新引擎把整串当**一条**'
   + '（老引擎/Legado 的 getStringList：按行切 ⇒ 一行一本书）',
-  'R-document：站方 `@js:` 里直接 `document.querySelectorAll` ⇒ 新引擎的 JS 作用域里**没有 document**'
-  + '（引擎仓 `docs/legado-semantics.md` §S-SCP-05 明确要求有）⇒ 这类列表规则直接失败（0 本）',
+  'R-documentDOM：站方 `@js:` 里直接 `document.querySelectorAll` ⇒ 新引擎**有** `document` 了（2026-10-26 补）'
+  + '，但**真 DOM 解析能力待吸收**（现在返回空数组 ⇒ 节点数 = 0 ⇒ 站方靠 DOM 解析的列表仍是空）',
   'R-hexLatin1（**只影响沙盒**）：沙盒的 Node 后端把 `java.hexDecodeToString` 的 **hex 路径**'
   + '实现成了 Latin-1（`String.fromCharCode`）⇒ 中文变乱码；真机 JSC 走引擎 `Crypto`（UTF-8）⇒ 不乱码'
   + ' ⇒ **沙盒 ≠ 真机** ⇒ 验 hex 路径的门禁在沙盒里会假红（本门禁因此改用 base64 载荷）',
@@ -187,18 +187,25 @@ function run(bookListJs) {
        '⭐ 空列表按引擎规格报 `emptyResult`（不是崩、也不是静默空）', r && r.error);
   }
 
-  console.log('\n=== 6. 活体（离线）：站方 `@js:` 用 `document.querySelectorAll` ⇒ 新引擎没给 document ===');
+  console.log('\n=== 6. 活体（离线）：站方 `@js:` 用 `document.querySelectorAll` ⇒ document 必须存在 ===');
   {
     const r = run(
       '@js: (function(){ var n = document.querySelectorAll("div.book-like");' +
       '  return ["https://x.example/1|||" + n.length + "|||作者一|||https://x.example/c1.jpg|||简介一"]; })()');
     const books = (r && r.books) || [];
-    console.log('  出书 =', books.length, '| error:', (r && r.error) || '(无)');
-    // ⚠️⚠️ **已知回归**：引擎仓 §S-SCP-05 要求「`document` 必须指向当前基准文档」⇒ 新引擎**没实现**
-    //   ⇒ 这条钉的是【现状】⇒ 引擎补上以后本条会红 ⇒ 那时改成断言「能取到节点数」⭐⭐⭐
-    ok(books.length === 0 && !!(r && r.error),
-       '【已知回归·已上报】JS 作用域里**没有 document** ⇒ 这类站方列表规则直接失败（引擎仓 §S-SCP-05 要求有）',
-       r && r.error);
+    console.log('  出书 =', books.length, '| 书名 =', JSON.stringify((books[0] || {}).name),
+                '| error:', (r && r.error) || '(无)');
+    // ⭐⭐⭐⭐⭐ **已修好（2026-10-26）**：引擎补了 `document` 全局替身
+    //   · 之前：`document is not defined` ⇒ 整条规则抛 ⇒ **0 本 + emptyResult** ⇒ 门禁钉的是【现状】⭐⭐⭐
+    //   · 现在：`document` **存在** ⇒ `querySelectorAll` 返回**空数组**（**真 DOM 能力待吸收**）
+    //     ⇒ `n.length === 0` ⇒ 书名 = "0" ⇒ **书能出来**（不再是 0 本）⭐⭐⭐
+    //   ⇒ 断言的是【语义】不是【实现】：`document` 在 + 规则能跑完 + 不是 0 本
+    ok(books.length === 1 && !(r && r.error),
+       '⭐⭐⭐ `document` 必须在 JS 作用域里（站方 `@js:` 直接用它 ⇒ 缺了整条规则死 ⇒ 0 本）',
+       'books=' + books.length + ' error=' + (r && r.error));
+    ok((books[0] || {}).name === '0',
+       '⭐⭐ `querySelectorAll` 现在返回**空数组**（真 DOM 解析能力**待吸收** ⇒ 节点数 = 0）',
+       'name=' + JSON.stringify((books[0] || {}).name));
   }
 
   console.log('');
