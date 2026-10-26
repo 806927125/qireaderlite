@@ -36,59 +36,76 @@ const read = (p) => {
 
 const jscPath = path.join(ENGINE_DIR, 'Sources', 'LegadoCore', 'JS', 'JSCExecutor.swift');
 const nodePath = path.join(ENGINE_DIR, 'Sources', 'LegadoCore', 'JS', 'NodeJSExecutor.swift');
+// ⭐⭐⭐ **形态的单一真相**（2026-10-26 重构）⇒ 两个后端都调它 ⇒ 不可能漂移
+const shapePath = path.join(ENGINE_DIR, 'Sources', 'LegadoCore', 'JS', 'JSEvalShape.swift');
 
 console.log('=== ① 两个后端的源码都在吗 ===');
 const jsc = read(jscPath);
 const node = read(nodePath);
+const shape = read(shapePath);
 ok(jsc !== null, 'JSCExecutor.swift 在（' + jscPath + '）');
 ok(node !== null, 'NodeJSExecutor.swift 在（' + nodePath + '）');
+ok(shape !== null, 'JSEvalShape.swift 在（形态的单一真相：' + shapePath + '）');
 
 if (jsc && node) {
   console.log('');
-  console.log('=== ② 形态选择：静态选形态（不许「跑到有值为止」）===');
-  for (const [name, src] of [['JSC', jsc], ['Node', node]]) {
-    ok(/isObjectLiteral/.test(src), `${name}：有「对象字面量」判定（isObjectLiteral）`);
-    ok(/hasPrefix\("\{"\)/.test(src) || /charAt\(0\) === '\{'/.test(src),
-       `${name}：对象字面量判定用的是首字符 '{'`);
+  console.log('=== ② 形态脚本文本【只有一处生成】（2026-10-26 重构后）===');
+  // ⭐⭐⭐⭐⭐ **最强的不变量**：两个后端**不各写各的** ⇒ 形态文本只存在于 `JSEvalShape.swift`
+  //   ⇒ JSC 直接跑那份脚本文本；Node 把同一份脚本文本发给 harness
+  //   ⇒ ⇒ **形态不可能漂移**（老架构下两边各拼各的 ⇒ 必然漂移）⭐⭐⭐
+  ok(shape !== null, 'JSEvalShape.swift 在（形态的单一真相）');
+  if (shape) {
+    ok(/public static func scripts\(for code: String, scope: String\)/.test(shape),
+       'JSEvalShape.scripts(for:scope:) 在（两个后端共用的入口）');
+    ok(/JSEvalShape\.scripts\(for: code, scope: scope\)/.test(jsc),
+       'JSC 后端调 JSEvalShape.scripts（不许自己拼脚本）');
+    ok(/JSEvalShape\.scripts\(for: code, scope: scope\)/.test(node),
+       'Node 后端调 JSEvalShape.scripts（不许自己拼脚本）');
+    // ⭐⭐⭐ **形态链 = 老引擎（轻阅 rule-analyzer.js）同款三形态，且顺序不变**
+    const idxEval = shape.indexOf('jsonLiteral(code)');
+    const idxExpr = shape.indexOf('jsonLiteral("(" + code + ")")');
+    const idxBody = shape.indexOf('jsonLiteral("(function(){" + code');
+    ok(idxEval > 0, '形态①：直接 eval（老引擎同款）');
+    ok(idxExpr > 0, '形态②：整段当表达式（对象字面量规则）');
+    ok(idxBody > 0, '形态③：整段当函数体（顶层 return）');
+    ok(idxEval > 0 && idxExpr > idxEval && idxBody > idxExpr,
+       '三个形态的顺序必须是 ①直接eval → ②表达式 → ③函数体（老引擎同款）');
   }
 
   console.log('');
-  console.log('=== ③ 对象字面量 ⇒ 整段当表达式 ===');
-  // ⭐⭐⭐ 两个后端写法不同（JSC 用 attempts 数组，Node 用 attempts = [...]）
-  //   ⇒ 判据只看「有没有 ( trimmed ) 这种整段当表达式的形态」
-  for (const [name, src] of [['JSC', jsc], ['Node', node]]) {
-    ok(/["']\( ["']?\s*\+?\s*trimmed/.test(src) || /\(\s*["']?\s*\+\s*trimmed/.test(src)
-       || /trimmed\s*\+\s*["']\n\)["']/.test(src),
-       `${name}：有「整段当表达式」形态（( trimmed )）`);
-  }
+  console.log('=== ③ 只有【语法错】才换下一种形态（运行时错误直接抛）===');
+  // ⭐⭐⭐⭐⭐ **这是「站方 JS 只执行一次」的生命线**（2026-10-25 真机回归的根因）
+  //   · 语法错 ⇒ 代码**根本没跑** ⇒ 换形态**不重复副作用** ✅
+  //   · 运行时错 ⇒ 代码**已经跑过** ⇒ 换形态**副作用重复**（java.ajax 重复发 ⇒ 限流打爆）❌
+  ok(/isSyntaxError/.test(jsc), 'JSC：有「是不是语法错」的判定');
+  ok(/if !Self\.isSyntaxError\(msg\)/.test(jsc),
+     'JSC：非语法错 ⇒ 直接抛（不许换形态重跑）');
+  const jscLoop = (jsc.match(/for \(i, src\) in attempts\.enumerated\(\) \{[\s\S]{0,3000}?\n        \}/) || [''])[0];
+  ok(jscLoop.length > 0, 'JSC：找到形态尝试循环');
+  ok(/break/.test(jscLoop), 'JSC：执行成功就 break（只跑一次）');
+  ok(!/isUndefined[\s\S]{0,200}?continue/.test(jscLoop),
+     'JSC：循环体里不许「undefined ⇒ continue」（那会重复执行站方 JS）');
+  ok(/isSyntax/.test(node), 'Node：harness 里有「是不是语法错」的判定');
+  ok(/if \(!isSyntax\) throw err;/.test(node),
+     'Node：非语法错 ⇒ 直接抛（不许换形态重跑）');
 
   console.log('');
   console.log('=== ④ 执行成功就返回（不许因 undefined 再跑一遍）===');
-  // ⭐⭐⭐ 关键判据：循环体里**不许**有「undefined ⇒ continue / 试下一种形态」
   for (const [name, src] of [['JSC', jsc], ['Node', node]]) {
     const fn = name === 'JSC'
-      ? (src.match(/for src in attempts \{[\s\S]{0,2500}?\n\s{8}\}/) || [''])[0]
-      : (src.match(/for \(let i = 0; i < attempts\.length; i\+\+\) \{[\s\S]{0,2500}?\n\s{2}\}/) || [''])[0];
+      ? jscLoop
+      : (src.match(/function runEval\(attempts\) \{[\s\S]{0,2500}?\n\}/) || [''])[0];
     ok(fn.length > 0, `${name}：找到形态尝试循环`);
-    ok(!/isUndefined[\s\S]{0,200}?continue/.test(fn) && !/undefined[\s\S]{0,200}?continue/.test(fn),
+    ok(!/undefined[\s\S]{0,200}?continue/.test(fn),
        `${name}：循环体里不许「undefined ⇒ continue」（那会重复执行站方 JS）`);
     ok(/break/.test(fn) || /return v/.test(fn) || /return null/.test(fn),
        `${name}：执行成功会 break/return（只跑一次）`);
-    // ⭐⭐⭐⭐⭐ **最关键的一条**：旧写法是「**没值就换下一种形态**」
-    //   ⇒ 特征就是「判 undefined / isUndefined 后才 break」
-    //   ⇒ 直接禁掉这个特征 ⇒ 变异测试立刻红 ⭐⭐⭐
-    ok(!/isUndefined/.test(fn),
-       `${name}：循环体里不许出现 isUndefined（旧写法：没值就换形态 ⇒ 重复执行站方 JS）`);
     if (name === 'Node') {
-      ok(!/v === undefined[\s\S]{0,160}?continue/.test(fn),
-         `Node：循环体里不许「v === undefined ⇒ continue」（重复执行站方 JS）`);
       // ⭐ Node 的正确写法：undefined 时 **不再跑下一种形态** ⇒ 直接返回
-      //   （形态 2 已经试过了 ⇒ undefined 就该结束 ⇒ 不许再试）
       const undefBlock = (fn.match(/if \(v === undefined \|\| v === null\) \{[\s\S]{0,1400}?\n\s{4}\}/) || [''])[0];
       ok(undefBlock.length > 0, 'Node：找到 undefined 分支');
       ok(!/for \(let i = 0/.test(undefBlock) && !/attempts\[i\]/.test(undefBlock),
          'Node：undefined 分支里不许再执行下一种形态（那会重复执行站方 JS）');
-      // ⭐⭐⭐ **最狠的一条**：undefined 分支里**任何**再执行都不许（不管用哪种写法）
       ok(!/runInContext/.test(undefBlock),
          'Node：undefined 分支里不许再 runInContext（重复执行站方 JS ⇒ 限流打爆 / 写盘翻倍）');
       ok(/return null/.test(undefBlock) || /throw new Error/.test(undefBlock),

@@ -52,7 +52,14 @@ trap 'rm -rf "$TMP"' EXIT
 cp test/host-tools-test.swift "$TMP/main.swift"
 
 echo "=== 编译 Core/HostTools.swift（swiftc 真编）==="
-if ! "$SWIFTC" -O "$TMP/main.swift" QiReaderLite/Core/HostTools.swift -o "$TMP/compat-test" 2>"$TMP/err.txt"; then
+# ⭐⭐⭐⭐⭐ **`AppPaths.swift` 必须一起编**（2026-10-26 实证）
+#
+# ⚠️⚠️⚠️ **原来的洞**：`HostTools.swift` 里的 `CacheFiles` 用了 `AppPaths.cacheDir`
+#   ⇒ 而 `AppPaths.swift` **不在编译列表里** ⇒ 报「cannot find 'AppPaths' in scope」
+#   ⇒ **门禁红**（而这个洞的成因是：**新加的纯 Foundation 文件没人加进编译列表**）⭐⭐⭐
+#   ⇒ ⇒ **「门禁全绿」≠「我改的文件被编过」** ⇒ 改完必须问「这个文件在列表里吗」⭐⭐⭐
+if ! "$SWIFTC" -O "$TMP/main.swift" QiReaderLite/Core/HostTools.swift \
+      QiReaderLite/Core/AppPaths.swift -o "$TMP/compat-test" 2>"$TMP/err.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err.txt" | head -30
   exit 1
@@ -141,7 +148,12 @@ echo
 echo "=== 编译 Core/BookSource.swift（swiftc 真编）==="
 mkdir -p "$TMP/import"
 cp test/source-import-patch-test.swift "$TMP/import/main.swift"
-if ! "$SWIFTC" -O "$TMP/import/main.swift" QiReaderLite/Core/BookSource.swift QiReaderLite/Core/SourceRawArchive.swift -o "$TMP/import-test" 2>"$TMP/err4b.txt"; then
+# ⭐⭐⭐⭐⭐ **`HostTools.swift` / `AppPaths.swift` 也要带上**（2026-10-26 实证）
+#   ⇒ `SourceRawArchive.swift` 用了 `HostTools.writeAtomicallyFree` + `DiskWriteMeter`
+#     （`DiskWriteMeter` 就定义在 `HostTools.swift` 里）⇒ 不带 ⇒ 编译失败 ⭐⭐⭐
+if ! "$SWIFTC" -O "$TMP/import/main.swift" QiReaderLite/Core/BookSource.swift \
+      QiReaderLite/Core/SourceRawArchive.swift QiReaderLite/Core/HostTools.swift \
+      QiReaderLite/Core/AppPaths.swift -o "$TMP/import-test" 2>"$TMP/err4b.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err4b.txt" | head -30
   exit 1
@@ -162,7 +174,10 @@ echo
 echo "=== 编译 Core/SourceDictCache.swift（swiftc 真编）==="
 mkdir -p "$TMP/dictcache"
 cp test/source-dict-cache-test.swift "$TMP/dictcache/main.swift"
-if ! "$SWIFTC" -O "$TMP/dictcache/main.swift" QiReaderLite/Core/BookSource.swift QiReaderLite/Core/SourceRawArchive.swift QiReaderLite/Core/SourceDictCache.swift -o "$TMP/dictcache-test" 2>"$TMP/err4c.txt"; then
+if ! "$SWIFTC" -O "$TMP/dictcache/main.swift" QiReaderLite/Core/BookSource.swift \
+      QiReaderLite/Core/SourceRawArchive.swift QiReaderLite/Core/SourceDictCache.swift \
+      QiReaderLite/Core/HostTools.swift QiReaderLite/Core/AppPaths.swift \
+      -o "$TMP/dictcache-test" 2>"$TMP/err4c.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err4c.txt" | head -30
   exit 1
@@ -211,6 +226,7 @@ if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
         QiReaderLite/Core/BookSource.swift \
         QiReaderLite/Core/SourceRawArchive.swift \
         QiReaderLite/Core/HostTools.swift \
+        QiReaderLite/Core/AppPaths.swift \
         QiReaderLite/Core/SourceVariables.swift \
         QiReaderLite/Core/EngineBackend.swift \
         QiReaderLite/Core/ServiceError.swift \

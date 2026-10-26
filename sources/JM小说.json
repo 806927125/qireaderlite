@@ -1,0 +1,55 @@
+[
+  {
+    "bookSourceComment" : "SM涩漫小说。解码：外层base64 -> 字节反转 -> 内层base64(UTF-8)，正文txturl为单层base64。发现页13分类onetab免token；搜索需token(自动注册并缓存)；正文免token。\n• 2026-10-07 修复:① coverDecodeJs\/imageDecode 内联 + Packages 加 typeof 守卫 —— 原版直接引用 Packages.java.io.InputStream,iOS 栖阅(JSC)无 Packages 必抛错→catch 返回 null→封面\/图片全解不开;② 封面 URL 归一化(\/\/→\/),站方数据有 https:\/\/host\/\/laosiji\/... 双斜杠,实测 404(动漫列表 5\/15 中招),改单斜杠即 200;③ 动漫目录 chapterList 改从详情响应取 movie.id 拼完整 URL,chapterUrl 三级兜底,不再依赖 baseUrl;④ respondTime 180000(3分钟)→30000,失败请求不必空转 3 分钟。\n• v2 2026-10-07:coverDecodeJs\/imageDecode 改多路取字节(InputStream\/String\/类数组\/ArrayBuffer\/TypedArray 依次试) —— 栖阅 JSC 无 Packages,Rhino 会把 byte[] 包成可下标对象而 JSC 未必,上一版只加 Packages 守卫没管 result 类型。若封面仍空,请对比一个【封面能正常显示】的书源其 coverDecodeJs 值。",
+    "bookSourceGroup" : "最新能用 10.8",
+    "bookSourceName" : "JM小说",
+    "bookSourceType" : 0,
+    "bookSourceUrl" : "小说API",
+    "coverDecodeJs" : "(function(){\nvar K='2019ysapp7527';\nvar b=null;\nvar i=0;\ntry{\n  var IS=null,BOS=null;\n  try{ if(typeof Packages!=='undefined'&&Packages.java&&Packages.java.io){IS=Packages.java.io.InputStream;BOS=Packages.java.io.ByteArrayOutputStream;} }catch(_e){}\n  if(IS&&BOS&&(result instanceof IS)){ var o=new BOS(),x; while((x=result.read())!==-1){o.write(x);} b=o.toByteArray(); }\n}catch(e){}\nif(!b){\n  try{ if(typeof result==='string'&&result.length>0){ b=[]; for(i=0;i<result.length;i++){ b[i]=result.charCodeAt(i)&255; } } }catch(e1){}\n}\nif(!b){\n  try{ if(result&&typeof result.length==='number'&&result.length>0){ b=[]; for(i=0;i<result.length;i++){ var v=result[i]; b[i]=(typeof v==='number'?v:(v&&typeof v.valueOf==='function'?v.valueOf():0))&255; } } }catch(e2){}\n}\nif(!b){\n  try{ if(result&&typeof result.byteLength==='number'&&result.byteLength>0){ var u=new Uint8Array(result); b=[]; for(i=0;i<u.length;i++){ b[i]=u[i]; } } }catch(e3){}\n}\nif(!b||!b.length){ return null; }\ntry{ var n=b.length<100?b.length:100; for(i=0;i<n;i++){ b[i]=(b[i]^K.charCodeAt(i%K.length))&255; } }catch(e4){ return null; }\nreturn b;\n})()",
+    "customButton" : false,
+    "customOrder" : 2,
+    "enabled" : true,
+    "enabledCookieJar" : false,
+    "enabledExplore" : true,
+    "eventListener" : false,
+    "exploreUrl" : "<js>\nvar H = 'https:\/\/cof03.bahfn.cn';\n\n\/\/ 标签名 + onetab 编号\nvar TAGS = [\n  ['每日最新', '61'],\n  ['都市激情', '63'],\n  ['校园春色', '64'],\n  ['乡村爱情', '65'],\n  ['系统异能', '66'],\n  ['经典武侠', '67'],\n  ['同人改编', '68'],\n  ['科学幻想', '69'],\n  ['东方玄幻', '70'],\n  ['娱乐明星', '71'],\n  ['历史架空', '72'],\n  ['西方魔幻', '73'],\n  ['贤者小说', '74']\n];\n\nvar FULL = {layout_flexBasisPercent: 1};\nvar HALF = {layout_flexBasisPercent: 0.459};\n\nvar ui = [];\n\n\/\/ 搜索区：输入框一行、按钮一行\nui.push({title:'关键字', type:'text', default:'', style: FULL});\nui.push({title:'🔍 搜索', type:'button', action: \"var k=infoMap['关键字']; if(!k){ java.toast('请输入搜索关键字'); } else { java.searchBook(k, source); }\", style: FULL});\n\n\/\/ 标签区：一行两个\nui.push({title:'标签', url:'', style: FULL});\nfor (var i = 0; i < TAGS.length; i++) {\n    var name = TAGS[i][0];\n    var id   = TAGS[i][1];\n    var u = H + '\/jbapi\/book\/onetab\/' + id + '\/{{page}}\/15\/sort\/hjm.ojbk';\n    ui.push({title: name, url: u, style: HALF});\n}\n\nJSON.stringify(ui);\n<\/js>",
+    "header" : "{\"User-Agent\": \"Mozilla\/5.0 (Linux; Android 10; K) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/137.0.0.0 Mobile Safari\/537.36\"}",
+    "jsLib" : "var K64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+\/';\nfunction b64ToBytes(x){x=String(x).replace(\/[^A-Za-z0-9+\/=]\/g,'');var out=[],i=0;while(i<x.length){var e1=K64.indexOf(x.charAt(i++)),e2=K64.indexOf(x.charAt(i++)),e3=K64.indexOf(x.charAt(i++)),e4=K64.indexOf(x.charAt(i++));var c1=(e1<<2)|(e2>>4),c2=((e2&15)<<4)|(e3>>2),c3=((e3&3)<<6)|e4;out.push(c1&255);if(e3!=-1&&e3!=64)out.push(c2&255);if(e4!=-1&&e4!=64)out.push(c3&255);}return out;}\nfunction bytesToUtf8(b){var s='',i=0,n=b.length;while(i<n){var c=b[i++];if(c<128){s+=String.fromCharCode(c);}else if(c>=192&&c<224){s+=String.fromCharCode(((c&31)<<6)|(b[i++]&63));}else if(c>=224&&c<240){s+=String.fromCharCode(((c&15)<<12)|((b[i++]&63)<<6)|(b[i++]&63));}else if(c>=240){var cp=((c&7)<<18)|((b[i++]&63)<<12)|((b[i++]&63)<<6)|(b[i++]&63);cp-=65536;s+=String.fromCharCode(55296+(cp>>10),56320+(cp&1023));}}return s;}\nfunction b64d(x){return bytesToUtf8(b64ToBytes(x));}\nfunction b64e(s){var bytes=unescape(encodeURIComponent(s));var o='',i=0;while(i<bytes.length){var c1=bytes.charCodeAt(i++),c2=bytes.charCodeAt(i++),c3=bytes.charCodeAt(i++);var e1=c1>>2,e2=((c1&3)<<4)|(c2>>4),e3=((c2&15)<<2)|(c3>>6),e4=c3&63;if(isNaN(c2)){e3=e4=64;}else if(isNaN(c3)){e4=64;}o+=K64.charAt(e1)+K64.charAt(e2)+(e3<64?K64.charAt(e3):'=')+(e4<64?K64.charAt(e4):'=');}return o;}\nfunction kwB64(k){return b64e(String(k));}\nfunction hjmDec(s){if(s===null||s===undefined||s==='')return '';var a=b64ToBytes(s);a.reverse();return bytesToUtf8(b64ToBytes(bytesToUtf8(a)));}\nfunction hjmB64(s){if(s===null||s===undefined||s==='')return '';return bytesToUtf8(b64ToBytes(String(s)));}\nfunction apiDec(s){return hjmDec(s);}\nvar _tk='';\nfunction getToken(j){try{if(_tk)return _tk;if(!j)j=java;var cid='bk'+new Date().getTime()+Math.floor(Math.random()*1000000);var r=j.ajax('https:\/\/cof03.bahfn.cn\/jbapi\/user\/autoUser\/null\/7\/'+cid);_tk=JSON.parse(hjmDec(JSON.parse(r).data)).token||'';return _tk;}catch(e){return '';}}\nfunction decodeImage(result){try{var InputStream=Packages.java.io.InputStream;var ByteArrayOutputStream=Packages.java.io.ByteArrayOutputStream;var bytes;if(result instanceof InputStream){var out=new ByteArrayOutputStream();var b;while((b=result.read())!=-1){out.write(b);}bytes=out.toByteArray();}else{bytes=result;}var K='2019ysapp7527';var n=Math.min(100,bytes.length);for(var i=0;i<n;i++){bytes[i]^=K.charCodeAt(i%K.length);}return bytes;}catch(e){return null;}}\n",
+    "lastUpdateTime" : "1791052559197",
+    "respondTime" : 30000,
+    "ruleBookInfo" : {
+      "coverUrl" : "@js:(function(){try{var o=JSON.parse(hjmDec(JSON.parse(result).data));var u=(o.book||{}).imgurl||'';return String(u).replace(\/([^:])\\\/\\\/\/g,'$1\/');}catch(e){return '';}})()",
+      "intro" : "@js:(function(){try{var o=JSON.parse(hjmDec(JSON.parse(result).data));var b=o.book||{};return (b.marks||'')+'\\n'+(b.miaoshu||'');}catch(e){return '';}})()",
+      "kind" : "@js:(function(){try{var o=JSON.parse(hjmDec(JSON.parse(result).data));return (o.book||{}).marks||'';}catch(e){return '';}})()",
+      "name" : "@js:(function(){try{var o=JSON.parse(hjmDec(JSON.parse(result).data));return (o.book||{}).title||'';}catch(e){return '';}})()"
+    },
+    "ruleContent" : {
+      "content" : "@js:\n(function(){\ntry{\nvar j=JSON.parse(result);\nvar s=j.data;\nvar o;\nif(typeof s==='string'){o=JSON.parse(hjmDec(s));}else{o=s;}\nvar u=o.txturl||o.content||o.txt||'';\nif(!u)return o.name||'';\nif(u.indexOf('http')!==0)u='https:\/\/cof03.bahfn.cn\/jbapi'+u;\nvar t=java.ajax(u);\nreturn hjmB64(t);\n}catch(e){return '加载失败:'+e;}\n})()",
+      "imageDecode" : "(function(){\nvar K='2019ysapp7527';\nvar b=null;\nvar i=0;\ntry{\n  var IS=null,BOS=null;\n  try{ if(typeof Packages!=='undefined'&&Packages.java&&Packages.java.io){IS=Packages.java.io.InputStream;BOS=Packages.java.io.ByteArrayOutputStream;} }catch(_e){}\n  if(IS&&BOS&&(result instanceof IS)){ var o=new BOS(),x; while((x=result.read())!==-1){o.write(x);} b=o.toByteArray(); }\n}catch(e){}\nif(!b){\n  try{ if(typeof result==='string'&&result.length>0){ b=[]; for(i=0;i<result.length;i++){ b[i]=result.charCodeAt(i)&255; } } }catch(e1){}\n}\nif(!b){\n  try{ if(result&&typeof result.length==='number'&&result.length>0){ b=[]; for(i=0;i<result.length;i++){ var v=result[i]; b[i]=(typeof v==='number'?v:(v&&typeof v.valueOf==='function'?v.valueOf():0))&255; } } }catch(e2){}\n}\nif(!b){\n  try{ if(result&&typeof result.byteLength==='number'&&result.byteLength>0){ var u=new Uint8Array(result); b=[]; for(i=0;i<u.length;i++){ b[i]=u[i]; } } }catch(e3){}\n}\nif(!b||!b.length){ return null; }\ntry{ var n=b.length<100?b.length:100; for(i=0;i<n;i++){ b[i]=(b[i]^K.charCodeAt(i%K.length))&255; } }catch(e4){ return null; }\nreturn b;\n})()"
+    },
+    "ruleExplore" : {
+      "bookList" : "@js:(function(){try{var j=JSON.parse(result);var d=j.data;if(typeof d==='string'){d=JSON.parse(hjmDec(d));}if(!d)return [];if(d.records)return d.records;if(d.list)return d.list;return Array.isArray(d)?d:[];}catch(e){return [];}})()",
+      "bookUrl" : "@js:'https:\/\/cof03.bahfn.cn\/jbapi\/book\/datav2\/1\/'+result.id+'\/hjm.ojbk'",
+      "coverUrl" : "@js:(function(){try{var m=(result&&result.movie)?result.movie:(result||{});return String(m.imgurl||'').replace(\/([^:])\\\/\\\/\/g,'$1\/');}catch(e){return '';}})()",
+      "intro" : "@js:result.miaoshu",
+      "kind" : "@js:(function(){try{return JSON.parse(result.marks).join(',');}catch(e){return result.marks||'';}})()",
+      "name" : "@js:result.title"
+    },
+    "ruleSearch" : {
+      "bookList" : "@js:(function(){try{var j=JSON.parse(result);var o=JSON.parse(hjmDec(j.data));return o.records||[];}catch(e){return [];}})()",
+      "bookUrl" : "@js:'https:\/\/cof03.bahfn.cn\/jbapi\/book\/datav2\/1\/'+result.id+'\/hjm.ojbk'",
+      "coverUrl" : "@js:(function(){try{var m=(result&&result.movie)?result.movie:(result||{});return String(m.imgurl||'').replace(\/([^:])\\\/\\\/\/g,'$1\/');}catch(e){return '';}})()",
+      "intro" : "@js:result.miaoshu",
+      "kind" : "@js:(function(){try{return JSON.parse(result.marks).join(',');}catch(e){return result.marks||'';}})()",
+      "name" : "@js:result.title"
+    },
+    "ruleToc" : {
+      "chapterList" : "@js:(function(){try{var o=JSON.parse(hjmDec(JSON.parse(result).data));return o.zhangjie||[];}catch(e){return [];}})()",
+      "chapterName" : "@js:result.name",
+      "chapterUrl" : "@js:'https:\/\/cof03.bahfn.cn\/jbapi\/book\/data\/zjv2\/'+result.id+'\/hjm.ojbk'"
+    },
+    "searchUrl" : "https:\/\/cof03.bahfn.cn\/jbapi\/book\/searchv2\/{{page}}\/15\/time,{\"method\":\"POST\",\"body\":\"{\\\"name\\\":\\\"{{kwB64(key)}}\\\"}\",\"headers\":{\"Content-Type\":\"application\/json\",\"token\":\"{{getToken(java)}}\"}}",
+    "storageKind" : 0,
+    "weight" : 0
+  }
+]
