@@ -32,7 +32,7 @@ final class WebViewJSHost: NSObject, WKNavigationDelegate, WKUIDelegate {
     private(set) var lastError: String?
 
     /// ⭐ 宿主调用分发（由 `WebViewJSExecutor` 注册）：`(object, method, argsJSON)` ⇒ JSON 文本
-    var syncHandler: ((String, String, String) -> String)?
+    var syncHandler: ((String) -> String)?
 
     private var pendingBoot: (() -> Void)?
 
@@ -79,7 +79,7 @@ final class WebViewJSHost: NSObject, WKNavigationDelegate, WKUIDelegate {
         // ① Java 兼容层（`JavaImporter` / `Packages.*` / 站方 jsLib 的地基）
         parts.append(contentsOf: JavaCompat.sources)
         // ② 宿主对象包装（`source.getVariable` / `java.*` … 全部走 `__hostJSON`）
-        parts.append(contentsOf: JSHostAPI.hostWrappers())
+        parts.append(contentsOf: JSScopeBuilder.hostWrappers())
         // ③ `document` 替身（站方 jsLib 有 117 处 `document.` ⇒ 缺了整条链死）
         parts.append(JSScopeBuilder.documentStub)
         // ④ `org.jsoup` 兼容层（43 处 `org.jsoup.Jsoup.parse`）
@@ -146,6 +146,26 @@ final class WebViewJSHost: NSObject, WKNavigationDelegate, WKUIDelegate {
             return
         }
         let payload = String(prompt.dropFirst(Self.syncPrefix.count))
-        completionHandler(syncHandler?(payload) ?? #"{"__qrNotImplemented":true}"#)
+        // ⭐⭐⭐ **同步分发不能在主线程直接做**（2026-10-26）
+        //   站方的 `java.ajax` 是**同步网络请求**（引擎内部全同步）⇒ 在主线程做 ⇒ **UI 卡死**（最久到超时）
+        //   ⇒ 丢后台队列 + 主线程转一下 runloop（UI 还能动）⇒ 语义仍是「同步」（JS 那边照样等结果）⭐⭐⭐
+        //   ⚠️ 老引擎没这层 ⇒ 因为它的 `java.ajax` 是异步的（postMessage + 两遍跑）⭐
+        final class Box: @unchecked Sendable { var value: String = #"{"__qrNotImplemented":true}"# }
+        let box = Box()
+        let sem = DispatchSemaphore(value: 0)
+        let handler = syncHandler
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let handler {
+                box.value = handler(payload)
+            }
+            sem.signal()
+        }
+        // ⭐ 主线程转 runloop（最多等 60 秒 ⇒ 站方 JS 死循环也不会永远卡住 UI）
+        let deadline = Date().addingTimeInterval(60)
+        while sem.wait(timeout: .now() + 0.005) == .timedOut {
+            if Date() >= deadline { break }
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
+        }
+        completionHandler(box.value)
     }
 }

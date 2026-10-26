@@ -1,4 +1,5 @@
 import SwiftUI
+import LegadoCore
 
 @main
 struct QiReaderLiteApp: App {
