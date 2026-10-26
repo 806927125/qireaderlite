@@ -110,8 +110,6 @@ enum EngineResourceLocator {
 final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     static let shared = RuleSandbox()
 
-    private var bootWaiters: [CheckedContinuation<Void, Never>] = []
-
     /// ⭐⭐⭐ **用系统浏览器打开**（站方 `java.startBrowser` / `startBrowserAwait` / `showBrowser` …）
     ///
     /// ⚠️ **为什么放这里**：要碰 `UIApplication` ⇒ 只能住在 import 了 UIKit 的文件
@@ -212,10 +210,10 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         lines.append(MemoryMeter.panelLine)
         // ⭐ 引擎会话数（新引擎的会话；当前用老引擎时是 0 ⇒ 看着不误导）
         lines.append("引擎会话：\(LegadoEngineBackend.shared.liveSessionCount) 个"
-                     + "（上限 \(LegadoEngineBackend.shared.maxLiveSessions)）")
+                     + "（上限 \(LegadoEngineBackend.maxLiveSessions)）")
         // ⭐⭐⭐ **本小时写盘**（iOS 的 diskwrites 限额 ≈ 1.07GB/天 ⇒ 写太多会被系统杀）
-        lines.append("本小时写盘：\(HostTools.DiskWriteMeter.hourBytes) B"
-                     + "（限额 \(HostTools.DiskWriteMeter.hourlyLimit) B）")
+        lines.append("本小时写盘：\(DiskWriteMeter.hourBytes) B"
+                     + "（限额 \(DiskWriteMeter.hourlyLimit) B）")
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")
             lines.append(contentsOf: recentLogs.suffix(12))
