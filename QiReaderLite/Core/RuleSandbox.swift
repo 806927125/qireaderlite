@@ -154,6 +154,13 @@ final class RuleSandbox: NSObject, ObservableObject {
         //   ⇒ 现在封顶（≤4）⇒ 这一行能一眼看出「会话有没有在涨」⭐⭐⭐
         lines.append("引擎会话：\(LegadoEngineBackend.shared.liveSessionCount) 个"
                      + "（上限 \(LegadoEngineBackend.maxLiveSessions) · 超了就淘汰最久未用的）")
+        // ⭐⭐⭐⭐⭐ **内存熔断清单**（2026-10-26 jetsam 实证 ⇒ 崩了也要留证 + 不再闪退）
+        //   ⇒ 「这个源上次把内存撑爆了」⇒ 已落盘 ⇒ 下次启动直接拒绝跑它 ⭐⭐⭐
+        let trips = MemoryMeter.tripsText
+        if trips != "（无）" {
+            lines.append("⚠️ 内存熔断（这些源上次把内存撑爆了 ⇒ 已拒绝运行）：")
+            lines.append(trips)
+        }
         // ⭐⭐⭐⭐⭐ **上次会话的档案**（build263）
         //   ⇒ jetsam 杀进程 ⇒ **内存里的峰值/日志一起没了** ⇒ 崩了再看面板啥也看不到
         //   ⇒ 所以峰值 + 采样（带 op 名）**落盘** ⇒ 这一行能回看「被杀前涨到多少、最后一个 op 是啥」⭐⭐⭐

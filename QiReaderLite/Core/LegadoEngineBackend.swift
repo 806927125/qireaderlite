@@ -586,10 +586,16 @@ final class LegadoEngineBackend: @unchecked Sendable {
     func dropAllSessions() {
         lock.lock()
         let n = sessions.count
+        let old = Array(sessions.values)
         sessions.removeAll()
         sessionOrder.removeAll()
         lock.unlock()
-        if n > 0 { NSLog("[engine] 清掉 \(n) 个会话") }
+        // ⭐⭐⭐⭐⭐ **连 JS 上下文一起作废**（2026-10-26 jetsam 实证）
+        //   ⇒ 光把会话从字典里删掉，**JSC 的堆未必立刻还给系统**
+        //   ⇒ 引擎的 `evaluator.js?.invalidate()` 会**丢掉整个 context**（含它的 VM）⭐⭐⭐
+        //   ⇒ 站方在 globalThis 里攒的东西（GB 级）⇒ 一次性还回去 ⭐⭐⭐
+        for s in old { s.engine?.evaluator.js?.invalidate() }
+        if n > 0 { NSLog("[engine] 清掉 \(n) 个会话（并作废 JS 上下文）") }
     }
 
     func dropSession(for sourceUrl: String) {

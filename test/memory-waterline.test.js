@@ -98,6 +98,8 @@ function stripComments(src) {
 console.log('\n── 1. 内存计量器必须在（而且量的是 jetsam 口径）──');
 ok(fs.existsSync(memPath), 'Core/MemoryMeter.swift 存在');
 const mem = fs.existsSync(memPath) ? stripComments(fs.readFileSync(memPath, 'utf8')) : '';
+const sb = fs.existsSync(sbPath) ? stripComments(fs.readFileSync(sbPath, 'utf8')) : '';
+const svc = fs.existsSync(svcPath) ? stripComments(fs.readFileSync(svcPath, 'utf8')) : '';
 ok(/phys_footprint/.test(mem), '量的是 phys_footprint（jetsam 判杀用的量）');
 ok(/TASK_VM_INFO/.test(mem), '走的是 TASK_VM_INFO（不是猜的）');
 ok(/autoResetThresholdMB\s*=\s*\d+/.test(mem), '有自动清理阈值常量');
@@ -105,7 +107,6 @@ ok(/#if canImport\(Darwin\)/.test(mem), '平台代码有 canImport 守卫（沙�
 ok(/cooldown|Cooldown/i.test(mem), '有冷却期（别反复清）');
 
 console.log('\n── 2. 自检面板必须有内存项（之前没有 ⇒ 涨到多少完全看不见）──');
-const sb = fs.existsSync(sbPath) ? stripComments(fs.readFileSync(sbPath, 'utf8')) : '';
 ok(/MemoryMeter\.panelLine/.test(sb), 'diagnose() 里挂了内存那一行');
 ok(/MemoryMeter\.sample\(\)/.test(sb), '面板会先采样一次（拿的是实时水位）');
 // ⭐⭐⭐⭐⭐ build263：jetsam 杀进程 ⇒ 内存里的峰值/日志**一起没了**
@@ -114,19 +115,31 @@ ok(/MemoryMeter\.lastSessionText/.test(sb), '面板有「上次会话」那一�
 ok(/MemoryMeter\.configure\(storeURL:/.test(sb), '启动就注入落盘位置（面板立刻能读上次会话）');
 ok(/AppPaths\.memMeterFile/.test(sb), '落盘位置来自 AppPaths（单一真相）');
 
+console.log('\n── 2b. 内存熔断（炸过的源 ⇒ 下次别再跑 ⇒ 不再闪退）──');
+ok(/func isTripped\(source:/.test(mem), '有「这个源炸过吗」的判定');
+ok(/func noteTrip\(/.test(mem), '有「记一次炸过」');
+ok(/func clearTrips\(/.test(mem), '有「手动解除熔断」');
+ok(/memory-trips\.json/.test(mem), '熔断记录**单独落盘**（不被 op 覆写）');
+ok(/func startWatch\(op:/.test(mem), 'op 期间有后台采样器（爆了能立刻落盘）');
+ok(/isTripped\(source: source\.bookSourceUrl\)/.test(svc), '引擎调用前会查熔断（炸过 ⇒ 拒绝跑）');
+ok(/noteTrip\(/.test(svc), '超限时会记下「这个源炸过」');
+const logSheetPath = path.join(APP, 'Features/Sources/EngineLogSheet.swift');
+const logSheet = fs.existsSync(logSheetPath) ? stripComments(fs.readFileSync(logSheetPath, 'utf8')) : '';
+ok(/MemoryMeter\.clearTrips\(\)/.test(logSheet), '急救面板里有「解除熔断」按钮（用户能手动放开）');
+ok(/内存熔断/.test(sb), '自检摘要里会显示「内存熔断」清单');
+
 console.log('\n── 3. 超限必须自己先清（清引擎会话 = 重建 JS context）──');
-const svc = fs.existsSync(svcPath) ? stripComments(fs.readFileSync(svcPath, 'utf8')) : '';
 ok(/checkMemoryWaterline/.test(svc), '引擎调用路径上挂了水位自检');
 ok(/dropAllSessions/.test(svc), '超限会清空引擎会话（⇒ JS context 重建）');
 ok(/MemoryMeter\.record\(/.test(svc), '判定走的是 MemoryMeter.record（阈值逻辑集中在一处）');
 // ⚠️ 关键：hook 必须在 **op 跑完之后**（不能中途掀掉正在跑的调用）
-const hookIdx = svc.indexOf('checkMemoryWaterline(op: op)');
+const hookIdx = svc.indexOf('checkMemoryWaterline(op: op');
 const invokeIdx = svc.indexOf('LegadoEngineBackend.shared.invoke(op, payload, source: source)');
 ok(hookIdx > 0 && invokeIdx > 0 && hookIdx > invokeIdx,
    '水位自检在引擎调用**之后**（不掀掉正在跑的结果）');
 // ⚠️⚠️ **不能只是「函数存在」** ⇒ 那个函数得**真的被调用**
 //   （注释掉调用点 ⇒ 门禁必须红；这条就是变异测试逼出来的）
-const callSites = (svc.match(/Self\.checkMemoryWaterline\(op:\s*op\)/g) || []).length;
+const callSites = (svc.match(/Self\.checkMemoryWaterline\(op:\s*op\b/g) || []).length;
 ok(callSites >= 1, 'checkMemoryWaterline 真的被调用了（不是只定义不用）');
 
 console.log('\n── 4. 真跑一遍阈值/峰值逻辑（需要 swiftc）──');

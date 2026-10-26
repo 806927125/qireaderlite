@@ -109,6 +109,17 @@ struct EngineLogSheet: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(Theme.accent)
+                            // ⭐⭐⭐⭐⭐ **解除内存熔断**（2026-10-26 jetsam 实证）
+                            //   ⇒ 熔断 = 「这个源上次把内存撑爆了」⇒ 手动放开让用户再试一次 ⭐⭐⭐
+                            Button {
+                                MemoryMeter.clearTrips()
+                                RuleSandbox.shared.appendLog("[内存] 已手动解除内存熔断（可以再试那些源了）")
+                                resetNote = "已解除内存熔断"
+                            } label: {
+                                Label("解除内存熔断", systemImage: "bolt.slash")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
+                            .buttonStyle(.bordered)
                             if !resetNote.isEmpty {
                                 Text(resetNote)
                                     .font(.caption)

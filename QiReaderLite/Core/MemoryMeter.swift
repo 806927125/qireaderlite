@@ -39,7 +39,131 @@ enum MemoryMeter {
     private static var lastResetFromMB: Int = 0
     private static var lastResetToMB: Int = 0
 
+    /// ⭐⭐⭐ **一次 op 的峰值**（op 开始时快照，op 结束时结算）
+    ///
+    /// ⚠️ 为什么要有：**op 内部爆掉时，op 结束后的采样可能已经晚了**（App 已被 jetsam 杀）
+    ///   ⇒ 必须在 op **期间**采样 ⇒ 才知道是哪个 op ⭐⭐⭐
+    private static var watchTimer: DispatchSourceTimer?
+    private static var watchOp: String = ""
+    private static var watchSource: String = ""
+    private static var watchPeakBytes: Int = 0
+
+    /// ⭐⭐⭐ **op 开始 ⇒ 起后台采样器**（每 250ms 采一次；超限立刻落盘）
+    static func startWatch(op: String, source: String) {
+        lock.lock(); defer { lock.unlock() }
+        stopWatchLocked()
+        watchOp = op
+        watchSource = source
+        watchPeakBytes = 0
+        let t = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        t.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250))
+        // ⚠️ `MemoryMeter` 是 enum（不是类）⇒ 不能 `[weak self]` ⇒ 直接静态调 ⭐⭐⭐
+        t.setEventHandler {
+            MemoryMeter.watchTick()
+        }
+        watchTimer = t
+        t.resume()
+    }
+
+    /// ⭐⭐⭐ **op 结束 ⇒ 停采样器**
+    static func stopWatch() {
+        lock.lock(); defer { lock.unlock() }
+        stopWatchLocked()
+    }
+
+    private static func stopWatchLocked() {
+        watchTimer?.cancel()
+        watchTimer = nil
+    }
+
+    /// ⭐ 采样器的一次心跳：超限 ⇒ **立刻落盘**（不等 op 结束）
+    private static func watchTick() {
+        let bytes = footprintBytes()
+        lock.lock()
+        watchPeakBytes = max(watchPeakBytes, bytes)
+        if bytes > peakBytes { peakBytes = bytes }
+        let over = bytes > 0 && bytes >= autoResetThresholdMB * 1024 * 1024
+        let op = watchOp
+        let src = watchSource
+        lock.unlock()
+        guard over else { return }
+        noteTrip(op: op, source: src, peakMB: bytes / (1024 * 1024))
+    }
+
+    /// ⭐⭐⭐ **记一次「内存超限」并落盘**（⇒ 下次启动能熔断这个源）
+    static func noteTrip(op: String, source: String, peakMB: Int) {
+        lock.lock(); defer { lock.unlock() }
+        let t = Trip(at: Date().timeIntervalSince1970, op: op, source: source, peakMB: peakMB)
+        trips.removeAll { $0.source == source }     // 同一个源只留最新一条
+        trips.append(t)
+        if trips.count > 20 { trips.removeFirst(trips.count - 20) }
+        writeTripsLocked()
+    }
+
+    /// ⭐⭐⭐ **这个源是不是已经「内存炸过」**（⇒ 熔断，别再跑）
+    static func isTripped(source: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        loadTripsLocked()
+        return trips.contains { $0.source == source }
+    }
+
+    /// ⭐ 熔断清单（面板显示）
+    static var tripsText: String {
+        lock.lock(); defer { lock.unlock() }
+        loadTripsLocked()
+        if trips.isEmpty { return "（无）" }
+        return trips.map { t in
+            let f = DateFormatter()
+            f.dateFormat = "MM-dd HH:mm"
+            let src = t.source.isEmpty ? "?" : String(t.source.suffix(28))
+            return "\(f.string(from: Date(timeIntervalSince1970: t.at))) · \(src) · op=\(t.op) · 峰值 \(t.peakMB) MB"
+        }.joined(separator: "\n")
+    }
+
+    /// ⭐ **手动解除熔断**（用户想再试一次时）
+    static func clearTrips() {
+        lock.lock(); defer { lock.unlock() }
+        trips.removeAll()
+        writeTripsLocked()
+    }
+
+    private static var trips: [Trip] = []
+    private static var tripsLoaded = false
+
+    private static func loadTripsLocked() {
+        guard !tripsLoaded else { return }
+        tripsLoaded = true
+        guard let url = storeURL else { return }
+        // 熔断存在**独立文件** ⇒ 不跟内存档案（会被 op 覆写）互相干扰
+        let tripURL = url.deletingLastPathComponent()
+            .appendingPathComponent("memory-trips.json")
+        guard let data = try? Data(contentsOf: tripURL),
+              let arr = try? JSONDecoder().decode([Trip].self, from: data) else { return }
+        trips = arr
+    }
+
+    private static func writeTripsLocked() {
+        guard let url = storeURL else { return }
+        let tripURL = url.deletingLastPathComponent()
+            .appendingPathComponent("memory-trips.json")
+        if let data = try? JSONEncoder().encode(trips) {
+            try? data.write(to: tripURL)
+        }
+    }
+
     // MARK: - 落盘档案（jetsam 杀进程 ⇒ 内存里的证据全没 ⇒ 必须落盘）
+
+    /// ⭐⭐⭐ **一次「内存超限」的记录**（源 + op + 峰值）—— **崩了也不能丢**
+    ///
+    /// ⚠️⚠️ **为什么必须落盘**：jetsam 杀进程 ⇒ 内存里的东西全没
+    ///   ⇒ 下次启动**不知道**哪个源炸过 ⇒ 还会再炸一次 ⇒ **反复闪退** ⭐⭐⭐
+    ///   ⇒ 落盘 ⇒ 下次启动读到 ⇒ **直接熔断这个源** ⇒ **不再闪退** ⭐⭐⭐
+    struct Trip: Codable {
+        var at: Double = 0
+        var op: String = ""
+        var source: String = ""
+        var peakMB: Int = 0
+    }
 
     /// ⭐ 一次采样（时间 + MB + 当时的 op 名）
     struct Sample: Codable, Equatable {
