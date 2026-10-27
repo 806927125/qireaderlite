@@ -104,6 +104,10 @@ declare -a GATES=(
   #   ⇒ 扫真实语料（125 源 + 聚合源）用到的站方 API 面 ⇒ 跟轻阅实现的面对账
   #   ⇒ **新出现的站方 API 必须当场定性**（实现 / 登记为例外）⇒ 不用人肉适配 ⭐
   "station-capability-audit:test/station-capability-audit.test.js"
+  # ⭐⭐⭐⭐⭐ **jsLib 顶层 let/const 的全局可见性**（2026-10-27 真机「详情目录都不能用」）
+  #   ⇒ 间接 eval 里 `let`/`const` 是 **eval 局部** ⇒ 规则里看不见 ⇒ URL 空
+  #   ⇒ 引擎 JSC/Node 有「显式导出」⇒ **只有 App 的 WebView 后端漏了** ⇒ 沙盒绿、真机挂
+  "jslib-global-export:test/jslib-global-export.test.js"
 )
 
 TOTAL_PASS=0

@@ -121,8 +121,24 @@ final class WebViewJSExecutor: JSExecutor {
         currentBase = context.base
         currentHostObjects = Self.hostObjects(from: context)
         WebViewJSBridge.shared.current = self
+        // ⭐⭐⭐⭐⭐ **必须显式导出 jsLib 的顶层符号**（2026-10-27 真机实证）
+        //
+        // ⚠️⚠️ **根因**：这里用的是**间接 eval** `(0,eval)(code)`
+        //   ⇒ 顶层 `function` / `var` 会进全局，但 **`let` / `const` 是 eval 局部** ⇒ 不是全局 ⭐⭐⭐
+        //   ⇒ 站方 jsLib 的 `let api = 'https://…'`（UAA 源用的）**规则里看不见**
+        //   ⇒ 规则里的 `@js:` 直接引用 `api` ⇒ ReferenceError ⇒ URL 空
+        //     ⇒ 「bookUrl 为空」「目录 URL 为空」⭐⭐⭐
+        //   ⚠️ 只有**函数**能摸到它（闭包捕获了 eval 的词法环境）⇒
+        //     「jsLib 定义函数 → 规则里调函数」能work，「规则直接引用顶层 let」必挂 ⭐
+        //
+        //   ⇒ 引擎的 JSC / Node 后端都有这步（`JSScopeBuilder.withExplicitGlobalExport`）
+        //   ⇒ **只有 WebView 后端漏了** ⇒ 沙盒全绿、真机全挂 ⭐⭐⭐
+        //   ⇒ 导出码必须在**同一个 eval 里**（才能看见 eval 局部的 let）⇒ 追加在 code 后面 ✔
+        //
+        // ⭐ 完成值会变成导出码的值（undefined）⇒ 与引擎 JSC 版同款（jsLib 本来就不要返回值）⭐
+        let exported = JSScopeBuilder.withExplicitGlobalExport(code)
         // ⭐ 全局求值（间接 eval）⇒ jsLib 的 `var` / `function` 留在全局（老引擎同款）
-        let wrapped = "JSON.stringify((0,eval)(" + JSEvalShape.jsonLiteral(code) + "))"
+        let wrapped = "JSON.stringify((0,eval)(" + JSEvalShape.jsonLiteral(exported) + "))"
         let text = try WebViewJSBridge.shared.evaluateSync(wrapped)
         return Self.parseValue(text)
     }

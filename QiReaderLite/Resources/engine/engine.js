@@ -45,6 +45,54 @@
     try { return Object.getOwnPropertyNames(g); } catch (e) { return []; }
   }
 
+  // ⭐⭐⭐⭐⭐ **显式导出 jsLib / loginUrl 的顶层符号**（2026-10-27 真机实证）
+  //
+  // ⚠️⚠️ **根因**：jsLib 是用**间接 eval** `(0, eval)(code)` 加载的
+  //   ⇒ 顶层 `function` / `var` 会进全局，但 **`let` / `const` 是 eval 局部** ⇒ 不是全局 ⭐⭐⭐
+  //   ⇒ 站方 jsLib 的 `let api = 'https://…'`（UAA 源用的）**规则里看不见**
+  //   ⇒ 规则里的 `@js:` 直接引用 `api` ⇒ ReferenceError ⇒ URL 空
+  //     ⇒ 「bookUrl 为空」「目录 URL 为空」⭐⭐⭐
+  //   ⚠️ 只有**函数**能摸到它（闭包捕获了 eval 的词法环境）⇒
+  //     「jsLib 定义函数 → 规则里调函数」能work，「规则直接引用顶层 let」必挂 ⭐
+  //
+  //   ⇒ 引擎的 JSC / Node 后端都有这步（`JSScopeBuilder.withExplicitGlobalExport`）
+  //   ⇒ **只有老引擎漏了** ⇒ 沙盒全绿、真机全挂 ⭐
+  //
+  // ⭐ **只导顶格声明**：函数体内的局部变量导出去会污染全局 ⇒ 别的源会读到 ⇒ 串源 ⭐⭐⭐
+  // ⭐ **写两个对象**（globalThis + this）⇒ 与「基线取并集」口径一致（与引擎侧同款）
+  function qrTopLevelExport(code) {
+    var names = [];
+    var seen = {};
+    var lines = String(code).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (!line.length) continue;
+      var first = line.charAt(0);
+      if (first === ' ' || first === '\t') continue;    // 缩进的 = 函数体内 ⇒ 不导
+      var t = line.trim();
+      if (t.indexOf('//') === 0 || t.indexOf('/*') === 0 || t.charAt(0) === '*') continue;
+      var m = /^(?:var|let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)/.exec(t);
+      if (!m) m = /^(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)/.exec(t);
+      if (m && !seen[m[1]]) { seen[m[1]] = 1; names.push(m[1]); }
+    }
+    if (!names.length) return code;
+    // ⚠️⚠️⚠️ **原代码必须拼在前面**（导出码是「追加」不是「替代」）
+    //   忘了拼 ⇒ eval 里只剩导出码 ⇒ **站方 jsLib 根本没加载**（而且不报错！）⭐⭐⭐
+    // ⚠️ 用 IIFE 包起来 ⇒ 里面的 var **不会变成全局**（不污染全局命名空间）⭐
+    //   ⇒ 但 IIFE 的闭包**看得见** eval 局部的 `let`/`const`（同一个 eval 词法环境）⭐⭐⭐
+    var out = String(code) + '\n;try{(function(){var __qrGs=[];';
+    out += 'try{if(typeof globalThis!==\'undefined\'&&globalThis)__qrGs.push(globalThis);}catch(e){}';
+    out += 'try{if(this&&typeof this===\'object\')__qrGs.push(this);}catch(e){}';
+    for (var j = 0; j < names.length; j++) {
+      var n = names[j];
+      out += 'for(var __qrI=0;__qrI<__qrGs.length;__qrI++){try{var __qrG=__qrGs[__qrI];';
+      out += 'if(typeof ' + n + '!==\'undefined\'&&__qrG.' + n + '===undefined){__qrG.' + n + '=' + n + ';}';
+      out += '}catch(e){}}';
+    }
+    out += '})();}catch(e){}';
+    return out;
+  }
+
   function purgeLibGlobals(key) {
     // ① 站方**新增**的全局 ⇒ 删掉
     var names = libGlobals[key] || [];
@@ -110,7 +158,12 @@
       //    实测：严格模式下 new Function + 间接 eval，声明照样进全局。
       //
       //    副作用：jsLib 里的 var 也会进全局（Rhino 共享 scope 也是这样，可接受）。
-      var fn = new Function('__code', 'return (0, eval)(__code);');
+      //
+      // ⭐⭐⭐⭐⭐ **必须显式导出顶层的 `let`/`const`**（间接 eval 里它们是 eval 局部 ⇒ 规则看不见）
+      //   ⚠️⚠️ **导出函数必须当【参数】传进去**：
+      //     `new Function(...)` 的函数体在**全局作用域** ⇒ 拿不到这个 IIFE 里的局部变量
+      //     ⇒ 直接写 `qrTopLevelExport(__code)` ⇒ ReferenceError ⇒ **jsLib 整个加载失败** ⭐⭐⭐
+      var fn = new Function('__code', '__exp', 'return (0, eval)(__exp(__code));');
 
       // 原来靠形参提供的宿主变量，改 eval 后得自己摆到全局上。
       // java / org 本来就是全局的；cache / cookie 没有就补个空壳
@@ -124,7 +177,7 @@
       g.source = QR.wrapSource ? QR.wrapSource(source) : source;
       g.book = undefined; g.chapter = undefined;
       try {
-        fn(code);
+        fn(code, qrTopLevelExport);
       } finally {
         g.source = prevSource; g.book = prevBook; g.chapter = prevChapter;
         void addedCache; void addedCookie;
@@ -196,9 +249,11 @@
     return ensureJsLib(source).then(function () {
     var prevSource = g.source;
     try {
-      var fn = new Function('__code', 'return (0, eval)(__code);');
+      // ⭐⭐⭐ **loginUrl 也一样要显式导出顶层 let/const**
+      //   （UAA 源的 loginUrl 里直接引用 jsLib 的 `let hosts` ⇒ 不导 ⇒ ReferenceError）⭐
+      var fn = new Function('__code', '__exp', 'return (0, eval)(__exp(__code));');
       g.source = QR.wrapSource ? QR.wrapSource(source) : source;
-      try { fn(String(source.loginUrl)); }
+      try { fn(String(source.loginUrl), qrTopLevelExport); }
       catch (e) { QR.java.log('[loginUrl 出错] ' + (source.bookSourceName || key) + ': ' + e.message); }
       finally { g.source = prevSource; }
     } catch (e) {
