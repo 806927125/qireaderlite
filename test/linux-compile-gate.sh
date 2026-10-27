@@ -50,6 +50,7 @@ FILES=(
   "QiReaderLite/Core/BookSource.swift"
   "QiReaderLite/Core/Book.swift"
   "QiReaderLite/Core/SourceVariables.swift"
+  "QiReaderLite/Core/StationVarForm.swift"
   "QiReaderLite/Core/SourceDictCache.swift"
   "QiReaderLite/Core/SourceRawArchive.swift"
   "QiReaderLite/Core/LegadoCompat.swift"
