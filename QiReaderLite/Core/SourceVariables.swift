@@ -76,6 +76,16 @@ enum SourceVariables {
         UserDefaults.standard.set(value, forKey: variablePrefix + sourceUrl)
     }
 
+    /// ⭐⭐⭐ **同时写「站方变量」+「书源变量」**
+    ///
+    /// ⚠️ **什么时候用**：站方用 `setVariable(...)` 存的东西（线路 / 发现页筛选 / 设置）
+    ///   ⇒ 按 Legado 语义那是**站方变量** ⇒ 宿主必须写进站方变量槽位 ⭐
+    ///   ⇒ 同时**镜像一份**进书源变量（兼容仍读 map 的老站方 / 老宿主）⭐
+    static func setVariableAndVars(_ value: String, for sourceUrl: String) {
+        setVariable(value, for: sourceUrl)
+        setVars(value, for: sourceUrl)
+    }
+
     /// ⭐ **存量变量是不是超长了**（面板用它提示用户「你之前存了一份超大的变量」）
     static func varsTooLong(for sourceUrl: String) -> Bool {
         vars(for: sourceUrl).count > maxVarsLength

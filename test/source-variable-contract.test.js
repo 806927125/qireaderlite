@@ -89,7 +89,20 @@ const ok = (c, m, extra) => {
   ok(/sourceVariable: sourceVariable/.test(backend), '新引擎的站方变量槽位接上了');
   ok(/dict\["__sourceVariable"\]/.test(backend), '新引擎回传站方变量');
 
-  console.log('\n=== 3. 变异对照：把老引擎改回「混成一份」⇒ 必须红 ===');
+  console.log('\n=== 3. 宿主侧：站方 setVariable 写的东西（线路 / 筛选 / 设置）必须落到站方变量 ===');
+  const svc2 = fs.readFileSync(path.join(APP, 'Core', 'SourceService.swift'), 'utf8');
+  const explore = fs.readFileSync(path.join(APP, 'Features', 'Explore', 'ExploreView.swift'), 'utf8');
+  const sheet = fs.readFileSync(path.join(APP, 'Features', 'Sources', 'SourceLoginSheet.swift'), 'utf8');
+  ok(/setVariableAndVars/.test(sv), '有「两处都写」的助手（站方变量 + 书源变量）');
+  // ⚠️ 漏一处 ⇒ 聚合源的「选最快线路 / 发现页筛选 / 本地云端开关」就白改了
+  //   （站方 `getArguments(source.getVariable(),'server')` 读的是**站方变量**）⭐
+  ok(/setVariableAndVars/.test(svc2), '选线 / 测速 ⇒ 写到站方变量');
+  ok(/setVariableAndVars/.test(explore), '发现页筛选 ⇒ 写到站方变量');
+  ok(/setVariable\(/.test(sheet), '登录面板的保存 / 清空 ⇒ 写到站方变量');
+  ok(/setVariable\(/.test(svc2) || /setVariableAndVars/.test(svc2),
+     '线路切换 ⇒ 写到站方变量');
+
+  console.log('\n=== 4. 变异对照：把老引擎改回「混成一份」⇒ 必须红 ===');
   const src = fs.readFileSync(API, 'utf8');
   const mutated = src.replace(
     "      if (hasVariable) return variable;   // ⭐ Legado 语义\n      return vars;                          // 老宿主兜底",

@@ -37,9 +37,8 @@ struct SourceLoginSheet: View {
     /// 番茄 sessionid（手动兜底）
     @State private var fqToken = ""
     /// 书源变量（JSON）—— 聚合源把「服务器地址 / 线路」存在这儿
-    @State private var varsText = ""
     /// ⭐⭐⭐ **站方变量**（Legado `source.variable`）—— 与「书源变量」**分开** ⭐
-    ///   ⇒ 站方把 token/凭据放这儿（`source.setVariable`）⇒ 用户也能手填 ⭐
+    ///   ⇒ 站方把 token/凭据放这儿（`source.setVariable`）⇒ 聚合源的线路/设置也放这儿 ⭐
     @State private var variableText = ""
     @State private var variableSaved = false
     @State private var varsSaved = false
@@ -190,9 +189,6 @@ struct SourceLoginSheet: View {
                     // ── 番茄 sessionid（手动兜底）──────────
                     fqTokenBox
                     varsBox
-                    // ⭐⭐⭐ 站方变量（token / 凭据）—— Legado 的「源变量」⭐
-                    variableBox
-
                     // ── 登录状态检测 ──────────────────────────
                     detectBox
 
@@ -216,77 +212,16 @@ struct SourceLoginSheet: View {
                 //   ⇒ 死线路每条等超时 ⇒ **每个 op 十几秒** ⇒ 面板一开就卡 ⭐⭐⭐
                 //   ⇒ 挑一条通的写进 `server` ⇒ 之后所有 op 只打那一条 ⇒ 秒回
                 await SourceService.shared.ensureFastLine(source: source)
-                varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+        variableText = SourceVariables.variable(for: source.bookSourceUrl)
+                variableText = SourceVariables.variable(for: source.bookSourceUrl)
                 variableText = SourceVariables.variable(for: source.bookSourceUrl)
                 // ⚠️⚠️ **别在这儿拉站方默认变量**（2026-10-24 真机「打开登录把 app 卡死」）
                 //   那个调用要**跑站方 jsLib + 发网络请求**（大灰狼的服务器经常 502）
                 //   ⇒ 卡在引擎队列里 ⇒ 面板一直转 ⇒ 用户以为 App 死了 ⭐⭐⭐
                 //   ⇒ 现在：**打开面板只读本地缓存**（同步、秒开）
                 //   ⇒ 想拉默认值/测速，点下面的「测速并选最快线路」⭐
-                varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
                 variableText = SourceVariables.variable(for: source.bookSourceUrl)
             }
-            }
-        }
-    }
-
-    // MARK: - ⭐⭐⭐ 站方变量（Legado 语义 · 通用书源系统的地基）
-
-    /// ⭐⭐⭐ **站方变量**（Legado `source.getVariable()` / `setVariable(str)`）
-    ///
-    /// ⚠️⚠️ **跟上面的「书源变量」是两回事**（Legado 就是两套）：
-    ///   · **站方变量** = 一整串 ⇒ 聚合源把 **token / 凭据** 放这儿
-    ///   · **书源变量** = map ⇒ 放线路 / 筛选 / 解锁态那些
-    /// ⇒ 混成一份 ⇒ 站方一存 token 就把线路冲掉（反过来也一样）⭐⭐⭐
-    private var variableBox: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("站方变量（token / 凭据）")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.ink)
-            Text("聚合源把 token 存在这儿（Legado 的「源变量」）。没有就先在登录界面点站方的「获取token」按钮，它会自己写进来；也可以直接粘一个已有的。")
-                .font(.caption2).foregroundStyle(Theme.sub)
-                .fixedSize(horizontal: false, vertical: true)
-            // ⚠️ 同样用 LimitedTextEditor（8K 上限 ⇒ 粘巨量文本不会排版炸进程）
-            LimitedTextEditor(text: $variableText, limit: 8_000) { projected in
-                message = "站方变量 \(projected) 字符，太大了（上限 8000）"
-                failed = true
-            }
-                .frame(minHeight: 60)
-                .scrollContentBackground(.hidden)
-                .padding(8)
-                .glassCard(cornerRadius: 10, variant: .regular)
-            if variableText.isEmpty {
-                Text("现在是空的 ⇒ 站方的请求不会带凭据（Legado 语义：空 ⇒ 走站方默认表）。")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 10) {
-                Button {
-                    let raw = variableText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    SourceVariables.setVariable(raw, for: source.bookSourceUrl)
-                    variableText = SourceVariables.variable(for: source.bookSourceUrl)
-                    variableSaved = true
-                } label: {
-                    Label(variableSaved ? "已保存" : "保存", systemImage: variableSaved ? "checkmark" : "square.and.arrow.down")
-                        .font(.system(size: 13, weight: .medium))
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                }
-                .buttonStyle(GlassActionButtonStyle())
-                if !variableText.isEmpty {
-                    Button {
-                        variableText = ""
-                        SourceVariables.setVariable("", for: source.bookSourceUrl)
-                        variableSaved = true
-                    } label: {
-                        Text("清空")
-                            .font(.system(size: 13))
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 12)
-                    }
-                    .buttonStyle(GlassActionButtonStyle())
-                }
             }
         }
     }
@@ -364,22 +299,24 @@ struct SourceLoginSheet: View {
     private var proxyBinding: Binding<String> {
         Binding(
             get: {
-                if let m = try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any],
+                // ⭐ 站方的 `proxy` 在**站方变量**里（`getArguments(source.getVariable(), 'proxy')`）⭐
+                if let m = try? JSONSerialization.jsonObject(with: Data(variableText.utf8)) as? [String: Any],
                    let v = m["proxy"] as? String, !v.isEmpty { return v }
                 return "云端"
             },
             set: { newValue in
-                var m = (try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any]) ?? [:]
+                var m = (try? JSONSerialization.jsonObject(with: Data(variableText.utf8)) as? [String: Any]) ?? [:]
                 m["proxy"] = newValue
                 if let d = try? JSONSerialization.data(withJSONObject: m),
                    let t = String(data: d, encoding: .utf8) {
-                    varsText = t
+                    variableText = t
                 }
-                SourceVariables.setVars(
-                    SourceVariables.mergeVars(
-                        userJSON: varsText,
-                        defaults: SourceVariables.defaultVars(for: source.bookSourceUrl)),
-                    for: source.bookSourceUrl)
+                // ⭐⭐ 站方变量（站方 getVariable() 读它）+ 书源变量各留一份 ⭐
+                let merged = SourceVariables.mergeVars(
+                    userJSON: variableText,
+                    defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
+                SourceVariables.setVariable(merged, for: source.bookSourceUrl)
+                SourceVariables.setVars(merged, for: source.bookSourceUrl)
                 varsSaved = true
             })
     }
@@ -397,17 +334,17 @@ struct SourceLoginSheet: View {
 
     private var varsBox: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("书源变量（线路 / 服务器）")
+            Text("站方变量（线路 / 服务器 / token）")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.ink)
-            Text("聚合源把服务器地址存在这里。默认线路不通时，详情页会逐条试 8 条（很慢）。把 server 改成一条通的线路即可。")
+            Text("⭐ Legado 的「源变量」：**一整串**。聚合源把服务器地址存这儿（默认线路不通时详情页会逐条试 8 条，很慢 ⇒ 把 server 改成一条通的线路）；token / 凭据也放这儿。")
                 .font(.caption2).foregroundStyle(Theme.sub)
                 .fixedSize(horizontal: false, vertical: true)
             // ⭐⭐⭐ **用 LimitedTextEditor**（不是 TextEditor）
             //   真机崩溃日志：TextEditor 粘贴/赋值巨量文本 ⇒ CoreText 排版 10 秒 ⇒ watchdog 杀进程
             //   ⇒ 这里给 8K 上限（站方默认表正常只有 170 字符 ⇒ 够用）⭐
-            LimitedTextEditor(text: $varsText, limit: 8_000) { projected in
-                message = "变量表 \(projected) 字符，太大了（上限 8000）⇒ 请只改 server 一项"
+            LimitedTextEditor(text: $variableText, limit: 8_000) { projected in
+                message = "站方变量 \(projected) 字符，太大了（上限 8000）⇒ 请只改 server 一项"
                 failed = true
             }
                 .frame(minHeight: 90)
@@ -417,28 +354,37 @@ struct SourceLoginSheet: View {
                 //    站方的邮箱/密码框用 `.clear` 通透档（栖阅同款）
                 .glassCard(cornerRadius: 10, variant: .regular)
             // ⚠️ 空的时候**说清为什么空**（2026-10-24 真机：空框让人以为是 App 坏了）
-            if varsText.isEmpty {
-                Text("还没有变量。点下面的「**测速并选最快线路**」会跑一次站方 jsLib，把默认变量和线路一起拉回来。")
+            if variableText.isEmpty {
+                Text("现在是空的 ⇒ 站方走它自己的默认表（Legado 语义）。点下面的「**测速并选最快线路**」会跑一次站方 jsLib，把默认变量和线路一起拉回来。")
                     .font(.caption2)
                     .foregroundStyle(Theme.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 10) {
                 Button {
-                    let raw = varsText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let raw = variableText.trimmingCharacters(in: .whitespacesAndNewlines)
                     // ⚠️ 空 = 恢复默认（让站方用自己的兜底）
                     //    非空 = **合并站方默认变量**再存（只存一项会把
                     //    server/tab/sources/proxy 全丢掉 ⇒ 源被改坏）
                     if raw.isEmpty {
-                        SourceVariables.setVars("", for: source.bookSourceUrl)
+                        SourceVariables.setVariable("", for: source.bookSourceUrl)
                     } else {
-                        SourceVariables.setVars(
-                            SourceVariables.mergeVars(
+                        // ⚠️⭐ **不是 JSON 对象**（eg token 串）⇒ **原样存**
+                        //   （合并会把 token 弄丢 ⇒ 站方拿不到凭据）⭐
+                        let isJSONObject = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) is [String: Any]
+                        let merged = isJSONObject
+                            ? SourceVariables.mergeVars(
                                 userJSON: raw,
-                                defaults: SourceVariables.defaultVars(for: source.bookSourceUrl)),
-                            for: source.bookSourceUrl)
+                                defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
+                            : raw
+                        // ⭐⭐ 站方变量（Legado：getVariable() 读它）⭐
+                        SourceVariables.setVariable(merged, for: source.bookSourceUrl)
+                        // 书源变量也留一份（兼容读 map 的站方）⭐
+                        if isJSONObject {
+                            SourceVariables.setVars(merged, for: source.bookSourceUrl)
+                        }
                     }
-                    varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+                    variableText = SourceVariables.variable(for: source.bookSourceUrl)
                 variableText = SourceVariables.variable(for: source.bookSourceUrl)
                     varsSaved = true
                 } label: {
@@ -448,10 +394,10 @@ struct SourceLoginSheet: View {
                         .padding(.horizontal, 12)
                 }
                 .buttonStyle(GlassActionButtonStyle())
-                if !varsText.isEmpty {
+                if !variableText.isEmpty {
                     Button {
-                        varsText = ""
-                        SourceVariables.setVars("", for: source.bookSourceUrl)
+                        variableText = ""
+                        SourceVariables.setVariable("", for: source.bookSourceUrl)
                         varsSaved = true
                     } label: {
                         Text("清空（用默认线路）")
@@ -512,11 +458,12 @@ struct SourceLoginSheet: View {
         //   ⇒ 拉不到就提示（引擎卡住 / 站方服务器不通）⇒ 用户一眼知道是哪边的问题 ⭐
         let defaults = await SourceService.shared.sourceDefaultVars(source: source)
         if !defaults.isEmpty {
-            varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+            // ⭐⭐ 站方变量（Legado：getVariable() 读它）⇒ 线路/设置都在这儿 ⭐
+            variableText = SourceVariables.variable(for: source.bookSourceUrl)
         }
         var hosts: [String] = (try? await SourceService.shared.sourceHosts(source: source)) ?? []
         // 兜底：当前变量里的 server 也一起测
-        if let m = try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any],
+        if let m = try? JSONSerialization.jsonObject(with: Data(variableText.utf8)) as? [String: Any],
            let sv = m["server"] as? String, !sv.isEmpty, !hosts.contains(sv) {
             hosts.insert(sv, at: 0)
         }
@@ -537,19 +484,19 @@ struct SourceLoginSheet: View {
             return
         }
         let ms = (best["ms"] as? Int) ?? -1
-        // 写进书源变量的 server
-        var m = (try? JSONSerialization.jsonObject(with: Data(varsText.utf8)) as? [String: Any]) ?? [:]
+        // ⭐⭐ 写进**站方变量**的 server（站方 `getArguments(source.getVariable(),'server')` 读它）⭐
+        var m = (try? JSONSerialization.jsonObject(with: Data(variableText.utf8)) as? [String: Any]) ?? [:]
         m["server"] = host
         if let d = try? JSONSerialization.data(withJSONObject: m),
            let t = String(data: d, encoding: .utf8) {
-            varsText = t
+            variableText = t
         }
-        SourceVariables.setVars(
-            SourceVariables.mergeVars(
-                userJSON: varsText,
-                defaults: SourceVariables.defaultVars(for: source.bookSourceUrl)),
-            for: source.bookSourceUrl)
-        varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+        let merged = SourceVariables.mergeVars(
+            userJSON: variableText,
+            defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
+        SourceVariables.setVariable(merged, for: source.bookSourceUrl)
+        SourceVariables.setVars(merged, for: source.bookSourceUrl)
+        variableText = SourceVariables.variable(for: source.bookSourceUrl)
         varsSaved = true
         bestHost = host
         // ⚠️ 文案照抄栖阅的「检测当前服务器」卡片（用户点名喜欢这个 UX ✅）
@@ -708,7 +655,6 @@ struct SourceLoginSheet: View {
             message = "你之前存了一份超大的书源变量（已被丢弃）⇒ 现在变量是干净的，可以重新填 server"
             failed = true
         }
-        varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
         variableText = SourceVariables.variable(for: source.bookSourceUrl)
         guard let raw = src.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),

@@ -856,7 +856,8 @@ final class SourceService {
             //   只写 `{"server":…}` 这种**只含一项**的合法 JSON ⇒ 它不再给默认
             //   ⇒ `tab / sources / source_type / proxy …` 全变 undefined ⇒ 源被改坏。
             let defaults = SourceVariables.defaultVars(for: url)
-            SourceVariables.setVars(
+            // ⭐⭐ 站方 `getArguments(source.getVariable(),'server')` 读的是**站方变量** ⇒ 两处都写 ⭐
+            SourceVariables.setVariableAndVars(
                 SourceVariables.mergeVars(userJSON: t, defaults: defaults), for: url)
         }
         let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
@@ -927,7 +928,8 @@ final class SourceService {
         let defaults = await sourceDefaultVars(source: source)
         let payload = "{\"server\":\"\(host)\"}"
         let merged = SourceVariables.mergeVars(userJSON: payload, defaults: defaults)
-        SourceVariables.setVars(merged, for: source.bookSourceUrl)
+        // ⭐⭐ 站方变量 + 书源变量都写（站方读的是站方变量）⭐
+        SourceVariables.setVariableAndVars(merged, for: source.bookSourceUrl)
         Self.fastLineCache[source.bookSourceUrl] = (host, Date())
         RuleSandbox.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
         return host

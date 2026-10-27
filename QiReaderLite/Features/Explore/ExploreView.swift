@@ -227,7 +227,8 @@ struct ExploreView: View {
         obj[key] = value
         if let data = try? JSONSerialization.data(withJSONObject: obj),
            let str = String(data: data, encoding: .utf8) {
-            SourceVariables.setVars(str, for: currentSourceUrl)
+            // ⭐⭐ 发现页筛选在 Legado 里是**站方变量**（`source.setVariable(JSON…)`）⇒ 两处都写 ⭐
+            SourceVariables.setVariableAndVars(str, for: currentSourceUrl)
         }
         // 站方的 exploreUrl 要重跑才看得到新平台（discoverySource 是在里面读的）
         kindsLoaded = false
