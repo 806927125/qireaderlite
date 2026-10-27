@@ -130,22 +130,6 @@ enum SourceVariables {
         case app
     }
 
-    /// ⭐⭐⭐ **站方变量的形态**（**一整串** ⇒ 两种形态并存）
-    ///
-    /// | 形态 | 哪个源 | 站方怎么用 | 站方变量里放什么 |
-    /// |---|---|---|---|
-    /// | **map** | 🍅大灰狼 / NovelHub / 番茄 | `getArguments(source.getVariable(),'server')` / `JSON.parse(source.getVariable())` | `{"server":…,"tab":…}` |
-    /// | **credential** | ✿UAA四合一（知秋） | `authorization: Bearer ${source.getVariable()}` | **token 那一串**（不是 JSON） |
-    /// | **unknown** | 还没取过默认表 | —— | **别动** |
-    enum StationVarForm: String {
-        /// 站方拿它当 **JSON map** 用
-        case map
-        /// 站方拿它当**一整串凭据**用（token）
-        case credential
-        /// **还不知道** ⇒ 不许动这一格（宁可不改，也别把好状态弄坏）
-        case unknown
-    }
-
     /// ⭐⭐⭐ **这个源的站方变量是什么形态？**（**要证据**，不能只看内容）
     ///
     /// ⭐ **判据的顺序**（每一条都要有）：
