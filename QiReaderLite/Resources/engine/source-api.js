@@ -163,12 +163,26 @@
 
     // 书籍变量：原生侧塞进来的原始字符串（站方自己 JSON.parse）
     var vars = (src.__variables == null) ? '' : String(src.__variables);
+    // ⭐⭐⭐ **站方变量**（Legado 语义：**一整串**）—— 宿主塞进来的 `__variable`
+    //   ⇒ ⚠️ **跟「书籍变量」分开**：Legado 就是两套（`getVariable/setVariable` vs `get/put`）
+    //   ⇒ 混成一套 ⇒ 站方 `setVariable(token)` 把 `put` 存的项**整份冲掉** ⭐⭐⭐
+    //     （UAA 源：token 塞进书籍变量 ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」）
+    //   ⇒ 没有 `__variable` 的老宿主 ⇒ 退回老行为（getVariable = 整份书籍变量）⭐
+    var hasVariable = (typeof src.__variable === 'string');
+    var variable = hasVariable ? String(src.__variable) : '';
     // 登录信息：原生侧塞进来的 map
     var loginInfo = src.__loginInfo && typeof src.__loginInfo === 'object'
       ? src.__loginInfo : {};
 
-    /** 书籍变量 → map（读出来是字符串，站方会自己 parse） */
-    wrapped.getVariable = function () { return vars; };
+    /**
+     * ⭐⭐⭐ **站方变量**（Legado `source.getVariable()`）—— **一整串**
+     *
+     * ⚠️ 老宿主（没塞 `__variable`）⇒ 退回老行为（返回整份书籍变量）⇒ 零影响 ⭐
+     */
+    wrapped.getVariable = function () {
+      if (hasVariable) return variable;   // ⭐ Legado 语义
+      return vars;                          // 老宿主兜底
+    };
 
     /** 写书籍变量。两种写法：
      *   setVariable(jsonString)      —— 整份替换
@@ -176,9 +190,16 @@
      */
     wrapped.setVariable = function (a, b) {
       if (a && typeof a === 'object') {
-        vars = JSON.stringify(a);
+        var objText = JSON.stringify(a);
+        // ⭐ 站方变量（Legado）vs 书籍变量（老宿主）⇒ 分开
+        if (hasVariable) { variable = objText; QR.__qrDirtyVariable = variable; return ''; }
+        vars = objText;
       } else if (b === undefined) {
-        vars = String(a == null ? '' : a);
+        var text = String(a == null ? '' : a);
+        // ⭐⭐⭐ `setVariable(str)` ⇒ **站方变量**（Legado 语义）—— 不是整份替换书籍变量 ⭐
+        //   （混成一套 ⇒ 站方存 token 时把 `put` 的项冲掉 ⇒ 聚合源解锁态丢失 / token 链路挂）⭐
+        if (hasVariable) { variable = text; QR.__qrDirtyVariable = variable; return ''; }
+        vars = text;
       } else {
         var m = {};
         try { m = JSON.parse(vars || '{}'); } catch (e) { m = {}; }
@@ -341,6 +362,7 @@
   /** op 开始前清脏标记 */
   QR.__qrResetDirty = function () {
     QR.__qrDirtyVars = undefined;
+    QR.__qrDirtyVariable = undefined;
     QR.__qrDirtyLogin = undefined;
     QR.__qrDirtyLoginHeader = undefined;
     QR.__qrDirtyCookie = false;
@@ -350,6 +372,7 @@
   QR.__qrTakeDirty = function () {
     var out = {};
     if (QR.__qrDirtyVars !== undefined) out.vars = QR.__qrDirtyVars;
+    if (QR.__qrDirtyVariable !== undefined) out.variable = QR.__qrDirtyVariable;
     if (QR.__qrDirtyLogin !== undefined) out.login = QR.__qrDirtyLogin;
     if (QR.__qrDirtyLoginHeader !== undefined) out.loginHeader = QR.__qrDirtyLoginHeader;
     if (QR.__qrDirtyCookie) out.cookie = true;

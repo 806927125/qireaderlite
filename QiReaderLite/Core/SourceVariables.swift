@@ -15,6 +15,8 @@ import Foundation
 enum SourceVariables {
     private static let varsPrefix = "sourcevars."
     private static let loginPrefix = "sourcelogin."
+    /// ⭐⭐⭐ **站方变量**（Legado `source.variable`）的键前缀 —— 与「书籍变量」**分开存** ⭐
+    private static let variablePrefix = "sourcevariable."
 
     // MARK: 书籍变量
 
@@ -38,6 +40,40 @@ enum SourceVariables {
             return
         }
         UserDefaults.standard.set(value, forKey: varsPrefix + sourceUrl)
+    }
+
+    // MARK: - ⭐⭐⭐ 站方变量（Legado `source.getVariable()` / `setVariable(str)`）
+
+    /// ⭐⭐⭐ 读某个源的**站方变量**（Legado 语义：**一整串**，不是 map）
+    ///
+    /// ⚠️⚠️ **为什么必须跟「书籍变量」分开**（2026-10-27 实证）：
+    ///   · Legado 是**两套**：`getVariable()/setVariable(str)` = **站方变量**（一串）
+    ///     `get(key)/put(key,v)` = **书源变量**（map）⇒ **互不污染** ⭐
+    ///   · 轻阅以前**混成一份** ⇒ 站方 `setVariable(token)` 会把 `put` 存的项**整份冲掉**
+    ///     ⇒ 聚合源（UAA）把 token 塞进「书籍变量」⇒ 请求头 `Bearer {"androidId":"…"}`
+    ///     ⇒ 服务端 **403「无效JWT」** ⇒ **永远拿不到 token** ⭐⭐⭐
+    ///   · 混成一份还有第二个后果：聚合源改一次发现页筛选（`setVariable(JSON…)`）
+    ///     ⇒ **解锁态被冲掉** ⭐
+    ///
+    /// ⭐ **迁移策略（懒迁移，零风险）**：站方变量**从空开始**（= Legado 的初始状态）
+    ///   ⇒ 站方的 `getArguments('', 'server')` 会走**站方默认表**（Legado 行为）⇒
+    ///   ⇒ 旧的「书籍变量」里那份 init 快照由站方自己重新 setVariable 写回来 ⇒ **自愈** ⭐
+    static func variable(for sourceUrl: String) -> String {
+        guard !sourceUrl.isEmpty else { return "" }
+        return UserDefaults.standard.string(forKey: variablePrefix + sourceUrl) ?? ""
+    }
+
+    /// 写回某个源的站方变量（引擎回传的 `__sourceVariable`）
+    ///
+    /// ⚠️ **同样不许超长**（跟书籍变量一个规矩 ⇒ 防「登录面板排版炸」那个老坑）
+    static func setVariable(_ value: String, for sourceUrl: String) {
+        guard !sourceUrl.isEmpty else { return }
+        if value.count > maxVarsLength {
+            NSLog("[变量] 拒绝存超长站方变量（\(value.count) 字符 > \(maxVarsLength)）· \(sourceUrl)")
+            UserDefaults.standard.set("", forKey: variablePrefix + sourceUrl)
+            return
+        }
+        UserDefaults.standard.set(value, forKey: variablePrefix + sourceUrl)
     }
 
     /// ⭐ **存量变量是不是超长了**（面板用它提示用户「你之前存了一份超大的变量」）

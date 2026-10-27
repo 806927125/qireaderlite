@@ -30,6 +30,8 @@ final class SourceService {
         // ⭐⭐⭐ 走缓存（同上）
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
+        // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
+        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -40,6 +42,10 @@ final class SourceService {
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
                 SourceVariables.setVars(v, for: source.bookSourceUrl)
+            }
+            // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 落盘（与书籍变量**分开**存）⭐
+            if let v = obj["__sourceVariable"] as? String {
+                SourceVariables.setVariable(v, for: source.bookSourceUrl)
             }
             if let l = obj["__loginInfo"] as? String {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
@@ -66,6 +72,8 @@ final class SourceService {
         // ⭐⭐⭐ 走缓存（同上：别每个 op 都编码+解析 158KB）
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
+        // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
+        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -101,6 +109,8 @@ final class SourceService {
         // 我们的原生桥是异步的（只能 postMessage）→ 只能原生侧读出来塞进去，
         // 引擎侧同步读。改完由引擎回传（见下面 __sourceVars）。
         srcDict["__variables"] = await effectiveVars(for: source)
+        // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
+        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -113,6 +123,10 @@ final class SourceService {
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
                 SourceVariables.setVars(v, for: source.bookSourceUrl)
+            }
+            // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 落盘（与书籍变量**分开**存）⭐
+            if let v = obj["__sourceVariable"] as? String {
+                SourceVariables.setVariable(v, for: source.bookSourceUrl)
             }
             if let l = obj["__loginInfo"] as? String {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
@@ -873,6 +887,8 @@ final class SourceService {
         var srcDict = await SourceDictCache.dict(for: source)
         // ⚠️ 这里不能用 effectiveVars(for:)（会递归）⇒ 用原始变量
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
+        // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
+        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         guard let raw = try? await RuleSandbox.shared.invoke("sourceVars", ["source": srcDict], source: source),
               let dict = raw as? [String: Any],
@@ -925,6 +941,8 @@ final class SourceService {
         // ⭐⭐⭐ 走缓存（同上）
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
+        // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
+        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
         let dict = raw as? [String: Any] ?? [:]
@@ -1012,6 +1030,8 @@ final class SourceService {
         // ⭐⭐⭐ 走缓存（同上）
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
+        // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
+        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
@@ -1021,6 +1041,11 @@ final class SourceService {
         if let obj = raw as? [String: Any],
            let v = obj["__sourceVars"] as? String {
             SourceVariables.setVars(v, for: source.bookSourceUrl)
+        }
+        // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 落盘 ⭐
+        if let obj = raw as? [String: Any],
+           let v = obj["__sourceVariable"] as? String {
+            SourceVariables.setVariable(v, for: source.bookSourceUrl)
         }
         let dict = raw as? [String: Any] ?? [:]
         return dict["ok"] as? Bool ?? false

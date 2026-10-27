@@ -2312,6 +2312,8 @@
         if (QR.__qrTakeDirty && r && typeof r === 'object' && !Array.isArray(r)) {
           var dirty = QR.__qrTakeDirty();
           if (dirty.vars !== undefined) r.__sourceVars = dirty.vars;
+          // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 回传（原生落盘）⭐
+          if (dirty.variable !== undefined) r.__sourceVariable = dirty.variable;
           if (dirty.login !== undefined) r.__loginInfo = dirty.login;
           if (dirty.loginHeader !== undefined) r.__loginHeader = dirty.loginHeader;
         }

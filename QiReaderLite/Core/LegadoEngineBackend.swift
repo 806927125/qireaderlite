@@ -343,6 +343,13 @@ final class LegadoEngineBackend: @unchecked Sendable {
         var api: EngineHostAPI!
         /// ⭐ **源级键值存储**（登录信息 ⇒ 站方 `source.getLoginInfoMap()` 读它）
         let storage: SourceStorage
+        /// ⭐⭐⭐ **站方变量槽**（Legado 语义：`source.getVariable()` = **这一串**）
+        ///
+        /// ⚠️⚠️ **为什么要跟「书源变量」（`source.get/put`）分开**（2026-10-27 实证）：
+        ///   Legado 是两套 ⇒ 混成一套 ⇒ 站方 `setVariable(token)` 会把 `put` 存的项冲掉
+        ///   ⇒ UAA 源 ⇒ 请求头 `Bearer {"androidId":…}` ⇒ 服务端 403「无效JWT」⇒ 拿不到 token ⭐⭐⭐
+        ///   ⇒ **槽位是引用（class）** ⇒ 每个 op 改 `text` 即可 ⇒ 已建好的 sourceObject 也看得见 ⭐
+        let sourceVariable = TextSlot()
         /// ⭐⭐⭐ **站方 jsLib**（引擎的 `BookSource` 没这个字段 ⇒ 单独带进来）
         ///
         /// ⚠️ 它定义的是**全局**（`host` / `getArguments` …）⇒ 站方规则的**前提**
@@ -380,7 +387,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
                                       storage: storage,
                                       // ⭐⭐⭐ **必须传 logger** ⇒ 引擎的诊断才看得见
                                       logger: EngineDiagnosticLogger(),
-                                      cookies: AppCookieService())
+                                      cookies: AppCookieService(),
+                                      // ⭐⭐⭐ 站方变量槽（Legado 两套语义）⭐
+                                      sourceVariable: sourceVariable)
             self.engine = engine
             // ⭐⭐⭐ **站方 jsLib** ⇒ 加载到 JS **全局**（它定义的 `host` / `getArguments` 等
             //   是站方规则的前提）⇒ 加载完必须**重设基线**，否则下次求值会被清掉 ⭐
@@ -426,6 +435,13 @@ final class LegadoEngineBackend: @unchecked Sendable {
         //   轻阅存在 `SourceVariables`（一个 JSON 串）⇒ 引擎存在 `varBox`（键值表）
         //   ⇒ **双向同步**：进（轻阅 → 引擎）/ 出（引擎 → 轻阅，落盘）
         Self.seedVars(from: payload, into: engine.varBox)
+        // ⭐⭐⭐ **站方变量**（Legado 语义）⇒ 灌进引擎的槽位（`source.getVariable()` 读它）⭐
+        //   ⚠️ 与「书源变量」（varBox）**分开** ⇒ 站方 setVariable 不会冲掉 get/put 的项 ⭐
+        if let sv = engine.sourceVariable,
+           let srcDict = payload["source"] as? [String: Any],
+           let text = srcDict["__variable"] as? String {
+            sv.text = text
+        }
         // ⭐⭐⭐ **cookie 也要灌进引擎的罐**（2026-10-24 真机栽的 ⇒ 详见 seedCookies 的注释）
         Self.seedCookies(from: payload, into: engine.fetcher.cookieJar)
         var out: Any?
@@ -450,6 +466,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
         // ⭐ **站方 JS 改过的源级变量** ⇒ 回传给轻阅（落盘 ⇒ 下次直接生效）
         if var dict = out as? [String: Any] {
             dict["__sourceVars"] = Self.varsJSON(engine.varBox)
+            // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 回传给轻阅（落盘）⭐
+            if let sv = engine.sourceVariable { dict["__sourceVariable"] = sv.text }
             out = dict
         }
         return out

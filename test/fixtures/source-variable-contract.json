@@ -1,0 +1,63 @@
+{
+  "_comment": "⭐⭐⭐ 站方变量 / 书源变量 的**通用契约**（Legado 语义）—— 两个实现跑同一份：① 轻阅老引擎（QiReaderLite/Resources/engine/source-api.js）② legado-engine（Sources/LegadoCore/Pipeline/SourceEngine.swift）。⚠️ 改一份就要改另一份（轻阅仓库的 test/source-variable-contract.test.js 与引擎仓库的 Tests/LegadoCoreTests/SourceVariableContractTests.swift 各读一份）。",
+  "_semantics": {
+    "source.getVariable()": "**站方变量**（Legado：source.variable）—— 一整串，不是 map",
+    "source.setVariable(str)": "改**站方变量**（整串替换）",
+    "source.get(key)": "读**书源变量**（map）里的一项 ⇒ 没有 ⇒ 空串",
+    "source.put(key, value)": "写**书源变量**（map）里的一项"
+  },
+  "cases": [
+    {
+      "name": "聚合源·大灰狼式：站方变量 = 发现页设置 JSON 串",
+      "source": { "__variables": "", "__variable": "" },
+      "steps": [
+        { "js": "source.setVariable(JSON.stringify({ server: 'https://api.example.com', proxy: '' }))" },
+        { "js": "source.getVariable()", "capture": "variable" },
+        { "js": "JSON.parse(source.getVariable()).server", "capture": "server" }
+      ],
+      "expect": {
+        "variable": "{\"server\":\"https://api.example.com\",\"proxy\":\"\"}",
+        "server": "https://api.example.com"
+      }
+    },
+    {
+      "name": "聚合源·NovelHub 式：站方变量存筛选 + 书源变量存解锁态（⭐ 互不冲掉）",
+      "source": { "__variables": "", "__variable": "" },
+      "steps": [
+        { "js": "source.put('nhAuthed', 'HASH123')" },
+        { "js": "source.setVariable(JSON.stringify({ gender: '1' }))" },
+        { "js": "source.get('nhAuthed')", "capture": "authed" },
+        { "js": "source.getVariable()", "capture": "variable" }
+      ],
+      "expect": {
+        "authed": "HASH123",
+        "variable": "{\"gender\":\"1\"}"
+      }
+    },
+    {
+      "name": "UAA 式：站方变量 = token 串 + 书源变量 = aid（⭐ token 不能被 map 污染）",
+      "source": { "__variables": "", "__variable": "" },
+      "steps": [
+        { "js": "source.put('aid', '42')" },
+        { "js": "source.setVariable('TOKEN-ABC')" },
+        { "js": "source.getVariable()", "capture": "variable" },
+        { "js": "source.get('aid')", "capture": "aid" }
+      ],
+      "expect": {
+        "variable": "TOKEN-ABC",
+        "aid": "42"
+      }
+    },
+    {
+      "name": "老宿主兜底：没塞 __variable ⇒ getVariable() 退回整份书籍变量（零影响）",
+      "source": { "__variables": "{\"server\":\"https://legacy\"}" },
+      "legacy": true,
+      "steps": [
+        { "js": "source.getVariable()", "capture": "variable" }
+      ],
+      "expect": {
+        "variable": "{\"server\":\"https://legacy\"}"
+      }
+    }
+  ]
+}

@@ -97,6 +97,9 @@ declare -a GATES=(
   #   ⇒ 真服务器回 403「无效JWT」⇒ 根因：`source.getVariable()` 在轻阅返回的是整份变量 JSON
   #   ⇒ 轻阅版源把 token 改存「书源变量·token」项 + 没有 token 就不发 authorization 头
   "uaa-token:test/uaa-token.test.js"
+  # ⭐⭐⭐ **站方变量 / 书源变量 拆两套**（Legado 语义 · 通用书源系统的地基）
+  #   ⇒ 混成一套 ⇒ UAA 源 403「无效JWT」拿不到 token + NovelHub 改筛选冲掉解锁态
+  "source-variable-contract:test/source-variable-contract.test.js"
 )
 
 TOTAL_PASS=0
