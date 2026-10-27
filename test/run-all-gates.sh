@@ -93,6 +93,10 @@ declare -a GATES=(
   #   runBookInfo 返回 ["book": {...}]（嵌套）而 isTrustworthy 读顶层 ⇒ 详情页 100% 失败
   #   ⇒ 沙盒对拍**直接调引擎** ⇒ 绕过 App 侧这层 ⇒ 永远抓不到 ⭐⭐⭐
   "op-shape-consistency:test/op-shape-consistency.test.js"
+  # ⭐⭐⭐ UAA 四合一（知秋）：「获取Token」链路（2026-10-27 用户报「获取 token 不了」）
+  #   ⇒ 真服务器回 403「无效JWT」⇒ 根因：`source.getVariable()` 在轻阅返回的是整份变量 JSON
+  #   ⇒ 轻阅版源把 token 改存「书源变量·token」项 + 没有 token 就不发 authorization 头
+  "uaa-token:test/uaa-token.test.js"
 )
 
 TOTAL_PASS=0
