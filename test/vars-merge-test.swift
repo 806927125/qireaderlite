@@ -134,6 +134,10 @@ ok(SourceVariables.isStationMapStyle(nov), "⭐ 站方写过 map ⇒ 是 map 形
 ok(!SourceVariables.isStationMapStyle(uaa), "UAA 没写过 map ⇒ 不是 map 形态")
 
 print("\n=== ⑫ 迁移：旧实现灌进站方变量的「污染」要清掉（真机上还躺着）===")
+// ⭐⭐⭐ 前提：**默认表取过了**（真机上每个 op 都会取一遍 ⇒ 顺序见 SourceService.call：
+//   `__variables`（会取默认表）**先**于 `__variable`（灌站方变量）⇒ 形态一定判得出来）⭐
+//   ⇒ 形态 = **凭据** ⇒ 这一格放的是 token ⇒ 里面躺着的 map = **宿主灌的污染** ⭐
+SourceVariables.setDefaultVars([:], for: uaa)
 // 模拟旧实现（2026-10-27 之前）：把线路表整份灌进站方变量
 SourceVariables.setVariable("{\"androidId\":\"b4e6060006b920bc\",\"server\":\"https://v1\"}",
                             for: uaa, origin: .app)

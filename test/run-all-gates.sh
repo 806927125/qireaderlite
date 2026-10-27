@@ -104,6 +104,11 @@ declare -a GATES=(
   #   ⇒ App 把「书籍变量/线路表」写进站方变量 ⇒ 凭据形态的源（UAA：token）被毁
   #   ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败
   "source-variable-shape:test/source-variable-shape.test.js"
+  # ⭐⭐⭐⭐⭐ **原版 UAA 的站方变量语义**（拿**真源**当断言对象，不是 mock）
+  #   ⇒ 真源：站方变量 = **纯 token**（`Bearer ${source.getVariable()}` + `source.setVariable(token)`）
+  #   ⇒ 共享服 api / 文件域名 / aid 全在【书源变量】⇒ App 的选线不受影响
+  #   ⇒ 一旦 App 往那一格塞 map ⇒ `Bearer {…}` ⇒ 403「无效JWT」⇒「获取Token」永远失败
+  "uaa-original-station-var:test/uaa-original-station-var.test.js"
   # ⭐⭐⭐⭐⭐ **站方能力面体检**（通用性的地基 · 2026-10-27）
   #   ⇒ 扫真实语料（125 源 + 聚合源）用到的站方 API 面 ⇒ 跟轻阅实现的面对账
   #   ⇒ **新出现的站方 API 必须当场定性**（实现 / 登记为例外）⇒ 不用人肉适配 ⭐

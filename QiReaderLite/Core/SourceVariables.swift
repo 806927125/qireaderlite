@@ -17,14 +17,29 @@ enum SourceVariables {
     private static let loginPrefix = "sourcelogin."
     /// ⭐⭐⭐ **站方变量**（Legado `source.variable`）的键前缀 —— 与「书籍变量」**分开存** ⭐
     private static let variablePrefix = "sourcevariable."
-    /// ⭐⭐⭐ **「这个源的站方变量里躺过 map」**的标记（**站方自己写的**才算）
+    /// ⭐⭐⭐ **「站方变量是什么形态」的证据**（**站方自己写的**才算）
     ///
     /// ⚠️ **为什么需要它**（2026-10-27 真机「获取 token 不了」）：
     ///   判「这个源的站方变量是 map 形态还是凭据形态」光看**内容**不可靠 ——
     ///   **旧实现灌进去的污染本身也是一份 map**（`{"androidId":…}`）⇒ 看着像 map 形态 ⭐⭐⭐
-    ///   ⇒ 只能看**证据**：**站方自己写过 map**（`setVariable(JSON…)`）⇒ 它才是 map 形态的源 ⭐
+    ///   ⇒ 只能看**证据**：**站方自己写过什么**（`setVariable(…)`）⇒ 它才是这个形态的源 ⭐
     ///   ⇒ 没这个证据 ⇒ 站方变量里那份 map 就是**宿主灌的污染** ⇒ 该清 ⭐⭐⭐
-    private static let stationMapFlagPrefix = "sourcevariable.stationmap."
+    ///
+    /// ⚠️⚠️⚠️ **v2：键名带版本**（2026-10-27 真机复盘）：
+    ///   v1（`sourcevariable.stationmap.`）的证据**会被自己污染** ⇒
+    ///   **回传**（`__sourceVariable`）里那份 map（其实就是宿主灌的污染被原样弹回来）
+    ///   ⇒ 被当成「站方自己写过 map」⇒ 证据**自证**⇒ 迁移永远不触发 ⇒ 真机上的污染清不掉 ⭐⭐⭐
+    ///   ⇒ **v2 换键名** ⇒ 旧的那份**自证的证据直接作废**（不是去修它，是**不看它**）⭐
+    private static let stationFormPrefix = "sourcevariable.stationform.v2."
+
+    /// ⭐⭐⭐ **「站方的默认变量表已经取过了」的标记**
+    ///
+    /// ⚠️ **为什么不能只看「默认表空不空」**（2026-10-27 真机复盘）：
+    ///   「默认表是空的」有两种完全不同的意思 ——
+    ///     ① **取过了，站方确实没有默认表**（✿UAA：站方变量 = **凭据的位置**）⇒ 该清污染 ⭐
+    ///     ② **还没取过**（大灰狼第一次进来）⇒ **还不知道** ⇒ **不许清**（会把大灰狼的合法 map 清掉）⭐⭐⭐
+    ///   ⇒ 必须**另立一个标记**记「取过没」⇒ 两种情况才分得开 ⭐
+    private static let defaultTableFetchedPrefix = "sourcevars.defaultfetched."
 
     // MARK: 书籍变量
 
@@ -74,6 +89,10 @@ enum SourceVariables {
     /// 写回某个源的站方变量（引擎回传的 `__sourceVariable`）
     ///
     /// ⚠️ **同样不许超长**（跟书籍变量一个规矩 ⇒ 防「登录面板排版炸」那个老坑）
+    ///
+    /// ⭐⭐⭐ **origin = 「这份是谁写的」** ⇒ 判形态的**证据**只认站方写的 ⭐
+    ///   · `.station` = **站方自己改的**（引擎回传且**值确实变了**）⇒ 算证据 ⭐
+    ///   · `.app` = **宿主自己合成的**（线路表 / 面板 / 回传时值没变）⇒ **不算证据** ⭐
     static func setVariable(_ value: String, for sourceUrl: String, origin: Origin = .station) {
         guard !sourceUrl.isEmpty else { return }
         if value.count > maxVarsLength {
@@ -82,11 +101,21 @@ enum SourceVariables {
             return
         }
         UserDefaults.standard.set(value, forKey: variablePrefix + sourceUrl)
-        // ⭐⭐⭐ **记下「这份是谁写的」** ⇒ 判 map 形态要有证据（不能只看内容）⭐
+        // ⭐⭐⭐ **记下「这份是谁写的」** ⇒ 判形态要有证据（不能只看内容）⭐
         switch origin {
         case .station:
-            // 站方 / 用户写的 ⇒ 它写 map ⇒ 这个源的站方变量就是 map 形态 ⭐
-            UserDefaults.standard.set(isMapStyleVariable(value), forKey: stationMapFlagPrefix + sourceUrl)
+            // 站方自己写的 ⇒ 它写什么形态 ⇒ 这个源的站方变量就是那个形态 ⭐
+            // ⚠️ **「map」证据是黏的**（站方写过 map ⇒ 这一格就是 map 形态）⭐
+            //   ⇒ 凭据形态的写**不覆盖**已有的 map 证据（站方两种都写过 ⇒ 按 map 处理，
+            //   ⇒ 而真正写进去时 `canWriteMapIntoVariable` 还会挡一次 ⭐⭐⭐）
+            if isMapStyleVariable(value) {
+                UserDefaults.standard.set(StationVarForm.map.rawValue,
+                                          forKey: stationFormPrefix + sourceUrl)
+            } else if UserDefaults.standard.string(forKey: stationFormPrefix + sourceUrl)
+                        != StationVarForm.map.rawValue {
+                UserDefaults.standard.set(StationVarForm.credential.rawValue,
+                                          forKey: stationFormPrefix + sourceUrl)
+            }
         case .app:
             // 宿主自己合成的（线路表）⇒ **不算证据**（它正是污染的来源）⭐
             break
@@ -101,14 +130,86 @@ enum SourceVariables {
         case app
     }
 
+    /// ⭐⭐⭐ **站方变量的形态**（**一整串** ⇒ 两种形态并存）
+    ///
+    /// | 形态 | 哪个源 | 站方怎么用 | 站方变量里放什么 |
+    /// |---|---|---|---|
+    /// | **map** | 🍅大灰狼 / NovelHub / 番茄 | `getArguments(source.getVariable(),'server')` / `JSON.parse(source.getVariable())` | `{"server":…,"tab":…}` |
+    /// | **credential** | ✿UAA四合一（知秋） | `authorization: Bearer ${source.getVariable()}` | **token 那一串**（不是 JSON） |
+    /// | **unknown** | 还没取过默认表 | —— | **别动** |
+    enum StationVarForm: String {
+        /// 站方拿它当 **JSON map** 用
+        case map
+        /// 站方拿它当**一整串凭据**用（token）
+        case credential
+        /// **还不知道** ⇒ 不许动这一格（宁可不改，也别把好状态弄坏）
+        case unknown
+    }
+
+    /// ⭐⭐⭐ **这个源的站方变量是什么形态？**（**要证据**，不能只看内容）
+    ///
+    /// ⭐ **判据的顺序**（每一条都要有）：
+    ///   ① **站方自己写过什么**（回传时**值确实变了**才算）⇒ 最硬的证据 ⭐⭐⭐
+    ///      · 写过 map ⇒ **map 形态**（大灰狼 / 番茄 / NovelHub）
+    ///      · 写过凭据（token 串）⇒ **凭据形态**（UAA）⭐⭐⭐
+    ///   ② **站方自带默认变量表**（`getArguments('','')` 有东西）⇒ map（大灰狼）⭐
+    ///   ③ **默认表取过了、且是空的** ⇒ **凭据形态**（UAA：这一格放的是 token）⭐⭐⭐
+    ///   ④ 其余 ⇒ **unknown**（**不许动**：大灰狼第一次进来时默认表还没取到
+    ///      ⇒ 那时候清一下就把它的合法 map 清掉了）⭐⭐⭐
+    static func form(for sourceUrl: String) -> StationVarForm {
+        guard !sourceUrl.isEmpty else { return .unknown }
+        // ① 站方自己写过什么（证据：回传时值**确实变了**才算）
+        if let raw = UserDefaults.standard.string(forKey: stationFormPrefix + sourceUrl) {
+            if raw == StationVarForm.map.rawValue { return .map }
+            if raw == StationVarForm.credential.rawValue { return .credential }
+        }
+        // ② 站方自带默认变量表 ⇒ 它把这格当 map 用（大灰狼）
+        if !defaultVars(for: sourceUrl).isEmpty { return .map }
+        // ③ 默认表取过了而且是空的 ⇒ 凭据形态（UAA）
+        if defaultTableFetched(sourceUrl) { return .credential }
+        // ④ 不知道 ⇒ 别动
+        return .unknown
+    }
+
     /// ⭐⭐⭐ **这个源的站方变量是不是「map 形态」？**（**要有证据**）
     ///
-    /// ⚠️⚠️ **不许只看内容**：旧实现灌进站方变量的**污染本身也是 map**（`{"androidId":…}`）⭐⭐⭐
-    ///   ⇒ 只看内容 ⇒ 污染被当成「map 形态的源」⇒ 继续被灌 ⇒ **永远修不好** ⭐⭐⭐
-    /// ⇒ **证据 = 站方自己写过 map**（`setVariable(JSON…)`）⭐
+    /// ⚠️ 只在「**这一格能不能被宿主塞 map**」这个问题上用它 ⇒ 等价于 `form(for:) == .map`
     static func isStationMapStyle(_ sourceUrl: String) -> Bool {
-        guard !sourceUrl.isEmpty else { return false }
-        return UserDefaults.standard.bool(forKey: stationMapFlagPrefix + sourceUrl)
+        form(for: sourceUrl) == .map
+    }
+
+    /// ⭐⭐⭐ **宿主往站方变量里写一份 map**（发现页筛选 / 面板选线路）
+    ///
+    /// ⚠️⚠️ **凭据形态的源不许写 map**（✿UAA：这一格放的是 **token**）⭐⭐⭐
+    ///   ⇒ 写了 ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败 ⭐⭐⭐
+    ///   ⇒ **书源变量**照写（那是宿主自己的变量表，跟站方变量是两套）⭐
+    ///
+    /// ⚠️ **形态还「不知道」的时候照写**（⇒ 宿主自己的功能得能用）
+    ///   ⇒ 形态一旦判出来（默认表取过了）⇒ 下一轮就被拦住 / 被迁移清掉 ⭐
+    static func setHostMap(_ value: String, for sourceUrl: String) {
+        setVars(value, for: sourceUrl)                                   // 书源变量：总是写 ⭐
+        guard form(for: sourceUrl) != .credential else { return }         // ⭐ 凭据形态 ⇒ 不许写 map ⭐⭐⭐
+        setVariable(value, for: sourceUrl, origin: .app)                  // 宿主写的 ⇒ **不算证据** ⭐
+    }
+
+    /// ⭐⭐⭐ **站方变量该往引擎里灌什么**（顺带做**存量污染的迁移**）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么迁移必须在这里做**（2026-10-27 真机复盘）：
+    ///   以前迁移写在 `setLineVars`（**选线**那条链）⇒
+    ///   ⇒ **✿UAA 压根没有线路**（jsLib 里没有 `host` 数组）⇒ **那条链永远走不到**
+    ///   ⇒ ⇒ 真机上的污染（`{"androidId":…}`）**永远清不掉** ⇒ `Bearer {"androidId":…}`
+    ///   ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败 ⭐⭐⭐
+    ///   ⇒ **每个 op 都要灌站方变量** ⇒ 迁移放这儿 ⇒ 一定会走到 ⭐
+    ///
+    /// - 判据：**凭据形态 + 这一格现在躺着一个 map** ⇒ 那是**宿主灌的污染** ⇒ 清掉 ⭐⭐⭐
+    ///   （map 形态的源**不清**：那是站方自己的 map ⇒ 清了就把大灰狼的线路弄没了 ⭐）
+    static func stationVariableToSeed(for sourceUrl: String) -> String {
+        let current = variable(for: sourceUrl)
+        guard !current.isEmpty else { return "" }
+        guard form(for: sourceUrl) == .credential, isMapStyleVariable(current) else { return current }
+        NSLog("[变量] 清掉站方变量里的宿主污染（凭据形态却躺着一个 map）· \(sourceUrl)")
+        setVariable("", for: sourceUrl, origin: .app)
+        return ""
     }
 
     /// ⭐⭐⭐ **同时写「站方变量」+「书源变量」**
@@ -170,10 +271,8 @@ enum SourceVariables {
     ///
     /// - Parameters:
     ///   - merged: 合并后的变量串（站方默认表做底 + 测速/用户的改动）
-    ///   - isMapStyle: 这个源的站方变量**是不是 map 形态**
-    ///     ⇒ **判据：站方自带默认变量表**（`getArguments('','')` 有东西）
-    ///     ⇒ 有 ⇒ 它用 `getArguments(站方变量, key)` ⇒ map 形态 ⭐
-    ///     ⇒ 没有（普通源 / UAA）⇒ 它的站方变量是**凭据的位置** ⇒ 别塞 map ⭐⭐⭐
+    ///   - isMapStyle: 这个源的站方变量**是不是 map 形态**（调用方按 `form(for:)` 算好）
+    ///     ⇒ **false 时不许把 map 塞进站方变量**（凭据形态的源：站方变量 = token）⭐⭐⭐
     static func setLineVars(_ merged: String, for sourceUrl: String, isMapStyle: Bool) {
         setVars(merged, for: sourceUrl)                    // 书源变量：总是写 ⭐
         if isMapStyle {
@@ -184,8 +283,9 @@ enum SourceVariables {
         // ⭐⭐⭐⭐⭐ **迁移**：旧实现把「线路表」整份灌进了站方变量 ⇒ 对「凭据形态」的源那是**污染** ⭐⭐⭐
         //   （不清 ⇒ 站方变量里躺着一份 map ⇒ `Bearer {"androidId":"…"}`
         //     ⇒ 服务端 **403「无效JWT」** ⇒ 「获取 token」永远失败 ⭐⭐⭐）
-        // ⇒ 判据：**站方变量里是 map，但站方自己从没写过 map** ⇒ 那是宿主灌的 ⇒ 清掉 ⭐
-        if isMapStyleVariable(variable(for: sourceUrl)), !isStationMapStyle(sourceUrl) {
+        // ⇒ 判据：**形态 = 凭据**（不是「不是 map」！）⇒ **unknown 时不许清** ⭐⭐⭐
+        //   （大灰狼第一次进来时默认表还没取到 ⇒ 那时候清一下就把它的合法 map 清掉了 ⭐）
+        if form(for: sourceUrl) == .credential, isMapStyleVariable(variable(for: sourceUrl)) {
             setVariable("", for: sourceUrl, origin: .app)
         }
     }
@@ -219,6 +319,16 @@ enum SourceVariables {
         guard let data = try? JSONSerialization.data(withJSONObject: value),
               let s = String(data: data, encoding: .utf8) else { return }
         UserDefaults.standard.set(s, forKey: defaultVarsPrefix + sourceUrl)
+        // ⭐⭐⭐ **记下「取过了」**（哪怕取回来是空的！）⭐
+        //   「默认表是空的」有两种意思：① 取过了，站方确实没有 ② **还没取过**
+        //   ⇒ 不记这个 ⇒ 分不清 ⇒ 会把大灰狼的合法 map 当污染清掉 ⭐⭐⭐
+        UserDefaults.standard.set(true, forKey: defaultTableFetchedPrefix + sourceUrl)
+    }
+
+    /// ⭐⭐⭐ **站方的默认变量表**取过没有？（**取过但为空**也算取过 ⭐）
+    static func defaultTableFetched(_ sourceUrl: String) -> Bool {
+        guard !sourceUrl.isEmpty else { return false }
+        return UserDefaults.standard.bool(forKey: defaultTableFetchedPrefix + sourceUrl)
     }
 
     /// **合并**：站方默认值（底）＋ 用户的改动（盖）
@@ -266,8 +376,9 @@ enum SourceVariables {
         UserDefaults.standard.removeObject(forKey: varsPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: loginPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: variablePrefix + sourceUrl)
-        UserDefaults.standard.removeObject(forKey: stationMapFlagPrefix + sourceUrl)
+        UserDefaults.standard.removeObject(forKey: stationFormPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: defaultVarsPrefix + sourceUrl)
+        UserDefaults.standard.removeObject(forKey: defaultTableFetchedPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: headerPrefix + sourceUrl)
     }
 

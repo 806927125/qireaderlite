@@ -31,7 +31,8 @@ final class SourceService {
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
-        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
+        //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -44,8 +45,10 @@ final class SourceService {
                 SourceVariables.setVars(v, for: source.bookSourceUrl)
             }
             // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 落盘（与书籍变量**分开**存）⭐
+            //   ⭐⭐⭐ **只有站方真改过这一格**才当成「站方写的」⇒ 不然证据会**自证** ⭐⭐⭐
             if let v = obj["__sourceVariable"] as? String {
-                SourceVariables.setVariable(v, for: source.bookSourceUrl)
+                SourceVariables.setVariable(v, for: source.bookSourceUrl,
+                                           origin: Self.stationWroteIt(obj) ? .station : .app)
             }
             if let l = obj["__loginInfo"] as? String {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
@@ -73,7 +76,8 @@ final class SourceService {
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
-        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
+        //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -110,7 +114,8 @@ final class SourceService {
         // 引擎侧同步读。改完由引擎回传（见下面 __sourceVars）。
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
-        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
+        //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -125,8 +130,10 @@ final class SourceService {
                 SourceVariables.setVars(v, for: source.bookSourceUrl)
             }
             // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 落盘（与书籍变量**分开**存）⭐
+            //   ⭐⭐⭐ **只有站方真改过这一格**才当成「站方写的」⇒ 不然证据会**自证** ⭐⭐⭐
             if let v = obj["__sourceVariable"] as? String {
-                SourceVariables.setVariable(v, for: source.bookSourceUrl)
+                SourceVariables.setVariable(v, for: source.bookSourceUrl,
+                                           origin: Self.stationWroteIt(obj) ? .station : .app)
             }
             if let l = obj["__loginInfo"] as? String {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
@@ -134,6 +141,16 @@ final class SourceService {
         }
         // ⭐⭐⭐ **后台解码**（大灰狼的分类响应 100KB+ ⇒ 主线程解会卡）
         return try await Self.decodeAsync(T.self, from: raw)
+    }
+
+    /// ⭐⭐⭐ **站方这一格到底改没改？**（引擎回传 `__sourceVariableChanged`）
+    ///
+    /// ⚠️⚠️ **为什么必须有它**（2026-10-27 真机复盘）：
+    ///   站方变量的**形态证据**必须是「**站方自己改过**」——
+    ///   ⇒ 回传时值**一模一样** ⇒ 那是**宿主灌进去的污染被原样弹回来** ⇒ 不是证据 ⭐⭐⭐
+    ///   ⇒ 拿它当证据 = **自证** ⇒ 「凭据形态」永远判不出来 ⇒ 污染永远清不掉 ⭐⭐⭐
+    static func stationWroteIt(_ obj: [String: Any]) -> Bool {
+        (obj["__sourceVariableChanged"] as? Bool) == true
     }
 
     // MARK: - ⭐⭐⭐ 引擎分流
@@ -862,10 +879,8 @@ final class SourceService {
             // ⭐⭐⭐⭐ 只有「map 形态」的源才把 map 写进**站方变量**
             //   ⇒ 凭据形态的源（✿UAA：站方变量 = token 的位置）**绝不能**被 map 覆盖 ⭐⭐⭐
             //   ⇒ 覆盖 ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败 ⭐
-            //   ⇒ 判据：**站方自带默认表**（大灰狼）或 **站方自己写过 map**（NovelHub）⭐
-            //   ⇒ 两条都不成立（UAA）⇒ 它的站方变量是**凭据的位置** ⇒ 不许灌 map ⭐⭐⭐
-            SourceVariables.setLineVars(merged, for: url, isMapStyle: !defaults.isEmpty
-                || SourceVariables.isStationMapStyle(url))
+            //   ⇒ 判据：**站方自己怎么用这一格**（证据）⇒ map / 凭据 / 不知道 ⭐⭐⭐
+            SourceVariables.setLineVars(merged, for: url, isMapStyle: SourceVariables.form(for: url) == .map)
         }
         let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
         NSLog("%@", msg)
@@ -896,11 +911,15 @@ final class SourceService {
         // ⚠️ 这里不能用 effectiveVars(for:)（会递归）⇒ 用原始变量
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
-        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
+        //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         guard let raw = try? await RuleSandbox.shared.invoke("sourceVars", ["source": srcDict], source: source),
               let dict = raw as? [String: Any],
-              let vars = dict["vars"] as? [String: Any], !vars.isEmpty else { return [:] }
+              let vars = dict["vars"] as? [String: Any] else { return [:] }
+        // ⭐⭐⭐ **哪怕是空的也要落盘** ⇒ 记下「取过了」⭐
+        //   （「默认表是空的」有两种意思：① 取过了、站方确实没有 ② **还没取过**）
+        //   ⇒ 不记这个 ⇒ 分不清 ⇒ 判不出「凭据形态」⇒ 真机上的污染清不掉 ⭐⭐⭐
         SourceVariables.setDefaultVars(vars, for: source.bookSourceUrl)
         return vars
     }
@@ -936,9 +955,9 @@ final class SourceService {
         let payload = "{\"server\":\"\(host)\"}"
         let merged = SourceVariables.mergeVars(userJSON: payload, defaults: defaults)
         // ⭐⭐⭐⭐ 只有「map 形态」的源才把 map 写进**站方变量**（凭据形态的源：站方变量 = token）⭐
-        // ⭐⭐⭐⭐ 判据：**站方自带默认表** 或 **站方自己写过 map**（两条都不成立 ⇒ 凭据形态 ⇒ 不许灌 map）⭐
-        SourceVariables.setLineVars(merged, for: source.bookSourceUrl, isMapStyle: !defaults.isEmpty
-            || SourceVariables.isStationMapStyle(source.bookSourceUrl))
+        // ⭐⭐⭐⭐ 判据：**站方自己怎么用这一格**（证据）⇒ map / 凭据 / 不知道 ⭐
+        SourceVariables.setLineVars(merged, for: source.bookSourceUrl,
+                                    isMapStyle: SourceVariables.form(for: source.bookSourceUrl) == .map)
         Self.fastLineCache[source.bookSourceUrl] = (host, Date())
         RuleSandbox.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
         return host
@@ -953,7 +972,8 @@ final class SourceService {
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
-        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
+        //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
         let dict = raw as? [String: Any] ?? [:]
@@ -1042,7 +1062,8 @@ final class SourceService {
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
-        srcDict["__variable"] = SourceVariables.variable(for: source.bookSourceUrl)
+        //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
@@ -1054,9 +1075,11 @@ final class SourceService {
             SourceVariables.setVars(v, for: source.bookSourceUrl)
         }
         // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 落盘 ⭐
+        //   ⭐⭐⭐ **只有站方真改过这一格**才当成「站方写的」⇒ 不然证据会**自证** ⭐⭐⭐
         if let obj = raw as? [String: Any],
            let v = obj["__sourceVariable"] as? String {
-            SourceVariables.setVariable(v, for: source.bookSourceUrl)
+            SourceVariables.setVariable(v, for: source.bookSourceUrl,
+                                       origin: Self.stationWroteIt(obj) ? .station : .app)
         }
         let dict = raw as? [String: Any] ?? [:]
         return dict["ok"] as? Bool ?? false

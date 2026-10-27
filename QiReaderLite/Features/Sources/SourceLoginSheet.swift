@@ -312,11 +312,11 @@ struct SourceLoginSheet: View {
                     variableText = t
                 }
                 // ⭐⭐ 站方变量（站方 getVariable() 读它）+ 书源变量各留一份 ⭐
+                //   ⭐⭐⭐ 走 `setHostMap` ⇒ **凭据形态的源不许被塞 map**（✿UAA：那一格放的是 token）⭐⭐⭐
                 let merged = SourceVariables.mergeVars(
                     userJSON: variableText,
                     defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
-                SourceVariables.setVariable(merged, for: source.bookSourceUrl)
-                SourceVariables.setVars(merged, for: source.bookSourceUrl)
+                SourceVariables.setHostMap(merged, for: source.bookSourceUrl)
                 varsSaved = true
             })
     }
@@ -367,7 +367,9 @@ struct SourceLoginSheet: View {
                     //    非空 = **合并站方默认变量**再存（只存一项会把
                     //    server/tab/sources/proxy 全丢掉 ⇒ 源被改坏）
                     if raw.isEmpty {
-                        SourceVariables.setVariable("", for: source.bookSourceUrl)
+                        // ⚠️⭐ **清空不是「站方写的」** ⇒ 不许拿它当形态证据 ⭐⭐⭐
+                        //   （否则清一次就把 map 形态的源误判成凭据形态 ⇒ 线路写不进去）⭐
+                        SourceVariables.setVariable("", for: source.bookSourceUrl, origin: .app)
                     } else {
                         // ⚠️⭐ **不是 JSON 对象**（eg token 串）⇒ **原样存**
                         //   （合并会把 token 弄丢 ⇒ 站方拿不到凭据）⭐
@@ -377,11 +379,14 @@ struct SourceLoginSheet: View {
                                 userJSON: raw,
                                 defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
                             : raw
-                        // ⭐⭐ 站方变量（Legado：getVariable() 读它）⭐
-                        SourceVariables.setVariable(merged, for: source.bookSourceUrl)
-                        // 书源变量也留一份（兼容读 map 的站方）⭐
                         if isJSONObject {
-                            SourceVariables.setVars(merged, for: source.bookSourceUrl)
+                            // ⭐⭐ 站方变量（Legado：getVariable() 读它）⭐
+                            //   ⭐⭐⭐ 走 `setHostMap` ⇒ **凭据形态的源不许被塞 map** ⭐⭐⭐
+                            SourceVariables.setHostMap(merged, for: source.bookSourceUrl)
+                        } else {
+                            // ⭐⭐⭐ **用户自己填的凭据**（token 串）⇒ 原样进站方变量 ⭐
+                            //   ⇒ 而且它**就是证据**：这一格放的是凭据 ⇒ 凭据形态 ⭐
+                            SourceVariables.setVariable(merged, for: source.bookSourceUrl, origin: .station)
                         }
                     }
                     variableText = SourceVariables.variable(for: source.bookSourceUrl)
@@ -397,7 +402,8 @@ struct SourceLoginSheet: View {
                 if !variableText.isEmpty {
                     Button {
                         variableText = ""
-                        SourceVariables.setVariable("", for: source.bookSourceUrl)
+                        // ⚠️⭐ **清空不是「站方写的」** ⇒ 不许拿它当形态证据 ⭐⭐⭐
+                        SourceVariables.setVariable("", for: source.bookSourceUrl, origin: .app)
                         varsSaved = true
                     } label: {
                         Text("清空（用默认线路）")
@@ -494,8 +500,8 @@ struct SourceLoginSheet: View {
         let merged = SourceVariables.mergeVars(
             userJSON: variableText,
             defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
-        SourceVariables.setVariable(merged, for: source.bookSourceUrl)
-        SourceVariables.setVars(merged, for: source.bookSourceUrl)
+        // ⭐⭐⭐ 走 `setHostMap` ⇒ **凭据形态的源不许被塞 map**（✿UAA：那一格放的是 token）⭐⭐⭐
+        SourceVariables.setHostMap(merged, for: source.bookSourceUrl)
         variableText = SourceVariables.variable(for: source.bookSourceUrl)
         varsSaved = true
         bestHost = host

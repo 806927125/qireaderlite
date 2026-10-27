@@ -437,10 +437,16 @@ final class LegadoEngineBackend: @unchecked Sendable {
         Self.seedVars(from: payload, into: engine.varBox)
         // ⭐⭐⭐ **站方变量**（Legado 语义）⇒ 灌进引擎的槽位（`source.getVariable()` 读它）⭐
         //   ⚠️ 与「书源变量」（varBox）**分开** ⇒ 站方 setVariable 不会冲掉 get/put 的项 ⭐
+        // ⭐⭐⭐ **记下「灌进去的是哪一串」** ⇒ 出的时候才知道**站方到底改没改** ⭐⭐⭐
+        //   （判「map 形态还是凭据形态」的证据必须是「**站方自己改过**」）
+        //   ⇒ 站方没改（值一模一样）⇒ 那份值可能只是**宿主灌的污染被原样弹回来**
+        //   ⇒ 拿它当证据 = **自证** ⇒ 迁移永远不触发 ⇒ 真机上的污染清不掉 ⭐⭐⭐
+        var seededStationVariable: String?
         if let sv = engine.sourceVariable,
            let srcDict = payload["source"] as? [String: Any],
            let text = srcDict["__variable"] as? String {
             sv.text = text
+            seededStationVariable = text
         }
         // ⭐⭐⭐ **cookie 也要灌进引擎的罐**（2026-10-24 真机栽的 ⇒ 详见 seedCookies 的注释）
         Self.seedCookies(from: payload, into: engine.fetcher.cookieJar)
@@ -467,7 +473,12 @@ final class LegadoEngineBackend: @unchecked Sendable {
         if var dict = out as? [String: Any] {
             dict["__sourceVars"] = Self.varsJSON(engine.varBox)
             // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 回传给轻阅（落盘）⭐
-            if let sv = engine.sourceVariable { dict["__sourceVariable"] = sv.text }
+            if let sv = engine.sourceVariable {
+                dict["__sourceVariable"] = sv.text
+                // ⭐⭐⭐ **站方到底改没改这一格？**（判形态的证据只认「真改过」）⭐
+                //   ⇒ 没改 ⇒ 落盘时**不许**把它当成「站方自己写的」⇒ 不许拿来当证据 ⭐⭐⭐
+                dict["__sourceVariableChanged"] = (sv.text != (seededStationVariable ?? ""))
+            }
             out = dict
         }
         return out

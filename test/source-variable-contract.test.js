@@ -108,7 +108,10 @@ const ok = (c, m, extra) => {
      '选线 / 测速 ⇒ 走**有守卫**的写回（setLineVars + isMapStyle 判据）');
   ok(!/setVariableAndVars\s*\(/.test(svc2),
      '⚠️ 选线 / 测速 **不许**再走无守卫的 setVariableAndVars（会把 map 灌进凭据形态的站方变量）');
-  ok(/setVariableAndVars/.test(explore), '发现页筛选 ⇒ 写到站方变量');
+  ok(/setHostMap\s*\(/.test(explore),
+     '发现页筛选 ⇒ 走**有守卫**的写回（setHostMap：map 形态照写，凭据形态拦住）');
+  ok(!/setVariableAndVars\s*\(/.test(explore),
+     '⚠️ 发现页筛选 **不许**走无守卫的 setVariableAndVars（会把 map 灌进凭据形态的站方变量）');
   ok(/setVariable\(/.test(sheet), '登录面板的保存 / 清空 ⇒ 写到站方变量');
   ok(/setLineVars\s*\(/.test(svc2) || /setVariable\s*\(/.test(svc2),
      '线路切换 ⇒ 写到站方变量（map 形态的源）');
@@ -117,6 +120,10 @@ const ok = (c, m, extra) => {
   const svcMut = svc2.replace(/setLineVars\s*\(/g, 'setVariableAndVars(');
   ok(/setVariableAndVars\s*\(/.test(svcMut) && !/setLineVars\s*\(/.test(svcMut),
      '变异对照：改回无守卫写回 ⇒ 会被上面那条抓住');
+  // ⭐⭐⭐ 变异对照：发现页筛选改回无守卫写回 ⇒ 上面那条必须红
+  const exploreMut = explore.replace(/setHostMap\s*\(/g, 'setVariableAndVars(');
+  ok(/setVariableAndVars\s*\(/.test(exploreMut) && !/setHostMap\s*\(/.test(exploreMut),
+     '变异对照：发现页改回无守卫写回 ⇒ 会被上面那条抓住');
 
   console.log('\n=== 4. 变异对照：把老引擎改回「混成一份」⇒ 必须红 ===');
   const src = fs.readFileSync(API, 'utf8');

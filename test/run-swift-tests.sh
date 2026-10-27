@@ -130,6 +130,27 @@ rc4=${PIPESTATUS[0]}
 [ $rc4 -ne 0 ] && rc=$rc4
 _sum "$TMP/out4.txt"
 
+# ── 第四组之二：**站方变量的形态 + 污染迁移**（Core/SourceVariables.swift）──
+# ⭐⭐⭐⭐⭐ 2026-10-27 真机复盘：✿UAA「获取 token」⇒ 403 无效JWT
+#   ⇒ 站方变量里躺着的不是 token，是**宿主灌进去的一份 map**
+#   ⇒ 三个根因：① 证据**自证**（回传时值没变也当证据）② 证据的键没有版本（旧的自证证据还在）
+#              ③ 迁移挂在**选线**那条链上（✿UAA 压根没有线路 ⇒ 永远走不到）⭐⭐⭐
+echo
+echo "=== 编译 Core/SourceVariables.swift（站方变量形态）==="
+mkdir -p "$TMP/form"
+cp test/station-var-form-test.swift "$TMP/form/main.swift"
+if ! "$SWIFTC" -O "$TMP/form/main.swift" QiReaderLite/Core/SourceVariables.swift -o "$TMP/form-test" 2>"$TMP/err4e.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4e.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/form-test" | tee "$TMP/out4e.txt"
+rc4e=${PIPESTATUS[0]}
+[ $rc4e -ne 0 ] && rc=$rc4e
+_sum "$TMP/out4e.txt"
+
 # ── 第四组之二：**书源导入补齐**（Core/BookSource.swift）────────
 # ⭐⭐⭐ 2026-10-24 真机：「登录界面整没了」的根因就在这个文件里
 #   `BookSource.init(from:)` 是**白名单解码** ⇒ 模型后加的字段（`loginUi` 是 build153 才加的）
