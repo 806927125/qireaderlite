@@ -448,6 +448,13 @@ final class LegadoEngineBackend: @unchecked Sendable {
             sv.text = text
             seededStationVariable = text
         }
+        // ⭐⭐⭐ **诊断**（2026-10-27 真机：Bearer 仍是污染 ⇒ 量出引擎里到底是哪一串）⭐
+        NSLog("[变量] 灌进引擎的站方变量=\(String((seededStationVariable ?? "<没有这格>").prefix(60)))")
+        if let sv = engine.sourceVariable {
+            NSLog("[变量] 引擎槽当前=\(String(sv.text.prefix(60)))（长度 \(sv.text.count)）")
+        } else {
+            NSLog("[变量] ⚠️ 引擎没有站方变量槽 ⇒ getVariable() 会回退成整份书源变量")
+        }
         // ⭐⭐⭐ **cookie 也要灌进引擎的罐**（2026-10-24 真机栽的 ⇒ 详见 seedCookies 的注释）
         Self.seedCookies(from: payload, into: engine.fetcher.cookieJar)
         var out: Any?

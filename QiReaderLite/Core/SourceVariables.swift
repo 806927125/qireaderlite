@@ -205,9 +205,21 @@ enum SourceVariables {
     ///   （map 形态的源**不清**：那是站方自己的 map ⇒ 清了就把大灰狼的线路弄没了 ⭐）
     static func stationVariableToSeed(for sourceUrl: String) -> String {
         let current = variable(for: sourceUrl)
+        // ⭐⭐⭐ **诊断**（2026-10-27 真机：污染还在 ⇒ 先量出来，别猜）⭐
+        //   一次跑就能定位：槽里是什么 / 形态判成什么 / 为什么没清 ⭐
+        let f = form(for: sourceUrl)
+        let isMap = isMapStyleVariable(current)
+        NSLog("[变量] 槽=\(current.prefix(60)) 形态=\(f.rawValue) 取过默认表=\(defaultTableFetched(sourceUrl)) 是map=\(isMap)")
         guard !current.isEmpty else { return "" }
-        guard form(for: sourceUrl) == .credential, isMapStyleVariable(current) else { return current }
-        NSLog("[变量] 清掉站方变量里的宿主污染（凭据形态却躺着一个 map）· \(sourceUrl)")
+        guard f == .credential, isMap else {
+            if f == .credential && !isMap {
+                NSLog("[变量] 迁移=没清（槽里不是 map，是凭据本身）")
+            } else if f != .credential {
+                NSLog("[变量] 迁移=没清（形态=\(f.rawValue)，不是凭据形态 ⇒ 不许动）")
+            }
+            return current
+        }
+        NSLog("[变量] 迁移=清了（凭据形态却躺着一个 map ⇒ 宿主灌的污染）")
         setVariable("", for: sourceUrl, origin: .app)
         return ""
     }
