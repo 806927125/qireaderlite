@@ -123,7 +123,22 @@ SourceVariables.setVariable("{\"server\":\"https://v1\"}", for: dhl, origin: .ap
 let seeded2 = SourceVariables.stationVariableToSeed(for: dhl, jsLib: "let d=JSON.parse(source.getVariable())")
 ok(seeded2.contains("server"), "⭐ map 形态的源 ⇒ 迁移**不许**清（否则大灰狼线路丢失）")
 
-for u in [uaa, dhl] { SourceVariables.clear(for: u) }
+// ⑥ 宿主写 map ⇒ 凭据形态要拦住（✿UAA 那一格只配放 token）
+let host = "form-gate-#host"
+SourceVariables.clear(for: host)
+SourceVariables.setHostMap("{\"androidId\":\"x\"}", for: host,
+                           jsLib: "let h='Bearer '+source.getVariable()")
+ok(SourceVariables.variable(for: host).isEmpty,
+   "⭐⭐⭐ 凭据形态 ⇒ 宿主往这一格塞 map 被拦住（UAA：否则 Bearer {…} ⇒ 403 无效JWT）")
+ok(SourceVariables.vars(for: host).contains("androidId"),
+   "⭐ 书源变量照写（那是宿主自己的变量表，跟站方变量是两套）")
+// map 形态的源 ⇒ 照旧写得进去（不能回归）
+SourceVariables.setHostMap("{\"server\":\"https://v2\"}", for: dhl,
+                           jsLib: "let d=JSON.parse(source.getVariable())")
+ok(SourceVariables.variable(for: dhl).contains("server"),
+   "⭐ map 形态的源 ⇒ 宿主写 map 照旧生效（不能回归）")
+
+for u in [uaa, dhl, host] { SourceVariables.clear(for: u) }
 
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

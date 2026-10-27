@@ -7,7 +7,11 @@
 # 为什么要有这个门禁：
 #   门禁「全绿」有两种可能：① 实现对 ② **门禁没抓到东西**（平凡通过）⭐⭐⭐
 #   ⇒ 所以每个断言都要问「**把实现改坏，它会不会红**」⭐
-#   ⇒ 这个脚本就是把实现改坏 7 次，看门禁是不是每次都红 ⭐⭐⭐
+#   ⇒ 这个脚本就是把实现改坏 N 次，看门禁是不是每次都红 ⭐⭐⭐
+#
+# ⚠️ **复原用「拷副本」**，不用 `git checkout` ⇒ 不会冲掉未提交的改动（踩过）⭐
+# ⚠️ **改坏的锚点必须跟当前代码形状一致** ⇒ 代码一改，锚点要跟着改（否则「变异没生效」
+#    ⇒ 门禁当然不红 ⇒ **看起来像门禁没牙齿，其实是变异没打中**）⭐⭐⭐
 # ============================================================
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -25,166 +29,159 @@ fi
 [ -d /tmp/swift/usr/lib/swift/linux ] && export LD_LIBRARY_PATH="/tmp/swift/usr/lib/swift/linux:${LD_LIBRARY_PATH:-}"
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-
 VARS="QiReaderLite/Core/SourceVariables.swift"
+FORM="QiReaderLite/Core/StationVarForm.swift"
 SVC="QiReaderLite/Core/SourceService.swift"
 BACK="QiReaderLite/Core/LegadoEngineBackend.swift"
+
+BAK="$TMP/backup"; mkdir -p "$BAK"
+cp "$VARS" "$BAK/vars.swift"; cp "$SVC" "$BAK/svc.swift"
+cp "$BACK" "$BAK/back.swift"; cp "$FORM" "$BAK/form.swift"
+restore() {
+  cp "$BAK/vars.swift" "$VARS"; cp "$BAK/svc.swift" "$SVC"
+  cp "$BAK/back.swift" "$BACK"; cp "$BAK/form.swift" "$FORM"
+}
+trap 'restore; rm -rf "$TMP"' EXIT
 
 pass=0; fail=0
 ok() { if [ "$1" = "0" ]; then pass=$((pass+1)); echo "  ✓ $2"; else fail=$((fail+1)); echo "  ✗ $2"; fi; }
 
-# ⭐⭐⭐ **复原用「拷副本」**，不用 `git checkout` ⇒ 否则会**冲掉未提交的改动**（踩过）⭐
-BAK="$(mktemp -d)"
-cp "$VARS" "$BAK/vars.swift"; cp "$SVC" "$BAK/svc.swift"; cp "$BACK" "$BAK/back.swift"
-restore() { cp "$BAK/vars.swift" "$VARS"; cp "$BAK/svc.swift" "$SVC"; cp "$BAK/back.swift" "$BACK"; }
-trap 'restore; rm -rf "$TMP"' EXIT
-
-# 跑 Swift 门禁（真编真跑）⇒ 退出码非 0 = 红
+# 跑 Swift 行为门禁（真编真跑）⇒ 退出码非 0 = 红
 run_swift_gate() {
-  mkdir -p "$TMP/m"
-  cp test/station-var-form-test.swift "$TMP/m/main.swift"
-  if ! "$SWIFTC" -O "$TMP/m/main.swift" "$VARS" -o "$TMP/m/t" 2>"$TMP/m/err.txt"; then
-    echo "COMPILE_ERROR"; return 2
+  local dir="$TMP/m$$"
+  mkdir -p "$dir"
+  cp test/station-var-form-test.swift "$dir/main.swift"
+  if ! "$SWIFTC" -O "$dir/main.swift" "$VARS" "$FORM" -o "$dir/t" 2>"$dir/err.txt"; then
+    echo "COMPILE_ERROR"; cat "$dir/err.txt" | head -6; return 2
   fi
-  "$TMP/m/t" > "$TMP/m/out.txt" 2>&1
+  (cd "$(dirname "$0")/.." && "$dir/t" > "$dir/out.txt" 2>&1)
   return $?
 }
 
-echo "=== ① 证据自证：回传时值没变也当成「站方写的」 ==="
+echo "=== ① 回传恒当「站方写的」证据（自证） ==="
 python3 - <<'PY'
-import re
 p = "QiReaderLite/Core/SourceService.swift"
 s = open(p, encoding="utf-8").read()
-s2 = s.replace("stationWroteIt(obj) ? .station : .app", ".station")
-assert s != s2, "变异没生效"
-open(p, "w", encoding="utf-8").write(s2)
+old = "origin: Self.stationWroteIt(obj) ? .station : .app"
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, "origin: .station"))
 PY
 node test/source-variable-shape.test.js > "$TMP/js1.txt" 2>&1
-[ $? -ne 0 ] && ok 0 "回传恒当证据 ⇒ source-variable-shape 变红 ✅" || { ok 1 "回传恒当证据 ⇒ 门禁**没红**（这条门禁没牙齿！）"; tail -5 "$TMP/js1.txt"; }
+[ $? -ne 0 ] && ok 0 "回传恒当证据 ⇒ source-variable-shape 变红 ✅" || { ok 1 "回传恒当证据 ⇒ 门禁**没红**"; tail -6 "$TMP/js1.txt"; }
 restore
 
 echo "=== ② 证据的键不带版本（旧的污染证据继续生效） ==="
 python3 - <<'PY'
 p = "QiReaderLite/Core/SourceVariables.swift"
 s = open(p, encoding="utf-8").read()
-s2 = s.replace("sourcevariable.stationform.v2.", "sourcevariable.stationform.")
-assert s != s2, "变异没生效"
-open(p, "w", encoding="utf-8").write(s2)
+old = "sourcevariable.stationform.v2."
+assert old in s, "锚点没找到"
+open(p, "w", encoding="utf-8").write(s.replace(old, "sourcevariable.stationform."))
 PY
 node test/source-variable-shape.test.js > "$TMP/js2.txt" 2>&1
-[ $? -ne 0 ] && ok 0 "证据键去掉版本 ⇒ 变红 ✅" || { ok 1 "证据键去掉版本 ⇒ 门禁**没红**"; tail -5 "$TMP/js2.txt"; }
-node test/uaa-original-station-var.test.js > "$TMP/js2b.txt" 2>&1
-[ $? -ne 0 ] && ok 0 "（真源门禁也跟着红）✅" || ok 1 "真源门禁没红"
+[ $? -ne 0 ] && ok 0 "证据键去掉版本 ⇒ 变红 ✅" || { ok 1 "证据键去掉版本 ⇒ 门禁**没红**"; tail -6 "$TMP/js2.txt"; }
 restore
 
-echo "=== ③ 污染迁移挂在走不到的链上（灌站方变量时不迁移） ==="
+echo "=== ③ 污染迁移挂在走不到的链上 ==="
 python3 - <<'PY'
 p = "QiReaderLite/Core/SourceService.swift"
 s = open(p, encoding="utf-8").read()
-s2 = s.replace("stationVariableToSeed(for:", "variable(for:")
-assert s != s2, "变异没生效"
-open(p, "w", encoding="utf-8").write(s2)
+old = "SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)"
+assert old in s, "锚点没找到"
+open(p, "w", encoding="utf-8").write(s.replace(old, "SourceVariables.variable(for: source.bookSourceUrl)"))
 PY
 node test/source-variable-shape.test.js > "$TMP/js3.txt" 2>&1
-[ $? -ne 0 ] && ok 0 "迁移被绕开 ⇒ 变红 ✅" || { ok 1 "迁移被绕开 ⇒ 门禁**没红**"; tail -5 "$TMP/js3.txt"; }
-node test/uaa-original-station-var.test.js > "$TMP/js3b.txt" 2>&1
-[ $? -ne 0 ] && ok 0 "（真源门禁也跟着红）✅" || ok 1 "真源门禁没红"
+[ $? -ne 0 ] && ok 0 "迁移被绕开 ⇒ 变红 ✅" || { ok 1 "迁移被绕开 ⇒ 门禁**没红**"; tail -6 "$TMP/js3.txt"; }
 restore
 
 echo "=== ④ 引擎不报「站方改没改」 ==="
 python3 - <<'PY'
 p = "QiReaderLite/Core/LegadoEngineBackend.swift"
 s = open(p, encoding="utf-8").read()
-s2 = s.replace('dict["__sourceVariableChanged"] = (sv.text != (seededStationVariable ?? ""))',
-               'dict["__sourceVariableChanged"] = true')
-assert s != s2, "变异没生效"
-open(p, "w", encoding="utf-8").write(s2)
+old = 'dict["__sourceVariableChanged"] = (sv.text != (seededStationVariable ?? ""))'
+assert old in s, "锚点没找到"
+open(p, "w", encoding="utf-8").write(s.replace(old, 'dict["__sourceVariableChanged"] = true'))
 PY
 node test/source-variable-shape.test.js > "$TMP/js4.txt" 2>&1
-[ $? -ne 0 ] && ok 0 "引擎恒报「改过」⇒ 变红 ✅" || { ok 1 "引擎恒报「改过」⇒ 门禁**没红**"; tail -5 "$TMP/js4.txt"; }
+[ $? -ne 0 ] && ok 0 "引擎恒报「改过」⇒ 变红 ✅" || { ok 1 "引擎恒报「改过」⇒ 门禁**没红**"; tail -6 "$TMP/js4.txt"; }
 restore
 
-echo "=== ⑤ 宿主写的值也当证据（自证回来了） ==="
+echo "=== ⑤ 静态扫描：凭据优先（会误伤大灰狼的线路表） ==="
 python3 - <<'PY'
-p = "QiReaderLite/Core/SourceVariables.swift"
+p = "QiReaderLite/Core/StationVarForm.swift"
 s = open(p, encoding="utf-8").read()
-old = """        case .app:
-            // 宿主自己合成的（线路表）⇒ **不算证据**（它正是污染的来源）⭐
-            break"""
-new = """        case .app:
-            UserDefaults.standard.set(isMapStyleVariable(value) ? StationVarForm.map.rawValue
-                                                                : StationVarForm.credential.rawValue,
-                                      forKey: stationFormPrefix + sourceUrl)"""
-assert old in s, "变异锚点没找到"
+old = """        if sawMap { return .map }
+        if sawCredential { return .credential }"""
+new = """        if sawCredential { return .credential }
+        if sawMap { return .map }"""
+assert old in s, "锚点没找到"
 open(p, "w", encoding="utf-8").write(s.replace(old, new))
 PY
 run_swift_gate; rc=$?
-[ $rc -ne 0 ] && ok 0 "宿主写的也算证据 ⇒ Swift 门禁变红 ✅" || { ok 1 "宿主写的也算证据 ⇒ 门禁**没红**"; tail -20 "$TMP/m/out.txt"; }
+[ $rc -ne 0 ] && ok 0 "凭据优先（大灰狼被误判）⇒ Swift 门禁变红 ✅" || { ok 1 "凭据优先 ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
 restore
 
-echo "=== ⑥ 凭据形态也当 map 形态（污染不清） ==="
+echo "=== ⑥ 静态扫描：不认 getArguments（大灰狼判成凭据） ==="
 python3 - <<'PY'
-p = "QiReaderLite/Core/SourceVariables.swift"
+p = "QiReaderLite/Core/StationVarForm.swift"
 s = open(p, encoding="utf-8").read()
-s2 = s.replace("if defaultTableFetched(sourceUrl) { return .credential }",
-               "if defaultTableFetched(sourceUrl) { return .map }")
-assert s != s2, "变异没生效"
-open(p, "w", encoding="utf-8").write(s2)
-PY
-run_swift_gate; rc=$?
-[ $rc -ne 0 ] && ok 0 "凭据形态当 map ⇒ Swift 门禁变红 ✅" || { ok 1 "凭据形态当 map ⇒ 门禁**没红**"; tail -20 "$TMP/m/out.txt"; }
-restore
-
-echo "=== ⑦ 迁移里的清污染逻辑删掉 ==="
-python3 - <<'PY'
-p = "QiReaderLite/Core/SourceVariables.swift"
-s = open(p, encoding="utf-8").read()
-old = 'guard form(for: sourceUrl) == .credential, isMapStyleVariable(current) else { return current }'
-new = 'guard false else { return current }'
-assert old in s, "变异锚点没找到"
+old = 'call.stack.contains(where: { $0 == "JSON.parse" || $0 == "getArguments" })'
+new = 'call.stack.contains(where: { $0 == "JSON.parse" })'
+assert old in s, "锚点没找到"
 open(p, "w", encoding="utf-8").write(s.replace(old, new))
 PY
 run_swift_gate; rc=$?
-[ $rc -ne 0 ] && ok 0 "清污染逻辑删掉 ⇒ Swift 门禁变红 ✅" || { ok 1 "清污染逻辑删掉 ⇒ 门禁**没红**"; tail -20 "$TMP/m/out.txt"; }
+[ $rc -ne 0 ] && ok 0 "扫描器不认 getArguments ⇒ Swift 门禁变红 ✅" || { ok 1 "扫描器不认 getArguments ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
 restore
 
-echo "=== ⑧ 宿主写 map 的凭据拦截删掉 ==="
+echo "=== ⑦ 清污染的逻辑删掉（污染留着 ⇒ 403 无效JWT） ==="
 python3 - <<'PY'
 p = "QiReaderLite/Core/SourceVariables.swift"
 s = open(p, encoding="utf-8").read()
-old = "guard form(for: sourceUrl) != .credential else { return }"
+old = """        NSLog("[变量] 迁移=清了（凭据形态却躺着一个 map ⇒ 宿主灌的污染）")
+        setVariable("", for: sourceUrl, origin: .app)
+        return \"\""""
+new = """        NSLog("[变量] 迁移=清了（凭据形态却躺着一个 map ⇒ 宿主灌的污染）")
+        return \"\""""
+assert old in s, "锚点没找到"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PY
+run_swift_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "清污染逻辑删掉 ⇒ Swift 门禁变红 ✅" || { ok 1 "清污染逻辑删掉 ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
+restore
+
+echo "=== ⑧ 宿主写 map 的凭据拦截删掉（UAA 又被塞 map） ==="
+python3 - <<'PY'
+p = "QiReaderLite/Core/SourceVariables.swift"
+s = open(p, encoding="utf-8").read()
+old = "guard form(for: sourceUrl, jsLib: jsLib) != .credential else { return }"
 new = "guard true else { return }"
-assert old in s, "变异锚点没找到"
+assert old in s, "锚点没找到"
 open(p, "w", encoding="utf-8").write(s.replace(old, new))
 PY
 run_swift_gate; rc=$?
-[ $rc -ne 0 ] && ok 0 "凭据拦截删掉 ⇒ Swift 门禁变红 ✅" || { ok 1 "凭据拦截删掉 ⇒ 门禁**没红**"; tail -20 "$TMP/m/out.txt"; }
+[ $rc -ne 0 ] && ok 0 "凭据拦截删掉 ⇒ Swift 门禁变红 ✅" || { ok 1 "凭据拦截删掉 ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
 restore
 
 echo "=== ⑨ 形态判据去掉【静态扫描】（只剩运行时证据） ==="
-python3 - <<'PYM'
+python3 - <<'PY'
 p = "QiReaderLite/Core/SourceVariables.swift"
 s = open(p, encoding="utf-8").read()
 old = "let staticForm = StationVarFormScanner.form(jsLib: jsLib)"
 new = "let staticForm = StationVarForm.unknown"
-assert old in s, "变异锚点没找到"
+assert old in s, "锚点没找到"
 open(p, "w", encoding="utf-8").write(s.replace(old, new))
-PYM
-{
-  mkdir -p "$TMP/m2"; cp test/station-var-form-test.swift "$TMP/m2/main.swift"
-  "$SWIFTC" -O "$TMP/m2/main.swift" QiReaderLite/Core/StationVarForm.swift QiReaderLite/Core/SourceVariables.swift -o "$TMP/m2/t" 2>"$TMP/m2/err.txt"
-  "$TMP/m2/t" > "$TMP/m2/out.txt" 2>&1
-}
-[ $? -ne 0 ] && ok 0 "去掉静态扫描 ⇒ Swift 门禁变红 ✅" || { ok 1 "去掉静态扫描 ⇒ 门禁**没红**（没牙齿！）"; tail -12 "$TMP/m2/out.txt"; }
+PY
+run_swift_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "去掉静态扫描 ⇒ Swift 门禁变红 ✅" || { ok 1 "去掉静态扫描 ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
 restore
 
-echo "=== ⑨ 复原后门禁必须恢复绿（证明脚本没把文件改坏） ==="
+echo "=== ⑩ 复原后门禁必须恢复绿（证明脚本没把文件改坏） ==="
 run_swift_gate; rc=$?
-[ $rc -eq 0 ] && ok 0 "Swift 门禁恢复绿 ✅" || { ok 1 "复原后还是红 ⇒ 脚本把文件改坏了！"; tail -20 "$TMP/m/out.txt"; }
-node test/source-variable-shape.test.js > "$TMP/js9.txt" 2>&1
-[ $? -eq 0 ] && ok 0 "source-variable-shape 恢复绿 ✅" || { ok 1 "source-variable-shape 复原后还是红"; tail -5 "$TMP/js9.txt"; }
-node test/uaa-original-station-var.test.js > "$TMP/js9b.txt" 2>&1
+[ $rc -eq 0 ] && ok 0 "Swift 门禁恢复绿 ✅" || { ok 1 "Swift 门禁复原后还是红 ⇒ 脚本把文件改坏了！"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
+node test/source-variable-shape.test.js > "$TMP/js10.txt" 2>&1
+[ $? -eq 0 ] && ok 0 "source-variable-shape 恢复绿 ✅" || ok 1 "source-variable-shape 复原后还是红"
+node test/uaa-original-station-var.test.js > "$TMP/js10b.txt" 2>&1
 [ $? -eq 0 ] && ok 0 "uaa-original-station-var 恢复绿 ✅" || ok 1 "uaa-original-station-var 复原后还是红"
 
 echo ""
