@@ -393,7 +393,7 @@ struct PasteImportView: View {
                         .font(.caption).foregroundStyle(Theme.accent)
                         .padding(.horizontal, 16)
                 }
-                Text("把书源 JSON 整段粘进来，支持单个对象、数组，或多个对象拼在一起。\n⚠️ 超过 \(limit) 字符会被拦下 —— 大文件请用书源页的「从文件导入」。")
+                Text("把书源 JSON 整段粘进来，支持单个对象、数组，或多个对象拼在一起。\n⭐ 不限长度：整段内容会原样保留，导入时按全部内容解析（编辑器里只显示前 2000 字，避免大文本排版卡死）。")
                     .font(.caption).foregroundStyle(Theme.sub)
                     .padding(.bottom, 8)
             }
