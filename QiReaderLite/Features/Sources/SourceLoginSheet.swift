@@ -38,6 +38,10 @@ struct SourceLoginSheet: View {
     @State private var fqToken = ""
     /// 书源变量（JSON）—— 聚合源把「服务器地址 / 线路」存在这儿
     @State private var varsText = ""
+    /// ⭐⭐⭐ **站方变量**（Legado `source.variable`）—— 与「书源变量」**分开** ⭐
+    ///   ⇒ 站方把 token/凭据放这儿（`source.setVariable`）⇒ 用户也能手填 ⭐
+    @State private var variableText = ""
+    @State private var variableSaved = false
     @State private var varsSaved = false
     @State private var probingHosts = false
     @State private var probeResult: String = ""
@@ -186,6 +190,8 @@ struct SourceLoginSheet: View {
                     // ── 番茄 sessionid（手动兜底）──────────
                     fqTokenBox
                     varsBox
+                    // ⭐⭐⭐ 站方变量（token / 凭据）—— Legado 的「源变量」⭐
+                    variableBox
 
                     // ── 登录状态检测 ──────────────────────────
                     detectBox
@@ -211,13 +217,76 @@ struct SourceLoginSheet: View {
                 //   ⇒ 挑一条通的写进 `server` ⇒ 之后所有 op 只打那一条 ⇒ 秒回
                 await SourceService.shared.ensureFastLine(source: source)
                 varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+                variableText = SourceVariables.variable(for: source.bookSourceUrl)
                 // ⚠️⚠️ **别在这儿拉站方默认变量**（2026-10-24 真机「打开登录把 app 卡死」）
                 //   那个调用要**跑站方 jsLib + 发网络请求**（大灰狼的服务器经常 502）
                 //   ⇒ 卡在引擎队列里 ⇒ 面板一直转 ⇒ 用户以为 App 死了 ⭐⭐⭐
                 //   ⇒ 现在：**打开面板只读本地缓存**（同步、秒开）
                 //   ⇒ 想拉默认值/测速，点下面的「测速并选最快线路」⭐
                 varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+                variableText = SourceVariables.variable(for: source.bookSourceUrl)
             }
+            }
+        }
+    }
+
+    // MARK: - ⭐⭐⭐ 站方变量（Legado 语义 · 通用书源系统的地基）
+
+    /// ⭐⭐⭐ **站方变量**（Legado `source.getVariable()` / `setVariable(str)`）
+    ///
+    /// ⚠️⚠️ **跟上面的「书源变量」是两回事**（Legado 就是两套）：
+    ///   · **站方变量** = 一整串 ⇒ 聚合源把 **token / 凭据** 放这儿
+    ///   · **书源变量** = map ⇒ 放线路 / 筛选 / 解锁态那些
+    /// ⇒ 混成一份 ⇒ 站方一存 token 就把线路冲掉（反过来也一样）⭐⭐⭐
+    private var variableBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("站方变量（token / 凭据）")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+            Text("聚合源把 token 存在这儿（Legado 的「源变量」）。没有就先在登录界面点站方的「获取token」按钮，它会自己写进来；也可以直接粘一个已有的。")
+                .font(.caption2).foregroundStyle(Theme.sub)
+                .fixedSize(horizontal: false, vertical: true)
+            // ⚠️ 同样用 LimitedTextEditor（8K 上限 ⇒ 粘巨量文本不会排版炸进程）
+            LimitedTextEditor(text: $variableText, limit: 8_000) { projected in
+                message = "站方变量 \(projected) 字符，太大了（上限 8000）"
+                failed = true
+            }
+                .frame(minHeight: 60)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .glassCard(cornerRadius: 10, variant: .regular)
+            if variableText.isEmpty {
+                Text("现在是空的 ⇒ 站方的请求不会带凭据（Legado 语义：空 ⇒ 走站方默认表）。")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 10) {
+                Button {
+                    let raw = variableText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    SourceVariables.setVariable(raw, for: source.bookSourceUrl)
+                    variableText = SourceVariables.variable(for: source.bookSourceUrl)
+                    variableSaved = true
+                } label: {
+                    Label(variableSaved ? "已保存" : "保存", systemImage: variableSaved ? "checkmark" : "square.and.arrow.down")
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                }
+                .buttonStyle(GlassActionButtonStyle())
+                if !variableText.isEmpty {
+                    Button {
+                        variableText = ""
+                        SourceVariables.setVariable("", for: source.bookSourceUrl)
+                        variableSaved = true
+                    } label: {
+                        Text("清空")
+                            .font(.system(size: 13))
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                    }
+                    .buttonStyle(GlassActionButtonStyle())
+                }
             }
         }
     }
@@ -370,6 +439,7 @@ struct SourceLoginSheet: View {
                             for: source.bookSourceUrl)
                     }
                     varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+                variableText = SourceVariables.variable(for: source.bookSourceUrl)
                     varsSaved = true
                 } label: {
                     Label(varsSaved ? "已保存" : "保存", systemImage: varsSaved ? "checkmark" : "square.and.arrow.down")
@@ -639,6 +709,7 @@ struct SourceLoginSheet: View {
             failed = true
         }
         varsText = SourceVariables.effectiveVars(for: source.bookSourceUrl)
+        variableText = SourceVariables.variable(for: source.bookSourceUrl)
         guard let raw = src.loginUi, !raw.isEmpty,
               let data = raw.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
