@@ -115,6 +115,22 @@ enum SourceVariables {
         return false                                       // 一串凭据（token）⇒ 不许被 map 覆盖 ⭐
     }
 
+    /// ⭐⭐⭐ **当前站方变量是不是「map 形态」？**（不是空、且是合法 JSON object）
+    ///
+    /// ⚠️ **为什么要两个判据**（站方变量是「一整串」⇒ 两种形态并存）：
+    ///   · **站方自带默认变量表**（`getArguments('','')` 有东西）⇒ 它把站方变量当 map 用
+    ///     （🍅大灰狼：`getArguments(source.getVariable(),'server')`）⭐
+    ///   · **站方变量里已经躺着一个 map** ⇒ 同上（站方自己写过 map）⭐
+    ///   · 两条都不成立 ⇒ 它的站方变量是**凭据的位置**（✿UAA：token）⇒ **别塞 map** ⭐⭐⭐
+    static func isMapStyleVariable(_ current: String) -> Bool {
+        let t = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return false }
+        guard let d = t.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d),
+              o is [String: Any] else { return false }
+        return true
+    }
+
     /// ⭐⭐⭐ **线路 / 默认表写回**：**书源变量**总是写；**站方变量**只给「map 形态」的源 ⭐
     ///
     /// - Parameters:

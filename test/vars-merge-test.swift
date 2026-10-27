@@ -120,5 +120,11 @@ SourceVariables.clear(for: uaa)
 SourceVariables.clear(for: dhl)
 ok(SourceVariables.variable(for: uaa).isEmpty, "clear() 把站方变量也清了（以前漏了 ⇒ token 残留）")
 
+print("\n=== ⑩ isMapStyleVariable：map 形态判定 ===")
+ok(!SourceVariables.isMapStyleVariable(""), "空 ⇒ 不是 map 形态")
+ok(SourceVariables.isMapStyleVariable("{\"server\":\"https://v1\"}"), "JSON object ⇒ 是 map 形态")
+ok(!SourceVariables.isMapStyleVariable(token), "token 串 ⇒ 不是 map 形态（凭据形态）")
+ok(!SourceVariables.isMapStyleVariable("[1,2]"), "JSON 数组 ⇒ 不是 map 形态（要的是 object）")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)
