@@ -33,10 +33,17 @@ ok(!/store\.enabled\.filter\s*\{\s*\$0\.exploreUrl\s*!=\s*nil\s*\}/.test(discove
 ok(/trimmingCharacters\(in:\s*\.whitespacesAndNewlines\)/.test(discover),
    '判据要「去掉空白后还剩东西」（空串也不算有发现页）');
 
-console.log('▶ ② 去掉「粘贴 JSON 导入」');
-ok(!/粘贴 JSON 导入/.test(sources), '菜单里不许再有「粘贴 JSON 导入」');
-ok(!/showPaste/.test(sources), '不许再有 showPaste 状态');
-ok(!/PasteImportView/.test(sources), '不许再有 PasteImportView');
+console.log('▶ ② 粘贴导入：**可以有，但大文件不许裸粘**（用户 2026-10-27 澄清）');
+ok(/粘贴 JSON 导入/.test(sources), '菜单里要有「粘贴 JSON 导入」');
+ok(/PasteImportView/.test(sources), '要有 PasteImportView');
+ok(/BigPasteTextEditor/.test(sources),
+   '粘贴必须用 BigPasteTextEditor（裸 TextEditor 粘大文本 ⇒ CoreText 排版 10 秒 ⇒ 杀进程）');
+ok(!/limit = 20_000/.test(sources), '粘贴**不带上限**（用户 2026-10-27 明确要求）');
+ok(!/(?<![\w])TextEditor\(/.test(sources), '不许用裸 TextEditor 接收粘贴');
+// ⭐ 大文本**不进气泡**（只进缓冲区）⇒ 零排版 ⇒ 永不卡
+const editor = read(path.join(APP, 'App/BigPasteTextEditor.swift'));
+ok(/override func paste/.test(editor), 'BigPasteTextView 要拦下粘贴（大文本不进 UITextView ⇒ 不排版）');
+ok(/onPaste\?\(s\)/.test(editor), '粘贴内容走 onPaste 回调进缓冲区（全量保留）');
 
 console.log('▶ ③ 文件导入能用');
 ok(/CFBundleDocumentTypes/.test(plistRaw), 'Info.plist 声明 CFBundleDocumentTypes（否则 iOS 不把文件路由给我们）');

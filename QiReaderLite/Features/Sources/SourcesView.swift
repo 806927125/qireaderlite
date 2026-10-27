@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SourcesView: View {
     @EnvironmentObject private var store: SourceStore
     @State private var showFileImporter = false
+    @State private var showPaste = false
     @State private var showURLImport = false
     @State private var showDiag = false
     @State private var importError: String?
@@ -56,9 +57,9 @@ struct SourcesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    // ⭐⭐⭐ 2026-10-26 用户要求：**去掉「粘贴 JSON 导入」**
-                    //   ⇒ 粘贴大文本会触发 CoreText 排版（158KB 排 10 秒 ⇒ 杀进程）
-                    //   ⇒ 大文件一律走「从文件导入」/「从链接导入」⭐⭐⭐
+                    Button { showPaste = true } label: {
+                        Label("粘贴 JSON 导入", systemImage: "doc.on.clipboard")
+                    }
                     Button { showFileImporter = true } label: {
                         Label("从文件导入", systemImage: "folder")
                     }
@@ -91,6 +92,12 @@ struct SourcesView: View {
                       allowedContentTypes: [.json, .text, .data],
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { urls.forEach(load) }
+        }
+        .sheet(isPresented: $showPaste) {
+            // ⭐⭐⭐ **不限长度的粘贴**（2026-10-27 用户要求：「不带上限」）
+            //   ⇒ 但大文本**不能进 UITextView**（CoreText 排版 10 秒 ⇒ watchdog 杀进程）
+            //   ⇒ `BigPasteTextEditor`：粘贴走缓冲区（**零排版**）⇒ 只显示前 2000 字，导入用全量 ⭐
+            PasteImportView { text in importJSON(text) }
         }
         .sheet(isPresented: $showURLImport) {
             URLImportView { data in importData(data, from: "链接") }
@@ -264,6 +271,15 @@ struct SourcesView: View {
     /// 文件和链接共用这一条，失败提示带上来源好排查
     // ⚠️ 参数名不能叫 `where` —— Swift 保留字，会报
     //    "Expected expression in list of expressions"（字面看不懂：以为在写 where 子句）
+    private func importJSON(_ text: String) {
+        do {
+            let list = try BookSourceParser.parse(Data(text.utf8))
+            let n = store.importSources(list)
+            Toast.show("导入 \(n) 个书源")
+        } catch {
+            importError = error.localizedDescription
+        }
+    }
     private func importData(_ data: Data, from source: String) {
         do {
             let list = try BookSourceParser.parse(data)
@@ -351,3 +367,50 @@ struct URLImportView: View {
     }
 }
 
+struct PasteImportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    /// ⭐⭐⭐ 超长提示（真机崩溃日志：粘 158KB ⇒ CoreText 排 10 秒 ⇒ watchdog 杀进程）
+    @State private var pasteHint = ""
+    let onImport: (String) -> Void
+
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                // ⭐⭐⭐ **不限长度**（2026-10-27 用户要求：「不带上限」）
+                //   ⇒ 但**大文本不能进 UITextView**（会 CoreText 排 10 秒 ⇒ watchdog 杀进程）
+                //   ⇒ `BigPasteTextEditor`：粘贴走缓冲区（**零排版**）⇒ 编辑器只显示前 2000 字
+                //   ⇒ 导入时用**全量** ⇒ 大书源照样能导 ⭐⭐⭐
+                BigPasteTextEditor(text: $text) { count in
+                    pasteHint = "已粘贴 \(count) 字符（显示前 2000 字，导入用全部内容）"
+                }
+                    .padding(8)
+                    .background(Theme.sub.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    .padding()
+                if !pasteHint.isEmpty {
+                    Text(pasteHint)
+                        .font(.caption).foregroundStyle(Theme.accent)
+                        .padding(.horizontal, 16)
+                }
+                Text("把书源 JSON 整段粘进来，支持单个对象、数组，或多个对象拼在一起。\n⚠️ 超过 \(limit) 字符会被拦下 —— 大文件请用书源页的「从文件导入」。")
+                    .font(.caption).foregroundStyle(Theme.sub)
+                    .padding(.bottom, 8)
+            }
+            .navigationTitle("粘贴书源")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("导入") {
+                        onImport(text)
+                        dismiss()
+                    }
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
