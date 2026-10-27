@@ -229,7 +229,7 @@ struct ExploreView: View {
            let str = String(data: data, encoding: .utf8) {
             // ⭐⭐ 发现页筛选在 Legado 里是**站方变量**（`source.setVariable(JSON…)`）⇒ 两处都写 ⭐
             //   ⭐⭐⭐ 走 `setHostMap` ⇒ **凭据形态的源不许被塞 map**（✿UAA：那一格放的是 token）⭐⭐⭐
-            SourceVariables.setHostMap(str, for: currentSourceUrl)
+            SourceVariables.setHostMap(str, for: currentSourceUrl, jsLib: current?.jsLib)
         }
         // 站方的 exploreUrl 要重跑才看得到新平台（discoverySource 是在里面读的）
         kindsLoaded = false

@@ -156,9 +156,12 @@ enum SourceVariables {
     ///   ③ **默认表取过了、且是空的** ⇒ **凭据形态**（UAA：这一格放的是 token）⭐⭐⭐
     ///   ④ 其余 ⇒ **unknown**（**不许动**：大灰狼第一次进来时默认表还没取到
     ///      ⇒ 那时候清一下就把它的合法 map 清掉了）⭐⭐⭐
-    static func form(for sourceUrl: String) -> StationVarForm {
+    static func form(for sourceUrl: String, jsLib: String? = nil) -> StationVarForm {
         guard !sourceUrl.isEmpty else { return .unknown }
-        // ① 站方自己写过什么（证据：回传时值**确实变了**才算）
+        // ① ⭐⭐⭐ **静态扫描站方 jsLib**（最硬的一级 ⇒ 装机第一次跑就能判出来）⭐⭐⭐
+        let staticForm = StationVarFormScanner.form(jsLib: jsLib)
+        if staticForm != .unknown { return staticForm }
+        // ② 站方自己写过什么（证据：回传时值**确实变了**才算）
         if let raw = UserDefaults.standard.string(forKey: stationFormPrefix + sourceUrl) {
             if raw == StationVarForm.map.rawValue { return .map }
             if raw == StationVarForm.credential.rawValue { return .credential }
@@ -186,9 +189,9 @@ enum SourceVariables {
     ///
     /// ⚠️ **形态还「不知道」的时候照写**（⇒ 宿主自己的功能得能用）
     ///   ⇒ 形态一旦判出来（默认表取过了）⇒ 下一轮就被拦住 / 被迁移清掉 ⭐
-    static func setHostMap(_ value: String, for sourceUrl: String) {
+    static func setHostMap(_ value: String, for sourceUrl: String, jsLib: String? = nil) {
         setVars(value, for: sourceUrl)                                   // 书源变量：总是写 ⭐
-        guard form(for: sourceUrl) != .credential else { return }         // ⭐ 凭据形态 ⇒ 不许写 map ⭐⭐⭐
+        guard form(for: sourceUrl, jsLib: jsLib) != .credential else { return }  // ⭐ 凭据形态 ⇒ 不许写 map ⭐⭐⭐
         setVariable(value, for: sourceUrl, origin: .app)                  // 宿主写的 ⇒ **不算证据** ⭐
     }
 
@@ -203,11 +206,11 @@ enum SourceVariables {
     ///
     /// - 判据：**凭据形态 + 这一格现在躺着一个 map** ⇒ 那是**宿主灌的污染** ⇒ 清掉 ⭐⭐⭐
     ///   （map 形态的源**不清**：那是站方自己的 map ⇒ 清了就把大灰狼的线路弄没了 ⭐）
-    static func stationVariableToSeed(for sourceUrl: String) -> String {
+    static func stationVariableToSeed(for sourceUrl: String, jsLib: String? = nil) -> String {
         let current = variable(for: sourceUrl)
         // ⭐⭐⭐ **诊断**（2026-10-27 真机：污染还在 ⇒ 先量出来，别猜）⭐
         //   一次跑就能定位：槽里是什么 / 形态判成什么 / 为什么没清 ⭐
-        let f = form(for: sourceUrl)
+        let f = form(for: sourceUrl, jsLib: jsLib)
         let isMap = isMapStyleVariable(current)
         NSLog("[变量] 槽=\(current.prefix(60)) 形态=\(f.rawValue) 取过默认表=\(defaultTableFetched(sourceUrl)) 是map=\(isMap)")
         guard !current.isEmpty else { return "" }
@@ -285,7 +288,7 @@ enum SourceVariables {
     ///   - merged: 合并后的变量串（站方默认表做底 + 测速/用户的改动）
     ///   - isMapStyle: 这个源的站方变量**是不是 map 形态**（调用方按 `form(for:)` 算好）
     ///     ⇒ **false 时不许把 map 塞进站方变量**（凭据形态的源：站方变量 = token）⭐⭐⭐
-    static func setLineVars(_ merged: String, for sourceUrl: String, isMapStyle: Bool) {
+    static func setLineVars(_ merged: String, for sourceUrl: String, isMapStyle: Bool, jsLib: String? = nil) {
         setVars(merged, for: sourceUrl)                    // 书源变量：总是写 ⭐
         if isMapStyle {
             guard canWriteMapIntoVariable(variable(for: sourceUrl)) else { return }  // ⭐ 凭据形态 ⇒ 不许覆盖
@@ -297,7 +300,7 @@ enum SourceVariables {
         //     ⇒ 服务端 **403「无效JWT」** ⇒ 「获取 token」永远失败 ⭐⭐⭐）
         // ⇒ 判据：**形态 = 凭据**（不是「不是 map」！）⇒ **unknown 时不许清** ⭐⭐⭐
         //   （大灰狼第一次进来时默认表还没取到 ⇒ 那时候清一下就把它的合法 map 清掉了 ⭐）
-        if form(for: sourceUrl) == .credential, isMapStyleVariable(variable(for: sourceUrl)) {
+        if form(for: sourceUrl, jsLib: jsLib) == .credential, isMapStyleVariable(variable(for: sourceUrl)) {
             setVariable("", for: sourceUrl, origin: .app)
         }
     }

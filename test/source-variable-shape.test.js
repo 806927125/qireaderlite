@@ -86,7 +86,7 @@ if (fnStart >= 0) {
   // ⭐⭐⭐ 迁移：旧实现灌进站方变量的污染要清掉（真机上还躺着 ⇒ 不清就永远 403）
   //   ⚠️ 判据是「形态 = **凭据**」（**不是**「不是 map」！）⇒ 形态**不知道**时不许清 ⭐⭐⭐
   //      （大灰狼第一次进来时默认表还没取到 ⇒ 那时候清一下就把它的合法 map 清掉了 ⭐）
-  ok(/form\s*\(\s*for\s*:\s*sourceUrl\s*\)\s*==\s*\.credential/.test(body) && /setVariable\(""/.test(body),
+  ok(/form\s*\(\s*for\s*:\s*sourceUrl\s*,\s*jsLib\s*:\s*jsLib\s*\)\s*==\s*\.credential/.test(body) && /setVariable\(""/.test(body),
      '守卫③：迁移 —— 凭据形态的源，站方变量里的旧污染要清掉');
 }
 const guardStart = vars.indexOf('static func canWriteMapIntoVariable');
@@ -105,8 +105,8 @@ ok(/form\s*\(\s*for\s*:/.test(service),
    '判据用「站方自己写过什么」的证据（SourceVariables.form(for:)）');
 ok(!/isMapStyleVariable\s*\(\s*SourceVariables\.variable/.test(service),
    '⚠️ 不许拿「站方变量当前内容」当形态判据（污染本身也是 map ⇒ 会误判）');
-ok(/static func form\s*\(\s*for\s+sourceUrl\s*:\s*String\s*\)\s*->\s*StationVarForm/.test(vars),
-   'SourceVariables 里有 form(for:)（形态判据，单一真相）');
+ok(/static func form\s*\(\s*for\s+sourceUrl\s*:\s*String\s*,\s*jsLib\s*:\s*String\?\s*=\s*nil\s*\)\s*->\s*StationVarForm/.test(vars),
+   'SourceVariables 里有 form(for:jsLib:)（形态判据，单一真相）');
 {
   // 变异对照：把判据换回「看内容」⇒ 上面那条必须红
   const m = service.replace(/form\s*\(\s*for\s*:/g, 'isMapStyleVariable(');
@@ -181,7 +181,7 @@ ok(/static func setHostMap/.test(vars), 'SourceVariables 里有 setHostMap（宿
 {
   const h0 = vars.indexOf('static func setHostMap');
   const hBody = vars.slice(h0, vars.indexOf('\n    }', h0) + 6);
-  ok(/form\s*\(\s*for\s*:\s*sourceUrl\s*\)\s*!=\s*\.credential/.test(hBody),
+  ok(/form\s*\(\s*for\s*:\s*sourceUrl\s*,\s*jsLib\s*:\s*jsLib\s*\)\s*!=\s*\.credential/.test(hBody),
      '⭐⭐⭐ 凭据形态 ⇒ 宿主不许往这一格塞 map（✿UAA：那一格放的是 token）');
 }
 ok(/setHostMap\s*\(/.test(explore), '⭐ 发现页筛选写回走 setHostMap');
@@ -195,6 +195,30 @@ ok(/setHostMap\s*\(/.test(sheet), '⭐ 登录面板的变量写回走 setHostMap
   const mh0 = m.indexOf('static func setHostMap');
   const mh = m.slice(mh0, m.indexOf('\n    }', mh0) + 6);
   ok(!/!=\s*\.credential/.test(mh), '变异对照：删掉凭据拦截 ⇒ 会被上面那条抓住');
+}
+
+console.log('\n=== ③·h ⭐⭐⭐⭐⭐ 形态判据必须有【静态扫描】（不能只靠运行时状态）===');
+// ⚠️⚠️⚠️ 2026-10-27 真机复盘：手机上**已经躺着的旧污染**，第一次 op 之前
+//   运行时证据**根本判不出来** ⇒ 判不出来 = 不许清 ⇒ **污染永远清不掉** ⭐⭐⭐
+const formRaw = fs.readFileSync(path.join(root, 'QiReaderLite/Core/SourceVariables.swift'), 'utf8');
+const scannerRaw = fs.readFileSync(path.join(root, 'QiReaderLite/Core/StationVarForm.swift'), 'utf8');
+ok(/StationVarFormScanner\.form\(jsLib:/.test(formRaw),
+   '⭐⭐⭐⭐⭐ form(for:jsLib:) 先问【静态扫描】（装机第一次跑就能判出来）');
+ok(/enum StationVarFormScanner/.test(scannerRaw) && /JSON\.parse/.test(scannerRaw) && /getArguments/.test(scannerRaw),
+   '⭐⭐⭐ 扫描器认得两种消费方式：JSON.parse / getArguments ⇒ map 形态');
+ok(/getVariable/.test(scannerRaw) && /setVariable/.test(scannerRaw),
+   '⭐⭐⭐ 扫描器同时看【读】和【写】');
+ok(/enum StationVarForm\b/.test(scannerRaw) && /case credential/.test(scannerRaw) && /case map/.test(scannerRaw),
+   '⭐⭐⭐ 形态有两态（map / credential）+ unknown（不知道时一律不许动）');
+{
+  // 变异对照：把「静态扫描优先」去掉 ⇒ 上面那条必须红
+  const m = formRaw.replace(/StationVarFormScanner\.form\(jsLib:/, 'formWithoutScan(jsLib:');
+  ok(!/StationVarFormScanner\.form\(jsLib:/.test(m), '变异对照：去掉静态扫描 ⇒ 会被上面那条抓住');
+}
+{
+  // 变异对照：把扫描器的 map 证据判据删掉 ⇒ 上面那条必须红
+  const m = scannerRaw.replace(/JSON\.parse/g, 'JSONxxx');
+  ok(!/JSON\.parse/.test(m), '变异对照：扫描器不认 JSON.parse ⇒ 会被上面那条抓住');
 }
 
 console.log('\n=== ④ 删源时站方变量也要清（token 别残留）===');

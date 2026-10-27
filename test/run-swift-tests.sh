@@ -174,6 +174,29 @@ rc4b=${PIPESTATUS[0]}
 [ $rc4b -ne 0 ] && rc=$rc4b
 _sum "$TMP/out4b.txt"
 
+# ── 第四组之二之二：**站方变量的形态静态判定**（Core/StationVarForm.swift）────
+# ⭐⭐⭐⭐⭐ 2026-10-27 真机复盘：手机上**已经躺着的旧污染**第一次 op 之前永远判不出来
+#   ⇒ 静态扫描站方 jsLib ⇒ 装机第一次跑就知道这一格是 map 还是凭据 ⇒ 污染能清掉
+#   ⇒ 断言对象是**仓库里的真源**（不是 mock）⇒ mock 会跟着实现一起漂 ⇒ 门禁白做
+echo
+echo "=== 编译 Core/StationVarForm.swift（站方变量形态）==="
+mkdir -p "$TMP/form"
+cp test/station-var-form-test.swift "$TMP/form/main.swift"
+if ! "$SWIFTC" -O "$TMP/form/main.swift" \
+      QiReaderLite/Core/StationVarForm.swift \
+      QiReaderLite/Core/SourceVariables.swift \
+      -o "$TMP/form-test" 2>"$TMP/err4f.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4f.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/form-test" | tee "$TMP/out4f.txt"
+rc4f=${PIPESTATUS[0]}
+[ $rc4f -ne 0 ] && rc=$rc4f
+_sum "$TMP/out4f.txt"
+
 # ── 第四组之三：**源字典缓存**（Core/SourceDictCache.swift）────
 # ⭐⭐⭐ 2026-10-24 真机「app 死机」的真凶（崩溃日志 0x8BADF00D 实证）：
 #   每个 op 都把整个源（大灰狼 158KB）编码 + Foundation 解析一遍

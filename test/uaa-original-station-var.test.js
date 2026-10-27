@@ -103,16 +103,20 @@ const serviceRaw = read('QiReaderLite/Core/SourceService.swift');
 const vars = varsRaw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/.*$/gm, '$1');
 const service = serviceRaw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-ok(/static func form\s*\(\s*for\s+sourceUrl\s*:\s*String\s*\)\s*->\s*StationVarForm/.test(vars),
-   '⭐ App 有站方变量的形态判据（form(for:)）');
-ok(/case credential/.test(vars) && /case map/.test(vars),
+ok(/static func form\s*\(\s*for\s+sourceUrl\s*:\s*String\s*,\s*jsLib\s*:\s*String\?/.test(vars),
+   '⭐ App 有站方变量的形态判据（form(for:jsLib:)）');
+const scannerSrc = fs.readFileSync(path.join(root, 'QiReaderLite/Core/StationVarForm.swift'), 'utf8');
+ok(/case credential/.test(scannerSrc) && /case map/.test(scannerSrc),
    '⭐⭐⭐ 形态分两种（map / credential）⇒ UAA 落在 credential ⇒ 不许被塞 map');
+ok(/StationVarFormScanner\.form\(jsLib:/.test(vars),
+   '⭐⭐⭐⭐⭐ 判据是【静态扫描站方 jsLib】（手机上的旧污染第一次 op 前就能判出来）');
 ok(/static func stationVariableToSeed/.test(vars),
    '⭐⭐⭐ 灌站方变量那一步带【污染迁移】（真机上躺着的旧污染要清掉）');
 {
   const s0 = vars.indexOf('static func stationVariableToSeed');
   const sBody = vars.slice(s0, vars.indexOf('\n    }', s0) + 6);
-  ok(/form\s*\(\s*for\s*:\s*sourceUrl\s*\)\s*==\s*\.credential/.test(sBody) && /setVariable\(""/.test(sBody),
+  ok(/let f = form\s*\(\s*for\s*:\s*sourceUrl\s*,\s*jsLib\s*:\s*jsLib\s*\)/.test(sBody)
+     && /f == \.credential/.test(sBody) && /setVariable\(""/.test(sBody),
      '⭐⭐⭐ 凭据形态 + 这一格躺着 map ⇒ 清掉（`Bearer {…}` ⇒ 403 无效JWT 的真根因）');
 }
 ok((service.match(/stationVariableToSeed\s*\(/g) || []).length >= 3,
@@ -132,7 +136,8 @@ console.log('\n=== ④ 变异对照（改坏 ⇒ 上面必须红）===');
   // 变异①：把凭据形态的清污染逻辑删掉 ⇒ ③ 的那条必须红
   const s0 = vars.indexOf('static func stationVariableToSeed');
   const sEnd = vars.indexOf('\n    }', s0) + 6;
-  const m = vars.slice(0, s0) + vars.slice(s0, sEnd).replace(/==\s*\.credential/, '== .zzz') + vars.slice(sEnd);
+  const m = vars.slice(0, s0) + vars.slice(s0, sEnd).replace(/f == \.credential/g, 'f == .zzz') + vars.slice(sEnd);
+  ok(/f == \.credential/.test(vars.slice(s0, sEnd)), '（对照）原实现里有 credential 判据');
   const ms0 = m.indexOf('static func stationVariableToSeed');
   const ms = m.slice(ms0, m.indexOf('\n    }', ms0) + 6);
   ok(!/==\s*\.credential/.test(ms), '变异①（清污染的判据改坏）⇒ 会被上面抓住');

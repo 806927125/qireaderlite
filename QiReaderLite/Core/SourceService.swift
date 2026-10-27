@@ -32,7 +32,7 @@ final class SourceService {
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
-        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -77,7 +77,7 @@ final class SourceService {
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
-        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -115,7 +115,7 @@ final class SourceService {
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
-        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         // 栖阅机制：loginHeader（自动注入到每次请求头）→ JS 侧 source.getLoginHeader()
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
@@ -880,7 +880,9 @@ final class SourceService {
             //   ⇒ 凭据形态的源（✿UAA：站方变量 = token 的位置）**绝不能**被 map 覆盖 ⭐⭐⭐
             //   ⇒ 覆盖 ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败 ⭐
             //   ⇒ 判据：**站方自己怎么用这一格**（证据）⇒ map / 凭据 / 不知道 ⭐⭐⭐
-            SourceVariables.setLineVars(merged, for: url, isMapStyle: SourceVariables.form(for: url) == .map)
+            SourceVariables.setLineVars(merged, for: url,
+                                       isMapStyle: SourceVariables.form(for: url, jsLib: source.jsLib) == .map,
+                                       jsLib: source.jsLib)
         }
         let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
         NSLog("%@", msg)
@@ -912,7 +914,7 @@ final class SourceService {
         srcDict["__variables"] = SourceVariables.vars(for: source.bookSourceUrl)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
-        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         guard let raw = try? await RuleSandbox.shared.invoke("sourceVars", ["source": srcDict], source: source),
               let dict = raw as? [String: Any],
@@ -957,7 +959,8 @@ final class SourceService {
         // ⭐⭐⭐⭐ 只有「map 形态」的源才把 map 写进**站方变量**（凭据形态的源：站方变量 = token）⭐
         // ⭐⭐⭐⭐ 判据：**站方自己怎么用这一格**（证据）⇒ map / 凭据 / 不知道 ⭐
         SourceVariables.setLineVars(merged, for: source.bookSourceUrl,
-                                    isMapStyle: SourceVariables.form(for: source.bookSourceUrl) == .map)
+                                    isMapStyle: SourceVariables.form(for: source.bookSourceUrl, jsLib: source.jsLib) == .map,
+                                    jsLib: source.jsLib)
         Self.fastLineCache[source.bookSourceUrl] = (host, Date())
         RuleSandbox.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
         return host
@@ -973,7 +976,7 @@ final class SourceService {
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
-        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
         let dict = raw as? [String: Any] ?? [:]
@@ -1063,7 +1066,7 @@ final class SourceService {
         srcDict["__variables"] = await effectiveVars(for: source)
         // ⭐⭐⭐ 站方变量（Legado 语义：一整串）⇒ 与「书籍变量」分开 ⭐
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
-        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl)
+        srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict

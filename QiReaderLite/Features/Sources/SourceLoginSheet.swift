@@ -316,7 +316,7 @@ struct SourceLoginSheet: View {
                 let merged = SourceVariables.mergeVars(
                     userJSON: variableText,
                     defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
-                SourceVariables.setHostMap(merged, for: source.bookSourceUrl)
+                SourceVariables.setHostMap(merged, for: source.bookSourceUrl, jsLib: source.jsLib)
                 varsSaved = true
             })
     }
@@ -382,7 +382,7 @@ struct SourceLoginSheet: View {
                         if isJSONObject {
                             // ⭐⭐ 站方变量（Legado：getVariable() 读它）⭐
                             //   ⭐⭐⭐ 走 `setHostMap` ⇒ **凭据形态的源不许被塞 map** ⭐⭐⭐
-                            SourceVariables.setHostMap(merged, for: source.bookSourceUrl)
+                            SourceVariables.setHostMap(merged, for: source.bookSourceUrl, jsLib: source.jsLib)
                         } else {
                             // ⭐⭐⭐ **用户自己填的凭据**（token 串）⇒ 原样进站方变量 ⭐
                             //   ⇒ 而且它**就是证据**：这一格放的是凭据 ⇒ 凭据形态 ⭐
@@ -501,7 +501,7 @@ struct SourceLoginSheet: View {
             userJSON: variableText,
             defaults: SourceVariables.defaultVars(for: source.bookSourceUrl))
         // ⭐⭐⭐ 走 `setHostMap` ⇒ **凭据形态的源不许被塞 map**（✿UAA：那一格放的是 token）⭐⭐⭐
-        SourceVariables.setHostMap(merged, for: source.bookSourceUrl)
+        SourceVariables.setHostMap(merged, for: source.bookSourceUrl, jsLib: source.jsLib)
         variableText = SourceVariables.variable(for: source.bookSourceUrl)
         varsSaved = true
         bestHost = host

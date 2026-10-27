@@ -1,133 +1,129 @@
 import Foundation
 
 // ============================================================
-// ⭐⭐⭐⭐⭐ 站方变量的「形态」与「污染迁移」（2026-10-27 真机复盘）
+// ⭐⭐⭐⭐⭐ 站方变量的「形态」静态判定（2026-10-27 真机复盘）
 //
 // ────────────────────────────────────────────────────────────
-// 背景：✿UAA四合一（知秋）⇒ 点「获取Token」⇒ 服务端 403「无效JWT」
-//   ⇒ 请求头是 `authorization: Bearer {"androidId":"b4e6060006b920bc"}`
-//   ⇒ 站方变量里躺着的**不是 token，是宿主灌进去的一份 map** ⭐⭐⭐
+// ⚠️ **为什么必须有静态判定**（真机上的血泪）：
+//   运行时证据（站方写过什么）**要等它写过才知道** ⇒
+//   ⇒ 手机上**已经躺着的旧污染**（`{"androidId":…}`）**第一次 op 之前永远判不出来** ⭐⭐⭐
+//   ⇒ 判不出来 = 不许清 ⇒ **污染永远清不掉** ⇒ `Bearer {…}` ⇒ 403「无效JWT」永远好不了 ⭐⭐⭐
+//   ⇒ **静态扫描站方 jsLib** ⇒ 装机第一次跑就知道这一格是 map 还是凭据 ⭐⭐⭐
 //
-// 本门禁钉四件事（每一条都对应真机上的一个坑）：
-//   ① **形态证据不许自证**（2026-10-27 真机复盘挖出来的根因）
-//      ⇒ 回传时值**一模一样** ⇒ 那是「宿主灌的污染被原样弹回来」⇒ **不是证据**
-//      ⇒ 旧实现拿它当证据 ⇒ 「凭据形态」永远判不出来 ⇒ 污染永远清不掉 ⭐⭐⭐
-//   ② **证据的键要带版本**：v1 的证据**已经自证污染了** ⇒ 换键名 ⇒ 旧的直接作废
-//   ③ **迁移不许挂在「选线」那条链上**（✿UAA 压根没有线路 ⇒ 那条链永远走不到）
-//      ⇒ 迁移必须挂在**每个 op 都要走的**「灌站方变量」这一步 ⭐⭐⭐
-//   ④ **形态「不知道」时不许动这一格**
-//      ⇒ 大灰狼第一次进来时默认表还没取到 ⇒ 那时候清一下就把它的合法 map 清掉了 ⭐⭐⭐
+// ────────────────────────────────────────────────────────────
+// 本门禁用**真源**（仓库里的书源文件）当断言对象 ⇒ 不是 mock ⭐⭐⭐
 // ============================================================
 
 var pass = 0
 var fail = 0
-func ok(_ cond: Bool, _ msg: String) {
-    if cond { pass += 1 } else { fail += 1; print("  ✗ " + msg) }
+func ok(_ cond: Bool, _ msg: String, _ extra: String = "") {
+    if cond { pass += 1 } else { fail += 1; print("  ✗ " + msg + (extra.isEmpty ? "" : "  → " + extra)) }
 }
 
-// ⚠️ 用**独立**的源 URL（别撞真实源）⇒ 门禁数据不污染真机
-let tag = "station-form-gate-\(ProcessInfo.processInfo.processIdentifier)"
-let uaa = "\(tag)#uaa"        // 凭据形态（UAA）：默认表取过 = 空
-let dhl = "\(tag)#dahulang"   // map 形态（大灰狼）：默认表非空
-let fresh = "\(tag)#fresh"    // 形态还「不知道」：默认表**没取过**
-let token = String(repeating: "a", count: 72)
-let pollution = "{\"androidId\":\"b4e6060006b920bc\",\"server\":\"https://v1\"}"
-
-// 清理上次可能留下的
-for u in [uaa, dhl, fresh] { SourceVariables.clear(for: u) }
-
-print("=== ① 形态判据：三条证据各有各的岗位 ===")
-// 前提：三个源都还没取过默认表 ⇒ 形态「不知道」
-ok(SourceVariables.form(for: uaa) == .unknown, "默认表没取过 ⇒ 形态 = 不知道（不许动这一格）")
-ok(SourceVariables.form(for: fresh) == .unknown, "同上")
-
-// 证据①：**站方自己写过 map** ⇒ map 形态
-SourceVariables.setVariable("{\"src\":\"x\"}", for: dhl, origin: .station)
-ok(SourceVariables.form(for: dhl) == .map, "⭐ 站方自己写过 map ⇒ map 形态（证据）")
-
-// 证据②：**站方自带默认变量表**（大灰狼）⇒ map 形态
-SourceVariables.setDefaultVars(["tab": "小说", "server": "https://v5.langge.uk"], for: uaa)
-ok(SourceVariables.form(for: uaa) == .map, "⭐ 站方自带默认表 ⇒ map 形态（大灰狼）")
-
-// 证据③：**默认表取过了、且是空的** ⇒ 凭据形态（UAA）
-SourceVariables.setDefaultVars([:], for: fresh)
-ok(SourceVariables.form(for: fresh) == .credential,
-   "⭐⭐⭐ 默认表取过 + 是空的 ⇒ 凭据形态（UAA：这一格放的是 token）")
-ok(!SourceVariables.defaultTableFetched(dhl),
-   "（前提）「默认表取过没」是**独立**的标记（dhl 没取过默认表，只是站方写过 map）")
-
-print("\n=== ② 证据不许自证（2026-10-27 真机复盘的根因）===")
-// 模拟「回传时值一模一样」⇒ 那是宿主灌的污染被原样弹回来 ⇒ **不是证据**
-let pollute = "\(tag)#polluted"
-SourceVariables.clear(for: pollute)
-SourceVariables.setDefaultVars([:], for: pollute)          // 凭据形态
-SourceVariables.setVariable(pollution, for: pollute, origin: .app)   // 宿主灌的污染
-ok(SourceVariables.form(for: pollute) == .credential, "（前提）宿主灌的 map 不改变形态（证据只认站方写的）")
-// ⭐ 回传：值**没变** ⇒ 落盘时必须按「宿主写的」处理（origin: .app）⇒ 证据不许被刷新
-SourceVariables.setVariable(pollution, for: pollute, origin: .app)
-ok(SourceVariables.form(for: pollute) == .credential,
-   "⭐⭐⭐ 回传（值没变）不许把「凭据形态」刷成「map 形态」（自证 ⇒ 永远修不好）")
-// ⭐ 站方**真改过** ⇒ 那才是证据
-SourceVariables.setVariable(token, for: pollute, origin: .station)
-ok(SourceVariables.form(for: pollute) == .credential, "站方改过（写了 token）⇒ 凭据形态 ⇒ 证据成立")
-
-print("\n=== ③ 证据的键带版本：v1 那份「自证的证据」直接作废 ===")
-let legacy = "\(tag)#legacy"
-SourceVariables.clear(for: legacy)
-SourceVariables.setDefaultVars([:], for: legacy)     // 凭据形态
-// ⚠️ 模拟旧版本（build267）留下的**自证证据**：v1 键 = true
-UserDefaults.standard.set(true, forKey: "sourcevariable.stationmap." + legacy)
-ok(SourceVariables.form(for: legacy) == .credential,
-   "⭐⭐⭐ v1 的「自证证据」被无视（换键名 ⇒ 旧的直接作废）")
-
-print("\n=== ④ 迁移：污染要清掉，但**必须挂在每个 op 都走的链上**===")
-let mig = "\(tag)#migrate"
-SourceVariables.clear(for: mig)
-SourceVariables.setDefaultVars([:], for: mig)                    // 凭据形态（UAA）
-SourceVariables.setVariable(pollution, for: mig, origin: .app)   // 真机上躺着的旧污染
-ok(SourceVariables.isMapStyleVariable(SourceVariables.variable(for: mig)), "（前提）站方变量里躺着一份 map")
-// ⭐ 关键：**不进选线那条链**（UAA 压根没有线路 ⇒ 选线永远走不到）
-let seeded = SourceVariables.stationVariableToSeed(for: mig)
-ok(seeded.isEmpty, "⭐⭐⭐ 灌站方变量这一步就把污染清掉了（不靠选线）")
-ok(SourceVariables.variable(for: mig).isEmpty, "落盘的那一格也清空了")
-ok(SourceVariables.vars(for: mig).isEmpty, "（顺带确认）书源变量没被动")
-
-print("\n=== ⑤ 迁移不许误伤：map 形态的源、形态未知的源 ⇒ 一个字都不能动 ===")
-let keepMap = "\(tag)#keepmap"
-SourceVariables.clear(for: keepMap)
-SourceVariables.setDefaultVars(["tab": "小说"], for: keepMap)   // map 形态（大灰狼）
-SourceVariables.setVariable(pollution, for: keepMap, origin: .app)
-ok(SourceVariables.stationVariableToSeed(for: keepMap) == pollution,
-   "⭐ map 形态的源 ⇒ 迁移**不许**清（大灰狼的合法 map）")
-let keepUnknown = "\(tag)#keepunknown"
-SourceVariables.clear(for: keepUnknown)                        // 默认表**没取过**⇒ 不知道
-SourceVariables.setVariable(pollution, for: keepUnknown, origin: .app)
-ok(SourceVariables.stationVariableToSeed(for: keepUnknown) == pollution,
-   "⭐⭐⭐ 形态还「不知道」⇒ **不许**清（大灰狼第一次进来时会把它的 map 清掉）")
-
-print("\n=== ⑥ 凭据形态 ⇒ 宿主不许往这一格塞 map ===")
-let host = "\(tag)#host"
-SourceVariables.clear(for: host)
-SourceVariables.setDefaultVars([:], for: host)      // 凭据形态
-SourceVariables.setHostMap(pollution, for: host)
-ok(SourceVariables.variable(for: host).isEmpty, "⭐⭐⭐ 宿主写 map ⇒ 凭据形态的源**没被**塞进去")
-ok(SourceVariables.vars(for: host).contains("androidId"), "书源变量照写（那是宿主自己的变量表）")
-// map 形态的源 ⇒ 照旧写进去
-SourceVariables.setHostMap(pollution, for: keepMap)
-ok(SourceVariables.variable(for: keepMap) == pollution, "map 形态的源 ⇒ 宿主写 map 照旧生效（不能回归）")
-
-print("\n=== ⑦ 凭据形态 + 站方写了 token ⇒ token 不许被 map 覆盖 ===")
-SourceVariables.setVariable(token, for: host, origin: .station)
-SourceVariables.setLineVars(pollution, for: host, isMapStyle: true)
-ok(SourceVariables.variable(for: host) == token,
-   "⭐ 站方变量是 token ⇒ 即使 isMapStyle=true 也不许被 map 覆盖")
-
-// 清理（别把门禁数据留在盘上）
-for u in [uaa, dhl, fresh, pollute, legacy, mig, keepMap, keepUnknown, host] {
-    SourceVariables.clear(for: u)
+/// 读真源的 jsLib（多文件源取第一个）
+func jsLib(_ path: String) -> String? {
+    guard let data = FileManager.default.contents(atPath: path),
+          let obj = try? JSONSerialization.jsonObject(with: data) else { return nil }
+    if let arr = obj as? [[String: Any]], let first = arr.first { return first["jsLib"] as? String }
+    if let d = obj as? [String: Any] { return d["jsLib"] as? String }
+    return nil
 }
-ok(SourceVariables.variable(for: mig).isEmpty, "clear() 把站方变量也清了")
-ok(!SourceVariables.defaultTableFetched(mig), "clear() 把「默认表取过」的标记也清了")
+
+print("=== ① 静态扫描：合成片段（判据本身） ===")
+ok(StationVarFormScanner.form(jsLib: nil) == .unknown, "没有 jsLib ⇒ 不知道（不许动）")
+ok(StationVarFormScanner.form(jsLib: "") == .unknown, "空 jsLib ⇒ 不知道")
+ok(StationVarFormScanner.form(jsLib: "function f(){}") == .unknown, "压根没用这一格 ⇒ 不知道")
+
+// 凭据形态：拼进请求头
+ok(StationVarFormScanner.form(jsLib: "let h = {authorization: 'Bearer ' + source.getVariable()}")
+   == .credential, "⭐ getVariable 拼进字符串 ⇒ 凭据形态（UAA 那种）")
+ok(StationVarFormScanner.form(jsLib: "let u = `x?token=${source.getVariable()}`") == .credential,
+   "⭐ getVariable 进模板字符串 ⇒ 凭据形态")
+// map 形态：被解析
+ok(StationVarFormScanner.form(jsLib: "let d = JSON.parse(source.getVariable())") == .map,
+   "⭐ getVariable 被 JSON.parse ⇒ map 形态")
+ok(StationVarFormScanner.form(jsLib: "let s = getArguments(source.getVariable(), 'server')") == .map,
+   "⭐ getVariable 喂给 getArguments ⇒ map 形态（大灰狼那种）")
+// 写：写什么形态就是什么形态
+ok(StationVarFormScanner.form(jsLib: "source.setVariable(JSON.stringify({a:1}))") == .map,
+   "⭐ setVariable(JSON.stringify(…)) ⇒ map 形态")
+ok(StationVarFormScanner.form(jsLib: "source.setVariable(token)") == .credential,
+   "⭐ setVariable(标量) ⇒ 凭据形态")
+// 注释里出现的**不算**
+ok(StationVarFormScanner.form(jsLib: "// source.getVariable() 用在这儿\nfunction f(){}") == .unknown,
+   "⭐ 注释里的 getVariable 不算（不许被注释骗）")
+ok(StationVarFormScanner.form(jsLib: "/* JSON.parse(source.getVariable()) */ function f(){}") == .unknown,
+   "⭐ 块注释里的也不算")
+
+print("\n=== ② ⭐⭐⭐ 真源（不是 mock！）：形态判对了吗 ===")
+// ✿UAA 原版（一字不改）⇒ 站方变量 = 纯 token ⇒ 凭据形态
+if let js = jsLib("test/fixtures/uaa-original.json") {
+    ok(StationVarFormScanner.form(jsLib: js) == .credential,
+       "⭐⭐⭐ 原版 UAA ⇒ 凭据形态（那一格放的是 token）")
+} else {
+    ok(false, "读不到 test/fixtures/uaa-original.json")
+}
+if let js = jsLib("sources/✿UAA四合一（知秋）✿-轻阅版.json") {
+    ok(StationVarFormScanner.form(jsLib: js) == .credential,
+       "⭐⭐⭐ 轻阅版 UAA ⇒ 凭据形态")
+} else {
+    ok(false, "读不到 轻阅版 UAA")
+}
+// 大灰狼 / NovelHub / 番茄 ⇒ map 形态（**判错就会把大灰狼的线路表写不进去** ⇒ 变回 8 条线路慢速）
+if let js = jsLib("sources/🍅大灰狼聚合5.9.30-轻阅适配版v2.json") {
+    ok(StationVarFormScanner.form(jsLib: js) == .map,
+       "⭐⭐⭐ 大灰狼 ⇒ map 形态（线路表要能写进站方变量）")
+} else {
+    ok(false, "读不到 大灰狼")
+}
+if let js = jsLib("sources/NovelHub聚合小说-轻阅版.json") {
+    ok(StationVarFormScanner.form(jsLib: js) == .map, "⭐⭐⭐ NovelHub ⇒ map 形态")
+} else {
+    ok(false, "读不到 NovelHub")
+}
+if let js = jsLib("sources/配置文件125个-轻阅适配版.json") {
+    // 这个包里有 125 个源 ⇒ 逐个扫 ⇒ 有用到这一格的都该判成 map（番茄小说TS）
+    if let data = FileManager.default.contents(atPath: "sources/配置文件125个-轻阅适配版.json"),
+       let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+        var used = 0, wrong = 0
+        for s in arr {
+            guard let js = s["jsLib"] as? String, !js.isEmpty else { continue }
+            guard js.contains("getVariable") || js.contains("setVariable") else { continue }
+            used += 1
+            if StationVarFormScanner.form(jsLib: js) != .map { wrong += 1 }
+        }
+        ok(used > 0, "125 源包里确实有用到这一格的源", "只有 \(used) 个")
+        ok(wrong == 0, "⭐⭐⭐ 125 源包里用到这一格的都判成 map 形态（不能误伤）", "有 \(wrong) 个判错")
+    }
+}
+
+print("\n=== ③ 集成：`form(for:jsLib:)` 的优先级（静态 > 运行时证据 > 默认表） ===")
+let uaa = "form-gate-#uaa"
+let dhl = "form-gate-#dahl"
+for u in [uaa, dhl] { SourceVariables.clear(for: u) }
+
+// ① 静态判据优先：jsLib 说凭据 ⇒ 即使运行时证据写着 map，也判凭据
+SourceVariables.setVariable("{\"a\":1}", for: uaa, origin: .station)   // 运行时证据 = map
+ok(SourceVariables.form(for: uaa, jsLib: "let h='Bearer '+source.getVariable()") == .credential,
+   "⭐⭐⭐ 静态判据**压过**运行时证据（旧的 map 证据不许再把 UAA 判成 map）")
+// ② 没有 jsLib ⇒ 退回运行时证据
+ok(SourceVariables.form(for: uaa) == .map, "没有 jsLib ⇒ 退回运行时证据（map）")
+// ③ 静态判据说 map ⇒ 即使默认表是空的，也判 map（大灰狼的线路表要写得进去）
+SourceVariables.setDefaultVars([:], for: dhl)
+ok(SourceVariables.form(for: dhl, jsLib: "let d=JSON.parse(source.getVariable())") == .map,
+   "⭐ 静态判据说 map ⇒ 就是 map（不因默认表空而变凭据）")
+// ④ 静态说凭据 + 槽里躺着一个 map ⇒ 迁移清掉它
+SourceVariables.setVariable("{\"androidId\":\"b4e6\"}", for: uaa, origin: .app)
+ok(SourceVariables.variable(for: uaa).contains("androidId"), "（前提）槽里躺着一份 map（真机上的旧污染）")
+let seeded = SourceVariables.stationVariableToSeed(for: uaa, jsLib: "let h='Bearer '+source.getVariable()")
+ok(seeded.isEmpty, "⭐⭐⭐ 凭据形态 + 槽里是 map ⇒ 灌进引擎的那一串被清空（污染清掉了）")
+ok(SourceVariables.variable(for: uaa).isEmpty, "⭐⭐⭐ 落盘的那一格也清空了")
+// ⑤ map 形态的源 ⇒ 不许清（大灰狼的合法 map）
+SourceVariables.setVariable("{\"server\":\"https://v1\"}", for: dhl, origin: .app)
+let seeded2 = SourceVariables.stationVariableToSeed(for: dhl, jsLib: "let d=JSON.parse(source.getVariable())")
+ok(seeded2.contains("server"), "⭐ map 形态的源 ⇒ 迁移**不许**清（否则大灰狼线路丢失）")
+
+for u in [uaa, dhl] { SourceVariables.clear(for: u) }
 
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

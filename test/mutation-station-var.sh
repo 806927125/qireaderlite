@@ -34,7 +34,10 @@ BACK="QiReaderLite/Core/LegadoEngineBackend.swift"
 pass=0; fail=0
 ok() { if [ "$1" = "0" ]; then pass=$((pass+1)); echo "  ✓ $2"; else fail=$((fail+1)); echo "  ✗ $2"; fi; }
 
-restore() { git checkout -- "$VARS" "$SVC" "$BACK" 2>/dev/null || true; }
+# ⭐⭐⭐ **复原用「拷副本」**，不用 `git checkout` ⇒ 否则会**冲掉未提交的改动**（踩过）⭐
+BAK="$(mktemp -d)"
+cp "$VARS" "$BAK/vars.swift"; cp "$SVC" "$BAK/svc.swift"; cp "$BACK" "$BAK/back.swift"
+restore() { cp "$BAK/vars.swift" "$VARS"; cp "$BAK/svc.swift" "$SVC"; cp "$BAK/back.swift" "$BACK"; }
 trap 'restore; rm -rf "$TMP"' EXIT
 
 # 跑 Swift 门禁（真编真跑）⇒ 退出码非 0 = 红
@@ -157,6 +160,23 @@ open(p, "w", encoding="utf-8").write(s.replace(old, new))
 PY
 run_swift_gate; rc=$?
 [ $rc -ne 0 ] && ok 0 "凭据拦截删掉 ⇒ Swift 门禁变红 ✅" || { ok 1 "凭据拦截删掉 ⇒ 门禁**没红**"; tail -20 "$TMP/m/out.txt"; }
+restore
+
+echo "=== ⑨ 形态判据去掉【静态扫描】（只剩运行时证据） ==="
+python3 - <<'PYM'
+p = "QiReaderLite/Core/SourceVariables.swift"
+s = open(p, encoding="utf-8").read()
+old = "let staticForm = StationVarFormScanner.form(jsLib: jsLib)"
+new = "let staticForm = StationVarForm.unknown"
+assert old in s, "变异锚点没找到"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PYM
+{
+  mkdir -p "$TMP/m2"; cp test/station-var-form-test.swift "$TMP/m2/main.swift"
+  "$SWIFTC" -O "$TMP/m2/main.swift" QiReaderLite/Core/StationVarForm.swift QiReaderLite/Core/SourceVariables.swift -o "$TMP/m2/t" 2>"$TMP/m2/err.txt"
+  "$TMP/m2/t" > "$TMP/m2/out.txt" 2>&1
+}
+[ $? -ne 0 ] && ok 0 "去掉静态扫描 ⇒ Swift 门禁变红 ✅" || { ok 1 "去掉静态扫描 ⇒ 门禁**没红**（没牙齿！）"; tail -12 "$TMP/m2/out.txt"; }
 restore
 
 echo "=== ⑨ 复原后门禁必须恢复绿（证明脚本没把文件改坏） ==="
