@@ -72,11 +72,14 @@ const fnStart = vars.indexOf('static func setLineVars');
 ok(fnStart >= 0, 'SourceVariables 里有 setLineVars(');
 if (fnStart >= 0) {
   const body = vars.slice(fnStart, vars.indexOf('\n    }', fnStart) + 6);
-  ok(/guard\s+isMapStyle\s+else\s*\{/.test(body),
+  ok(/if\s+isMapStyle\s*\{/.test(body),
      '守卫①：isMapStyle 判据（非 map 形态 ⇒ 不写站方变量）');
   ok(/canWriteMapIntoVariable\s*\(/.test(body),
      '守卫②：canWriteMapIntoVariable( 形状守卫（凭据形态 ⇒ 不许被 map 覆盖）');
   ok(/setVars\s*\(/.test(body), '书源变量照样写（站方读 map 形态时用）');
+  // ⭐⭐⭐ 迁移：旧实现灌进站方变量的污染要清掉（真机上还躺着 ⇒ 不清就永远 403）
+  ok(/isStationMapStyle\s*\(/.test(body) && /setVariable\(""/.test(body),
+     '守卫③：迁移 —— 站方变量里的旧污染（非 map 形态的源）要清掉');
 }
 const guardStart = vars.indexOf('static func canWriteMapIntoVariable');
 ok(guardStart >= 0, 'SourceVariables 里有 canWriteMapIntoVariable(');
@@ -84,6 +87,22 @@ if (guardStart >= 0) {
   const g = vars.slice(guardStart, vars.indexOf('\n    }', guardStart) + 6);
   ok(/is\s+\[String:\s*Any\]/.test(g), '形状守卫认得「JSON map」');
   ok(/return\s+false/.test(g), '形状守卫对「非 JSON（一串凭据）」返回 false');
+}
+
+console.log('\n=== ③·b 「map 形态」要有证据（不许只看内容）===');
+// ⚠️⚠️ **旧实现灌进站方变量的污染本身也是一份 map**（{"androidId":…}）⭐⭐⭐
+//   ⇒ 拿「站方变量当前内容」当判据 ⇒ 污染被当成 map 形态 ⇒ 继续被灌 ⇒ 永远修不好 ⭐⭐⭐
+//   ⇒ 判据必须是**证据**：**站方自己写过 map**（setVariable(JSON…)）⇒ isStationMapStyle ⭐
+ok(/isStationMapStyle/.test(service),
+   '判据用「站方自己写过 map」的证据（isStationMapStyle）');
+ok(!/isMapStyleVariable\s*\(\s*SourceVariables\.variable/.test(service),
+   '⚠️ 不许拿「站方变量当前内容」当 map 形态判据（污染本身也是 map ⇒ 会误判）');
+ok(/isStationMapStyle/.test(vars), 'SourceVariables 里有 isStationMapStyle（证据标记）');
+{
+  // 变异对照：把判据换回「看内容」⇒ 上面那条必须红
+  const m = service.replace(/isStationMapStyle\(/g, 'isMapStyleVariable(');
+  ok(/isMapStyleVariable\s*\(/.test(m) && !/isStationMapStyle/.test(m),
+     '变异对照：判据换回「看内容」⇒ 会被上面那条抓住');
 }
 
 console.log('\n=== ④ 删源时站方变量也要清（token 别残留）===');
@@ -114,11 +133,14 @@ function mutatedService(replacement) {
   ok(withFlag < 2, '变异②（删掉 isMapStyle 判据）⇒ 会被 ② 抓住');
 }
 {
-  // 变异③：形状守卫恒返回 true ⇒ ③ 必须红
-  const m = vars.replace(/return\s+false/, 'return true');
-  const g0 = m.indexOf('static func canWriteMapIntoVariable');
-  const g = m.slice(g0, m.indexOf('\n    }', g0) + 6);
-  ok(!/return\s+false/.test(g), '变异③（形状守卫恒 true）⇒ 会被 ③ 抓住');
+  // 变异③：形状守卫恒返回 true ⇒ ③ 必须红（**只改 canWriteMapIntoVariable 那个函数**）
+  const g0 = vars.indexOf('static func canWriteMapIntoVariable');
+  const gEnd = vars.indexOf('\n    }', g0) + 6;
+  const gBody = vars.slice(g0, gEnd);
+  const m = vars.slice(0, g0) + gBody.replace(/return\s+false/, 'return true') + vars.slice(gEnd);
+  const mg0 = m.indexOf('static func canWriteMapIntoVariable');
+  const mg = m.slice(mg0, m.indexOf('\n    }', mg0) + 6);
+  ok(!/return\s+false/.test(mg), '变异③（形状守卫恒 true）⇒ 会被 ③ 抓住');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);

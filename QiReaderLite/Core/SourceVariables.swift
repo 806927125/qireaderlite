@@ -17,6 +17,14 @@ enum SourceVariables {
     private static let loginPrefix = "sourcelogin."
     /// ⭐⭐⭐ **站方变量**（Legado `source.variable`）的键前缀 —— 与「书籍变量」**分开存** ⭐
     private static let variablePrefix = "sourcevariable."
+    /// ⭐⭐⭐ **「这个源的站方变量里躺过 map」**的标记（**站方自己写的**才算）
+    ///
+    /// ⚠️ **为什么需要它**（2026-10-27 真机「获取 token 不了」）：
+    ///   判「这个源的站方变量是 map 形态还是凭据形态」光看**内容**不可靠 ——
+    ///   **旧实现灌进去的污染本身也是一份 map**（`{"androidId":…}`）⇒ 看着像 map 形态 ⭐⭐⭐
+    ///   ⇒ 只能看**证据**：**站方自己写过 map**（`setVariable(JSON…)`）⇒ 它才是 map 形态的源 ⭐
+    ///   ⇒ 没这个证据 ⇒ 站方变量里那份 map 就是**宿主灌的污染** ⇒ 该清 ⭐⭐⭐
+    private static let stationMapFlagPrefix = "sourcevariable.stationmap."
 
     // MARK: 书籍变量
 
@@ -66,7 +74,7 @@ enum SourceVariables {
     /// 写回某个源的站方变量（引擎回传的 `__sourceVariable`）
     ///
     /// ⚠️ **同样不许超长**（跟书籍变量一个规矩 ⇒ 防「登录面板排版炸」那个老坑）
-    static func setVariable(_ value: String, for sourceUrl: String) {
+    static func setVariable(_ value: String, for sourceUrl: String, origin: Origin = .station) {
         guard !sourceUrl.isEmpty else { return }
         if value.count > maxVarsLength {
             NSLog("[变量] 拒绝存超长站方变量（\(value.count) 字符 > \(maxVarsLength)）· \(sourceUrl)")
@@ -74,6 +82,33 @@ enum SourceVariables {
             return
         }
         UserDefaults.standard.set(value, forKey: variablePrefix + sourceUrl)
+        // ⭐⭐⭐ **记下「这份是谁写的」** ⇒ 判 map 形态要有证据（不能只看内容）⭐
+        switch origin {
+        case .station:
+            // 站方 / 用户写的 ⇒ 它写 map ⇒ 这个源的站方变量就是 map 形态 ⭐
+            UserDefaults.standard.set(isMapStyleVariable(value), forKey: stationMapFlagPrefix + sourceUrl)
+        case .app:
+            // 宿主自己合成的（线路表）⇒ **不算证据**（它正是污染的来源）⭐
+            break
+        }
+    }
+
+    /// ⭐⭐⭐ **谁写的站方变量**
+    enum Origin {
+        /// 站方自己（`setVariable`）或用户在面板里改的 ⇒ **算证据** ⭐
+        case station
+        /// 宿主自己合成的（线路表 / 默认表）⇒ **不算证据** ⭐
+        case app
+    }
+
+    /// ⭐⭐⭐ **这个源的站方变量是不是「map 形态」？**（**要有证据**）
+    ///
+    /// ⚠️⚠️ **不许只看内容**：旧实现灌进站方变量的**污染本身也是 map**（`{"androidId":…}`）⭐⭐⭐
+    ///   ⇒ 只看内容 ⇒ 污染被当成「map 形态的源」⇒ 继续被灌 ⇒ **永远修不好** ⭐⭐⭐
+    /// ⇒ **证据 = 站方自己写过 map**（`setVariable(JSON…)`）⭐
+    static func isStationMapStyle(_ sourceUrl: String) -> Bool {
+        guard !sourceUrl.isEmpty else { return false }
+        return UserDefaults.standard.bool(forKey: stationMapFlagPrefix + sourceUrl)
     }
 
     /// ⭐⭐⭐ **同时写「站方变量」+「书源变量」**
@@ -141,9 +176,18 @@ enum SourceVariables {
     ///     ⇒ 没有（普通源 / UAA）⇒ 它的站方变量是**凭据的位置** ⇒ 别塞 map ⭐⭐⭐
     static func setLineVars(_ merged: String, for sourceUrl: String, isMapStyle: Bool) {
         setVars(merged, for: sourceUrl)                    // 书源变量：总是写 ⭐
-        guard isMapStyle else { return }                   // ⭐ 非 map 形态 ⇒ 站方变量留给站方自己
-        guard canWriteMapIntoVariable(variable(for: sourceUrl)) else { return }  // ⭐ 凭据形态 ⇒ 不许覆盖
-        setVariable(merged, for: sourceUrl)
+        if isMapStyle {
+            guard canWriteMapIntoVariable(variable(for: sourceUrl)) else { return }  // ⭐ 凭据形态 ⇒ 不许覆盖
+            setVariable(merged, for: sourceUrl, origin: .app)
+            return
+        }
+        // ⭐⭐⭐⭐⭐ **迁移**：旧实现把「线路表」整份灌进了站方变量 ⇒ 对「凭据形态」的源那是**污染** ⭐⭐⭐
+        //   （不清 ⇒ 站方变量里躺着一份 map ⇒ `Bearer {"androidId":"…"}`
+        //     ⇒ 服务端 **403「无效JWT」** ⇒ 「获取 token」永远失败 ⭐⭐⭐）
+        // ⇒ 判据：**站方变量里是 map，但站方自己从没写过 map** ⇒ 那是宿主灌的 ⇒ 清掉 ⭐
+        if isMapStyleVariable(variable(for: sourceUrl)), !isStationMapStyle(sourceUrl) {
+            setVariable("", for: sourceUrl, origin: .app)
+        }
     }
 
     /// ⭐ **存量变量是不是超长了**（面板用它提示用户「你之前存了一份超大的变量」）
@@ -222,6 +266,7 @@ enum SourceVariables {
         UserDefaults.standard.removeObject(forKey: varsPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: loginPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: variablePrefix + sourceUrl)
+        UserDefaults.standard.removeObject(forKey: stationMapFlagPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: defaultVarsPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: headerPrefix + sourceUrl)
     }

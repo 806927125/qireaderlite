@@ -862,8 +862,10 @@ final class SourceService {
             // ⭐⭐⭐⭐ 只有「map 形态」的源才把 map 写进**站方变量**
             //   ⇒ 凭据形态的源（✿UAA：站方变量 = token 的位置）**绝不能**被 map 覆盖 ⭐⭐⭐
             //   ⇒ 覆盖 ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败 ⭐
+            //   ⇒ 判据：**站方自带默认表**（大灰狼）或 **站方自己写过 map**（NovelHub）⭐
+            //   ⇒ 两条都不成立（UAA）⇒ 它的站方变量是**凭据的位置** ⇒ 不许灌 map ⭐⭐⭐
             SourceVariables.setLineVars(merged, for: url, isMapStyle: !defaults.isEmpty
-                || SourceVariables.isMapStyleVariable(SourceVariables.variable(for: url)))
+                || SourceVariables.isStationMapStyle(url))
         }
         let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
         NSLog("%@", msg)
@@ -934,8 +936,9 @@ final class SourceService {
         let payload = "{\"server\":\"\(host)\"}"
         let merged = SourceVariables.mergeVars(userJSON: payload, defaults: defaults)
         // ⭐⭐⭐⭐ 只有「map 形态」的源才把 map 写进**站方变量**（凭据形态的源：站方变量 = token）⭐
+        // ⭐⭐⭐⭐ 判据：**站方自带默认表** 或 **站方自己写过 map**（两条都不成立 ⇒ 凭据形态 ⇒ 不许灌 map）⭐
         SourceVariables.setLineVars(merged, for: source.bookSourceUrl, isMapStyle: !defaults.isEmpty
-            || SourceVariables.isMapStyleVariable(SourceVariables.variable(for: source.bookSourceUrl)))
+            || SourceVariables.isStationMapStyle(source.bookSourceUrl))
         Self.fastLineCache[source.bookSourceUrl] = (host, Date())
         RuleSandbox.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
         return host

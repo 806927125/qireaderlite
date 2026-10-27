@@ -76,7 +76,8 @@ const ok = (c, m, extra) => {
   console.log('\n=== 2. App 侧接线（喂进去 / 落盘回来）===');
   const sv = fs.readFileSync(path.join(APP, 'Core', 'SourceVariables.swift'), 'utf8');
   ok(/static func variable\(for sourceUrl: String\)/.test(sv), '有「站方变量」独立槽位');
-  ok(/static func setVariable\(_ value: String, for sourceUrl: String\)/.test(sv), '站方变量能落盘');
+  ok(/static func setVariable\(_ value: String, for sourceUrl: String, origin:/.test(sv)
+     || /static func setVariable\(_ value: String, for sourceUrl: String\)/.test(sv), '站方变量能落盘');
   ok(/sourcevariable\./.test(sv), '站方变量用**独立的** UserDefaults 键（不跟书籍变量混）');
 
   const svc = fs.readFileSync(path.join(APP, 'Core', 'SourceService.swift'), 'utf8');

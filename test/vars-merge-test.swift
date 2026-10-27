@@ -126,5 +126,33 @@ ok(SourceVariables.isMapStyleVariable("{\"server\":\"https://v1\"}"), "JSON obje
 ok(!SourceVariables.isMapStyleVariable(token), "token 串 ⇒ 不是 map 形态（凭据形态）")
 ok(!SourceVariables.isMapStyleVariable("[1,2]"), "JSON 数组 ⇒ 不是 map 形态（要的是 object）")
 
+print("\n=== ⑪ 「map 形态」要有证据：站方自己写过 map ===")
+let nov = "NovelHub#形状门禁"
+ok(!SourceVariables.isStationMapStyle(nov), "没写过 ⇒ 不是 map 形态")
+SourceVariables.setVariable("{\"src\":\"x\"}", for: nov)   // 站方自己写的 map
+ok(SourceVariables.isStationMapStyle(nov), "⭐ 站方写过 map ⇒ 是 map 形态（证据）")
+ok(!SourceVariables.isStationMapStyle(uaa), "UAA 没写过 map ⇒ 不是 map 形态")
+
+print("\n=== ⑫ 迁移：旧实现灌进站方变量的「污染」要清掉（真机上还躺着）===")
+// 模拟旧实现（2026-10-27 之前）：把线路表整份灌进站方变量
+SourceVariables.setVariable("{\"androidId\":\"b4e6060006b920bc\",\"server\":\"https://v1\"}",
+                            for: uaa, origin: .app)
+ok(SourceVariables.isMapStyleVariable(SourceVariables.variable(for: uaa)), "（前提）站方变量里现在是一份 map")
+SourceVariables.setLineVars("{\"server\":\"https://v2\"}", for: uaa, isMapStyle: false)
+ok(SourceVariables.variable(for: uaa).isEmpty,
+   "⭐ 非 map 形态的源 ⇒ 污染被清掉（不清 ⇒ `Bearer {\"androidId\":…}` ⇒ 403 无效JWT ⇒ 永远拿不到 token）")
+ok(SourceVariables.vars(for: uaa).contains("server"), "书源变量照样写了线路")
+
+print("\n=== ⑬ map 形态的源（NovelHub：站方写过 map）⇒ 不清、照旧写 ===")
+SourceVariables.setLineVars("{\"server\":\"https://v2\",\"src\":\"x\"}", for: nov, isMapStyle: true)
+ok(SourceVariables.variable(for: nov).contains("server"), "map 形态的源 ⇒ 站方变量照旧写（不能回归）")
+
+// 清理（别把门禁数据留在盘上）
+SourceVariables.clear(for: uaa)
+SourceVariables.clear(for: dhl)
+SourceVariables.clear(for: nov)
+ok(SourceVariables.variable(for: uaa).isEmpty, "clear() 把站方变量也清了（以前漏了 ⇒ token 残留）")
+ok(!SourceVariables.isStationMapStyle(nov), "clear() 把「map 形态」证据也清了")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)
