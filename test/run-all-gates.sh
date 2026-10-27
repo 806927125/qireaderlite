@@ -109,6 +109,10 @@ declare -a GATES=(
   #   ⇒ 共享服 api / 文件域名 / aid 全在【书源变量】⇒ App 的选线不受影响
   #   ⇒ 一旦 App 往那一格塞 map ⇒ `Bearer {…}` ⇒ 403「无效JWT」⇒「获取Token」永远失败
   "uaa-original-station-var:test/uaa-original-station-var.test.js"
+  # ⭐⭐⭐⭐⭐ **变异测试**：把实现改坏 9 种 ⇒ 门禁必须红
+  #   ⇒ 「门禁全绿」有两种可能：① 实现对 ② 门禁没抓到东西（平凡通过）⭐⭐⭐
+  #   ⇒ 这一层专门证伪 ②（会真的改源码 ⇒ 跑之前要 commit）
+  "mutation-station-var:test/mutation-station-var.test.js"
   # ⭐⭐⭐⭐⭐ **站方能力面体检**（通用性的地基 · 2026-10-27）
   #   ⇒ 扫真实语料（125 源 + 聚合源）用到的站方 API 面 ⇒ 跟轻阅实现的面对账
   #   ⇒ **新出现的站方 API 必须当场定性**（实现 / 登记为例外）⇒ 不用人肉适配 ⭐

@@ -117,6 +117,15 @@ ok(/static func stationVariableToSeed/.test(vars),
 }
 ok((service.match(/stationVariableToSeed\s*\(/g) || []).length >= 3,
    '⭐ 每个 op 灌站方变量的地方都走它（UAA 的登录 op 就在其中）');
+{
+  // ⭐⭐⭐⭐⭐ **证据的键要带版本** —— 这条是**真机上**才暴露的：
+  //   build267 的证据（`sourcevariable.stationmap.`）**本身就被污染了**
+  //   （回传时值没变也当证据 ⇒ 自证 ⇒ 「凭据形态」永远判不出来）
+  //   ⇒ 升级后必须**不再看那份证据** ⇒ 换键名（v2）⇒ 旧的直接作废 ⭐⭐⭐
+  ok(/stationform\.v2\./.test(vars), '⭐⭐⭐⭐⭐ 证据的键带版本（v2）⇒ build267 那份自证的证据作废');
+  ok(!/sourcevariable\.stationmap\./.test(vars),
+     '⭐⭐⭐⭐⭐ 旧的 v1 键不许再用（那份证据已经自证污染了）');
+}
 
 console.log('\n=== ④ 变异对照（改坏 ⇒ 上面必须红）===');
 {
@@ -132,6 +141,11 @@ console.log('\n=== ④ 变异对照（改坏 ⇒ 上面必须红）===');
   // 变异②：灌站方变量时绕开迁移 ⇒ ③ 的那条必须红
   const m = service.replace(/stationVariableToSeed\s*\(/g, 'variable(');
   ok(!/stationVariableToSeed\s*\(/.test(m), '变异②（绕开迁移）⇒ 会被上面抓住');
+}
+{
+  // 变异③：证据的键去掉版本 ⇒ ③ 的那条必须红
+  const m = vars.replace(/sourcevariable\.stationform\.v2\./g, 'sourcevariable.stationform.');
+  ok(!/stationform\.v2\./.test(m), '变异③（证据键去掉版本）⇒ 会被上面抓住');
 }
 {
   // 变异对照③：真源的形状变了（把 Bearer 改成 JSON.parse）⇒ ① 必须红
