@@ -96,11 +96,26 @@ const ok = (c, m, extra) => {
   ok(/setVariableAndVars/.test(sv), '有「两处都写」的助手（站方变量 + 书源变量）');
   // ⚠️ 漏一处 ⇒ 聚合源的「选最快线路 / 发现页筛选 / 本地云端开关」就白改了
   //   （站方 `getArguments(source.getVariable(),'server')` 读的是**站方变量**）⭐
-  ok(/setVariableAndVars/.test(svc2), '选线 / 测速 ⇒ 写到站方变量');
+  //
+  // ⭐⭐⭐⭐⭐ 2026-10-27：**「写站方变量」变成有条件的了**（不是无条件写）
+  //   站方变量是「一整串」⇒ 两种形态并存：
+  //     · **map 形态**（🍅大灰狼）⇒ 选线/测速的 map **要**写进站方变量（站方 getArguments 读它）⭐
+  //     · **凭据形态**（✿UAA：站方变量 = token 的位置）⇒ **绝不能**被 map 覆盖
+  //       ⇒ 覆盖 ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败 ⭐⭐⭐
+  //   ⇒ 判据 = 「站方自带默认变量表」⇒ 走**有守卫的** `setLineVars(..., isMapStyle:)` ⭐
+  ok(/setLineVars\s*\(/.test(svc2) && /isMapStyle\s*:/.test(svc2),
+     '选线 / 测速 ⇒ 走**有守卫**的写回（setLineVars + isMapStyle 判据）');
+  ok(!/setVariableAndVars\s*\(/.test(svc2),
+     '⚠️ 选线 / 测速 **不许**再走无守卫的 setVariableAndVars（会把 map 灌进凭据形态的站方变量）');
   ok(/setVariableAndVars/.test(explore), '发现页筛选 ⇒ 写到站方变量');
   ok(/setVariable\(/.test(sheet), '登录面板的保存 / 清空 ⇒ 写到站方变量');
-  ok(/setVariable\(/.test(svc2) || /setVariableAndVars/.test(svc2),
-     '线路切换 ⇒ 写到站方变量');
+  ok(/setLineVars\s*\(/.test(svc2) || /setVariable\s*\(/.test(svc2),
+     '线路切换 ⇒ 写到站方变量（map 形态的源）');
+
+  // ⭐⭐⭐ 变异对照：把写回改回无守卫的 ⇒ 上面那条必须红（不许平凡通过）
+  const svcMut = svc2.replace(/setLineVars\s*\(/g, 'setVariableAndVars(');
+  ok(/setVariableAndVars\s*\(/.test(svcMut) && !/setLineVars\s*\(/.test(svcMut),
+     '变异对照：改回无守卫写回 ⇒ 会被上面那条抓住');
 
   console.log('\n=== 4. 变异对照：把老引擎改回「混成一份」⇒ 必须红 ===');
   const src = fs.readFileSync(API, 'utf8');

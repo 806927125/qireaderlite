@@ -66,5 +66,59 @@ print("\n=== ⑤ 没有站方默认（普通书源）⇒ 原样保留用户写�
 let plain = json(SourceVariables.mergeVars(userJSON: "{\"a\":\"1\"}", defaults: [:]))
 ok((plain["a"] as? String) == "1", "没有站方默认时用户变量原样保留")
 
+// ============================================================
+// ⭐⭐⭐⭐⭐ 站方变量的「两种形态」（2026-10-27 真机「获取 token 不了」的根因）
+//
+// ⚠️⚠️ 站方变量是「一整串」⇒ **两种形态并存**：
+//   · **map 形态**（🍅大灰狼）：`getArguments(source.getVariable(),'server')`
+//     ⇒ 站方变量里放 `{"server":…}` 这种 JSON map
+//   · **凭据形态**（✿UAA四合一（知秋））：`authorization: Bearer ${source.getVariable()}`
+//     ⇒ 站方变量里放 **token 那一串**（不是 JSON）
+//
+// ⇒⇒ **App 把「书籍变量 / 线路表」写进站方变量 ⇒ 凭据形态的源直接被毁** ⭐⭐⭐
+//   （UAA：站方变量变成 `{"androidId":"…"}` ⇒ `Bearer {"androidId":"…"}`
+//     ⇒ 服务端 **403「无效JWT」** ⇒ 「获取 token」永远失败 ⭐⭐⭐）
+//
+// ⇒⇒⇒ 真服务器实证（2026-10-27 直接打 UAA 的接口）：
+//   · 不带 authorization 头   ⇒ `403 口令1错误`（JWT 层放行 ⇒ 口令层才拒）✅
+//   · `authorization: Bearer `（空）⇒ `403 口令1错误`（**空 Bearer 能过 JWT 层**）✅
+//   · `authorization: Bearer {"androidId":"…"}` ⇒ `403 无效JWT` ❌（**这才是真凶**）
+// ============================================================
+print("\n=== ⑥ 站方变量的两种形态：map 形态 vs 凭据形态 ===")
+ok(SourceVariables.canWriteMapIntoVariable(""), "空站方变量 ⇒ 允许写 map")
+ok(SourceVariables.canWriteMapIntoVariable("{\"server\":\"https://v5\"}"), "map 形态 ⇒ 允许写 map")
+ok(!SourceVariables.canWriteMapIntoVariable(String(repeating: "a", count: 72)),
+   "⭐ 凭据形态（token 串）⇒ **不许**被 map 覆盖（否则 Bearer {…} ⇒ 403 无效JWT）")
+
+print("\n=== ⑦ 线路写回：非 map 形态的源 ⇒ 站方变量不许被碰（UAA 那个坑）===")
+let uaa = "UAA四合一＃知秋#形状门禁"
+let token = String(repeating: "a", count: 72)
+SourceVariables.setVariable(token, for: uaa)                  // 站方变量 = token（站方自己写的）
+SourceVariables.setVars("{\"androidId\":\"b4e6060006b920bc\"}", for: uaa)
+// ① App 合成 map 写回（非 map 形态的源）
+SourceVariables.setLineVars("{\"server\":\"https://v1\",\"androidId\":\"b4e6060006b920bc\"}",
+                             for: uaa, isMapStyle: false)
+ok(SourceVariables.variable(for: uaa) == token,
+   "⭐ 非 map 形态 ⇒ 站方变量（token）**没被** map 覆盖")
+ok(SourceVariables.vars(for: uaa).contains("server"), "书源变量照样写了线路（站方读 map 形态用）")
+ok(SourceVariables.vars(for: uaa).contains("androidId"), "书源变量里的 androidId 还在")
+
+print("\n=== ⑧ map 形态的源（大灰狼）⇒ 线路照旧写进站方变量（不能回归）===")
+let dhl = "大灰狼#形状门禁"
+SourceVariables.setVariable("{\"tab\":\"小说\"}", for: dhl)
+SourceVariables.setLineVars("{\"server\":\"https://v1\",\"tab\":\"小说\"}", for: dhl, isMapStyle: true)
+ok(SourceVariables.variable(for: dhl).contains("server"), "map 形态 ⇒ 站方变量拿到了线路")
+ok(SourceVariables.vars(for: dhl).contains("server"), "map 形态 ⇒ 书源变量也拿到了线路")
+
+print("\n=== ⑨ 就算 isMapStyle=true，站方变量是 token 时也不许被覆盖 ===")
+SourceVariables.setLineVars("{\"server\":\"https://v2\"}", for: uaa, isMapStyle: true)
+ok(SourceVariables.variable(for: uaa) == token,
+   "⭐ 站方变量是凭据形态 ⇒ 即使 isMapStyle=true 也不许被 map 覆盖")
+
+// 清理（别把门禁数据留在盘上）
+SourceVariables.clear(for: uaa)
+SourceVariables.clear(for: dhl)
+ok(SourceVariables.variable(for: uaa).isEmpty, "clear() 把站方变量也清了（以前漏了 ⇒ token 残留）")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

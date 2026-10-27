@@ -81,9 +81,53 @@ enum SourceVariables {
     /// ⚠️ **什么时候用**：站方用 `setVariable(...)` 存的东西（线路 / 发现页筛选 / 设置）
     ///   ⇒ 按 Legado 语义那是**站方变量** ⇒ 宿主必须写进站方变量槽位 ⭐
     ///   ⇒ 同时**镜像一份**进书源变量（兼容仍读 map 的老站方 / 老宿主）⭐
+    ///
+    /// ⚠️⚠️ **只给「站方自己写的值」用**（回传 / 站方筛选写回）
+    ///   ⇒ **App 自己合成的 map（线路 / 默认表）必须走 `setLineVars`** ⭐⭐⭐
     static func setVariableAndVars(_ value: String, for sourceUrl: String) {
         setVariable(value, for: sourceUrl)
         setVars(value, for: sourceUrl)
+    }
+
+    // MARK: - ⭐⭐⭐ 「站方变量」的两种形态（map 形态 vs 凭据形态）
+
+    /// ⭐⭐⭐ **当前站方变量能不能被一份 map 覆盖？**
+    ///
+    /// ⚠️⚠️ **站方变量是「一整串」⇒ 两种形态并存**（2026-10-27 真机实证）：
+    ///   · **map 形态**（🍅大灰狼 / NovelHub）：
+    ///     `getArguments(source.getVariable(), 'server')` ⇒ 站方变量里放的是
+    ///     `{"server":…,"tab":…}` 这种 **JSON map** ⭐
+    ///   · **凭据形态**（✿UAA四合一（知秋））：
+    ///     `authorization: Bearer ${source.getVariable()}` ⇒ 站方变量里放的是
+    ///     **token 那一串**（不是 JSON）⭐
+    ///
+    /// ⇒⇒ **App 把「书籍变量 / 线路表」写进站方变量 ⇒ 凭据形态的源直接被毁** ⭐⭐⭐
+    ///   （UAA：站方变量变成 `{"androidId":"…"}` ⇒ 请求头 `Bearer {"androidId":"…"}`
+    ///     ⇒ 服务端 **403「无效JWT」** ⇒ 「获取 token」永远失败 ⭐⭐⭐）
+    ///
+    /// - Returns: true = 当前站方变量**允许**被 map 覆盖
+    static func canWriteMapIntoVariable(_ current: String) -> Bool {
+        let t = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return true }                        // 还没写过 ⇒ 随便
+        if let d = t.data(using: .utf8),
+           let o = try? JSONSerialization.jsonObject(with: d),
+           o is [String: Any] { return true }              // 本来就是 map 形态 ⇒ 允许
+        return false                                       // 一串凭据（token）⇒ 不许被 map 覆盖 ⭐
+    }
+
+    /// ⭐⭐⭐ **线路 / 默认表写回**：**书源变量**总是写；**站方变量**只给「map 形态」的源 ⭐
+    ///
+    /// - Parameters:
+    ///   - merged: 合并后的变量串（站方默认表做底 + 测速/用户的改动）
+    ///   - isMapStyle: 这个源的站方变量**是不是 map 形态**
+    ///     ⇒ **判据：站方自带默认变量表**（`getArguments('','')` 有东西）
+    ///     ⇒ 有 ⇒ 它用 `getArguments(站方变量, key)` ⇒ map 形态 ⭐
+    ///     ⇒ 没有（普通源 / UAA）⇒ 它的站方变量是**凭据的位置** ⇒ 别塞 map ⭐⭐⭐
+    static func setLineVars(_ merged: String, for sourceUrl: String, isMapStyle: Bool) {
+        setVars(merged, for: sourceUrl)                    // 书源变量：总是写 ⭐
+        guard isMapStyle else { return }                   // ⭐ 非 map 形态 ⇒ 站方变量留给站方自己
+        guard canWriteMapIntoVariable(variable(for: sourceUrl)) else { return }  // ⭐ 凭据形态 ⇒ 不许覆盖
+        setVariable(merged, for: sourceUrl)
     }
 
     /// ⭐ **存量变量是不是超长了**（面板用它提示用户「你之前存了一份超大的变量」）
@@ -153,10 +197,17 @@ enum SourceVariables {
     static let maxVarsLength = 8_000
 
     /// 清掉某个源的书籍变量（删源时用）
+    ///
+    /// ⚠️⭐⭐ **站方变量 / 默认表 / 登录头也要一起清**（2026-10-27 补）
+    ///   ⇒ 以前只清了「书籍变量 + 登录信息」⇒ **站方变量（token！）留在盘上** ⭐
+    ///   ⇒ 删源再导入同名源 ⇒ 拿到**上一次的 token** ⇒ 「登录态乱了」查不到原因 ⭐⭐⭐
     static func clear(for sourceUrl: String) {
         guard !sourceUrl.isEmpty else { return }
         UserDefaults.standard.removeObject(forKey: varsPrefix + sourceUrl)
         UserDefaults.standard.removeObject(forKey: loginPrefix + sourceUrl)
+        UserDefaults.standard.removeObject(forKey: variablePrefix + sourceUrl)
+        UserDefaults.standard.removeObject(forKey: defaultVarsPrefix + sourceUrl)
+        UserDefaults.standard.removeObject(forKey: headerPrefix + sourceUrl)
     }
 
     // MARK: 登录表单值（loginUi 的输入框）

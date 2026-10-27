@@ -855,10 +855,14 @@ final class SourceService {
             //   站方的 `getArguments` 只在变量串**解析失败**时才给默认表；
             //   只写 `{"server":…}` 这种**只含一项**的合法 JSON ⇒ 它不再给默认
             //   ⇒ `tab / sources / source_type / proxy …` 全变 undefined ⇒ 源被改坏。
-            let defaults = SourceVariables.defaultVars(for: url)
-            // ⭐⭐ 站方 `getArguments(source.getVariable(),'server')` 读的是**站方变量** ⇒ 两处都写 ⭐
-            SourceVariables.setVariableAndVars(
-                SourceVariables.mergeVars(userJSON: t, defaults: defaults), for: url)
+            let defaults = await sourceDefaultVars(source: source)
+            // ⭐⭐⭐ **判据要准** ⇒ 这里 **await** 一次（同步读缓存可能拿到空表）
+            //   （空表 ⇒ 误判成「非 map 形态的源」⇒ 线路写不进站方变量 ⇒ 大灰狼又变慢）
+            let merged = SourceVariables.mergeVars(userJSON: t, defaults: defaults)
+            // ⭐⭐⭐⭐ 只有「map 形态」的源才把 map 写进**站方变量**
+            //   ⇒ 凭据形态的源（✿UAA：站方变量 = token 的位置）**绝不能**被 map 覆盖 ⭐⭐⭐
+            //   ⇒ 覆盖 ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败 ⭐
+            SourceVariables.setLineVars(merged, for: url, isMapStyle: !defaults.isEmpty)
         }
         let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
         NSLog("%@", msg)
@@ -928,8 +932,8 @@ final class SourceService {
         let defaults = await sourceDefaultVars(source: source)
         let payload = "{\"server\":\"\(host)\"}"
         let merged = SourceVariables.mergeVars(userJSON: payload, defaults: defaults)
-        // ⭐⭐ 站方变量 + 书源变量都写（站方读的是站方变量）⭐
-        SourceVariables.setVariableAndVars(merged, for: source.bookSourceUrl)
+        // ⭐⭐⭐⭐ 只有「map 形态」的源才把 map 写进**站方变量**（凭据形态的源：站方变量 = token）⭐
+        SourceVariables.setLineVars(merged, for: source.bookSourceUrl, isMapStyle: !defaults.isEmpty)
         Self.fastLineCache[source.bookSourceUrl] = (host, Date())
         RuleSandbox.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
         return host
