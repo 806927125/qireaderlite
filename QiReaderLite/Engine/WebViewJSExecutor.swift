@@ -73,7 +73,7 @@ final class WebViewJSExecutor: JSExecutor {
             }
         }
         guard !lines.isEmpty else { return }
-        _ = try? evaluateSync(lines.joined(separator: "\n"))
+        _ = try? WebViewJSBridge.shared.evaluateSync(lines.joined(separator: "\n"))
     }
 
     func run(_ code: String, context: JSRunContext) throws -> JSONValue {

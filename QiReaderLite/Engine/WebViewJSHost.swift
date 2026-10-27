@@ -135,11 +135,12 @@ final class WebViewJSHost: NSObject, WKNavigationDelegate, WKUIDelegate {
                 // ⭐⭐⭐ **把 WebKit 的通用文案换成真错误**（「发生了 JavaScript 异常」什么都说明不了）
                 let ns = error as NSError
                 var msg = ns.localizedDescription
-                if let wk = ns.userInfo[WKError.javaScriptExceptionMessage] as? String, !wk.isEmpty {
+                // ⭐ 用 WebKit 的**原始 userInfo 键**（不依赖 SDK 常量名 ⇒ 各版本都稳）
+                if let wk = ns.userInfo["WKJavaScriptExceptionMessage"] as? String, !wk.isEmpty {
                     msg = wk
                 }
-                let line = ns.userInfo[WKError.javaScriptExceptionLine] as? Int
-                let col = ns.userInfo[WKError.javaScriptExceptionColumn] as? Int
+                let line = ns.userInfo["WKJavaScriptExceptionLine"] as? Int
+                let col = ns.userInfo["WKJavaScriptExceptionColumn"] as? Int
                 if let line {
                     msg += "（第 \(line) 行\(col.map { "，第 \($0) 列" } ?? "")）"
                 }
