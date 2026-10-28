@@ -13,6 +13,12 @@ struct QiReaderLiteApp: App {
         //   · 旧的一次性迁移键（曾把主链路强制切回老引擎）⇒ **彻底清掉**（否则会一直把开关写回 false）⭐⭐⭐
         // ⭐⭐⭐ 引擎日志出口挂上面板（诊断要用户「复制日志」就能看到 ⇒ 不用去 Xcode 看控制台）
         EngineLogBootstrap.install()
+        // ⭐⭐⭐⭐⭐ **每次启动都报一次 build 号**（2026-10-28 教训）
+        //   ⇒ 用户反馈「还是一样」时，**第一件事就是确认他装的到底是哪一版**
+        //   ⇒ 之前就是因为跑的是 build271（没有探针的版本）⇒ 白猜了好几轮 ⇒
+        //   ⇒ 现在日志第一行就有版本号 ⇒ 不用再靠猜
+        let bv = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        engineLog("[轻阅] 本机版本 = build \(bv)（\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")）")
         UserDefaults.standard.removeObject(forKey: "qr.useNewEngine")
         UserDefaults.standard.removeObject(forKey: "qr.fallbackLegacy")
         UserDefaults.standard.removeObject(forKey: "qr.engine.legacy240")
