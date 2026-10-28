@@ -34,15 +34,16 @@ FORM="QiReaderLite/Core/StationVarForm.swift"
 SVC="QiReaderLite/Core/SourceService.swift"
 BACK="QiReaderLite/Core/LegadoEngineBackend.swift"
 EXEC="QiReaderLite/Engine/WebViewJSExecutor.swift"
+ANALYZE="QiReaderLite/Core/AnalyzeUrl.swift"
 
 BAK="$TMP/backup"; mkdir -p "$BAK"
 cp "$VARS" "$BAK/vars.swift"; cp "$SVC" "$BAK/svc.swift"
 cp "$BACK" "$BAK/back.swift"; cp "$FORM" "$BAK/form.swift"
-cp "$EXEC" "$BAK/exec.swift"
+cp "$EXEC" "$BAK/exec.swift"; cp "$ANALYZE" "$BAK/analyze.swift"
 restore() {
   cp "$BAK/vars.swift" "$VARS"; cp "$BAK/svc.swift" "$SVC"
   cp "$BAK/back.swift" "$BACK"; cp "$BAK/form.swift" "$FORM"
-  cp "$BAK/exec.swift" "$EXEC"
+  cp "$BAK/exec.swift" "$EXEC"; cp "$BAK/analyze.swift" "$ANALYZE"
 }
 trap 'restore; rm -rf "$TMP"' EXIT
 
@@ -64,6 +65,12 @@ run_swift_gate() {
 # 跑「站方变量感知 source」的接线门禁（Node ⇒ 秒级）
 run_bridge_gate() {
   node test/station-var-bridge.test.js > "$TMP/bridge.txt" 2>&1
+  return $?
+}
+
+# 跑「JSON 列表项改写 + 带后缀图片 URL」的接线门禁（Node ⇒ 秒级）
+run_rewrite_gate() {
+  node test/toc-jsonpath-rewrite.test.js > "$TMP/rewrite.txt" 2>&1
   return $?
 }
 
@@ -256,6 +263,51 @@ restore
 echo "=== ⑮ 复原后接线门禁必须恢复绿 ==="
 run_bridge_gate; rc=$?
 [ $rc -eq 0 ] && ok 0 "station-var-bridge 恢复绿 ✅" || { ok 1 "station-var-bridge 复原后还是红 ⇒ 脚本把文件改坏了！"; tail -10 "$TMP/bridge.txt"; }
+
+# ── ⭐⭐⭐⭐⭐ ⑯⑰⑱⑲：**JSON 列表项的字段规则改写 + 带后缀的图片 URL**（2026-10-29）──
+#   症状：目录「有行、点得开、就是没标题」；封面全是占位图
+echo "=== ⑯ chapterName 不改写成 JSONPath ==="
+python3 - <<'PY'
+p = "QiReaderLite/Core/LegadoEngineBackend.swift"
+s = open(p, encoding="utf-8").read()
+old = "            f.chapterName = Self.jsonPathForm(f.chapterName)"
+new = "            // f.chapterName = Self.jsonPathForm(f.chapterName)"
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PY
+run_rewrite_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "chapterName 不改写 ⇒ toc-jsonpath-rewrite 变红 ✅" || { ok 1 "chapterName 不改写 ⇒ 门禁**没红**"; tail -8 "$TMP/rewrite.txt"; }
+restore
+
+echo "=== ⑰ isVolume 改成 JSONPath（JSON 的 false 会变成非空 ⇒ 每章都成卷）==="
+python3 - <<'PY'
+p = "QiReaderLite/Core/LegadoEngineBackend.swift"
+s = open(p, encoding="utf-8").read()
+old = "            f.isVolume = nil"
+new = "            f.isVolume = Self.jsonPathForm(f.isVolume)"
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PY
+run_rewrite_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "isVolume 改写 ⇒ 门禁变红 ✅" || { ok 1 "isVolume 改写 ⇒ 门禁**没红**"; tail -8 "$TMP/rewrite.txt"; }
+restore
+
+echo "=== ⑱ 图片 URL 不拆 ,{…} 后缀（⇒ URL(string:) 失败 ⇒ 404）==="
+python3 - <<'PY'
+p = "QiReaderLite/Core/AnalyzeUrl.swift"
+s = open(p, encoding="utf-8").read()
+old = "        let (urlPart, opt) = splitOptions(raw.trimmingCharacters(in: .whitespacesAndNewlines))"
+new = "        let urlPart = raw.trimmingCharacters(in: .whitespacesAndNewlines)\n        let opt: [String: Any] = [:]"
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PY
+run_rewrite_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "不拆后缀 ⇒ 门禁变红 ✅" || { ok 1 "不拆后缀 ⇒ 门禁**没红**"; tail -8 "$TMP/rewrite.txt"; }
+restore
+
+echo "=== ⑲ 复原后改写门禁必须恢复绿 ==="
+run_rewrite_gate; rc=$?
+[ $rc -eq 0 ] && ok 0 "toc-jsonpath-rewrite 恢复绿 ✅" || { ok 1 "toc-jsonpath-rewrite 复原后还是红 ⇒ 脚本把文件改坏了！"; tail -10 "$TMP/rewrite.txt"; }
 
 echo ""
 echo "$( [ $fail -eq 0 ] && echo "✅" || echo "❌" ) 变异测试：通过 $pass / 失败 $fail"

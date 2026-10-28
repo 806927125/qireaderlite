@@ -134,5 +134,22 @@ let dataParsed = AnalyzeUrl.parse("data:;base64,eyJib29rX2lkIjoiTnpBNE5qYzQ+,{\"
 ok(dataParsed.url == "data:;base64,eyJib29rX2lkIjoiTnpBNE5qYzQ+,{\"type\":\"qingtian3\"}",
    "data: 伪 URL 原样返回（载荷不被百分号编码改掉）")
 
+// ───────── ⑥ 带 `,{…}` 后缀的【图片 URL】⇒ 拆后缀 + 带上请求头（2026-10-29 真机：封面全是占位图）──
+//   症状：✿UAA 的封面 URL = `https://cdn.xxx/file/bucket-media/…jpg,{"method":"GET","headers":{…}}`
+//     ⇒ 不拆 ⇒ URL 里带 `{` ⇒ `URL(string:)` 返 nil ⇒ 整串发出去 ⇒ 404
+//     ⇒ 拆了不带头 ⇒ CDN 403（实测：没 Referer 就 403）
+print("\n=== ⑥ 图片 URL：拆 `,{…}` 后缀 + 带请求头 ===")
+let coverRaw = "https://cdn.uaa010.com/file/bucket-media/image/cover/x.jpg,{\"method\":\"GET\",\"headers\":{\"User-Agent\":\"UA/1\",\"Referer\":\"uaa.com\"}}"
+let coverReq = AnalyzeUrl.request(coverRaw)
+ok(coverReq != nil, "带后缀的封面 URL 能建出请求（不因 `{` 而失败）")
+ok(coverReq?.url?.absoluteString == "https://cdn.uaa010.com/file/bucket-media/image/cover/x.jpg",
+   "⭐ 请求的 URL 是**剥掉后缀**的那个（后缀不是路径的一部分）")
+ok(coverReq?.value(forHTTPHeaderField: "Referer") == "uaa.com",
+   "⭐⭐ 后缀里的 Referer 必须带上（✿UAA 的 CDN 没它就 403）")
+ok(coverReq?.value(forHTTPHeaderField: "User-Agent") == "UA/1", "⭐⭐ 后缀里的 UA 也要带上")
+ok(AnalyzeUrl.request("https://x/y.jpg")?.url?.absoluteString == "https://x/y.jpg",
+   "没有后缀的普通 URL 不受影响")
+ok(AnalyzeUrl.request("") == nil, "空串 ⇒ nil（不是崩）")
+
 print("\n" + (fail == 0 ? "✅" : "❌") + " 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

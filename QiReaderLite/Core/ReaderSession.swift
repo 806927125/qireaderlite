@@ -26,10 +26,11 @@ final class ReaderSession: ObservableObject {
     /// 走的是原生下载再转 base64（WebView 里直接 fetch 会被 CORS 挡）。
     func coverDataURL(_ urlString: String) async -> String? {
         let raw = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty, let u = URL(string: raw) else { return nil }
+        guard !raw.isEmpty else { return nil }
         if raw.hasPrefix("data:") { return raw }
-        var req = URLRequest(url: u)
-        req.timeoutInterval = 10
+        // ⭐⭐⭐⭐⭐ **站方封面 URL 带 `,{…}` 后缀（请求头）⇒ 拆开 + 带头请求**
+        //   ⇒ 不拆 ⇒ 带 `{` 的串 `URL(string:)` 返 nil ⇒ 404；拆了不带头 ⇒ CDN 403 ⭐⭐⭐
+        guard var req = AnalyzeUrl.request(raw, timeout: 10) else { return nil }
         req.setValue(Self.ua, forHTTPHeaderField: "User-Agent")
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 10

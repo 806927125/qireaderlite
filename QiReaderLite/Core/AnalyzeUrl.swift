@@ -1,5 +1,11 @@
 import Foundation
 
+// ⚠️ Linux（沙盒 swiftc）上 URLRequest 在 FoundationNetworking 里，iOS 上在 Foundation
+//    ⇒ 条件导入，两边都能编 ✅
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// **URL 规则**（纯 Foundation；语义照搬 Legado `AnalyzeUrl` + 栖阅 `AnalyzeUrl`）
 ///
 /// ## 为什么搬到 Swift
@@ -214,6 +220,29 @@ public enum AnalyzeUrl {
     }
 
     // MARK: - 字符判定
+
+    /// ⭐⭐⭐⭐⭐ **带请求头的 URLRequest**（站方的 `url,{"headers":…}` 形态）
+    ///
+    /// ⚠️⚠️⚠️ **为什么必须有（2026-10-29 真机：封面全是占位图）**：
+    ///   站方给的封面 URL 是 **`https://cdn.xxx/file/bucket-media/…jpg,{"method":"GET","headers":{…}}`**
+    ///   ⇒ ① 不拆后缀 ⇒ URL 里带 `{` / `"` ⇒ `URL(string:)` **返回 nil**
+    ///      ⇒ 退化成「把带后缀的整串发出去」⇒ 服务器 **404** ⭐⭐⭐
+    ///   ⇒ ② 就算拆了，**请求头也必须带上**：✿UAA 的 CDN **没有 `Referer: uaa.com` 就 403**
+    ///      （实测：不带头 403 / 只带 UA 403 / 带 Referer 200）⭐⭐⭐
+    ///
+    /// ⇒ 所以：**拆后缀 + 把后缀里的 headers 装进请求** ⇒ 封面才出得来 ⭐
+    ///
+    /// ⚠️ **只拆、不重新编码 query**（图片 URL 的签名参数不能动）⭐
+    public static func request(_ raw: String, timeout: TimeInterval = 15) -> URLRequest? {
+        let (urlPart, opt) = splitOptions(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let u = URL(string: urlPart) else { return nil }
+        var req = URLRequest(url: u)
+        req.timeoutInterval = timeout
+        if let h = opt["headers"] as? [String: Any] {
+            for (k, v) in h { req.setValue(String(describing: v), forHTTPHeaderField: k) }
+        }
+        return req
+    }
 
     private static func hasHeader(_ h: [String: String], _ name: String) -> Bool {
         for k in h.keys where k.lowercased() == name.lowercased() { return true }

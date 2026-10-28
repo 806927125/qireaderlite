@@ -114,6 +114,11 @@ declare -a GATES=(
   #   ⇒ 那个对象 getVariable() = 整份 varBox（map）⇒ 站方 `Bearer {map}` ⇒ 403「无效JWT」
   #   ⇒ 宿主侧包一层（getVariable/setVariable 走槽，其余原样委托）⇒ 目录/正文也能拿到 token
   "station-var-bridge:test/station-var-bridge.test.js"
+  # ⭐⭐⭐⭐⭐ **JSON 列表项的字段规则改写 + 带后缀的图片 URL**（2026-10-29 真机）
+  #   ⇒ 目录「有行、点得开、就是没标题」：引擎的字段规则按【页面】判 isJSON
+  #     而 ✿UAA 的目录页正文是纯数字 id ⇒ 裸字段名被当 CSS ⇒ 抽不到
+  #   ⇒ 封面全是占位图：站方封面 URL 带 `,{…}` 后缀（要 Referer）⇒ 不拆 + 不带头 ⇒ 403
+  "toc-jsonpath-rewrite:test/toc-jsonpath-rewrite.test.js"
   # ⭐⭐⭐⭐⭐ **变异测试**：把实现改坏 9 种 ⇒ 门禁必须红
   #   ⇒ 「门禁全绿」有两种可能：① 实现对 ② 门禁没抓到东西（平凡通过）⭐⭐⭐
   #   ⇒ 这一层专门证伪 ②（会真的改源码 ⇒ 跑之前要 commit）

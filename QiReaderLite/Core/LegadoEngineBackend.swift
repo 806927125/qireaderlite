@@ -1067,7 +1067,53 @@ final class LegadoEngineBackend: @unchecked Sendable {
         f.isVolume = ruleText(r.isVolume)
         f.isVip = ruleText(r.isVip)
         f.nextTocUrl = ruleText(r.nextTocUrl)
+        // ⭐⭐⭐⭐⭐ **JSON 列表项 ⇒ 字段规则要写成 JSONPath**（2026-10-29 真机：目录没标题）
+        if Self.listItemsAreJSON(f.chapterList) {
+            f.chapterName = Self.jsonPathForm(f.chapterName)
+            f.chapterUrl = Self.jsonPathForm(f.chapterUrl)
+            // ⭐⭐⭐ **isVolume 直接丢掉**（不是改写）⇒ 让引擎走兜底（「没有章节 URL ⇒ 是卷标题」）
+            //   ⚠️ 改写成 `$.isVolume` 是**错的**：站方用「字段**不存在**」表达「不是卷」，
+            //   而 JSON 的 `false` 取出来是**字符串 "false"**（非空）⇒ **每一章都成卷** ⭐⭐⭐
+            f.isVolume = nil
+        }
         return f
+    }
+
+    /// ⭐⭐⭐⭐⭐ **列表项是不是 JSON 对象**（列表规则是 JS / JSONPath ⇒ 是）
+    ///
+    /// ⚠️⚠️ **为什么必须先判这个**（2026-10-29 真机实证）：
+    ///   引擎给**字段规则**用的 `isJSON` 标志取自**页面正文**
+    ///   （`SourceEngine.value(...)` ⇒ `isJSON: page.isJSON`）⭐⭐⭐
+    ///   ⇒ 而站方的目录页正文常常**不是 JSON**（✿UAA 是 `data:;base64,<纯数字 id>`）
+    ///   ⇒ `isJSON = false` ⇒ **裸字段名**（`title` / `url`）被当 **CSS 选择器**解析
+    ///   ⇒ **抽不到标题**（而 `url` 恰好是引擎的特殊字段名 ⇒ 能抽到
+    ///   ⇒ 症状 = 「目录有行、点得开、就是没名字」）⭐⭐⭐
+    ///
+    /// ⇒ **列表规则是 JS / JSONPath ⇒ 列表项一定是 JSON 对象** ⇒ 字段规则得按 JSON 取
+    /// ⇒ **DOM 源的列表项是节点 ⇒ 一个字都不改**（CSS 语义必须原样保持）⭐⭐⭐
+    static func listItemsAreJSON(_ listRule: String?) -> Bool {
+        guard let r = listRule?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty else { return false }
+        if r.hasPrefix("@js:") || r.hasPrefix("@JS:") { return true }
+        if r.hasPrefix("<js>") || r.hasPrefix("<JS>") { return true }
+        if r.hasPrefix("$.") || r.hasPrefix("$[") { return true }
+        if r.hasPrefix("result.") || r.hasPrefix("result[") { return true }
+        return false
+    }
+
+    /// ⭐⭐⭐ **把「裸字段路径」改写成 JSONPath 形态**（`title` ⇒ `$.title`）
+    ///
+    /// ⚠️ **只改「纯路径」**（字母/数字/`_`/`.`/`-`）：
+    ///   带 `@`（取值模式）/ `##`（正则）/ `||`（兜底）/ `{{}}`（模板）/ `$`（已是 JSONPath）
+    ///   ⇒ 一律**不动**（那些在 JSON 基准上本来也不成立 ⇒ 不制造新的行为变化）⭐
+    ///   ⇒ 例：NovelHub 的 `##^[^|]*\|\|…`（正则抠名）保持原样 ⭐⭐⭐
+    static func jsonPathForm(_ rule: String?) -> String? {
+        guard let r = rule?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty else { return rule }
+        if r.hasPrefix("$") { return rule }
+        let plain = r.allSatisfy { c in
+            c.isLetter || c.isNumber || c == "_" || c == "." || c == "-"
+        }
+        guard plain else { return rule }
+        return "$." + r
     }
 
     /// ⭐ **正文规则**（`ruleContent`）

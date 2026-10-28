@@ -124,8 +124,11 @@ struct CoverImage: View {
     }
 
     private func load() async {
-        guard let s = url.isEmpty ? nil : URL(string: url),
-              let (data, _) = try? await URLSession.shared.data(from: s),
+        // ⭐⭐⭐⭐⭐ **站方的封面 URL 带 `,{…}` 后缀（请求头）⇒ 必须拆开 + 带头请求**
+        //   ⇒ 不拆 ⇒ `URL(string:)` 遇 `{` 返 nil ⇒ 整串带后缀发出去 ⇒ 404 ⭐⭐⭐
+        //   ⇒ 拆了不带头 ⇒ ✿UAA 的 CDN **403**（要 `Referer: uaa.com`）⭐⭐⭐
+        guard let req = AnalyzeUrl.request(url),
+              let (data, _) = try? await URLSession.shared.data(for: req),
               let img = UIImage(data: data) else { failed = true; return }
         await MainActor.run { image = img; failed = false }
     }

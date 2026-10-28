@@ -195,5 +195,51 @@ if let session = madeSession, let engine = session.engine {
     ok(false, "⭐ 建不出引擎会话（后面几条没法验）")
 }
 
+// ── ⭐⭐⭐⭐⭐ ⑥ JSON 列表项的字段规则要写成 JSONPath（2026-10-29 真机：目录没标题）────
+//   症状：✿UAA 目录**有行、点得开、就是没名字**；正文也没章节标题
+//   根因：引擎给**字段规则**用的 `isJSON` 取自**页面正文**（✿UAA 的目录页正文 = 纯数字 id ⇒ false）
+//         ⇒ 裸字段名 `title` 被当 **CSS** 解析 ⇒ 抽不到（`url` 是引擎特殊字段 ⇒ 能抽到）
+//   ⇒ 宿主侧兜底：列表规则是 JS / JSONPath ⇒ 列表项一定是 JSON ⇒ 字段规则改写成 `$.xxx`
+print("\n=== ⑥ JSON 列表项的字段规则要写成 JSONPath ===")
+func tocSource(_ list: String, _ name: String, _ url: String,
+               _ vol: String? = nil, _ vip: String? = nil) -> BookSource {
+    var s = BookSource()
+    s.bookSourceName = "T"
+    s.bookSourceUrl = "https://example.com"
+    var t = TocRule()
+    t.chapterList = .text(list)
+    t.chapterName = .text(name)
+    t.chapterUrl = .text(url)
+    if let vol { t.isVolume = .text(vol) }
+    if let vip { t.isVip = .text(vip) }
+    s.ruleToc = t
+    return s
+}
+// ① JS 列表规则 + 裸字段名（✿UAA 的形状）
+let e6a = LegadoEngineBackend.convert(
+    tocSource("@js:\n[{\"title\":\"第一章\",\"url\":\"u\"}]", "title", "url", "voltype", "isVip"))
+ok(e6a.ruleToc?.chapterName == "$.title", "⭐ 裸字段名 title ⇒ $.title（JSON 列表项要按 JSON 取）")
+ok(e6a.ruleToc?.chapterUrl == "$.url", "⭐ 裸字段名 url ⇒ $.url")
+ok(e6a.ruleToc?.isVolume == nil,
+   "⭐⭐ isVolume 直接丢掉（改成 $.voltype ⇒ JSON 的 false 取出来是 \"false\"（非空）⇒ 每章都成卷）")
+ok(e6a.ruleToc?.isVip == "isVip", "⭐ isVip 不动（同上：布尔字段不能改写）")
+// ② DOM 源：一个字都不改
+let e6b = LegadoEngineBackend.convert(
+    tocSource(".catalog-section-title,.article-title", "text", "href", ".catalog-section-title"))
+ok(e6b.ruleToc?.chapterName == "text", "DOM 源不改（CSS 语义必须原样）")
+ok(e6b.ruleToc?.chapterUrl == "href", "DOM 源的 chapterUrl 不改")
+ok(e6b.ruleToc?.isVolume == ".catalog-section-title", "DOM 源的 isVolume 不改")
+// ③ 已经是 JSONPath ⇒ 不动
+let e6c = LegadoEngineBackend.convert(tocSource("$.data.chapterList", "$.title", "$.url"))
+ok(e6c.ruleToc?.chapterName == "$.title", "已是 JSONPath 的不改（别写成 $.$.title）")
+ok(e6c.ruleToc?.chapterUrl == "$.url", "已是 JSONPath 的 chapterUrl 不改")
+// ④ 正则抠名（NovelHub 那种）⇒ 不动
+let e6d = LegadoEngineBackend.convert(
+    tocSource("@js:\n[]", "##^[^|]*\\|\\|([\\s\\S]*)", "##^([^|]*)\\|\\|[\\s\\S]*"))
+ok(e6d.ruleToc?.chapterName == "##^[^|]*\\|\\|([\\s\\S]*)", "正则抠名的规则不改（不是纯路径）")
+// ⑤ 绝对 URL 的 chapterUrl ⇒ 不动
+let e6e = LegadoEngineBackend.convert(tocSource("@js:\n[]", "title", "https://x.com/a?b=1"))
+ok(e6e.ruleToc?.chapterUrl == "https://x.com/a?b=1", "绝对 URL 的 chapterUrl 不改")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)
