@@ -104,6 +104,10 @@ final class WebViewJSExecutor: JSExecutor {
             } catch let e as WebViewJSError {
                 // ⭐⭐⭐ **只有【语法错】才换下一种形态**（与 JSC 版逐字一致）
                 //   ⇒ 运行时错误直接抛 ⇒ **站方 JS 只执行一次** ⇒ 副作用不重复（限流/登录）⭐⭐⭐
+                //
+                // ⭐⭐⭐ **探针**（2026-10-28 真机：三个形态报「同一个」语法错）
+                //   ⇒ 把**每个形态的真实错误**逐条进面板 ⇒ 才知道到底是哪一步炸的
+                engineLog("[JS形态] #\(i + 1) 失败：\(String(e.message.prefix(160)))")
                 if !e.isSyntaxError {
                     throw e
                 }
@@ -111,7 +115,7 @@ final class WebViewJSExecutor: JSExecutor {
                 if firstError == nil { firstError = e.message }
             }
         }
-        throw WebViewJSError(message: "站方 JS 三种形态都失败："
+        throw WebViewJSError(message: "站方 JS 三种形态都失败（代码前 40 字：\(String(code.prefix(40)))）："
                               + (firstError ?? "未知") + " | " + attemptsLog.joined(separator: " || "))
     }
 
@@ -181,6 +185,13 @@ final class WebViewJSExecutor: JSExecutor {
                 ?? api.hostObject(named: object)?.call(method, args)
         }
         guard let result else { return #"{"__qrNotImplemented":true}"# }
+        // ⭐⭐⭐ **探针**（2026-10-28 真机 403：Bearer 里是整份 map）
+        //   ⇒ 站方 JS 读 `source.getVariable()` **实际拿到什么** ⇒ 面板可见
+        //   ⇒ 和上面的「引擎槽当前」一对比 ⇒ 立刻分清「槽被写坏」还是「站方拿错对象」
+        if object == "source", method == "getVariable" {
+            let v = result.scalarString
+            engineLog("[变量] 站方 JS 读 source.getVariable() = \(String(v.prefix(80)))（长度 \(v.count)）")
+        }
         // ⭐⭐⭐ **取证**：宿主调用返回了多大的东西？（站方的 `java.ajax` 会把整个响应体搬回来）⭐
         if let any = result.foundationValue as? String, any.utf8.count > WebViewJSBridge.logThresholdBytes {
             engineLog("[桥接] op=\(LegadoEngineBackend.currentOp) 宿主返回 \(object).\(method) = "
