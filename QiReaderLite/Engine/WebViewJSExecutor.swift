@@ -89,6 +89,31 @@ final class WebViewJSExecutor: JSExecutor {
 
         // ⭐⭐⭐ 刷新宿主属性（属性是值 ⇒ 必须每次 op 刷新）★
         refreshHostProperties()
+        // ⭐⭐⭐⭐⭐ **宿主方法兜底重装**（2026-10-28 真机 403 实证）
+        //
+        // ⚠️⚠️ **症状**：站方 jsLib 顶层 `var source = {...}`（老引擎那套）
+        //   ⇒ **覆盖**我们注入的宿主 `source` ⇒
+        //   ⇒ 站方 JS 里的 `source.getVariable()` 走 jsLib 自己那份（= 整份 vars）
+        //   ⇒ 请求头变成 `Bearer {整份变量}` ⇒ 服务端 403「无效JWT」⭐⭐⭐
+        //   ⇒ 特征：**我们的探针（走 `__hostJSON`）一次都不触发** ⇒ 印证「被覆盖」
+        //
+        // ⭐⭐⭐ **为什么放在这里（而不是 jsLib 加载之后）**：
+        //   jsLib 加载**可能在主线程** ⇒ 那里同步 evaluateSync（prompt 往返）
+        //   ⇒ 同线程自等 ⇒ **死锁闪退**（build273 真踩过，用户装完「出书崩了」）⭐
+        //   ⇒ 这里（规则求值）本来就在跑 evaluateSync 的线程 ⇒ 安全 ✔
+        //
+        // ⭐ 判据 = 我们的实现源码里**含 `__hostJSON`** ⇒ 不含 = 被站方覆盖了
+        let detect = "(function(){try{return String(source.getVariable).indexOf('__hostJSON')<0?'1':'0';}catch(e){return '0';}})()"
+        let covered = (try? WebViewJSBridge.shared.evaluateSync(detect)) ?? "0"
+        if covered == "1" {
+            let restore = JSScopeBuilder.hostWrappers().joined(separator: "\n")
+            _ = try? WebViewJSBridge.shared.evaluateSync(restore)
+            refreshHostProperties()
+            engineLog("[JS宿主] 站方 jsLib 覆盖了宿主 source ⇒ 已重装宿主方法")
+        } else if Self.hostChecked == false {
+            Self.hostChecked = true
+            engineLog("[JS宿主] 宿主 source 未被覆盖 ✔")
+        }
         // ⭐⭐ 清理站方残留的全局（复用 context 的代价 ⇒ 必须治）★ 语义与 JSC 版一致
         WebViewJSBridge.shared.removeGlobals(notIn: baselineGlobals)
 
@@ -144,26 +169,6 @@ final class WebViewJSExecutor: JSExecutor {
         // ⭐ 全局求值（间接 eval）⇒ jsLib 的 `var` / `function` 留在全局（老引擎同款）
         let wrapped = "JSON.stringify((0,eval)(" + JSEvalShape.jsonLiteral(exported) + "))"
         let text = try WebViewJSBridge.shared.evaluateSync(wrapped)
-        // ⭐⭐⭐⭐⭐ **jsLib 可能把宿主对象整个盖掉**（2026-10-28 真机 403 实证）
-        //
-        // ⚠️⚠️ **症状**：站方 jsLib 顶层写 `var source = { getVariable: … }`（老引擎那套）
-        //   ⇒ 直接**覆盖**我们注入的宿主 `source` ⇒
-        //   ⇒ 站方 JS 里的 `source.getVariable()` 走的是 **jsLib 自己那份**（= 整份 vars）
-        //   ⇒ 请求头变成 `Bearer {整份变量}` ⇒ 服务端 403「无效JWT」⭐⭐⭐
-        //   ⇒ **探针不触发**（我们的宿主实现压根没被调用）⭐
-        //
-        // ⭐ **修法**：jsLib 装完**把宿主对象重装回去**（幂等 ⇒ 没被覆盖的源零影响）⭐
-        let probeJS = "(function(){try{return String(source.getVariable).slice(0,110);}"
-            + "catch(e){return '<没有 source.getVariable>';}})()"
-        let before = (try? WebViewJSBridge.shared.evaluateSync(probeJS)) ?? "<探针失败>"
-        engineLog("[JS宿主] jsLib 装完后 source.getVariable = \(String(before.prefix(130)))")
-        // 重装宿主方法（一次往返）
-        let restore = JSScopeBuilder.hostWrappers().joined(separator: "\n")
-        _ = try? WebViewJSBridge.shared.evaluateSync(restore)
-        // 重装宿主属性（jsLib 也可能覆盖属性）
-        refreshHostProperties()
-        let after = (try? WebViewJSBridge.shared.evaluateSync(probeJS)) ?? "<探针失败>"
-        engineLog("[JS宿主] 重装宿主对象后 source.getVariable = \(String(after.prefix(130)))")
         return Self.parseValue(text)
     }
 
@@ -178,6 +183,9 @@ final class WebViewJSExecutor: JSExecutor {
     }
 
     // MARK: - 同步通道的 Swift 侧（照抄 JSC 版 `makeHostBlock` 的语义）
+
+    /// ⭐⭐⭐ **宿主覆盖检测只打一次日志**（避免刷屏）
+    fileprivate static var hostChecked = false
 
     fileprivate func handleSync(_ payload: String) -> String {
         guard let data = payload.data(using: .utf8),
