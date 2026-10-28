@@ -170,6 +170,35 @@ final class EngineDiagnosticLogger: EngineLogger, @unchecked Sendable {
 
 // MARK: - ② 站方 JS 的宿主 API
 
+/// ⭐⭐⭐⭐⭐ **站方变量感知的 source 宿主对象**（App 侧自有协议）
+///
+/// ⚠️⚠️⚠️ **为什么需要这一层（2026-10-28 真机 403 实证 · 根因在引擎）**：
+///
+///   引擎的 `SourceEngine.toc()` / `content()` 会**重建** `sourceObject`：
+///   ```swift
+///   sourceObject = Self.makeSourceObject(source, varBox: varBox, loginInfo: loadLoginInfo())
+///   //                                                       ↑↑↑ 漏传 sourceVariable:
+///   ```
+///   ⇒ 那个对象退回**老语义**：`getVariable()` = **整份 varBox JSON**（一个 map）
+///     而不是**站方变量那一串**（token）⭐⭐⭐
+///   ⇒ 站方（✿UAA）`authorization: Bearer ${source.getVariable()}`
+///   ⇒ 请求头变成 `Bearer {"androidId":"…"}` ⇒ 服务端 **403「无效JWT」** ⭐⭐⭐
+///
+/// ⭐ **为什么只有目录/正文 403、详情却是好的**：
+///   引擎的 `bookInfo()` 重建时**传了** `sourceVariable:` ⇒ 详情那步 `getVariable()` 正确
+///   ⇒ 拿到 token ✔ ⇒ 而 `toc()` / `content()` 漏传 ⇒ 只有这两步是 map ❌ ⭐
+///
+/// ⇒ 宿主侧兜底：**把引擎那个「漏传槽」的对象包一层**
+///   · `getVariable` / `setVariable` ⇒ 走**站方变量槽**（Legado 语义）
+///   · 其余方法 ⇒ **原样委托**给引擎那个对象（不重复实现 ⇒ 不会漂）⭐⭐⭐
+///
+/// ⚠️ **引擎那边修好之后（`toc`/`content` 也传槽）**，这一层依然正确
+///   ⇒ 委托 + 覆盖 ⇒ 同一个值 ⇒ **幂等** ⇒ 两边可以各自修、不会互相打架 ⭐
+protocol StationVariableSourceProviding: AnyObject {
+    /// 站方变量感知的 `source` 宿主对象（`getVariable()` = 站方变量那一串）
+    func stationVariableSourceObject() -> HostObject?
+}
+
 /// ⭐⭐⭐ **站方 JS 的宿主 API**（`JSHostAPIProvider`）
 ///
 /// 站方 JS 会调：`java.toast` / `java.log` / `java.getCookie` / `java.cacheFile` /
@@ -177,7 +206,7 @@ final class EngineDiagnosticLogger: EngineLogger, @unchecked Sendable {
 ///
 /// ⚠️ **书源 / 书籍 / 章节对象由引擎自己管**（`SourceEngine.bookObject` 等）
 /// ⇒ 这里直接转发给引擎 ⇒ 不会出现「两套对象、内容不一致」。
-final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
+final class EngineHostAPI: JSHostAPIProvider, StationVariableSourceProviding, @unchecked Sendable {
 
     private let session: LegadoEngineBackend.Session
 
@@ -185,13 +214,59 @@ final class EngineHostAPI: JSHostAPIProvider, @unchecked Sendable {
 
     func hostObject(named name: String) -> HostObject? {
         switch name {
-        case "source": return session.engine?.sourceObject
+        // ⭐⭐⭐ **source 用「站方变量感知」那份**（引擎在 toc/content 里重建的那份漏传槽）
+        //   ⇒ 站方 `getVariable()` 会读到整份 varBox（map）⇒ `Bearer {map}` ⇒ 403 ⭐⭐⭐
+        //   ⇒ 属性（name / bookSourceUrl …）仍然来自引擎那个对象 ⇒ 不会过期 ⭐
+        case "source": return stationVariableSourceObject() ?? session.engine?.sourceObject
         case "book": return session.engine?.bookObject
         case "chapter": return session.engine?.chapterObject
         // ⭐⭐ **cookie 宿主对象**（站方 `cookie.*` —— 真实语料 205 处）
         case "cookie": return session.engine?.cookieObject
         default: return nil
         }
+    }
+
+    // MARK: - ⭐⭐⭐⭐⭐ 站方变量感知的 source（引擎漏传槽 ⇒ 宿主侧兜底）
+
+    /// ⭐⭐⭐⭐⭐ **站方变量感知的 `source` 宿主对象**（2026-10-28 真机 403 实证）
+    ///
+    /// ⚠️ **根因在引擎**：`SourceEngine.toc()` / `content()` 重建 `sourceObject` 时
+    ///   **漏传 `sourceVariable:`** ⇒ 那个对象退回**老语义**：
+    ///   `getVariable()` = **整份 varBox JSON**（一个 map）而不是**站方变量那一串** ⭐⭐⭐
+    ///   ⇒ 站方（✿UAA）`authorization: Bearer ${source.getVariable()}`
+    ///   ⇒ 请求头变成 `Bearer {"androidId":"…"}` ⇒ 服务端 **403 无效JWT** ⭐⭐⭐
+    ///   （详情 op 传了槽 ⇒ 详情那步能拿到 token ⇒ **只有目录/正文 403** ⭐）
+    ///
+    /// ⇒ 宿主侧兜底：**把引擎那个对象包一层** ⇒
+    ///   · `getVariable` / `setVariable` ⇒ 走**站方变量槽**（Legado 语义）
+    ///   · 其余方法 ⇒ **原样委托**给引擎那个对象（不重复实现 ⇒ 不会漂）⭐⭐⭐
+    func stationVariableSourceObject() -> HostObject? {
+        guard let base = session.engine?.sourceObject else { return nil }
+        let slot = session.sourceVariable
+        let varBox = session.engine?.varBox
+        var methods = base.methods
+        // ⭐⭐⭐ **站方变量（Legado 语义：一整串）** —— 与「书源变量」（map）**分开** ⭐
+        methods["getVariable"] = { _ in .string(slot.text) }
+        methods["setVariable"] = { args in
+            let a = args.first
+            if args.count > 1 {
+                // ② `setVariable(key, value)` ⇒ 改**书源变量**的一项（老宿主也这么用）
+                let k = args[0].scalarString
+                if !k.isEmpty { varBox?.set(k, args[1].scalarString) }
+            } else if case .object(let o)? = a {
+                // ① 传对象 ⇒ 序列化成串存进站方变量（站方极少这么用）
+                var flat: [String: String] = [:]
+                for (k, v) in o { flat[k] = v.scalarString }
+                let data = (try? JSONSerialization.data(withJSONObject: flat)) ?? Data()
+                slot.text = String(data: data, encoding: .utf8) ?? ""
+            } else {
+                // ③ `setVariable(jsonString)` ⇒ 站方变量 = 那一串（**原样存**）⭐
+                //    ⚠️ 老语义会把它**并进 varBox** ⇒ 站方 setVariable(token) 把书源变量整份冲掉 ⭐⭐⭐
+                slot.text = a?.scalarString ?? ""
+            }
+            return .string("")
+        }
+        return HostObject(name: base.name, methods: methods, properties: base.properties)
     }
 
     func callJava(_ method: String, _ args: [JSONValue]) -> JSONValue? {

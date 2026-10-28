@@ -109,6 +109,11 @@ declare -a GATES=(
   #   ⇒ 共享服 api / 文件域名 / aid 全在【书源变量】⇒ App 的选线不受影响
   #   ⇒ 一旦 App 往那一格塞 map ⇒ `Bearer {…}` ⇒ 403「无效JWT」⇒「获取Token」永远失败
   "uaa-original-station-var:test/uaa-original-station-var.test.js"
+  # ⭐⭐⭐⭐⭐ **站方变量感知的 source（宿主侧兜底 · 2026-10-28）**
+  #   ⇒ 引擎在 toc/content 里重建 sourceObject 时**漏传站方变量槽**
+  #   ⇒ 那个对象 getVariable() = 整份 varBox（map）⇒ 站方 `Bearer {map}` ⇒ 403「无效JWT」
+  #   ⇒ 宿主侧包一层（getVariable/setVariable 走槽，其余原样委托）⇒ 目录/正文也能拿到 token
+  "station-var-bridge:test/station-var-bridge.test.js"
   # ⭐⭐⭐⭐⭐ **变异测试**：把实现改坏 9 种 ⇒ 门禁必须红
   #   ⇒ 「门禁全绿」有两种可能：① 实现对 ② 门禁没抓到东西（平凡通过）⭐⭐⭐
   #   ⇒ 这一层专门证伪 ②（会真的改源码 ⇒ 跑之前要 commit）

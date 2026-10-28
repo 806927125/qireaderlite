@@ -133,5 +133,67 @@ let ckEmpty = LegadoCore.CookieJar()
 LegadoEngineBackend.seedCookies(from: [:], into: ckEmpty)
 ok(ckEmpty.cookieHeader(for: "https://v5.langge.uk/x") == nil, "没有快照就不能凭空造 cookie")
 
+// ── ⭐⭐⭐⭐⭐ 站方变量感知的 source（2026-10-28 真机 403 实证）────────────────
+//   症状：✿UAA 目录 op 报 403「无效JWT」⇒ 请求头是 `Bearer {"androidId":"…"}`
+//   根因：**引擎的 `toc()` / `content()` 重建 `sourceObject` 时漏传 `sourceVariable:`**
+//         ⇒ 那个对象退回老语义（`getVariable()` = 整份 varBox JSON = 一个 map）
+//   ⇒ 宿主侧兜底：包一层（`getVariable`/`setVariable` 走站方变量槽，其余原样委托）
+//   ⚠️ 这组门禁**直接复刻引擎的重建**（不传 sourceVariable）⇒ 改坏实现必须红 ⭐⭐⭐
+print("\n=== ⑤ 站方变量感知的 source（引擎漏传槽 ⇒ 宿主侧兜底）===")
+let engineSource5 = LegadoEngineBackend.convert(src)
+var madeSession: LegadoEngineBackend.Session? = nil
+do {
+    madeSession = try LegadoEngineBackend.Session(source: engineSource5,
+                                                   jar: LegadoCore.CookieJar(),
+                                                   jsLib: nil)
+} catch {
+    print("  ✗ 建会话失败：\(error)")
+}
+if let session = madeSession, let engine = session.engine {
+    // 站方变量槽 = 站方自己写的那一串（✿UAA 放的是 token）
+    session.sourceVariable.text = "TOKEN-ABC123"
+    // 书源变量（Legado 的 get/put 那套）
+    engine.varBox.set("server", "https://line1.example.com")
+    engine.varBox.set("androidId", "4ad2abe07c5eded1")
+
+    // ⭐⭐⭐ **复刻引擎 `toc()` / `content()` 的重建**（漏传 sourceVariable ⇒ 老语义）
+    let legacy = SourceEngine.makeSourceObject(engineSource5, varBox: engine.varBox)
+    let legacyValue = legacy.call("getVariable", [])?.scalarString ?? ""
+    ok(legacyValue.contains("androidId"),
+       "复刻成功：引擎重建的那个对象 getVariable() = 整份 varBox（map）—— \(legacyValue.prefix(40))")
+
+    // ⭐⭐⭐ 宿主那份必须是「站方变量感知」的
+    let host = session.api.stationVariableSourceObject()
+    let hostValue = host?.call("getVariable", [])?.scalarString ?? ""
+    ok(hostValue == "TOKEN-ABC123",
+       "⭐⭐ 宿主 source.getVariable() = 站方变量那一串（不是 map）—— 实际 \(hostValue.prefix(40))")
+    // ⭐ 其余方法**原样委托**给引擎那个对象（不重复实现 ⇒ 不会漂）
+    ok(host?.call("getKey", [])?.scalarString == engineSource5.bookSourceUrl,
+       "其余方法原样委托（getKey 仍返回源 URL）")
+    // ⭐⭐ 属性也要**原样带着**（站方 JS 读 `source.bookSourceUrl` / `bookSourceName`）
+    //    ⚠️ 这条**必须能红**（属性丢了 ⇒ 站方拼 URL 用空串 ⇒ 静默失效）⭐
+    ok(host?.property("bookSourceUrl")?.scalarString == engineSource5.bookSourceUrl,
+       "⭐ 属性也原样委托（bookSourceUrl 在）")
+    ok(host?.property("bookSourceName")?.scalarString == engineSource5.bookSourceName,
+       "⭐ 属性也原样委托（bookSourceName 在）")
+
+    // ⭐⭐⭐ `setVariable(str)` = 写站方变量；**不得**把书源变量整份冲掉
+    host?.call("setVariable", [.string("NEW-TOKEN")])
+    ok(session.sourceVariable.text == "NEW-TOKEN", "setVariable(str) 写进站方变量槽")
+    ok(engine.varBox.get("androidId") == "4ad2abe07c5eded1",
+       "⭐⭐ setVariable 不得把书源变量整份冲掉（老语义会并进 varBox）")
+    ok(engine.varBox.get("server") == "https://line1.example.com", "⭐⭐ 书源变量一个都不能少")
+
+    // ⭐ 两参数形式 = 改**书源变量**的一项（Legado 两套语义）
+    host?.call("setVariable", [.string("tab"), .string("v2")])
+    ok(engine.varBox.get("tab") == "v2", "setVariable(key,value) 改书源变量的一项")
+    ok(session.sourceVariable.text == "NEW-TOKEN", "⭐ 两参数形式不得动站方变量")
+
+    // ⭐ 站方变量的槽与引擎的是**同一个引用** ⇒ 引擎那边也看得见
+    ok(engine.sourceVariable?.text == "NEW-TOKEN", "⭐ 站方变量槽与引擎共享（同一个引用）")
+} else {
+    ok(false, "⭐ 建不出引擎会话（后面几条没法验）")
+}
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

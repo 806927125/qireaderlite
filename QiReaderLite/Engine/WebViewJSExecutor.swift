@@ -84,6 +84,7 @@ final class WebViewJSExecutor: JSExecutor {
 
         currentBase = context.base
         currentHostObjects = Self.hostObjects(from: context)
+        applyStationVariableSource()
         // ⭐ 同步通道的「当前上下文」= 本执行器（同步通道在主线程回调 ⇒ 必须能拿到它）
         WebViewJSBridge.shared.current = self
 
@@ -149,6 +150,7 @@ final class WebViewJSExecutor: JSExecutor {
         defer { WebViewJSBridge.shared.lock.unlock() }
         currentBase = context.base
         currentHostObjects = Self.hostObjects(from: context)
+        applyStationVariableSource()
         WebViewJSBridge.shared.current = self
         // ⭐⭐⭐⭐⭐ **必须显式导出 jsLib 的顶层符号**（2026-10-27 真机实证）
         //
@@ -180,6 +182,33 @@ final class WebViewJSExecutor: JSExecutor {
         if let b = ctx.book { out["book"] = b }
         if let c = ctx.chapter { out["chapter"] = c }
         return out
+    }
+
+    // MARK: - ⭐⭐⭐⭐⭐ 站方变量感知的 source（引擎漏传槽 ⇒ 宿主侧兜底）
+
+    /// ⭐⭐⭐ **「站方变量感知」只打一次日志**（避免刷屏）
+    private static var stationVariableSourceLogged = false
+
+    /// ⭐⭐⭐⭐⭐ **把 `source` 换成「站方变量感知」的那份**（2026-10-28 真机 403 实证）
+    ///
+    /// ⚠️⚠️ **根因在引擎**：`SourceEngine.toc()` / `content()` 重建 `sourceObject` 时
+    ///   **漏传 `sourceVariable:`** ⇒ 那个对象的 `getVariable()` 退回**整份 varBox JSON**（map）
+    ///   ⇒ 站方 `Bearer ${source.getVariable()}` ⇒ `Bearer {"androidId":"…"}` ⇒ **403 无效JWT** ⭐⭐⭐
+    ///   ⇒ 详情 op 传了槽 ⇒ 详情没事；**只有目录/正文 403** ⭐
+    ///
+    /// ⇒ 这里换成宿主那份（`getVariable` = **站方变量那一串**）⇒ **两条 op 都能拿到 token** ⭐
+    ///
+    /// ⚠️ **`runGlobal` 也要换**：站方 jsLib 的函数在**全局作用域**里
+    ///   ⇒ 它们体里的 `source.getVariable()` 解析到**全局的 `source`**
+    ///   ⇒ 全局 `source` 是宿主包装器 ⇒ 照样走 `__hostJSON('source','getVariable')`
+    ///   ⇒ 也落到 `currentHostObjects["source"]` ⇒ 同样要换 ⭐⭐⭐
+    private func applyStationVariableSource() {
+        guard let s = (api as? StationVariableSourceProviding)?.stationVariableSourceObject() else { return }
+        currentHostObjects["source"] = s
+        if !Self.stationVariableSourceLogged {
+            Self.stationVariableSourceLogged = true
+            engineLog("[变量] 宿主 source 已换成「站方变量感知」版 ⇒ getVariable() = 站方变量那一串")
+        }
     }
 
     // MARK: - 同步通道的 Swift 侧（照抄 JSC 版 `makeHostBlock` 的语义）

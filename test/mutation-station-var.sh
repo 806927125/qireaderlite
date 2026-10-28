@@ -33,13 +33,16 @@ VARS="QiReaderLite/Core/SourceVariables.swift"
 FORM="QiReaderLite/Core/StationVarForm.swift"
 SVC="QiReaderLite/Core/SourceService.swift"
 BACK="QiReaderLite/Core/LegadoEngineBackend.swift"
+EXEC="QiReaderLite/Engine/WebViewJSExecutor.swift"
 
 BAK="$TMP/backup"; mkdir -p "$BAK"
 cp "$VARS" "$BAK/vars.swift"; cp "$SVC" "$BAK/svc.swift"
 cp "$BACK" "$BAK/back.swift"; cp "$FORM" "$BAK/form.swift"
+cp "$EXEC" "$BAK/exec.swift"
 restore() {
   cp "$BAK/vars.swift" "$VARS"; cp "$BAK/svc.swift" "$SVC"
   cp "$BAK/back.swift" "$BACK"; cp "$BAK/form.swift" "$FORM"
+  cp "$BAK/exec.swift" "$EXEC"
 }
 trap 'restore; rm -rf "$TMP"' EXIT
 
@@ -55,6 +58,12 @@ run_swift_gate() {
     echo "COMPILE_ERROR"; cat "$dir/err.txt" | head -6; return 2
   fi
   (cd "$(dirname "$0")/.." && "$dir/t" > "$dir/out.txt" 2>&1)
+  return $?
+}
+
+# 跑「站方变量感知 source」的接线门禁（Node ⇒ 秒级）
+run_bridge_gate() {
+  node test/station-var-bridge.test.js > "$TMP/bridge.txt" 2>&1
   return $?
 }
 
@@ -194,6 +203,59 @@ node test/source-variable-shape.test.js > "$TMP/js10.txt" 2>&1
 [ $? -eq 0 ] && ok 0 "source-variable-shape 恢复绿 ✅" || ok 1 "source-variable-shape 复原后还是红"
 node test/uaa-original-station-var.test.js > "$TMP/js10b.txt" 2>&1
 [ $? -eq 0 ] && ok 0 "uaa-original-station-var 恢复绿 ✅" || ok 1 "uaa-original-station-var 复原后还是红"
+
+# ── ⭐⭐⭐⭐⭐ ⑫⑬⑭⑮：**站方变量感知的 source**（2026-10-28 真机 403 的宿主侧兜底）──
+#   症状：✿UAA 目录 op 403「无效JWT」⇒ `Bearer {"androidId":"…"}`
+#   根因：引擎在 toc/content 里重建 sourceObject 时**漏传站方变量槽**
+#   ⇒ 宿主侧包一层（getVariable/setVariable 走槽，其余委托）
+#   ⇒ 这三条分别把「槽」「run」「runGlobal」各改坏一次 ⇒ 门禁每次都得红 ⭐⭐⭐
+echo "=== ⑫ 宿主那份 source 不用站方变量槽了 ==="
+python3 - <<'PY'
+p = "QiReaderLite/Core/LegadoEngineBackend.swift"
+s = open(p, encoding="utf-8").read()
+old = 'methods["getVariable"] = { _ in .string(slot.text) }'
+new = 'methods["getVariable"] = { _ in .string("") }'
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PY
+run_bridge_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "getVariable 不读槽 ⇒ station-var-bridge 变红 ✅" || { ok 1 "getVariable 不读槽 ⇒ 门禁**没红**"; tail -8 "$TMP/bridge.txt"; }
+restore
+
+echo "=== ⑬ run() 里不换 source ==="
+python3 - <<'PY'
+p = "QiReaderLite/Engine/WebViewJSExecutor.swift"
+s = open(p, encoding="utf-8").read()
+old = """        currentHostObjects = Self.hostObjects(from: context)
+        applyStationVariableSource()"""
+new = """        currentHostObjects = Self.hostObjects(from: context)"""
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, new, 1))
+PY
+run_bridge_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "run() 不换 source ⇒ station-var-bridge 变红 ✅" || { ok 1 "run() 不换 source ⇒ 门禁**没红**"; tail -8 "$TMP/bridge.txt"; }
+restore
+
+echo "=== ⑭ runGlobal() 里不换 source ==="
+python3 - <<'PY'
+p = "QiReaderLite/Engine/WebViewJSExecutor.swift"
+s = open(p, encoding="utf-8").read()
+old = """        currentHostObjects = Self.hostObjects(from: context)
+        applyStationVariableSource()"""
+new = """        currentHostObjects = Self.hostObjects(from: context)"""
+# ⚠️ run() 和 runGlobal() 这两处**长得一样** ⇒ 改**最后**一处（= runGlobal 的）⭐
+idx = s.rfind(old)
+assert idx >= 0, "锚点没找到（代码形状变了？）"
+s = s[:idx] + new + s[idx + len(old):]
+open(p, "w", encoding="utf-8").write(s)
+PY
+run_bridge_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "runGlobal() 不换 source ⇒ station-var-bridge 变红 ✅" || { ok 1 "runGlobal() 不换 source ⇒ 门禁**没红**"; tail -8 "$TMP/bridge.txt"; }
+restore
+
+echo "=== ⑮ 复原后接线门禁必须恢复绿 ==="
+run_bridge_gate; rc=$?
+[ $rc -eq 0 ] && ok 0 "station-var-bridge 恢复绿 ✅" || { ok 1 "station-var-bridge 复原后还是红 ⇒ 脚本把文件改坏了！"; tail -10 "$TMP/bridge.txt"; }
 
 echo ""
 echo "$( [ $fail -eq 0 ] && echo "✅" || echo "❌" ) 变异测试：通过 $pass / 失败 $fail"
