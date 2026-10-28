@@ -51,7 +51,7 @@ run_swift_gate() {
   local dir="$TMP/m$$"
   mkdir -p "$dir"
   cp test/station-var-form-test.swift "$dir/main.swift"
-  if ! "$SWIFTC" -O "$dir/main.swift" "$VARS" "$FORM" -o "$dir/t" 2>"$dir/err.txt"; then
+  if ! "$SWIFTC" -O "$dir/main.swift" "$VARS" "$FORM" QiReaderLite/Core/EngineLog.swift -o "$dir/t" 2>"$dir/err.txt"; then
     echo "COMPILE_ERROR"; cat "$dir/err.txt" | head -6; return 2
   fi
   (cd "$(dirname "$0")/.." && "$dir/t" > "$dir/out.txt" 2>&1)
@@ -138,11 +138,9 @@ echo "=== ⑦ 清污染的逻辑删掉（污染留着 ⇒ 403 无效JWT） ==="
 python3 - <<'PY'
 p = "QiReaderLite/Core/SourceVariables.swift"
 s = open(p, encoding="utf-8").read()
-old = """        NSLog("[变量] 迁移=清了（凭据形态却躺着一个 map ⇒ 宿主灌的污染）")
-        setVariable("", for: sourceUrl, origin: .app)
+old = """        setVariable("", for: sourceUrl, origin: .app)
         return \"\""""
-new = """        NSLog("[变量] 迁移=清了（凭据形态却躺着一个 map ⇒ 宿主灌的污染）")
-        return \"\""""
+new = """        return \"\""""
 assert old in s, "锚点没找到"
 open(p, "w", encoding="utf-8").write(s.replace(old, new))
 PY
@@ -189,9 +187,9 @@ run_swift_gate; rc=$?
 [ $rc -ne 0 ] && ok 0 "去掉结构性判据 ⇒ Swift 门禁变红 ✅" || { ok 1 "去掉结构性判据 ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
 restore
 
-echo "=== ⑩ 复原后门禁必须恢复绿（证明脚本没把文件改坏） ==="
+echo "=== ⑪ 复原后门禁必须恢复绿（证明脚本没把文件改坏） ==="
 run_swift_gate; rc=$?
-[ $rc -eq 0 ] && ok 0 "Swift 门禁恢复绿 ✅" || { ok 1 "Swift 门禁复原后还是红 ⇒ 脚本把文件改坏了！"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
+[ $rc -eq 0 ] && ok 0 "Swift 门禁恢复绿 ✅" || { ok 1 "Swift 门禁复原后还是红 ⇒ 脚本把文件改坏了！"; grep -E "✗|COMPILE" "$TMP/m$$/out.txt" "$TMP/m$$/err.txt" 2>/dev/null | head -8; tail -6 "$TMP/m$$/err.txt" 2>/dev/null; }
 node test/source-variable-shape.test.js > "$TMP/js10.txt" 2>&1
 [ $? -eq 0 ] && ok 0 "source-variable-shape 恢复绿 ✅" || ok 1 "source-variable-shape 复原后还是红"
 node test/uaa-original-station-var.test.js > "$TMP/js10b.txt" 2>&1
