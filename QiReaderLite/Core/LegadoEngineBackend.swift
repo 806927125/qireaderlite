@@ -465,6 +465,16 @@ final class LegadoEngineBackend: @unchecked Sendable {
         } else {
             engineLog("[变量] ⚠️ 引擎没有站方变量槽 ⇒ getVariable() 会回退成整份书源变量")
         }
+        // ⭐⭐⭐⭐⭐ **直接问引擎对象**（2026-10-28 真机 403 实证：探针一条都没出现 ⇒ 疑 JS 后端不是 App 的）
+        //   ⇒ 这条**不经过 JS** ⇒ 一定能看到「引擎侧 source.getVariable() 到底返回什么」⭐
+        if let so = engine.sourceObject {
+            let v = so.call("getVariable", [])?.scalarString ?? "<nil>"
+            engineLog("[变量] 引擎 sourceObject.getVariable() = \(String(v.prefix(80)))（长度 \(v.count)）")
+        } else {
+            engineLog("[变量] ⚠️ 引擎没有 sourceObject")
+        }
+        // ⭐⭐⭐ **JS 后端是谁**（App 的 WebViewJSExecutor vs 引擎自带的 JSC）⇒ 决定宿主注入走哪条路
+        engineLog("[变量] 引擎类型 = \(String(describing: type(of: engine)))")
         // ⭐⭐⭐ **cookie 也要灌进引擎的罐**（2026-10-24 真机栽的 ⇒ 详见 seedCookies 的注释）
         Self.seedCookies(from: payload, into: engine.fetcher.cookieJar)
         var out: Any?
