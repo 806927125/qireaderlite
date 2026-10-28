@@ -545,6 +545,13 @@ final class LegadoEngineBackend: @unchecked Sendable {
         if let so = engine.sourceObject {
             let v = so.call("getVariable", [])?.scalarString ?? "<nil>"
             engineLog("[变量] 引擎 sourceObject.getVariable() = \(String(v.prefix(80)))（长度 \(v.count)）")
+            // ⭐⭐⭐⭐⭐ **再看「站方实际拿到的那份」**（宿主兜底后的）⇒ 一眼分辨是谁的问题 ⭐
+            //   ⇒ 引擎那份 = map（引擎漏传槽）而宿主那份 = token（兜底生效）⇒ 站方拿到的是 token ✔
+            //   ⇒ 两份都 = map ⇒ 兜底没生效（接线断了）⭐⭐⭐
+            if let hostObj = session.api.stationVariableSourceObject() {
+                let hv = hostObj.call("getVariable", [])?.scalarString ?? "<nil>"
+                engineLog("[变量] 站方实际拿到的 getVariable() = \(String(hv.prefix(80)))（长度 \(hv.count)）")
+            }
         } else {
             engineLog("[变量] ⚠️ 引擎没有 sourceObject")
         }
