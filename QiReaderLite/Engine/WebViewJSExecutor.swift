@@ -144,6 +144,26 @@ final class WebViewJSExecutor: JSExecutor {
         // ⭐ 全局求值（间接 eval）⇒ jsLib 的 `var` / `function` 留在全局（老引擎同款）
         let wrapped = "JSON.stringify((0,eval)(" + JSEvalShape.jsonLiteral(exported) + "))"
         let text = try WebViewJSBridge.shared.evaluateSync(wrapped)
+        // ⭐⭐⭐⭐⭐ **jsLib 可能把宿主对象整个盖掉**（2026-10-28 真机 403 实证）
+        //
+        // ⚠️⚠️ **症状**：站方 jsLib 顶层写 `var source = { getVariable: … }`（老引擎那套）
+        //   ⇒ 直接**覆盖**我们注入的宿主 `source` ⇒
+        //   ⇒ 站方 JS 里的 `source.getVariable()` 走的是 **jsLib 自己那份**（= 整份 vars）
+        //   ⇒ 请求头变成 `Bearer {整份变量}` ⇒ 服务端 403「无效JWT」⭐⭐⭐
+        //   ⇒ **探针不触发**（我们的宿主实现压根没被调用）⭐
+        //
+        // ⭐ **修法**：jsLib 装完**把宿主对象重装回去**（幂等 ⇒ 没被覆盖的源零影响）⭐
+        let probeJS = "(function(){try{return String(source.getVariable).slice(0,110);}"
+            + "catch(e){return '<没有 source.getVariable>';}})()"
+        let before = (try? WebViewJSBridge.shared.evaluateSync(probeJS)) ?? "<探针失败>"
+        engineLog("[JS宿主] jsLib 装完后 source.getVariable = \(String(before.prefix(130)))")
+        // 重装宿主方法（一次往返）
+        let restore = JSScopeBuilder.hostWrappers().joined(separator: "\n")
+        _ = try? WebViewJSBridge.shared.evaluateSync(restore)
+        // 重装宿主属性（jsLib 也可能覆盖属性）
+        refreshHostProperties()
+        let after = (try? WebViewJSBridge.shared.evaluateSync(probeJS)) ?? "<探针失败>"
+        engineLog("[JS宿主] 重装宿主对象后 source.getVariable = \(String(after.prefix(130)))")
         return Self.parseValue(text)
     }
 
