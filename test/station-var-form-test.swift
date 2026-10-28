@@ -138,7 +138,20 @@ SourceVariables.setHostMap("{\"server\":\"https://v2\"}", for: dhl,
 ok(SourceVariables.variable(for: dhl).contains("server"),
    "⭐ map 形态的源 ⇒ 宿主写 map 照旧生效（不能回归）")
 
-for u in [uaa, dhl, host] { SourceVariables.clear(for: u) }
+// ⑦ ⭐⭐⭐ 结构性判据：**站方从没写过这一格** + 里面躺着一个 map ⇒ 那是**宿主灌的** ⇒ 清
+let orphan = "form-gate-#orphan"
+SourceVariables.clear(for: orphan)
+SourceVariables.setVariable("{\"androidId\":\"b4e6\"}", for: orphan, origin: .app)
+ok(SourceVariables.variable(for: orphan).contains("androidId"), "（前提）槽里躺着一份 map")
+let seeded3 = SourceVariables.stationVariableToSeed(for: orphan)
+ok(seeded3.isEmpty, "⭐⭐⭐⭐⭐ 形态未知 + 站方从没写过 + 槽里是 map ⇒ 照样清（宿主灌的）")
+ok(SourceVariables.variable(for: orphan).isEmpty, "⭐⭐⭐ 落盘那一格也清空了")
+let own = "form-gate-#own"
+SourceVariables.clear(for: own)
+SourceVariables.setVariable("{\"server\":\"https://v1\"}", for: own, origin: .station)
+let seeded4 = SourceVariables.stationVariableToSeed(for: own)
+ok(seeded4.contains("server"), "⭐⭐⭐ 站方自己写过 map ⇒ 不许清（大灰狼的线路表）")
+for u in [uaa, dhl, host, orphan, own] { SourceVariables.clear(for: u) }
 
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

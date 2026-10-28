@@ -176,6 +176,19 @@ run_swift_gate; rc=$?
 [ $rc -ne 0 ] && ok 0 "去掉静态扫描 ⇒ Swift 门禁变红 ✅" || { ok 1 "去掉静态扫描 ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
 restore
 
+echo "=== ⑩ 去掉【结构性判据】（站方没写过 ⇒ 宿主灌的 ⇒ 该清） ==="
+python3 - <<'PYMUT'
+p = "QiReaderLite/Core/SourceVariables.swift"
+s = open(p, encoding="utf-8").read()
+old = "let isHostPollution = !stationWroteIt"
+new = "let isHostPollution = false"
+assert old in s, "锚点没找到"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PYMUT
+run_swift_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "去掉结构性判据 ⇒ Swift 门禁变红 ✅" || { ok 1 "去掉结构性判据 ⇒ 门禁**没红**"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }
+restore
+
 echo "=== ⑩ 复原后门禁必须恢复绿（证明脚本没把文件改坏） ==="
 run_swift_gate; rc=$?
 [ $rc -eq 0 ] && ok 0 "Swift 门禁恢复绿 ✅" || { ok 1 "Swift 门禁复原后还是红 ⇒ 脚本把文件改坏了！"; tail -14 "$TMP/m$$/out.txt" 2>/dev/null; }

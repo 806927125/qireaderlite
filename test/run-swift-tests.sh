@@ -118,7 +118,7 @@ echo
 echo "=== 编译 Core/SourceVariables.swift（swiftc 真编）==="
 mkdir -p "$TMP/vars"
 cp test/vars-merge-test.swift "$TMP/vars/main.swift"
-if ! "$SWIFTC" -O "$TMP/vars/main.swift" QiReaderLite/Core/SourceVariables.swift QiReaderLite/Core/StationVarForm.swift -o "$TMP/vars-test" 2>"$TMP/err4.txt"; then
+if ! "$SWIFTC" -O "$TMP/vars/main.swift" QiReaderLite/Core/SourceVariables.swift QiReaderLite/Core/StationVarForm.swift QiReaderLite/Core/EngineLog.swift -o "$TMP/vars-test" 2>"$TMP/err4.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err4.txt" | head -30
   exit 1
@@ -139,7 +139,7 @@ echo
 echo "=== 编译 Core/SourceVariables.swift（站方变量形态）==="
 mkdir -p "$TMP/form"
 cp test/station-var-form-test.swift "$TMP/form/main.swift"
-if ! "$SWIFTC" -O "$TMP/form/main.swift" QiReaderLite/Core/SourceVariables.swift QiReaderLite/Core/StationVarForm.swift -o "$TMP/form-test" 2>"$TMP/err4e.txt"; then
+if ! "$SWIFTC" -O "$TMP/form/main.swift" QiReaderLite/Core/SourceVariables.swift QiReaderLite/Core/StationVarForm.swift QiReaderLite/Core/EngineLog.swift -o "$TMP/form-test" 2>"$TMP/err4e.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err4e.txt" | head -30
   exit 1
@@ -185,6 +185,7 @@ cp test/station-var-form-test.swift "$TMP/form/main.swift"
 if ! "$SWIFTC" -O "$TMP/form/main.swift" \
       QiReaderLite/Core/StationVarForm.swift \
       QiReaderLite/Core/SourceVariables.swift \
+      QiReaderLite/Core/EngineLog.swift \
       -o "$TMP/form-test" 2>"$TMP/err4f.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err4f.txt" | head -30
@@ -256,6 +257,7 @@ if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
         QiReaderLite/Core/SourceRawArchive.swift \
         QiReaderLite/Core/LegadoCompat.swift \
         QiReaderLite/Core/SourceVariables.swift \
+        QiReaderLite/Core/EngineLog.swift \
         QiReaderLite/Core/StationVarForm.swift \
         QiReaderLite/Core/EngineBackend.swift \
         QiReaderLite/Core/ServiceError.swift \

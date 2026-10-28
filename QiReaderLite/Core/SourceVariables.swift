@@ -196,17 +196,19 @@ enum SourceVariables {
         //   一次跑就能定位：槽里是什么 / 形态判成什么 / 为什么没清 ⭐
         let f = form(for: sourceUrl, jsLib: jsLib)
         let isMap = isMapStyleVariable(current)
-        NSLog("[变量] 槽=\(current.prefix(60)) 形态=\(f.rawValue) 取过默认表=\(defaultTableFetched(sourceUrl)) 是map=\(isMap)")
+        engineLog("[变量] 槽=\(current.prefix(50)) 形态=\(f.rawValue) jsLib=\(jsLib?.count ?? -1) 字 取过默认表=\(defaultTableFetched(sourceUrl)) 是map=\(isMap)")
         guard !current.isEmpty else { return "" }
-        guard f == .credential, isMap else {
-            if f == .credential && !isMap {
-                NSLog("[变量] 迁移=没清（槽里不是 map，是凭据本身）")
-            } else if f != .credential {
-                NSLog("[变量] 迁移=没清（形态=\(f.rawValue)，不是凭据形态 ⇒ 不许动）")
-            }
+        // ⭐⭐⭐⭐⭐ **结构性判据**：**站方从没写过这一格**（没有 v2 证据）
+        //   ⇒ 这一格里的东西**只可能是宿主灌的**（旧的 setVariableAndVars / 选线写回）⭐⭐⭐
+        //   ⇒ 哪怕静态扫描判不出形态（老源 / jsLib 丢了）⇒ **该清还是清** ⭐⭐⭐
+        //   ⇒ 反过来：站方自己写过 map（大灰狼的线路表）⇒ 有证据 ⇒ **不清** ⭐⭐⭐
+        let stationWroteIt = UserDefaults.standard.string(forKey: stationFormPrefix + sourceUrl) != nil
+        let isHostPollution = !stationWroteIt
+        guard isMap, (f == .credential || (f == .unknown && isHostPollution)) else {
+            engineLog("[变量] 迁移=没清（形态=\(f.rawValue) 站方写过=\(stationWroteIt) 是map=\(isMap)）")
             return current
         }
-        NSLog("[变量] 迁移=清了（凭据形态却躺着一个 map ⇒ 宿主灌的污染）")
+        engineLog("[变量] 迁移=清了（形态=\(f.rawValue) 站方写过=\(stationWroteIt) ⇒ 宿主灌的 map）")
         setVariable("", for: sourceUrl, origin: .app)
         return ""
     }

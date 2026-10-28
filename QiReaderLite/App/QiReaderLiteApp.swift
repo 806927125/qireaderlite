@@ -11,6 +11,8 @@ struct QiReaderLiteApp: App {
         // ⭐⭐⭐ **build252：老 JS 引擎（WKWebView）退役**（用户明确要求：「老引擎给我去掉先」）
         //   · 现在**只有一个引擎**（新 Swift 引擎 `legado-engine`）⇒ 没有开关、没有回退
         //   · 旧的一次性迁移键（曾把主链路强制切回老引擎）⇒ **彻底清掉**（否则会一直把开关写回 false）⭐⭐⭐
+        // ⭐⭐⭐ 引擎日志出口挂上面板（诊断要用户「复制日志」就能看到 ⇒ 不用去 Xcode 看控制台）
+        EngineLogBootstrap.install()
         UserDefaults.standard.removeObject(forKey: "qr.useNewEngine")
         UserDefaults.standard.removeObject(forKey: "qr.fallbackLegacy")
         UserDefaults.standard.removeObject(forKey: "qr.engine.legacy240")

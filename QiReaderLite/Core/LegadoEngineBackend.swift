@@ -142,8 +142,18 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
 /// ⚠️ `RuleSandbox` 是 **`@MainActor`** ⇒ 后台线程（引擎在那边跑）**不能直接调**
 /// ⇒ 否则编译期就报「call to main actor-isolated instance method in a synchronous
 ///    nonisolated context」（**真机 CI 才暴露** ⇒ 沙盒 stub 必须也标 `@MainActor` 才拦得住）⭐
-func engineLog(_ message: String) {
-    Task { @MainActor in RuleSandbox.shared.appendLog(message) }
+
+/// ⭐⭐⭐ **把引擎日志挂到「引擎日志」面板**（App 启动时挂一次 ⇒ 别处直接用 `engineLog`）
+///
+/// ⚠️ **为什么要挂**（2026-10-28）：诊断写在 `NSLog` 里 ⇒ **只进设备控制台，用户看不到**
+///   ⇒ 真机排查只能靠「让用户去 Xcode 看控制台」⇒ 一轮一条信息 ⇒ 极慢 ⭐⭐⭐
+///   ⇒ 挂上面板 ⇒ 用户「复制日志」就有 ⭐⭐⭐
+enum EngineLogBootstrap {
+    static func install() {
+        EngineLog.sink = { message in
+            Task { @MainActor in RuleSandbox.shared.appendLog(message) }
+        }
+    }
 }
 
 // ⭐⭐⭐ **把【引擎的诊断】送进 App 的「引擎日志」**（2026-10-24 真机栽的）
