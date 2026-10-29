@@ -259,6 +259,27 @@ else
 fi
 
 printf "%s\n" "────────────────────────────────────────────────────"
+
+# ── 变异测试（shell 层）：把实现改坏 ⇒ 门禁必须红 ──
+# ⭐⭐⭐⭐⭐ 2026-10-29 新增：**凭据双写**（站方变量 ⇄ 书源变量 `token` 项）
+#   ⇒ 变异脚本会**真的改源码** ⇒ 跑之前必须 commit（否则改坏的东西会留在工作区）⭐⭐⭐
+if git diff --quiet -- QiReaderLite/ 2>/dev/null; then
+  if bash test/mutation-credential-mirror.sh > /tmp/mutation-cred.out 2>&1; then
+    printf "%-24s %-22s %s\n" "变异(凭据双写)" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-cred.out | tail -1)"
+    MP="$(grep -oE '通过 [0-9]+' /tmp/mutation-cred.out | tail -1 | grep -oE '[0-9]+')"
+    TOTAL_PASS=$((TOTAL_PASS + ${MP:-0}))
+  else
+    printf "%-24s %-22s %s\n" "变异(凭据双写)" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-cred.out | tail -1)"
+    grep -E "✗|COMPILE_ERROR" /tmp/mutation-cred.out | head -5
+    TOTAL_FAIL=$((TOTAL_FAIL+1))
+    FAILED+=("变异(凭据双写)")
+  fi
+else
+  printf "%-24s %-22s %s\n" "变异(凭据双写)" "⚠️ 跳过" "QiReaderLite/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
+  SKIPPED+=("变异(凭据双写)")
+fi
+
+printf "%s\n" "────────────────────────────────────────────────────"
 printf "合计通过 %d 项 / 失败 %d 个门禁\n" "$TOTAL_PASS" "$TOTAL_FAIL"
 
 

@@ -268,6 +268,71 @@ enum SourceVariables {
         return true
     }
 
+    // MARK: - ⭐⭐⭐⭐⭐ 凭据双写（站方变量 ⇄ 书源变量的 `token` 项）
+
+    /// ⭐⭐⭐⭐⭐ **凭据形态的站方变量 ⇒ 同步镜像到书源变量的 `token` 项**
+    ///
+    /// ⚠️⚠️ **为什么必须有（2026-10-29 真机 401「目录 0 章」实证）**：
+    ///   Legado 的**站方变量**和**书源变量**是**两套**：
+    ///   · `source.getVariable()` / `setVariable(str)` ⇒ **站方变量**（一整串）
+    ///   · `source.get(k)` / `put(k,v)`            ⇒ **书源变量**（map）
+    ///   ⇒ **两套互不相通** ⭐⭐⭐
+    ///
+    ///   而**不同版本的站方源把 token 存在不同的地方**：
+    ///   · 老版：`setVariable(token)`（站方变量）+ `Bearer ${source.getVariable()}`
+    ///   · **新版：`put('token', t)`（书源变量）+ `Bearer ${source.get('token')}`** ⭐⭐⭐
+    ///
+    ///   ⇒ 宿主只把 token 写进「站方变量」⇒ **新版站方源读 `source.get('token')` 拿到空**
+    ///   ⇒ 请求头 `authorization: "Bearer "` ⇒ **401** ⇒ 目录 0 章 ⭐⭐⭐
+    ///   ⇒ 而**探针读的是 `getVariable()`** ⇒ 探针显示「有 token」⇒ **看着一切正常** ⇒ 极难查 ⭐
+    ///
+    /// ⭐⭐⭐ **解法 = 两套都写**（不是挑一套）⇒ 新旧版站方源都能读到 ⭐
+    ///
+    /// ⚠️⚠️ **只对「凭据形态」做**（map 形态的源**绝不碰**）：
+    ///   map 形态的源（🍅大灰狼 / NovelHub）的站方变量是**线路表**（一份 map）
+    ///   ⇒ 往它的书源变量塞 token = **制造污染** ⭐⭐⭐
+    ///
+    /// - Parameters:
+    ///   - value: 站方变量的值（凭据形态 ⇒ 一串 token）
+    ///   - sourceUrl: 源
+    ///   - jsLib: 站方 jsLib（用于判形态）
+    static func mirrorCredentialToVars(_ value: String, for sourceUrl: String, jsLib: String? = nil) {
+        guard !sourceUrl.isEmpty else { return }
+        let t = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        // ⭐⭐⭐ **凭据形态判定**：**不是 JSON map 的标量**才是凭据
+        //   （map 形态的站方变量 = 线路表 ⇒ 塞 token 就是污染 ⇒ 绝不做）
+        guard !isMapStyleVariable(t) else { return }
+        // ⭐⭐⭐ **形态证据也要是凭据**（站方自己写过 map 的源 ⇒ 不许塞）
+        guard form(for: sourceUrl, jsLib: jsLib) != .map else { return }
+        // ⭐⭐⭐ **已有 token 且不一样 ⇒ 不覆盖**（站方自己写的值优先）
+        if let cur = varsMap(for: sourceUrl)["token"], !cur.isEmpty, cur != t { return }
+        var m = varsMap(for: sourceUrl)
+        m["token"] = t
+        setVars(varsJSON(m), for: sourceUrl)
+    }
+
+    /// ⭐⭐⭐ **读某个源的书源变量（map 形态）**
+    ///
+    /// ⚠️ 解析失败 ⇒ 返回**空 map**（不是原串）⇒ 调用方只当 map 用
+    static func varsMap(for sourceUrl: String) -> [String: String] {
+        let raw = vars(for: sourceUrl)
+        guard !raw.isEmpty,
+              let d = raw.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        var out: [String: String] = [:]
+        for (k, v) in o { out[k] = v is String ? (v as! String) : String(describing: v) }
+        return out
+    }
+
+    /// ⭐⭐⭐ **把 map 序列化回书源变量串**
+    static func varsJSON(_ m: [String: String]) -> String {
+        guard !m.isEmpty,
+              let d = try? JSONSerialization.data(withJSONObject: m),
+              let s = String(data: d, encoding: .utf8) else { return "" }
+        return s
+    }
+
     /// ⭐⭐⭐ **线路 / 默认表写回**：**书源变量**总是写；**站方变量**只给「map 形态」的源 ⭐
     ///
     /// - Parameters:

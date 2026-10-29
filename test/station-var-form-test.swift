@@ -153,5 +153,87 @@ let seeded4 = SourceVariables.stationVariableToSeed(for: own)
 ok(seeded4.contains("server"), "⭐⭐⭐ 站方自己写过 map ⇒ 不许清（大灰狼的线路表）")
 for u in [uaa, dhl, host, orphan, own] { SourceVariables.clear(for: u) }
 
+// ============================================================
+// ⭐⭐⭐⭐⭐ ⑧ 凭据双写（2026-10-29 真机 401「目录 0 章」根因）
+//
+// ────────────────────────────────────────────────────────────
+// ⚠️ **根因**：Legado 的**站方变量**与**书源变量**是**两套**：
+//   · `source.getVariable()` / `setVariable(str)` ⇒ 站方变量（一整串）
+//   · `source.get(k)` / `put(k,v)`             ⇒ 书源变量（map）
+//   ⇒ **互不相通** ⭐⭐⭐
+//
+// ⚠️ **不同版本的站方源把 token 存在不同的地方**：
+//   · 老版：`setVariable(token)` + `Bearer ${source.getVariable()}`
+//   · **新版：`put('token', t)` + `Bearer ${source.get('token')}`** ⭐⭐⭐
+//   ⇒ 宿主只写站方变量 ⇒ **新版站方源读 `source.get('token')` = 空**
+//   ⇒ 请求头 `authorization: "Bearer "` ⇒ **401** ⇒ 目录 0 章 ⭐⭐⭐
+//   ⇒ 而探针读 `getVariable()` ⇒ 显示「有 token」⇒ **看着一切正常** ⭐
+//
+// ⭐ **修法 = 两套都写**（不是挑一套）⇒ 新旧版站方源都能读到 ⭐
+// ⚠️ **只对「凭据形态」做**（map 形态塞 token = 制造污染 ⇒ 绝不做）
+// ============================================================
+print("\n=== ⑧ 凭据双写：站方变量 ⇄ 书源变量的 `token` 项 ===")
+let newUaa = "form-gate-#newuaa"
+let mapUaa = "form-gate-#mapuaa"
+for u in [newUaa, mapUaa] { SourceVariables.clear(for: u) }
+
+// ① ⭐⭐⭐ **新版站方源**：jsLib 只用 `source.get('token')`（压根不碰 getVariable）
+//   ⇒ 静态扫描判 **unknown**（不是 map）⇒ 双写**放行** ⭐
+let newJsLib = "let h = {authorization: 'Bearer ' + source.get('token')}"
+ok(SourceVariables.form(for: newUaa, jsLib: newJsLib) == .unknown,
+   "⭐⭐⭐ 新版站方源（只用 get('token')）⇒ 形态 unknown（扫描器只认 getVariable/setVariable）")
+SourceVariables.setVariable("eyJpZCI6IjRhZDJhYmUwN2M1ZWRlZDEi", for: newUaa, origin: .station)
+SourceVariables.mirrorCredentialToVars("eyJpZCI6IjRhZDJhYmUwN2M1ZWRlZDEi", for: newUaa, jsLib: newJsLib)
+ok(SourceVariables.varsMap(for: newUaa)["token"] == "eyJpZCI6IjRhZDJhYmUwN2M1ZWRlZDEi",
+   "⭐⭐⭐⭐⭐ 凭据双写：token 也进了书源变量 ⇒ 新版站方 `source.get('token')` 读得到 ⇒ 不再是空 Bearer")
+
+// ② ⭐⭐⭐⭐⭐ **老版站方源**（用 getVariable）⇒ 站方变量那一格仍然有效（不能回归）
+ok(SourceVariables.variable(for: newUaa) == "eyJpZCI6IjRhZDJhYmUwN2M1ZWRlZDEi",
+   "⭐⭐⭐ 站方变量那一格仍然原样保留（老版站方源照样读得到）")
+
+// ③ ⭐⭐⭐⭐⭐ **map 形态的源 ⇒ 绝不许塞 token**（那是污染）
+//   ⚠️⚠️ **两道守卫覆盖的场景不同**（变异测试逼出来的）⭐⭐⭐：
+//   · 第①道（值不是 JSON map）⇒ 挡「值本身是 map」的
+//   · 第②道（形态证据不是 map）⇒ 挡「值是标量、但这个源是 map 形态」的
+//   ⇒ **两个场景都要测**（只测一个 ⇒ 变异测试会打不中 ⇒ 门禁没牙齿）⭐⭐⭐
+SourceVariables.setVariable("{\"server\":\"https://v1\"}", for: mapUaa, origin: .station)
+// ⭐ 场景 B：裸标量（不是 JSON）⇒ 一定穿过第①道 ⇒ 真正检验第②道
+SourceVariables.mirrorCredentialToVars("裸标量token", for: mapUaa,
+                                        jsLib: "let d=JSON.parse(source.getVariable())")
+ok(SourceVariables.varsMap(for: mapUaa)["token"] == nil,
+   "⭐⭐⭐⭐⭐ 场景 B（值是标量 + 形态证据 = map）⇒ **不写** token 进书源变量")
+
+// ⭐ 场景 A：**值本身是 JSON map**（凭据形态的源里躺着污染 map）⇒ 第①道就该挡
+let polluteUaa = "form-gate-#polluteuaa"
+SourceVariables.clear(for: polluteUaa)
+SourceVariables.setVariable("{\"androidId\":\"b4e6\"}", for: polluteUaa, origin: .app)
+SourceVariables.mirrorCredentialToVars("{\"androidId\":\"b4e6\"}", for: polluteUaa,
+                                        jsLib: "let h='Bearer '+source.getVariable()")
+ok(SourceVariables.varsMap(for: polluteUaa)["token"] == nil,
+   "⭐⭐⭐⭐⭐ 场景 A（值本身是 JSON map）⇒ **不写** token 进书源变量（那份是污染，不是凭据）")
+
+// ④ ⭐⭐⭐ 站方自己写的 token ≠ 宿主那份 ⇒ 不许覆盖
+let keepUaa = "form-gate-#keepuaa"
+SourceVariables.clear(for: keepUaa)
+SourceVariables.setVars("{\"token\":\"站方自己写的\"}", for: keepUaa)
+SourceVariables.setVariable("宿主这份", for: keepUaa, origin: .station)
+SourceVariables.mirrorCredentialToVars("宿主这份", for: keepUaa, jsLib: newJsLib)
+ok(SourceVariables.varsMap(for: keepUaa)["token"] == "站方自己写的",
+   "⭐⭐⭐ 站方自己写的 token 优先 ⇒ 宿主那份不许覆盖它")
+
+// ⑤ ⭐⭐⭐ 幂等：双写两次结果一样（不重复折腾）
+SourceVariables.mirrorCredentialToVars("eyJpZCI6IjRhZDJhYmUwN2M1ZWRlZDEi", for: newUaa, jsLib: newJsLib)
+ok(SourceVariables.varsMap(for: newUaa)["token"] == "eyJpZCI6IjRhZDJhYmUwN2M1ZWRlZDEi",
+   "⭐⭐⭐ 双写是幂等的（重复写结果不变）")
+
+// ⑥ ⭐⭐⭐ 空值 ⇒ 不写（清空站方变量不该留下旧 token）
+let emptyUaa = "form-gate-#emptyuaa"
+SourceVariables.clear(for: emptyUaa)
+SourceVariables.mirrorCredentialToVars("", for: emptyUaa, jsLib: newJsLib)
+ok(SourceVariables.varsMap(for: emptyUaa)["token"] == nil,
+   "⭐⭐⭐ 空凭据 ⇒ 不写进书源变量")
+
+for u in [newUaa, mapUaa, polluteUaa, keepUaa, emptyUaa] { SourceVariables.clear(for: u) }
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

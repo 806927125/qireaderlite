@@ -387,6 +387,12 @@ struct SourceLoginSheet: View {
                             // ⭐⭐⭐ **用户自己填的凭据**（token 串）⇒ 原样进站方变量 ⭐
                             //   ⇒ 而且它**就是证据**：这一格放的是凭据 ⇒ 凭据形态 ⭐
                             SourceVariables.setVariable(merged, for: source.bookSourceUrl, origin: .station)
+                            // ⭐⭐⭐⭐⭐ **凭据双写**（2026-10-29 真机 401「目录 0 章」根因）
+                            //   ⇒ **新版**站方源从**书源变量**的 `token` 项读凭据（`source.get('token')`）
+                            //   ⇒ 只写站方变量 ⇒ 新版源读不到 ⇒ 请求头 `Bearer ` 空 ⇒ 401 ⭐⭐⭐
+                            //   ⇒ 两套都写 ⇒ 新旧版站方源都能读到 ⭐
+                            //   ⚠️ 必须在 setVariable **之后**（形态证据要先落盘 ⇒ 双写才知道该不该做）⭐
+                            SourceVariables.mirrorCredentialToVars(merged, for: source.bookSourceUrl, jsLib: source.jsLib)
                         }
                     }
                     variableText = SourceVariables.variable(for: source.bookSourceUrl)

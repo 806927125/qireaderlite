@@ -49,6 +49,10 @@ final class SourceService {
             if let v = obj["__sourceVariable"] as? String {
                 SourceVariables.setVariable(v, for: source.bookSourceUrl,
                                            origin: Self.stationWroteIt(obj) ? .station : .app)
+                // ⭐⭐⭐⭐⭐ **凭据双写**（2026-10-29 真机 401「目录 0 章」根因）
+                //   ⇒ 新版站方源把 token 放**书源变量**的 `token` 项（`put`/`get`）
+                //   ⇒ 只写站方变量 ⇒ `source.get('token')` = 空 ⇒ `Bearer ` 空 ⇒ 401 ⭐⭐⭐
+                SourceVariables.mirrorCredentialToVars(v, for: source.bookSourceUrl, jsLib: source.jsLib)
             }
             if let l = obj["__loginInfo"] as? String {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
@@ -134,6 +138,10 @@ final class SourceService {
             if let v = obj["__sourceVariable"] as? String {
                 SourceVariables.setVariable(v, for: source.bookSourceUrl,
                                            origin: Self.stationWroteIt(obj) ? .station : .app)
+                // ⭐⭐⭐⭐⭐ **凭据双写**（2026-10-29 真机 401「目录 0 章」根因）
+                //   ⇒ 新版站方源把 token 放**书源变量**的 `token` 项（`put`/`get`）
+                //   ⇒ 只写站方变量 ⇒ `source.get('token')` = 空 ⇒ `Bearer ` 空 ⇒ 401 ⭐⭐⭐
+                SourceVariables.mirrorCredentialToVars(v, for: source.bookSourceUrl, jsLib: source.jsLib)
             }
             if let l = obj["__loginInfo"] as? String {
                 SourceVariables.setLoginInfoJSON(l, for: source.bookSourceUrl)
