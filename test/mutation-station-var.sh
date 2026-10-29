@@ -323,6 +323,19 @@ run_rewrite_gate; rc=$?
 [ $rc -ne 0 ] && ok 0 "上游不拆后缀 ⇒ 门禁变红 ✅" || { ok 1 "上游不拆后缀 ⇒ 门禁**没红**"; tail -8 "$TMP/rewrite.txt"; }
 restore
 
+echo "=== ㉑ 发现页翻页：不改分类 URL 的 page 参数 ==="
+python3 - <<'PYMUT'
+p = "QiReaderLite/Core/LegadoEngineBackend.swift"
+s = open(p, encoding="utf-8").read()
+old = "        let kindUrl = Self.exploreURL(rawKindUrl, page: page)"
+new = "        let kindUrl = rawKindUrl"
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PYMUT
+run_rewrite_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "不改 page 参数 ⇒ 门禁变红 ✅" || { ok 1 "不改 page 参数 ⇒ 门禁**没红**"; tail -8 "$TMP/rewrite.txt"; }
+restore
+
 echo "=== ⑲ 复原后改写门禁必须恢复绿 ==="
 run_rewrite_gate; rc=$?
 [ $rc -eq 0 ] && ok 0 "toc-jsonpath-rewrite 恢复绿 ✅" || { ok 1 "toc-jsonpath-rewrite 复原后还是红 ⇒ 脚本把文件改坏了！"; tail -10 "$TMP/rewrite.txt"; }

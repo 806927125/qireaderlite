@@ -83,6 +83,26 @@ const app = stripComments(fs.readFileSync(F.app, 'utf8'));
 const session = stripComments(fs.readFileSync(F.session, 'utf8'));
 const book = stripComments(fs.readFileSync(F.book, 'utf8'));
 
+/** ⭐ 取函数体（**签名跨行**也能用：找 `func name(` 之后的第一个 `{`） */
+function bodyOfLoose(src, prefix) {
+  const i = src.indexOf(prefix);
+  if (i < 0) return null;
+  let j = i + prefix.length;
+  while (j < src.length && src[j] !== '{') {
+    if (src[j] === '\n' && j + 1 < src.length && src[j + 1] === '\n') return null; // 跨了两行还没到 {
+    j++;
+  }
+  let depth = 0, k = j;
+  while (k < src.length) {
+    const ch = src[k];
+    if (ch === '"') { k++; while (k < src.length && src[k] !== '"') { if (src[k] === '\\') k++; k++; } k++; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return src.slice(j, k + 1); }
+    k++;
+  }
+  return null;
+}
+
 console.log('=== ① 目录规则改写：JSON 列表项的字段规则要写成 JSONPath ===');
 const tocRule = bodyOf(backend, 'static func tocRule(_ r: TocRule) -> LegadoCore.RuleFields');
 ok(!!tocRule, '得有 tocRule(_:)');
@@ -143,6 +163,23 @@ const coverData = bodyOf(session, 'func coverDataURL(_ urlString: String) async 
 ok(!!coverData, '得有 coverDataURL(_:)');
 if (coverData) {
   ok(/AnalyzeUrl\.request\(/.test(coverData), '⭐⭐ 读者背景封面也要走 AnalyzeUrl.request');
+}
+
+console.log('\n=== ③ 发现页翻页：分类 URL 的 page 参数 ===');
+// ⭐⭐⭐ 站方（✿UAA）的分类 URL = `/console/explore?type=novel&page=1&size=8`
+//   ⇒ `page=1` 是站方算分类时**烤死**的 ⇒ 翻第 2 页还发它 ⇒ 同一页 ⇒ 「没有翻页功能」
+const exploreFn = bodyOf(backend, 'static func exploreURL(_ raw: String, page: Int) -> String');
+ok(!!exploreFn, '得有 exploreURL(_:page:)');
+if (exploreFn) {
+  ok(/page=/.test(exploreFn), '⭐⭐ 改的必须是 query 里的 page= 参数');
+  ok(/components\(separatedBy: "&"\)/.test(exploreFn),
+     '⭐⭐⭐ 只改 page 这一项（其余参数逐字保留 ⇒ 签名参数不能被改坏）');
+}
+const runExplore = bodyOfLoose(backend, 'private func runExplore(');
+ok(!!runExplore, '得有 runExplore(_:_:_:)');
+if (runExplore) {
+  ok(/Self\.exploreURL\(/.test(runExplore),
+     '⭐⭐⭐ runExplore 必须把 kindUrl 过 exploreURL（否则翻页还是同一个 URL）');
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`);

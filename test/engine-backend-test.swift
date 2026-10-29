@@ -241,5 +241,32 @@ ok(e6d.ruleToc?.chapterName == "##^[^|]*\\|\\|([\\s\\S]*)", "正则抠名的规�
 let e6e = LegadoEngineBackend.convert(tocSource("@js:\n[]", "title", "https://x.com/a?b=1"))
 ok(e6e.ruleToc?.chapterUrl == "https://x.com/a?b=1", "绝对 URL 的 chapterUrl 不改")
 
+// ── ⭐⭐⭐⭐⭐ ⑦ 发现页翻页：分类 URL 里的 `page=` 要跟着请求页码走（2026-10-29 真机）────
+//   症状：发现页**没有翻页功能**（加载更多按了还是同一页）
+//   根因：站方（✿UAA）的分类 URL = `/console/explore?type=novel&page=1&size=8`
+//         ⇒ **`page=1` 是站方算分类时烤死的** ⇒ 翻第 2 页还发这个 URL ⇒ 站方返回同一页
+//         ⇒ App 的 `addedNew == 0` ⇒ 判定「没有更多了」⇒ **看起来像没有翻页** ⭐⭐⭐
+print("\n=== ⑦ 发现页翻页：分类 URL 的 page 参数 ===")
+let u1 = LegadoEngineBackend.exploreURL("https://www.uaa1234.com/console/explore?type=novel&page=1&size=8", page: 3)
+ok(u1 == "https://www.uaa1234.com/console/explore?type=novel&page=3&size=8",
+   "⭐⭐⭐ page=1 ⇒ 改成 page=3（其余参数一个字节都不动）")
+ok(LegadoEngineBackend.exploreURL("https://www.uaa1234.com/console/explore?type=novel&page=1&size=8", page: 1)
+   == "https://www.uaa1234.com/console/explore?type=novel&page=1&size=8",
+   "⭐⭐ 第 1 页不改（本来就是 page=1）")
+ok(LegadoEngineBackend.exploreURL("https://x/a?type=novel", page: 3) == "https://x/a?type=novel",
+   "没有 page 参数 ⇒ 不动（别的参数名由站方自己的模板管）")
+// ⚠️ 签名参数必须**逐字保留**（重新拼 query 会把签名改坏 ⇒ 404）
+let signed = "https://x/a?sign=abc%2Fdef%3D&page=1&size=8&t=1699999999"
+let u2 = LegadoEngineBackend.exploreURL(signed, page: 5)
+ok(u2.contains("sign=abc%2Fdef%3D") && u2.contains("t=1699999999") && u2.contains("page=5"),
+   "⭐⭐⭐ 其余参数（含百分号编码的签名）逐字保留")
+ok(LegadoEngineBackend.exploreURL("https://x/a?page=1", page: 4) == "https://x/a?page=4",
+   "page 是最后一个参数时也能改")
+ok(LegadoEngineBackend.exploreURL("https://x/a", page: 4) == "https://x/a", "没有 ? ⇒ 不动")
+ok(LegadoEngineBackend.exploreURL("https://x/a?page={{page}}&size=8", page: 4)
+   == "https://x/a?page=4&size=8",
+   "⭐ 已有 {{page}} 模板 ⇒ 替换成页码（结果与引擎插值一致，但更稳）")
+ok(LegadoEngineBackend.exploreURL("", page: 4) == "", "空串 ⇒ 不动")
+
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

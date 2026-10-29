@@ -714,8 +714,18 @@ final class LegadoEngineBackend: @unchecked Sendable {
     /// ⭐ **发现**
     private func runExplore(_ session: Session, _ engine: SourceEngine,
                             _ payload: [String: Any]) throws -> Any {
-        let kindUrl = (payload["kindUrl"] as? String) ?? ""
+        let rawKindUrl = (payload["kindUrl"] as? String) ?? ""
         let page = (payload["page"] as? Int) ?? 1
+        // ⭐⭐⭐⭐⭐ **分类 URL 里的 `page` 参数要跟着请求的页码走**（2026-10-29 真机「发现页没有翻页功能」）
+        //   ⇒ 站方（✿UAA）的分类 URL 是 `/console/explore?type=novel&page=1&size=8`
+        //   ⇒ **`page=1` 是站方 JS 在算分类时烤死的**（`_page` 那时是 1）
+        //   ⇒ 翻第 2 页时如果还发这个 URL ⇒ **站方返回同一页** ⇒ `addedNew == 0`
+        //   ⇒ App 判定「没有更多了」⇒ **看起来像没有翻页功能** ⭐⭐⭐
+        //   ⇒ 修法：把 URL 里 query 的 `page=` 改成请求的页码（其余**一个字节都不动**）
+        let kindUrl = Self.exploreURL(rawKindUrl, page: page)
+        if page > 1 {
+            engineLog("[发现] 第 \(page) 页的分类 URL = \(String(kindUrl.prefix(140)))")
+        }
         // ⭐⭐⭐⭐⭐ **失败时把【引擎的诊断行】带进错误**（2026-10-25 真机实证）
         //   ⇒ 以前只有「emptyResult(\"bookList\")」⇒ 用户完全看不到引擎看到了什么 ⇒ 只能猜 ⭐⭐⭐
         //   ⇒ 诊断行里有：**实际请求的 URL + 响应长度 + 响应前 200 字 + isJSON** ⇒ 一次定位 ⭐⭐⭐
@@ -725,6 +735,35 @@ final class LegadoEngineBackend: @unchecked Sendable {
         } catch {
             throw Self.diagnose(engine, "发现页", error)
         }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **把分类 URL 里 query 的 `page=` 改成请求的页码**
+    ///
+    /// ⚠️⚠️ **只改 `page` 这一个参数的值**（其余**一个字节都不动**）：
+    ///   聚合源的 URL 常带**签名参数** ⇒ 重新拼 query 会把签名改坏 ⇒ 404 ⭐⭐⭐
+    ///
+    /// ⚠️ **没有 `page` 参数就不动**（有的源用 `offset` / `start` 等别的参数名）
+    ///   ⇒ 那种源的翻页由**站方自己的 `{{page}}` 模板**处理（引擎的模板插值）⭐
+    static func exploreURL(_ raw: String, page: Int) -> String {
+        guard page > 1, !raw.isEmpty else { return raw }
+        guard let qIdx = raw.firstIndex(of: "?") else { return raw }
+        let head = String(raw[raw.startIndex..<qIdx])
+        let query = String(raw[raw.index(after: qIdx)...])
+        // ⭐ 只替换 query 里**第一个** `page=`（值到 `&` 或结尾为止）
+        let items = query.components(separatedBy: "&")
+        var replaced = false
+        var outItems: [String] = []
+        for item in items {
+            if !replaced, let eq = item.firstIndex(of: "="),
+               String(item[item.startIndex..<eq]) == "page" {
+                outItems.append("page=\(page)")
+                replaced = true
+            } else {
+                outItems.append(item)
+            }
+        }
+        guard replaced else { return raw }
+        return head + "?" + outItems.joined(separator: "&")
     }
 
     /// ⭐⭐⭐⭐⭐ **把引擎的失败诊断拼进宿主错误**（真机日志能直接看出真凶）
