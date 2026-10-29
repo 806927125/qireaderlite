@@ -38,7 +38,12 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await RuleSandbox.shared.invoke("login", p, source: source)
+        // ⭐⭐⭐⭐⭐ **登录也走新引擎**（2026-10-29 补完迁移的最后一截）
+        //   ⇒ 以前走老引擎（**另一台 WKWebView**）⇒ **站方变量的语义是两套**
+        //     （老引擎 = 整份书源变量；新引擎 = 站方变量那一串）
+        //   ⇒ **登录拿到的 token 和目录用的 token 不是一回事** ⭐⭐⭐
+        //   ⇒ 新引擎早就实现了 `login`（返回形状逐字相同：`ok`/`messages`/`result`/`error`）⭐
+        let raw = try await Self.invokeEngine("login", p, source: source)
         // 登录动作会改书籍变量 / 登录信息 → 落盘
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
@@ -87,7 +92,8 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         var p: [String: Any] = ["source": srcDict]
         p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await RuleSandbox.shared.invoke("loginProbe", p, source: source)
+        // ⭐⭐⭐⭐⭐ **登录态检测也走新引擎**（同上 ⇒ 两套语义的问题）
+        let raw = try await Self.invokeEngine("loginProbe", p, source: source)
         let dict = raw as? [String: Any] ?? [:]
         if let e = dict["error"] as? String, !e.isEmpty {
             throw ServiceError.engineFailed(e)
@@ -924,7 +930,8 @@ final class SourceService {
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
         srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
-        guard let raw = try? await RuleSandbox.shared.invoke("sourceVars", ["source": srcDict], source: source),
+        // ⭐⭐⭐⭐⭐ **走新引擎**（2026-10-29 ⇒ 与登录/目录同一套站方变量语义）
+        guard let raw = try? await Self.invokeEngine("sourceVars", ["source": srcDict], source: source),
               let dict = raw as? [String: Any],
               let vars = dict["vars"] as? [String: Any] else { return [:] }
         // ⭐⭐⭐ **哪怕是空的也要落盘** ⇒ 记下「取过了」⭐
@@ -986,7 +993,8 @@ final class SourceService {
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
         srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
-        let raw = try await RuleSandbox.shared.invoke("sourceHosts", ["source": srcDict], source: source)
+        // ⭐⭐⭐⭐⭐ **走新引擎**（2026-10-29 ⇒ 与登录/目录同一套站方变量语义）
+        let raw = try await Self.invokeEngine("sourceHosts", ["source": srcDict], source: source)
         let dict = raw as? [String: Any] ?? [:]
         return (dict["hosts"] as? [String]) ?? []
     }
@@ -1079,7 +1087,8 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         p["cookieSnapshot"] = CookieJar.snapshot()
-        let raw = try await RuleSandbox.shared.invoke("filterAction", p, source: source)
+        // ⭐⭐⭐⭐⭐ **走新引擎**（2026-10-29 ⇒ 与登录/目录同一套站方变量语义）
+        let raw = try await Self.invokeEngine("filterAction", p, source: source)
         // 站方自己写的源级变量 → 落盘（下次 exploreKinds 直接生效）
         if let obj = raw as? [String: Any],
            let v = obj["__sourceVars"] as? String {

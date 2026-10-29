@@ -55,6 +55,12 @@ FILES=(
   "QiReaderLite/Core/SourceRawArchive.swift"
   "QiReaderLite/Core/LegadoCompat.swift"
   "QiReaderLite/Core/ServiceError.swift"      # ⭐⭐⭐ 错误类型独立文件 ⇒ 两组都能编
+  # ⭐⭐⭐⭐⭐ **`EngineLog.swift` 也要编**（2026-10-29 补）
+  #   ⚠️⚠️ `LegadoEngineBackend.swift` / `SourceVariables.swift` 都调 `engineLog(...)`
+  #   ⇒ 它**在同一个模块** ⇒ 不编它 ⇒ typecheck 报「cannot find 'engineLog' in scope」
+  #   ⇒ **这个门禁从加进清单那天起就一直是红的**（⇒ 事实上的假绿：没人看它）⭐⭐⭐
+  "QiReaderLite/Core/EngineLog.swift"
+  "QiReaderLite/Core/AnalyzeUrl.swift"
 )
 
 # ⭐⭐⭐⭐⭐ **组 B：要链【真引擎】编的文件**（2026-10-25 补）
