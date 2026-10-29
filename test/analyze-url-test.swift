@@ -150,6 +150,18 @@ ok(coverReq?.value(forHTTPHeaderField: "User-Agent") == "UA/1", "⭐⭐ 后缀�
 ok(AnalyzeUrl.request("https://x/y.jpg")?.url?.absoluteString == "https://x/y.jpg",
    "没有后缀的普通 URL 不受影响")
 ok(AnalyzeUrl.request("") == nil, "空串 ⇒ nil（不是崩）")
+// ⭐⭐⭐ **被百分号编码过的后缀认不出来**（2026-10-29 真机：改了请求层还是占位图）
+//   ⇒ `URL(string:)` 对带 `{` 的串**不返回 nil** ⇒ 它会编码成 `%7B` ⇒ 后缀就废了 ⭐⭐⭐
+let encoded = "https://cdn.x/y.jpg,%7B%22method%22:%22GET%22%7D"
+ok(AnalyzeUrl.splitOptionsRaw(encoded).optionsJSON.isEmpty,
+   "⭐⭐⭐ 编码过的后缀（%7B）**认不出来**（所以必须在上游就保住原样）")
+ok(AnalyzeUrl.request(encoded)?.url?.absoluteString == encoded,
+   "⭐⭐⭐ 编码过的串会被整个当 URL 发出去 ⇒ 服务器 404/403（封面占位图的真凶）")
+// ⭐ splitOptionsRaw 返回**原始后缀文本**（不重新序列化 ⇒ 站方原文不改）
+let rawSplit = AnalyzeUrl.splitOptionsRaw(coverRaw)
+ok(rawSplit.url == "https://cdn.uaa010.com/file/bucket-media/image/cover/x.jpg", "splitOptionsRaw 拆出干净的 URL")
+ok(rawSplit.optionsJSON.hasPrefix("{") && rawSplit.optionsJSON.contains("Referer"),
+   "⭐ splitOptionsRaw 返回原始后缀文本（带请求头）")
 
 print("\n" + (fail == 0 ? "✅" : "❌") + " 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

@@ -221,12 +221,44 @@ public enum AnalyzeUrl {
 
     // MARK: - 字符判定
 
+    /// ⭐⭐⭐⭐⭐ **拆 `,{…}` 后缀（返回【原始】后缀文本，不重新序列化）**
+    ///
+    /// ⚠️⚠️⚠️ **为什么必须是「原始文本」（2026-10-29 真机：封面改了还是占位图）**：
+    ///   `URL(string:)` 对带 `{` 的串**不返回 nil**（Linux/iOS 实测）⇒ 它会
+    ///   **百分号编码**成 `%7B%22method%22…` ⇒ ⇒ **后缀已经废了**
+    ///   ⇒ 后面再调 `splitOptions` ⇒ 逗号后面是 `%7B` 不是 `{` ⇒ **认不出来**
+    ///   ⇒ ⇒ 不拆、不带请求头 ⇒ CDN 403 ⇒ **封面还是占位图** ⭐⭐⭐
+    ///
+    /// ⇒ 所以：**任何要保留后缀的地方，都得在【绝对化之前】拆** ⇒
+    ///   `splitOptionsRaw` 返回原始后缀文本 ⇒ 绝对化完再拼回去 ⇒ 后缀还在 ⭐
+    ///
+    /// ⚠️ **不重新序列化**（保持站方原文 ⇒ 免得键序/转义变了）
+    public static func splitOptionsRaw(_ raw: String) -> (url: String, optionsJSON: String) {
+        let chars = Array(raw)
+        var i = 0
+        while i < chars.count {
+            if chars[i] == "," {
+                let rest = String(chars[(i + 1)...])
+                    .trimmingCharacters(in: .whitespaces)
+                if rest.hasPrefix("{") {
+                    let head = String(chars[0..<i])
+                    if let d = rest.data(using: .utf8),
+                       (try? JSONSerialization.jsonObject(with: d)) != nil {
+                        return (head, rest)
+                    }
+                }
+            }
+            i += 1
+        }
+        return (raw, "")
+    }
+
     /// ⭐⭐⭐⭐⭐ **带请求头的 URLRequest**（站方的 `url,{"headers":…}` 形态）
     ///
     /// ⚠️⚠️⚠️ **为什么必须有（2026-10-29 真机：封面全是占位图）**：
     ///   站方给的封面 URL 是 **`https://cdn.xxx/file/bucket-media/…jpg,{"method":"GET","headers":{…}}`**
-    ///   ⇒ ① 不拆后缀 ⇒ URL 里带 `{` / `"` ⇒ `URL(string:)` **返回 nil**
-    ///      ⇒ 退化成「把带后缀的整串发出去」⇒ 服务器 **404** ⭐⭐⭐
+    ///   ⇒ ① 不拆后缀 ⇒ URL 里带 `{` / `"` ⇒ `URL(string:)` **会百分号编码**
+    ///      ⇒ 退化成「把编码后的整串发出去」⇒ 服务器 **404** ⭐⭐⭐
     ///   ⇒ ② 就算拆了，**请求头也必须带上**：✿UAA 的 CDN **没有 `Referer: uaa.com` 就 403**
     ///      （实测：不带头 403 / 只带 UA 403 / 带 Referer 200）⭐⭐⭐
     ///
@@ -234,11 +266,13 @@ public enum AnalyzeUrl {
     ///
     /// ⚠️ **只拆、不重新编码 query**（图片 URL 的签名参数不能动）⭐
     public static func request(_ raw: String, timeout: TimeInterval = 15) -> URLRequest? {
-        let (urlPart, opt) = splitOptions(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        let (urlPart, optionsJSON) = splitOptionsRaw(raw.trimmingCharacters(in: .whitespacesAndNewlines))
         guard let u = URL(string: urlPart) else { return nil }
         var req = URLRequest(url: u)
         req.timeoutInterval = timeout
-        if let h = opt["headers"] as? [String: Any] {
+        if let d = optionsJSON.data(using: .utf8),
+           let opt = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let h = opt["headers"] as? [String: Any] {
             for (k, v) in h { req.setValue(String(describing: v), forHTTPHeaderField: k) }
         }
         return req

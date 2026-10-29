@@ -34,6 +34,7 @@ const F = {
   analyze: path.join(ROOT, 'QiReaderLite/Core/AnalyzeUrl.swift'),
   app: path.join(ROOT, 'QiReaderLite/App/QiReaderLiteApp.swift'),
   session: path.join(ROOT, 'QiReaderLite/Core/ReaderSession.swift'),
+  book: path.join(ROOT, 'QiReaderLite/Core/Book.swift'),
 };
 
 let pass = 0, fail = 0;
@@ -80,6 +81,7 @@ const backend = stripComments(fs.readFileSync(F.backend, 'utf8'));
 const analyze = stripComments(fs.readFileSync(F.analyze, 'utf8'));
 const app = stripComments(fs.readFileSync(F.app, 'utf8'));
 const session = stripComments(fs.readFileSync(F.session, 'utf8'));
+const book = stripComments(fs.readFileSync(F.book, 'utf8'));
 
 console.log('=== ① 目录规则改写：JSON 列表项的字段规则要写成 JSONPath ===');
 const tocRule = bodyOf(backend, 'static func tocRule(_ r: TocRule) -> LegadoCore.RuleFields');
@@ -113,10 +115,22 @@ if (jsonPathForm) {
 }
 
 console.log('\n=== ② 带 `,{…}` 后缀的图片 URL：拆后缀 + 带请求头 ===');
+// ⭐⭐⭐ **上游**：Book.normalizeURL 必须【先拆后缀 → 绝对化 → 再拼回去】
+//   ⇒ 不拆就绝对化 ⇒ `URL(string:).absoluteString` 把 `{` 编码成 `%7B` ⇒ 后缀废了
+//   ⇒ 下游再怎么改都拆不出请求头 ⇒ **封面永远占位图**（2026-10-29 真机）⭐⭐⭐
+const normFn = bodyOf(book, 'static func normalizeURL(_ raw: String) -> String');
+ok(!!normFn, '得有 Book.normalizeURL(_:)');
+if (normFn) {
+  ok(/splitOptionsRaw\(/.test(normFn), '⭐⭐⭐ normalizeURL 必须先 splitOptionsRaw（在绝对化之前）');
+  ok(/optionsJSON/.test(normFn) && /\+ "," \+/.test(normFn),
+     '⭐⭐⭐ 绝对化之后要把后缀**拼回去**（不然请求头丢了）');
+  ok(!/URL\(string: s\)\?\.absoluteString\s*\n\s*guard/.test(normFn), '⭐ 不能直接对整串 absoluteString');
+}
 const reqFn = bodyOf(analyze, 'public static func request(_ raw: String, timeout: TimeInterval = 15) -> URLRequest?');
 ok(!!reqFn, '得有 AnalyzeUrl.request(_:timeout:)');
 if (reqFn) {
-  ok(/splitOptions\(/.test(reqFn), '⭐⭐ 必须先 splitOptions（后缀不是路径的一部分）');
+  ok(/splitOptionsRaw\(/.test(reqFn), '⭐⭐ 必须先 splitOptionsRaw（后缀不是路径的一部分）');
+  ok(/splitOptionsRaw/.test(analyze), '⭐⭐⭐ 得有 splitOptionsRaw（返回**原始**后缀文本 ⇒ 不被百分号编码）');
   ok(/forHTTPHeaderField/.test(reqFn), '⭐⭐ 后缀里的请求头必须装进请求（CDN 没 Referer 就 403）');
 }
 const coverLoad = bodyOf(app, 'private func load() async');

@@ -35,15 +35,16 @@ SVC="QiReaderLite/Core/SourceService.swift"
 BACK="QiReaderLite/Core/LegadoEngineBackend.swift"
 EXEC="QiReaderLite/Engine/WebViewJSExecutor.swift"
 ANALYZE="QiReaderLite/Core/AnalyzeUrl.swift"
+BOOK="QiReaderLite/Core/Book.swift"
 
 BAK="$TMP/backup"; mkdir -p "$BAK"
 cp "$VARS" "$BAK/vars.swift"; cp "$SVC" "$BAK/svc.swift"
 cp "$BACK" "$BAK/back.swift"; cp "$FORM" "$BAK/form.swift"
-cp "$EXEC" "$BAK/exec.swift"; cp "$ANALYZE" "$BAK/analyze.swift"
+cp "$EXEC" "$BAK/exec.swift"; cp "$ANALYZE" "$BAK/analyze.swift"; cp "$BOOK" "$BAK/book.swift"
 restore() {
   cp "$BAK/vars.swift" "$VARS"; cp "$BAK/svc.swift" "$SVC"
   cp "$BAK/back.swift" "$BACK"; cp "$BAK/form.swift" "$FORM"
-  cp "$BAK/exec.swift" "$EXEC"; cp "$BAK/analyze.swift" "$ANALYZE"
+  cp "$BAK/exec.swift" "$EXEC"; cp "$BAK/analyze.swift" "$ANALYZE"; cp "$BAK/book.swift" "$BOOK"
 }
 trap 'restore; rm -rf "$TMP"' EXIT
 
@@ -296,13 +297,30 @@ echo "=== ⑱ 图片 URL 不拆 ,{…} 后缀（⇒ URL(string:) 失败 ⇒ 404�
 python3 - <<'PY'
 p = "QiReaderLite/Core/AnalyzeUrl.swift"
 s = open(p, encoding="utf-8").read()
-old = "        let (urlPart, opt) = splitOptions(raw.trimmingCharacters(in: .whitespacesAndNewlines))"
-new = "        let urlPart = raw.trimmingCharacters(in: .whitespacesAndNewlines)\n        let opt: [String: Any] = [:]"
+old = "        let (urlPart, optionsJSON) = splitOptionsRaw(raw.trimmingCharacters(in: .whitespacesAndNewlines))"
+new = "        let urlPart = raw.trimmingCharacters(in: .whitespacesAndNewlines)\n        let optionsJSON = \"\""
 assert old in s, "锚点没找到（代码形状变了？）"
 open(p, "w", encoding="utf-8").write(s.replace(old, new))
 PY
 run_rewrite_gate; rc=$?
 [ $rc -ne 0 ] && ok 0 "不拆后缀 ⇒ 门禁变红 ✅" || { ok 1 "不拆后缀 ⇒ 门禁**没红**"; tail -8 "$TMP/rewrite.txt"; }
+restore
+
+echo "=== ⑳ 上游 normalizeURL 不拆后缀（⇒ { 被编码成 %7B ⇒ 后缀废了 ⇒ 封面还是占位图）==="
+python3 - <<'PYMUT'
+p = "QiReaderLite/Core/Book.swift"
+s = open(p, encoding="utf-8").read()
+old = """        let (urlPart, optionsJSON) = AnalyzeUrl.splitOptionsRaw(s)
+        if !optionsJSON.isEmpty {
+            let abs = URL(string: urlPart)?.absoluteString ?? urlPart
+            return abs + "," + optionsJSON
+        }"""
+new = """        // （变异：不拆后缀 ⇒ 直接绝对化 ⇒ { 被编码成 %7B）"""
+assert old in s, "锚点没找到（代码形状变了？）"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+PYMUT
+run_rewrite_gate; rc=$?
+[ $rc -ne 0 ] && ok 0 "上游不拆后缀 ⇒ 门禁变红 ✅" || { ok 1 "上游不拆后缀 ⇒ 门禁**没红**"; tail -8 "$TMP/rewrite.txt"; }
 restore
 
 echo "=== ⑲ 复原后改写门禁必须恢复绿 ==="

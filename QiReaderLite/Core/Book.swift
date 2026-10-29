@@ -71,6 +71,15 @@ struct Book: Codable, Identifiable, Hashable {
         if lower.hasPrefix("data:") || lower.hasPrefix("blob:") || lower.hasPrefix("qireaderlite:") {
             return s
         }
+        // ⭐⭐⭐⭐⭐ **带 `,{…}` 后缀的 URL：先拆 → 绝对化 URL 部分 → 再把后缀拼回去**
+        //   ⇒ 不拆就绝对化 ⇒ `URL(string:).absoluteString` 会把 `{` **百分号编码**成 `%7B`
+        //   ⇒ 后缀就**废了** ⇒ 后面拆不出请求头 ⇒ 图片请求 403/404 ⇒ **封面全是占位图**
+        //   （2026-10-29 真机：改了下游的请求层还是占位图 ⇒ 真凶在上游这一步）⭐⭐⭐
+        let (urlPart, optionsJSON) = AnalyzeUrl.splitOptionsRaw(s)
+        if !optionsJSON.isEmpty {
+            let abs = URL(string: urlPart)?.absoluteString ?? urlPart
+            return abs + "," + optionsJSON
+        }
         guard let u = URL(string: s) else { return s }
         return u.absoluteString
     }

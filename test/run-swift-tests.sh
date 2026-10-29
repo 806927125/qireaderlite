@@ -99,7 +99,7 @@ echo
 echo "=== 编译 Core/Book.swift（swiftc 真编）==="
 mkdir -p "$TMP/book"
 cp test/book-url-test.swift "$TMP/book/main.swift"
-if ! "$SWIFTC" -O "$TMP/book/main.swift" QiReaderLite/Core/Book.swift -o "$TMP/book-test" 2>"$TMP/err3.txt"; then
+if ! "$SWIFTC" -O "$TMP/book/main.swift" QiReaderLite/Core/Book.swift QiReaderLite/Core/AnalyzeUrl.swift -o "$TMP/book-test" 2>"$TMP/err3.txt"; then
   echo "❌ 编译失败："
   cat "$TMP/err3.txt" | head -30
   exit 1

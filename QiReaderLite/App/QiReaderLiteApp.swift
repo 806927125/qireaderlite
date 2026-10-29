@@ -125,12 +125,21 @@ struct CoverImage: View {
 
     private func load() async {
         // ⭐⭐⭐⭐⭐ **站方的封面 URL 带 `,{…}` 后缀（请求头）⇒ 必须拆开 + 带头请求**
-        //   ⇒ 不拆 ⇒ `URL(string:)` 遇 `{` 返 nil ⇒ 整串带后缀发出去 ⇒ 404 ⭐⭐⭐
-        //   ⇒ 拆了不带头 ⇒ ✿UAA 的 CDN **403**（要 `Referer: uaa.com`）⭐⭐⭐
-        guard let req = AnalyzeUrl.request(url),
-              let (data, _) = try? await URLSession.shared.data(for: req),
-              let img = UIImage(data: data) else { failed = true; return }
-        await MainActor.run { image = img; failed = false }
+        //   ⇒ 不拆 ⇒ 后缀被百分号编码（`%7B`）⇒ 拆不出来 ⇒ 404 / CDN 403 ⇒ **占位图** ⭐⭐⭐
+        guard let req = AnalyzeUrl.request(url) else {
+            engineLog("[封面] URL 解析失败：\(String(url.prefix(120)))")
+            failed = true; return
+        }
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            engineLog("[封面] \(req.url?.absoluteString ?? "") 状态=\(code) 字节=\(data.count)")
+            guard let img = UIImage(data: data), code == 200 else { failed = true; return }
+            await MainActor.run { image = img; failed = false }
+        } catch {
+            engineLog("[封面] 请求失败：\(String(error.localizedDescription.prefix(80)))")
+            failed = true
+        }
     }
 }
 

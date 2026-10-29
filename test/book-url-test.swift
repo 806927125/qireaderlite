@@ -54,6 +54,31 @@ let weird = Book.normalizeURL("not a url")
 print("  → 'not a url' 规范化后 = \(weird)")
 ok(!weird.isEmpty, "解析不了也别清空（以前是 return \"\"）")
 
+// ── ⭐⭐⭐⭐⭐ 带 `,{…}` 后缀的 URL（2026-10-29 真机：封面改了还是占位图）──
+//   症状：封面永远占位图 ⇒ 查下来是**上游**把后缀**百分号编码**了（`%7B`）⇒ 拆不出请求头
+print("\n── 5. 带 ,{…} 后缀的 URL：后缀不许被百分号编码 ──")
+let coverRaw = "https://cdn.uaa010.com/file/bucket-media/image/cover/x.jpg,{\"method\":\"GET\",\"headers\":{\"Referer\":\"uaa.com\"}}"
+let coverNorm = Book.normalizeURL(coverRaw)
+print("  → \(coverNorm)")
+ok(!coverNorm.contains("%7B"), "⭐⭐ 后缀里的 `{` 没被百分号编码（编码了就废了）")
+ok(!coverNorm.contains("%22"), "⭐⭐ 后缀里的引号也没被编码")
+ok(coverNorm.hasPrefix("https://cdn.uaa010.com/file/bucket-media/image/cover/x.jpg,"),
+   "⭐⭐ URL 部分原样，后缀跟在逗号后面")
+ok(coverNorm.contains("\"Referer\":\"uaa.com\""), "⭐⭐ 后缀里的请求头还在")
+// ⭐ 关键闭环：规范化之后**还能拆出请求头**（这才是封面能出来的前提）
+let (u5, o5) = AnalyzeUrl.splitOptionsRaw(coverNorm)
+ok(u5 == "https://cdn.uaa010.com/file/bucket-media/image/cover/x.jpg", "⭐⭐⭐ 规范化后仍能拆出干净的 URL")
+ok(!o5.isEmpty && (try? JSONSerialization.jsonObject(with: Data(o5.utf8))) != nil,
+   "⭐⭐⭐ 规范化后仍能拆出请求头（后缀还是合法 JSON）")
+// 相对路径 + 后缀 ⇒ URL 部分要绝对化（后缀照旧保留）
+let relCover = "/img/a.jpg,{\"headers\":{\"Referer\":\"uaa.com\"}}"
+let relNorm = Book.normalizeURL(relCover)
+print("  → \(relNorm)")
+ok(!relNorm.contains("%7B"), "⭐ 相对路径 + 后缀：后缀也没被编码")
+ok(relNorm.contains("/img/a.jpg"), "⭐ 相对路径 + 后缀：路径部分还在")
+// 没有后缀的 URL 不受影响
+ok(Book.normalizeURL("https://x.com/a.jpg") == "https://x.com/a.jpg", "没有后缀的不受影响")
+
 // 汇总行放最后
 print("\n" + (fail == 0 ? "✅" : "❌") + " 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

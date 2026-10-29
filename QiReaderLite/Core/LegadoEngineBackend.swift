@@ -823,6 +823,9 @@ final class LegadoEngineBackend: @unchecked Sendable {
         }
         var rawMap: [String: String] = [:]
         for (k, v) in raw { if let s = v as? String { rawMap[k] = s } }
+        // ⭐⭐⭐ **封面 URL 探针**（2026-10-29 真机：封面一直是占位图）
+        //   ⇒ 这一行能一眼分清：**引擎根本没给出 URL**（空）/ **给出了但请求失败**（看 [封面] 那行）⭐
+        engineLog("[封面] 引擎给的 coverUrl = \(String(info.coverUrl.prefix(120)))（长度 \(info.coverUrl.count)）")
         let out = Self.bookPayload(info.name, author: info.author, intro: info.intro,
                                    kind: info.kind, group: info.group, lastChapter: info.lastChapter,
                                    coverUrl: info.coverUrl, bookUrl: info.bookUrl,
