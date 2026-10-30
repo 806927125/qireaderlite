@@ -93,6 +93,12 @@ declare -a GATES=(
   #   runBookInfo 返回 ["book": {...}]（嵌套）而 isTrustworthy 读顶层 ⇒ 详情页 100% 失败
   #   ⇒ 沙盒对拍**直接调引擎** ⇒ 绕过 App 侧这层 ⇒ 永远抓不到 ⭐⭐⭐
   "op-shape-consistency:test/op-shape-consistency.test.js"
+  # ⭐⭐⭐⭐⭐ **op 分流契约**（2026-10-29 真机回归：「发现都没了」的根因）
+  #   ⇒ 把 `login`/`filterAction` 切到新引擎 ⇒ 引擎的 runXxx **没传 source**
+  #     ⇒ 全局 `source` 没有宿主方法 ⇒ 站方 `source.put('order',…)` 写不进去
+  #     ⇒ 筛选栏 0 个 + explore 的 order_type 取旧值 ⇒ **HTTP 500** ⇒ 发现页全空 ⭐⭐⭐
+  #   ⇒ **要写变量的 op 必须走老引擎**（老引擎会把 `g.source` 挂到全局）⭐
+  "op-routing-contract:test/op-routing-contract.test.js"
   # ⭐⭐⭐ UAA 四合一（知秋）：「获取Token」链路（2026-10-27 用户报「获取 token 不了」）
   #   ⇒ 真服务器回 403「无效JWT」⇒ 根因：`source.getVariable()` 在轻阅返回的是整份变量 JSON
   #   ⇒ 轻阅版源把 token 改存「书源变量·token」项 + 没有 token 就不发 authorization 头
@@ -277,6 +283,27 @@ if git diff --quiet -- QiReaderLite/ 2>/dev/null; then
 else
   printf "%-24s %-22s %s\n" "变异(凭据双写)" "⚠️ 跳过" "QiReaderLite/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
   SKIPPED+=("变异(凭据双写)")
+fi
+
+printf "%s\n" "────────────────────────────────────────────────────"
+
+# ── 变异测试（shell 层）：op 分流契约 ──
+# ⭐⭐⭐⭐⭐ 2026-10-29 新增：把「要写变量的 op」切回新引擎 ⇒ 门禁必须红
+#   ⇒ 变异脚本会**真的改源码** ⇒ 跑之前必须 commit（否则改坏的东西会留在工作区）⭐⭐⭐
+if git diff --quiet -- QiReaderLite/ 2>/dev/null; then
+  if bash test/mutation-op-routing.sh > /tmp/mutation-routing.out 2>&1; then
+    printf "%-24s %-22s %s\n" "变异(op分流)" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-routing.out | tail -1)"
+    MP="$(grep -oE '通过 [0-9]+' /tmp/mutation-routing.out | tail -1 | grep -oE '[0-9]+')"
+    TOTAL_PASS=$((TOTAL_PASS + ${MP:-0}))
+  else
+    printf "%-24s %-22s %s\n" "变异(op分流)" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-routing.out | tail -1)"
+    grep -E "✗" /tmp/mutation-routing.out | head -5
+    TOTAL_FAIL=$((TOTAL_FAIL+1))
+    FAILED+=("变异(op分流)")
+  fi
+else
+  printf "%-24s %-22s %s\n" "变异(op分流)" "⚠️ 跳过" "QiReaderLite/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
+  SKIPPED+=("变异(op分流)")
 fi
 
 printf "%s\n" "────────────────────────────────────────────────────"

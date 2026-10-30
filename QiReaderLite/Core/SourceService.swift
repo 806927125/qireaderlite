@@ -38,12 +38,16 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         p["cookieSnapshot"] = CookieJar.snapshot()
-        // ⭐⭐⭐⭐⭐ **登录也走新引擎**（2026-10-29 补完迁移的最后一截）
-        //   ⇒ 以前走老引擎（**另一台 WKWebView**）⇒ **站方变量的语义是两套**
-        //     （老引擎 = 整份书源变量；新引擎 = 站方变量那一串）
-        //   ⇒ **登录拿到的 token 和目录用的 token 不是一回事** ⭐⭐⭐
-        //   ⇒ 新引擎早就实现了 `login`（返回形状逐字相同：`ok`/`messages`/`result`/`error`）⭐
-        let raw = try await Self.invokeEngine("login", p, source: source)
+        // ⚠️⚠️⚠️ **登录【必须走老引擎】**（2026-10-29 真机回归实证 ⇒ 改回来了）
+        //   ⇒ 原因：引擎的 `runLoginAction` 构造求值上下文时**没传 `source:`**
+        //     ⇒ `ctx.source == nil` ⇒ **全局 `source` 对象没有宿主方法**
+        //     ⇒ 站方 loginUrl 里的 `source.setVariable(token)` / `source.put('type',…)`
+        //        **全部失效** ⇒ token / 排序选项写不进去 ⭐⭐⭐
+        //     ⇒ 症状：发现页「筛选栏 0 个」+ explore 的 `order_type` 取旧值 ⇒ **HTTP 500** ⭐⭐⭐
+        //   ⇒ 老引擎的 login op **会把 `g.source` 挂上**（engine.js:1249）⇒ 站方写变量才有效 ⭐
+        //   ⇒ ⚠️ **代价**：登录用的站方变量语义仍是老引擎那套（整份书源变量）
+        //     ⇒ 但登录本来就是「写」的 ⇒ 语义一致 ⇒ **不影响** ⭐⭐⭐
+        let raw = try await RuleSandbox.shared.invoke("login", p, source: source)
         // 登录动作会改书籍变量 / 登录信息 → 落盘
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
@@ -1087,8 +1091,12 @@ final class SourceService {
         srcDict["__loginHeader"] = SourceVariables.loginHeader(for: source.bookSourceUrl)
         p["source"] = srcDict
         p["cookieSnapshot"] = CookieJar.snapshot()
-        // ⭐⭐⭐⭐⭐ **走新引擎**（2026-10-29 ⇒ 与登录/目录同一套站方变量语义）
-        let raw = try await Self.invokeEngine("filterAction", p, source: source)
+        // ⚠️⚠️⚠️ **筛选栏 action【必须走老引擎】**（2026-10-29 真机回归实证 ⇒ 改回来了）
+        //   ⇒ 同 login：引擎的 `runFilterAction` **没传 `source:`** ⇒ 全局 `source` 没有宿主方法
+        //     ⇒ 站方 action 里的 `source.put('order', 2)` / `source.put('type', …)` **写不进去** ⭐⭐⭐
+        //     ⇒ 症状：发现页「**筛选栏 0 个**」+ explore 的 `order_type` 取旧值 ⇒ **HTTP 500** ⭐⭐⭐
+        //   ⇒ 老引擎的 filterAction **会把 `g.source` 挂上**（engine.js:1468）⇒ 站方写变量才有效 ⭐
+        let raw = try await RuleSandbox.shared.invoke("filterAction", p, source: source)
         // 站方自己写的源级变量 → 落盘（下次 exploreKinds 直接生效）
         if let obj = raw as? [String: Any],
            let v = obj["__sourceVars"] as? String {
