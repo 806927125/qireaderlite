@@ -206,6 +206,14 @@ enum SourceVariables {
         let isHostPollution = !stationWroteIt
         guard isMap, (f == .credential || (f == .unknown && isHostPollution)) else {
             engineLog("[变量] 迁移=没清（形态=\(f.rawValue) 站方写过=\(stationWroteIt) 是map=\(isMap)）")
+            // ⭐⭐⭐⭐⭐ **读时自愈**（2026-10-29 真机 401 的另一半）
+            //   ⇒ 这一格是**凭据**（不是 map）⇒ 里面是 token
+            //   ⇒ 但**书源变量的 `token` 项可能是空的**（老版本只写站方变量那一格）
+            //   ⇒ 新版站方源读 `source.get('token')` ⇒ 拿不到 ⇒ `Bearer ` 空 ⇒ 401 ⭐⭐⭐
+            //   ⇒ **每个 op 都会走到这里** ⇒ 在这儿补写一次 ⇒ 存量 token 自动迁移 ⭐
+            if !isMap, !current.isEmpty {
+                mirrorCredentialToVars(current, for: sourceUrl, jsLib: jsLib)
+            }
             return current
         }
         engineLog("[变量] 迁移=清了（形态=\(f.rawValue) 站方写过=\(stationWroteIt) ⇒ 宿主灌的 map）")
@@ -310,6 +318,9 @@ enum SourceVariables {
         var m = varsMap(for: sourceUrl)
         m["token"] = t
         setVars(varsJSON(m), for: sourceUrl)
+        // ⭐⭐⭐ **诊断**（2026-10-29 真机 401：探针看 `getVariable()` 是好的，但拼 header 是空的）
+        //   ⇒ 双写到底有没有生效 ⇒ 真机日志一眼可见（不用猜）⭐⭐⭐
+        engineLog("[变量] 凭据双写：站方变量那一串已镜像到书源变量的 token 项（长度 \(t.count)）")
     }
 
     /// ⭐⭐⭐ **读某个源的书源变量（map 形态）**

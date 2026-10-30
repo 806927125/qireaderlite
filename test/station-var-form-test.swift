@@ -233,7 +233,21 @@ SourceVariables.mirrorCredentialToVars("", for: emptyUaa, jsLib: newJsLib)
 ok(SourceVariables.varsMap(for: emptyUaa)["token"] == nil,
    "⭐⭐⭐ 空凭据 ⇒ 不写进书源变量")
 
-for u in [newUaa, mapUaa, polluteUaa, keepUaa, emptyUaa] { SourceVariables.clear(for: u) }
+// ⑦ ⭐⭐⭐⭐⭐ **读时自愈**：存量 token（只存在站方变量那一格）⇒ 灌给引擎时自动补写
+//   ⇒ 老版本存的 token 也能被新版站方源（读 `source.get('token')`）读到 ⭐⭐⭐
+let legacyUaa = "form-gate-#legacyuaa"
+SourceVariables.clear(for: legacyUaa)
+// 模拟「老版本只写了站方变量那一格」⇒ 书源变量里**没有** token 项
+SourceVariables.setVariable("老版本存的token", for: legacyUaa, origin: .station)
+ok(SourceVariables.varsMap(for: legacyUaa)["token"] == nil,
+   "（前提）老版本：token 只在站方变量那一格，书源变量里没有")
+// 灌给引擎的那一步（每个 op 都会走）⇒ 自动补写
+let seededLegacy = SourceVariables.stationVariableToSeed(for: legacyUaa, jsLib: newJsLib)
+ok(seededLegacy == "老版本存的token", "⭐⭐⭐ 灌给引擎的仍是站方变量那一串（没被改）")
+ok(SourceVariables.varsMap(for: legacyUaa)["token"] == "老版本存的token",
+   "⭐⭐⭐⭐⭐ 读时自愈：存量 token 已自动补写进书源变量 ⇒ 新版站方源读得到 ⇒ 不再是空 Bearer")
+
+for u in [newUaa, mapUaa, polluteUaa, keepUaa, emptyUaa, legacyUaa] { SourceVariables.clear(for: u) }
 
 print("\n\(fail == 0 ? "✅" : "❌") 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)
