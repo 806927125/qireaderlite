@@ -54,6 +54,29 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         session = URLSession(configuration: cfg)
     }
 
+    /// ⭐⭐⭐⭐⭐ **当前 op 的单请求超时【下限】**（2026-11-01 真机「发现页全空」实证）
+    ///
+    /// ⚠️ **背景**：引擎的 `PageFetcher.fetch` 不传 timeout ⇒ 固定 8 秒
+    ///   ⇒ 分类接口（几百个分类 · 100KB+ 响应）在 5G 下**经常超时** ⇒ 分类全废 ⇒ 发现页空 ⭐⭐⭐
+    ///   ⇒ 而**老引擎的原生 `request` 会重试 3 次** ⇒ 实际耐受度是 3 倍 ⇒ 切引擎后悄悄降了 3 倍 ⭐⭐⭐
+    ///
+    /// ⭐⭐⭐ **分档依据 = op 层的总预算**（`newEngineTimeoutSeconds`）：
+    ///   · 交互类（搜索 / 发现 / 分类）⇒ op 预算 60 秒 ⇒ 单请求给 **20 秒**
+    ///     ⇒ 一次 op 最多试 3 条慢线路；全死时 op 层先超时（总闸）⇒ 不会更糟 ⭐
+    ///   · 内容类（详情 / 目录 / 正文）⇒ op 预算 300 秒 ⇒ 单请求给 **30 秒**
+    ///     ⇒ 慢接口能过；线路全死时 op 层兜底 ⇒ 不会更糟 ⭐
+    ///   · 其余 ⇒ **保持 8 秒**（诊断 / 登录等轻量请求 ⇒ 不放宽）⭐
+    static func minimumTimeoutForCurrentOp() -> TimeInterval {
+        switch LegadoEngineBackend.currentOp {
+        case "search", "explore", "exploreKinds":
+            return 20
+        case "bookInfo", "toc", "content":
+            return 30
+        default:
+            return 8
+        }
+    }
+
     func send(_ request: HTTPRequest) throws -> HTTPResponse {
         // ① ⭐⭐⭐ **`data:` 伪 URL** ⇒ 载荷就是「页面内容」⇒ 直接当响应体返回
         if request.url.lowercased().hasPrefix("data:") {
@@ -66,7 +89,27 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         }
         var req = URLRequest(url: url)
         req.httpMethod = request.method
-        req.timeoutInterval = request.timeout
+        // ⭐⭐⭐⭐⭐ **单请求超时的【下限】**（2026-11-01 真机「发现页全空」实证）
+        //
+        // ⚠️ **现象**：分类接口 `/console/explore`（几百个分类 · 响应 100KB+）在 5G 下
+        //   **8 秒没回** ⇒ `NSURLErrorDomain Code=-1001 请求超时` ⇒ 站方拿到空
+        //   ⇒ `JSON Parse error: Unexpected identifier "undefined"` ⇒ **分类全废 ⇒ 发现页空** ⭐⭐⭐
+        //
+        // ⭐ **为什么引擎的 8 秒不够**：
+        //   引擎的 `PageFetcher.fetch` **不传 timeout** ⇒ 用默认 8 秒；
+        //   而**老引擎的原生 `request` 会重试 3 次**（每次 timeout/3）⇒ **实际能撑 3 倍** ⭐⭐⭐
+        //   ⇒ **切新引擎后，慢接口的耐受度悄悄降了 3 倍** ⇒ 这是切引擎带来的隐性回归 ⭐⭐⭐
+        //
+        // ⭐⭐⭐ **为什么提高下限【不会】把 App 拖死**（大灰狼 8 条死线路的担心）：
+        //   · 正常情况**第一条线路就通** ⇒ 单请求超时常量不影响正常路径 ✔
+        //   · 8 条全死时：单请求 20 秒 × 8 = 160 秒，**但 op 层预算是 60 秒**
+        //     ⇒ **op 层先超时**（总闸）⇒ 用户体感仍是 60 秒，不是 160 秒 ✔✔✔
+        //   ⇒ **提高单请求下限只放宽「单条慢线路」，不放宽「整个 op」** ⭐⭐⭐
+        //
+        // ⚠️⚠️ **URLRequest 的超时**和**主线程等待的超时**必须**用同一个值**
+        //   ⇒ 否则 URLRequest 还在等，主线程已经判超时返回了（改动等于没改）⭐⭐⭐
+        let effectiveTimeout = max(request.timeout, Self.minimumTimeoutForCurrentOp())
+        req.timeoutInterval = effectiveTimeout
         for (k, v) in request.headers { req.setValue(v, forHTTPHeaderField: k) }
         req.httpBody = request.body
         // ⚠️ cookie **交给 URLSession 的共享罐**处理（`HTTPCookieStorage.shared`）
@@ -89,8 +132,9 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
             sem.signal()
         }.resume()
         // ⭐ 超时比请求超时多给 5 秒 ⇒ 别把「网络慢」误报成「引擎卡死」
-        if sem.wait(timeout: .now() + request.timeout + 5) == .timedOut {
-            throw SourceError.requestFailed(request.url, "请求超时（\(Int(request.timeout))s）")
+        // ⚠️⚠️ **必须用 effectiveTimeout**（不是 request.timeout）⇒ 否则下限改了也没用 ⭐⭐⭐
+        if sem.wait(timeout: .now() + effectiveTimeout + 5) == .timedOut {
+            throw SourceError.requestFailed(request.url, "请求超时（\(Int(effectiveTimeout))s）")
         }
         return try box.take()
     }
@@ -832,6 +876,22 @@ final class LegadoEngineBackend: @unchecked Sendable {
         do {
             (kinds, filters) = try engine.exploreKinds()
         } catch {
+            // ⭐⭐⭐⭐⭐ **失败时翻译成人话**（2026-11-01 真机：分类接口超时 ⇒ 发现页整个空）
+            //   ⇒ 真机原文：「java.ajax 失败: Error Domain=NSURLErrorDomain Code=-1001 "请求超时。"」
+            //   ⇒ 站方拿到空 ⇒ `JSON Parse error: Unexpected identifier "undefined"` ⇒ 分类全废
+            let msg = String(describing: error)
+            if msg.contains("aid=0") {
+                let hint = "⭐⭐⭐ **账号未登录**（请求里 aid=0）⇒ 服务端认不出账号 ⇒ "
+                    + "请到【登录界面】重新登录一次（登录会写入账号 id）"
+                engineLog("[发现] \(hint)")
+                throw ServiceError.engineFailed(hint + "\n（原始错误：" + msg.prefix(140) + "）")
+            }
+            if msg.contains("-1001") || msg.contains("请求超时") {
+                let hint = "⭐⭐⭐ **站方接口请求超时**（单请求超时上限内没回）⇒ 分类拿不到 ⇒ 发现页空"
+                    + " ⇒ 可稍后重试；若一直超时 ⇒ 请到【登录界面】重新登录一次（未登录时服务端可能迟迟不回）"
+                engineLog("[发现] \(hint)")
+                throw ServiceError.engineFailed(hint + "\n（原始错误：" + msg.prefix(140) + "）")
+            }
             throw Self.diagnose(engine, "发现页分类", error)
         }
         // ⭐⭐ **把分类/筛选栏的标题记下来**（2026-10-24 真机栽的）

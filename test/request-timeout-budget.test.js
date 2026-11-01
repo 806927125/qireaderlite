@@ -59,7 +59,30 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
   ok(/timeoutSeconds\(for op: String\)/.test(sw) && /slowOps\.contains\(op\) \? 300 : opTimeoutSeconds/.test(sw),
      '超时按 op 分档取（慢 op 300 秒 / 交互 op 45 秒）');
 
-  console.log('\n=== ③ 超时链路自证 ===');
+  console.log('\n=== ③ 新引擎的单请求超时下限（2026-11-01 真机「发现页全空」）===');
+  // ⭐⭐⭐ 真机：分类接口 /console/explore（几百个分类 · 100KB+ 响应）在 5G 下 8 秒没回
+  //   ⇒ NSURLErrorDomain Code=-1001 ⇒ 站方拿到空 ⇒ JSON Parse error ⇒ 分类全废 ⇒ 发现页空
+  // ⇒ 引擎的 PageFetcher.fetch **不传 timeout** ⇒ 固定 8 秒
+  // ⇒ 而**老引擎的原生 request 会重试 3 次** ⇒ 实际耐受 3 倍 ⇒ 切引擎后悄悄降了 3 倍 ⭐⭐⭐
+  const be = read('QiReaderLite/Core/LegadoEngineBackend.swift');
+  ok(/func minimumTimeoutForCurrentOp\(\) -> TimeInterval/.test(be),
+     '⭐⭐⭐ 有「按 op 算单请求超时下限」的函数');
+  ok(/"search", "explore", "exploreKinds"/.test(be),
+     '⭐⭐⭐ 交互类 op（搜索/发现/分类）有更宽的单请求下限（分类接口慢）');
+  ok(/"bookInfo", "toc", "content"/.test(be),
+     '⭐⭐⭐ 内容类 op（详情/目录/正文）有更宽的单请求下限');
+  // ⭐⭐⭐ 最关键：**URLRequest 的超时**和**主线程等待的超时**必须是**同一个值**
+  //   ⇒ 否则 URLRequest 还在等、主线程已判超时 ⇒ 改了下限等于没改 ⭐⭐⭐
+  ok(/let effectiveTimeout = max\(request\.timeout, Self\.minimumTimeoutForCurrentOp\(\)\)/.test(be),
+     '⭐⭐⭐⭐⭐ 算出一个 effectiveTimeout（URLRequest 和主线程等待共用）');
+  ok(/req\.timeoutInterval = effectiveTimeout/.test(be),
+     '⭐⭐⭐⭐⭐ URLRequest 用 effectiveTimeout（不是 request.timeout）');
+  ok(/sem\.wait\(timeout: \.now\(\) \+ effectiveTimeout \+ 5\)/.test(be),
+     '⭐⭐⭐⭐⭐ 主线程等待也用 effectiveTimeout（否则下限改了也没用）');
+  ok(!/sem\.wait\(timeout: \.now\(\) \+ request\.timeout \+ 5\)/.test(be),
+     '旧的「主线程只等 request.timeout」已经没有了');
+
+  console.log('\n=== ④ 超时链路自证 ===');
   // 12s ⇒ 原生侧最坏 22.6s ⇒ JS 侧等 29s ⇒ 覆盖
   const per = [12 / 3, 12 / 2, 12 / 1];
   const nativeWorst = per.reduce((a, b) => a + Math.max(3, b), 0) + 0.6;
