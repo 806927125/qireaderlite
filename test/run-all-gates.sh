@@ -99,6 +99,10 @@ declare -a GATES=(
   #     ⇒ 筛选栏 0 个 + explore 的 order_type 取旧值 ⇒ **HTTP 500** ⇒ 发现页全空 ⭐⭐⭐
   #   ⇒ **要写变量的 op 必须走老引擎**（老引擎会把 `g.source` 挂到全局）⭐
   "op-routing-contract:test/op-routing-contract.test.js"
+  # ⭐⭐⭐⭐⭐ **登录 op 的【行为】门禁**（2026-10-29 真机回归：aid 写不进去 ⇒ explore 500 ⇒ 发现页空）
+  #   ⇒ 真跑一遍 login op ⇒ 断言站方 `source.put('aid',…)` 落进了书源变量 ⭐⭐⭐
+  #   ⇒ **行为级**（不是静态匹配源码）⇒ 比 op-routing-contract 更硬 ⭐
+  "login-writes-vars:test/login-writes-vars.test.js"
   # ⭐⭐⭐ UAA 四合一（知秋）：「获取Token」链路（2026-10-27 用户报「获取 token 不了」）
   #   ⇒ 真服务器回 403「无效JWT」⇒ 根因：`source.getVariable()` 在轻阅返回的是整份变量 JSON
   #   ⇒ 轻阅版源把 token 改存「书源变量·token」项 + 没有 token 就不发 authorization 头
@@ -304,6 +308,23 @@ if git diff --quiet -- QiReaderLite/ 2>/dev/null; then
 else
   printf "%-24s %-22s %s\n" "变异(op分流)" "⚠️ 跳过" "QiReaderLite/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
   SKIPPED+=("变异(op分流)")
+fi
+
+printf "%s\n" "────────────────────────────────────────────────────"
+
+# ── 变异测试（shell 层）：登录写变量（老引擎 JS）──
+# ⭐⭐⭐⭐⭐ 2026-10-31 新增：站方 `source.put('aid',…)` 写不进去 ⇒ explore 的 URL 里 aid=0
+#   ⇒ 服务端 500 ⇒ 发现页全空 ⭐⭐⭐
+# ⚠️ 这个脚本改的是**老引擎的 JS**（不是 App 源码）⇒ 不需要「工作区干净」的保护
+if bash test/mutation-login-writes-vars.sh > /tmp/mutation-loginvars.out 2>&1; then
+  printf "%-24s %-22s %s\n" "变异(登录写变量)" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-loginvars.out | tail -1)"
+  MP="$(grep -oE '通过 [0-9]+' /tmp/mutation-loginvars.out | tail -1 | grep -oE '[0-9]+')"
+  TOTAL_PASS=$((TOTAL_PASS + ${MP:-0}))
+else
+  printf "%-24s %-22s %s\n" "变异(登录写变量)" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-loginvars.out | tail -1)"
+  grep -E "✗" /tmp/mutation-loginvars.out | head -5
+  TOTAL_FAIL=$((TOTAL_FAIL+1))
+  FAILED+=("变异(登录写变量)")
 fi
 
 printf "%s\n" "────────────────────────────────────────────────────"

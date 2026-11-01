@@ -733,6 +733,17 @@ final class LegadoEngineBackend: @unchecked Sendable {
             let books = try engine.explore(kindUrl, page: page)
             return Self.bookListPayload(books)
         } catch {
+            // ⭐⭐⭐⭐⭐ **失败时把「账号未登录」翻译成人话**（2026-10-29 真机回归）
+            //   ⇒ 现象：URL 里 `aid=0` ⇒ 服务端 500 ⇒ 整页「HTTP 500」天书 ⇒ 用户不知道该做什么
+            //   ⇒ 根因：站方登录写的 `source.put('aid', 账号id)` 没落进书源变量 ⇒ aid 一直是 0
+            //   ⇒ 站方 jsLib：`source.get('aid') || source.get('account_id') || '0'` ⇒ 缺了就退化成 '0' ⭐⭐⭐
+            let msg = String(describing: error)
+            if msg.contains("aid=0") || msg.contains("aid=0&") || msg.contains("&aid=0") {
+                let hint = "⭐⭐⭐ **账号未登录**（请求里 aid=0）⇒ 服务端 500 ⇒ "
+                    + "请到【登录界面】重新登录一次（登录会写入账号 id）"
+                engineLog("[发现] \(hint)")
+                throw ServiceError.engineFailed(hint + "\n（原始错误：" + msg.prefix(120) + "）")
+            }
             throw Self.diagnose(engine, "发现页", error)
         }
     }

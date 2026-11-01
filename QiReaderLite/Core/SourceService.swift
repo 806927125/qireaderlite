@@ -52,6 +52,21 @@ final class SourceService {
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
                 SourceVariables.setVars(v, for: source.bookSourceUrl)
+                // ⭐⭐⭐⭐⭐ **诊断**（2026-10-29 真机回归：发现页全空 ⇒ explore 的 URL 里 aid=0 ⇒ 500）
+                //   ⇒ 站方登录写的是 `source.put('aid', 账号id)` ⇒ **落进书源变量**
+                //   ⇒ 这一行让用户一眼看出「账号 id 有没有写进去」⇒ 不用猜 ⭐⭐⭐
+                let vm = SourceVariables.varsMap(for: source.bookSourceUrl)
+                RuleSandbox.shared.appendLog(
+                    "[登录] 站方写入的书源变量：aid=\(vm["aid"] ?? "(空)") "
+                    + "account_id=\(vm["account_id"] ?? "(空)") "
+                    + "token=\(vm["token"].map { $0.isEmpty ? "(空)" : "有(\($0.count)字)" } ?? "(无)")")
+                if (vm["aid"] ?? "").isEmpty {
+                    RuleSandbox.shared.appendLog(
+                        "[登录] ⚠️⭐⭐⭐ **账号 id（aid）没写进去** ⇒ 发现页的请求会带 `aid=0` ⇒ 服务端 500 ⇒ 发现页全空")
+                    RuleSandbox.shared.appendLog(
+                        "[登录] ⇒ 请**重新登录一次**（登录面板 → 账号密码 → 登录）；"
+                        + "若仍失败 ⇒ 看站方 toast 原文（「服务端没返回账号 id」= 服务端没认这次登录）")
+                }
             }
             // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 落盘（与书籍变量**分开**存）⭐
             //   ⭐⭐⭐ **只有站方真改过这一格**才当成「站方写的」⇒ 不然证据会**自证** ⭐⭐⭐
