@@ -109,7 +109,7 @@ async function runSearch() {
   const body = start >= 0 ? wv.slice(start, start + 3000) : '';
   ok(/JSScopeBuilder\.withExplicitGlobalExport/.test(body),
      '⭐⭐⭐ runGlobal 里用了 JSScopeBuilder.withExplicitGlobalExport（与 JSC/Node 后端同款）');
-  ok(/withExplicitGlobalExport\(code\)/.test(body) && /jsonLiteral\(exported\)/.test(body),
+  ok(/withExplicitGlobalExport\(code\)/.test(body) && /(jsonLiteral\(exported\)|bridgeScript\(exported\))/.test(body),
      '⭐⭐⭐ 求值的正是【导出后】的代码（不是原始 code ⇒ 导出码进不了同一个 eval 就白搭）');
   ok(/let exported = JSScopeBuilder\.withExplicitGlobalExport\(code\)/.test(body),
      '导出码与原代码在**同一个 eval**里（才能看见 eval 局部的 let）');

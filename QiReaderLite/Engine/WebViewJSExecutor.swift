@@ -123,17 +123,25 @@ final class WebViewJSExecutor: JSExecutor {
         var attemptsLog: [String] = []
         for (i, src) in JSEvalShape.scripts(for: code, scope: scope).enumerated() {
             // ⭐ 完成值统一在 JS 侧 `JSON.stringify`（WKWebView 桥接不了对象/函数）
-            let wrapped = "JSON.stringify((0,eval)(" + JSEvalShape.jsonLiteral(src) + "))"
+            let wrapped = Self.bridgeScript(src)
             do {
                 let text = try WebViewJSBridge.shared.evaluateSync(wrapped)
-                return Self.parseValue(text)
+                let env = Self.parseEnvelope(text)
+                // ⭐⭐⭐ **探针**：值是 undefined/函数/Symbol ⇒ 记一笔（真机失败时一眼看出）
+                if env.type != "string" && env.type != "object" && env.type != "number"
+                    && env.type != "boolean" {
+                    engineLog("[桥接] 形态#\(i + 1) 完成值类型=\(env.type)"
+                              + "（已按 null 兜底）· 代码 \(code.count) 字")
+                }
+                return env.value
             } catch let e as WebViewJSError {
                 // ⭐⭐⭐ **只有【语法错】才换下一种形态**（与 JSC 版逐字一致）
                 //   ⇒ 运行时错误直接抛 ⇒ **站方 JS 只执行一次** ⇒ 副作用不重复（限流/登录）⭐⭐⭐
                 //
                 // ⭐⭐⭐ **探针**（2026-10-28 真机：三个形态报「同一个」语法错）
                 //   ⇒ 把**每个形态的真实错误**逐条进面板 ⇒ 才知道到底是哪一步炸的
-                engineLog("[JS形态] #\(i + 1) 失败：\(String(e.message.prefix(160)))")
+                engineLog("[JS形态] #\(i + 1) 失败：\(String(e.message.prefix(160)))"
+                          + "｜代码 \(code.count) 字·头 \(String(code.prefix(60)))")
                 if !e.isSyntaxError {
                     throw e
                 }
@@ -169,9 +177,10 @@ final class WebViewJSExecutor: JSExecutor {
         // ⭐ 完成值会变成导出码的值（undefined）⇒ 与引擎 JSC 版同款（jsLib 本来就不要返回值）⭐
         let exported = JSScopeBuilder.withExplicitGlobalExport(code)
         // ⭐ 全局求值（间接 eval）⇒ jsLib 的 `var` / `function` 留在全局（老引擎同款）
-        let wrapped = "JSON.stringify((0,eval)(" + JSEvalShape.jsonLiteral(exported) + "))"
+        let wrapped = Self.bridgeScript(exported)
         let text = try WebViewJSBridge.shared.evaluateSync(wrapped)
-        return Self.parseValue(text)
+        let env = Self.parseEnvelope(text)
+        return env.value
     }
 
     // MARK: - 宿主对象
@@ -263,6 +272,40 @@ final class WebViewJSExecutor: JSExecutor {
         guard let data = try? JSONSerialization.data(withJSONObject: [any]),
               let text = String(data: data, encoding: .utf8) else { return "null" }
         return text
+    }
+
+    // MARK: - ⭐⭐⭐⭐⭐ 桥接包装（2026-11-10 真机「返回结果的类型不受支持」的修法）
+
+    /// ⭐⭐⭐⭐⭐ **求值脚本 ⇒ 保证完成值一定是字符串 + 顺带带回值的类型**
+    ///
+    /// ⚠️⚠️⚠️ **为什么必须包一层函数**（2026-11-10 真机实证）：
+    ///   旧写法 `JSON.stringify((0,eval)(…))` ⇒ 内层是 **undefined** 时
+    ///   `JSON.stringify` 返回的**也是 undefined** ⇒ 脚本完成值不可桥接
+    ///   ⇒ WebKit 抛 `WKError.resultTypeIsUnsupported`（「执行JavaScript返回结果的类型不受支持」）
+    ///   ⇒ **整个 op 直接失败**（真机：sourceVars / exploreKinds 双双挂）⭐⭐⭐
+    ///   ⇒ 老链路（`Core/RuleSandbox.swift`）早就有 `v === undefined ? null : v` 这层兜底
+    ///   ⇒ **新链路漏了** ⇒ 这就是两边的差异 ⭐⭐⭐
+    ///
+    /// ⭐ **顺带把 `typeof` 带回来** ⇒ 真机失败时能一眼看出「值到底是什么类型」
+    ///   ⇒ 不用再猜「是 undefined 还是函数」⭐⭐⭐
+    private static func bridgeScript(_ src: String) -> String {
+        let lit = JSEvalShape.jsonLiteral(src)
+        return "(function(){var __v=(0,eval)(" + lit + ");var __t=(typeof __v);var __s;"
+            + "try{__s=JSON.stringify(__v===undefined?null:__v);}"
+            + "catch(e){__t='stringify-throw:'+String(e).slice(0,80);__s='null';}"
+            + "return JSON.stringify({t:__t,s:__s});})()"
+    }
+
+    /// ⭐ 把桥接信封解回「类型 + 值」
+    private static func parseEnvelope(_ text: String?) -> (type: String, value: JSONValue) {
+        guard let text, !text.isEmpty else { return ("null", .null) }
+        guard let data = text.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ("raw", .null)
+        }
+        let t = obj["t"] as? String ?? "?"
+        let s = obj["s"] as? String ?? ""
+        return (type: t, value: parseValue(s))
     }
 
     private static func parseValue(_ text: String?) -> JSONValue {
