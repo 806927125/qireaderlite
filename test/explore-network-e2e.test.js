@@ -88,6 +88,50 @@ function fetchRaw(url, headers) {
   const { win } = createSandbox({ nativeMock });
   const crypto = require('crypto');
   const H = crypto.createHash('md5').update('pw', 'utf8').digest('hex');
+
+  // ── 静态断言：书源侧的「整源门禁」只保留在【内容字段】，不挡发现页 ──
+  const eu = String(src.exploreUrl || '');
+  ok(!eu.includes('if (!nhAuth())'),
+     '⭐⭐⭐⭐⭐ exploreUrl 不再有「整源未解锁 ⇒ 交白卷」的门禁（分类接口不需要解锁）');
+  ok(String(src.jsLib || '').includes('function nhAuth()'),
+     '⭐⭐⭐ nhAuth() 仍在 jsLib 里（详情/目录/正文的门禁要保留）');
+  let fieldGates = 0;
+  for (const [k, v] of Object.entries(src)) {
+    if (typeof v !== 'string' || k === 'exploreUrl' || k === 'jsLib') continue;
+    fieldGates += (v.match(/if \(!nhAuth\(\)\)/g) || []).length;
+  }
+  ok(fieldGates > 0,
+     '⭐⭐⭐ 内容字段仍保留整源门禁（未解锁时详情/目录/正文照常交白卷）', '实际 ' + fieldGates);
+
+  // ── loginUi 卫生：输入框不许重名 + 装饰条必须是 label ──
+  let ui = [];
+  try { ui = JSON.parse(String(src.loginUi || '')); } catch (e) {}
+  const inputs = ui.filter((x) => x && (x.type === 'text' || x.type === 'password'));
+  const inputNames = inputs.map((x) => x.name);
+  const dupInputs = [...new Set(inputNames.filter((n, i) => inputNames.indexOf(n) !== i))];
+  ok(dupInputs.length === 0,
+     '⭐⭐⭐ 输入框不许重名（重名会共用同一个 binding ⇒ 填一个全都变）', dupInputs.join('、'));
+  const labels = ui.filter((x) => x && x.type === 'label');
+  ok(labels.length > 0,
+     '⭐⭐⭐ 装饰条必须是 type:"label"（宿主渲染成只读文字，不是输入框）', '实际 ' + labels.length);
+
+  // ── 场景 A：未解锁（用户还没点「🔓 解锁整个源」）⇒ 也必须出真分类 ──
+  const payloadUnlocked = {
+    source: Object.assign({}, src, {
+      __variables: '{}',                 // ⭐ 没有 nhAuthed ⇒ 未解锁
+      __variable: '', __loginInfo: {},
+    }),
+    cookieSnapshot: {},
+  };
+  const rUn = await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify(payloadUnlocked)})`);
+  const kindsUn = (rUn && rUn.kinds) || [];
+  console.log('=== 场景 A：未解锁（用户还没解锁整个源）===');
+  console.log('  分类数 = ' + kindsUn.length);
+  console.log('  前 5 个 = ' + kindsUn.slice(0, 5).map((k) => k.title).join(' | '));
+  ok(kindsUn.length > 10,
+     '⭐⭐⭐⭐⭐ 未解锁也能出真分类（发现页不再是空页）', '实际 ' + kindsUn.length);
+
+  // ── 场景 B：解锁后 ⇒ 同样出真分类 ──
   const payload = {
     source: Object.assign({}, src, {
       __variables: JSON.stringify({ nhAuthed: H, nhPwdHash: H }),
@@ -95,10 +139,10 @@ function fetchRaw(url, headers) {
     }),
     cookieSnapshot: {},
   };
-
+  reqs.length = 0;
   const r = await win.eval(`window.__qrInvoke('exploreKinds', ${JSON.stringify(payload)})`);
   const kinds = (r && r.kinds) || [];
-  console.log('=== 站方 exploreUrl（真网络）===');
+  console.log('=== 场景 B：已解锁（真网络）===');
   console.log('  分类数 = ' + kinds.length);
   console.log('  前 5 个 = ' + kinds.slice(0, 5).map((k) => k.title).join(' | '));
   console.log('  真实请求数 = ' + reqs.length);
