@@ -39,6 +39,7 @@ const REGISTERED = {
   'java.ajaxTestAll': '站方自造（NovelHub 的批量测速）· try/catch 包着',
   'java.openVideoPlayer': '轻阅没有站方那种内嵌视频页 ⇒ 站方 try/catch 包着 ⇒ 降级到网页播放',
   'source.putVariable': '站方防御式调用（`typeof fqS_.putVariable === "function"` 才调）· 缺了没事',
+  'source.refreshExplore': '站方自造的 UI 钩子（NovelHub 聚合源 · 2026-11）· try/catch 包着 ⇒ 缺了不影响（App 跑完 action 自己刷新发现页）',
   // ⚠️⚠️ **下面这几条是【已排期的真缺口】** —— 不是「有意不实现」⇒
   //   通用性体检**每次都会报出来** ⇒ 修完一条就删一条 ⭐
   'java.copyText': '【待补】复制到剪贴板（125 源 32 处）· 宿主实现 UIPasteboard 即可',
