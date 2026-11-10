@@ -28,10 +28,11 @@ function stripComments(t) {
 const modeRaw = read('QiReaderLite/Core/EngineMode.swift');
 const svcRaw = read('QiReaderLite/Core/SourceService.swift');
 const sheetRaw = read('QiReaderLite/Features/Sources/EngineLogSheet.swift');
+const backendRaw = read('QiReaderLite/Core/EngineBackend.swift');
 
 /** ⭐⭐⭐ 门禁本体（可对任意文本跑 ⇒ 变异对照能复用） */
-function check({ mode, svc, sheet }) {
-  const m = stripComments(mode), s = stripComments(svc), u = stripComments(sheet);
+function check({ mode, svc, sheet, backend }) {
+  const m = stripComments(mode), s = stripComments(svc), u = stripComments(sheet), b = stripComments(backend || '');
   const p = [];
   if (!/enum EngineMode/.test(m)) p.push('缺 EngineMode');
   if (!/case webView/.test(m) || !/case swiftEngine/.test(m)) p.push('EngineMode 缺两条引擎分支');
@@ -53,10 +54,15 @@ function check({ mode, svc, sheet }) {
   if (!/EngineMode\.current = \$0 \? \.webView : \.swiftEngine/.test(u)) {
     p.push('自检面板的开关没有真的切换引擎（setter 只会写 .webView）');
   }
+  // ⭐⭐⭐ **展示必须跟着真实通路走**（否则界面会撒谎 ⇒ 用户以为还在新引擎）
+  if (!/case webView/.test(b)) p.push('EngineBackend 没有 WebView 引擎档位');
+  if (/var current: Kind \{ \.swiftNew \}/.test(b)) p.push('EngineBackend.current 仍写死新引擎（界面会撒谎）');
+  if (!/EngineMode\.current/.test(b)) p.push('EngineBackend 没读 EngineMode（真相源不唯一 ⇒ 会漂移）');
+  if (/@AppStorage\("qr\.engineBackend"\)/.test(u)) p.push('面板还挂着旧的 engineBackend 开关（两个开关并存 ⇒ 会打架）');
   return p;
 }
 
-const base = check({ mode: modeRaw, svc: svcRaw, sheet: sheetRaw });
+const base = check({ mode: modeRaw, svc: svcRaw, sheet: sheetRaw, backend: backendRaw });
 ok(base.length === 0, '基线无问题' + (base.length ? '：' + base.join(' / ') : ' ✓'));
 base.forEach(p => ok(false, p));
 
@@ -69,9 +75,11 @@ const mutations = [
   ['不用 RuleSandbox 求值', { svc: svcRaw.replace(/RuleSandbox\.shared\.invoke\(op, payload, source: source\)/, 'SomeOtherEngine.call(op)') }],
   ['诊断包写死旧文案', { sheet: sheetRaw.replace(/EngineMode\.label/, '"老 JS 引擎已退役"') }],
   ['面板开关去掉', { sheet: sheetRaw.replace(/EngineMode\.current = \$0 \? \.webView : \.swiftEngine/, 'EngineMode.current = .webView') }],
+  ['EngineBackend 写死新引擎', { backend: backendRaw.replace(/EngineMode\.current == \.webView \? \.webView : \.swiftNew/, '.swiftNew') }],
+  ['旧开关复活', { sheet: sheetRaw.replace('    // ⭐⭐⭐ 2026-11-10：旧的', '    @AppStorage("qr.engineBackend") private var backendKind = ""\n    // ⭐⭐⭐ 2026-11-10：旧的') }],
 ];
 for (const [name, over] of mutations) {
-  const p = check({ mode: modeRaw, svc: svcRaw, sheet: sheetRaw, ...over });
+  const p = check({ mode: modeRaw, svc: svcRaw, sheet: sheetRaw, backend: backendRaw, ...over });
   ok(p.length > 0, `变异「${name}」被门禁抓到（${p.length} 项）`);
 }
 

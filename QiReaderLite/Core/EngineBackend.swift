@@ -10,21 +10,31 @@ import Foundation
 public enum EngineBackend {
     private static let key = "qr.engineBackend"
 
-    /// 当前后端（**只有新引擎** ⇒ 恒为 `.swiftNew`）
+    /// 当前后端（⭐ 真相源 = `EngineMode` ⇒ 展示与实际不会漂移）
     public enum Kind: String {
+        /// ⭐ WebView 引擎（阅读2.0 同款架构）—— **默认**
+        case webView = "WebView 引擎（阅读2.0 同款）"
+        /// 自研 Swift 引擎（legado-engine）—— 回退用
         case swiftNew = "新 Swift 引擎（legado-engine）"
     }
 
     /// 当前后端
-    public static var current: Kind { .swiftNew }
+    public static var current: Kind {
+        EngineMode.current == .webView ? .webView : .swiftNew
+    }
 
     // MARK: - ⭐⭐⭐ 三件**必须分开显示**的事（各管各的，别混成一句）
 
-    /// **① 引擎**（只有一个 ⇒ 恒为新引擎）
-    public static var switchState: String { "新 Swift 引擎（legado-engine）" }
+    /// **① 引擎**（现在有两种 ⇒ 显示当前那个）
+    public static var switchState: String { current.rawValue }
 
     /// **② 当前是谁在服务**
-    public static var servingText: String { "新 Swift 引擎" }
+    public static var servingText: String {
+        switch current {
+        case .webView: return "WebView 引擎（阅读2.0 同款）"
+        case .swiftNew: return "新 Swift 引擎"
+        }
+    }
 
     /// **③ 最后一次失败原因**（没有它 ⇒ 用户只看到「引擎在服务」⇒ 不知道出了什么事）
     public static var lastError: String? {
@@ -69,8 +79,8 @@ public enum EngineBackend {
     /// 一行说明（给 UI 显示）—— ⭐ **短版**（测书源面板那行）
     public static var description: String {
         if let e = lastError, !e.isEmpty {
-            return "新 Swift 引擎（legado-engine）· 上次失败：\(e.prefix(40))"
+            return "\(current.rawValue)· 上次失败：\(e.prefix(40))"
         }
-        return "新 Swift 引擎（legado-engine）· 运行中"
+        return "\(current.rawValue)· 运行中"
     }
 }

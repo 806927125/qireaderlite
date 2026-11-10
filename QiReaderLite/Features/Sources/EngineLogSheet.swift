@@ -20,14 +20,16 @@ struct EngineLogSheet: View {
     //
     // ⭐⭐⭐ **2026-10-25：老 JS 引擎退役** ⇒ 「用哪个引擎」「失败回不退」两个开关**都删了**
     //   ⇒ 用户不再需要操心这件事 ⇒ 只剩新 Swift 引擎（legado-engine）⭐⭐⭐
-    @AppStorage("qr.engineBackend") private var backendKind = ""
+    // ⭐⭐⭐ 2026-11-10：旧的 `@AppStorage("qr.engineBackend")` 已删除
+    //   （2026-10-25 老引擎退役后它就是**死的**；现在引擎开关统一由 `EngineMode` 承担 ⇒ 两个开关不许并存）⭐⭐⭐
 
-    /// 当前后端（`EngineBackend.Kind` 的原文）
-    private var currentBackendName: String {
-        EngineBackend.Kind(rawValue: backendKind)?.rawValue ?? EngineBackend.Kind.swiftNew.rawValue
-    }
-    /// 主链路是不是走新引擎（**恒为真** ⇒ 只剩一个引擎）
-    private var isNewEngine: Bool { true }
+    /// 当前后端（`EngineMode` 的原文）
+    /// ⭐⭐⭐ **真相源统一到 `EngineMode`**（2026-11-10）⇒ 面板的显示与真实通路**不会漂移**
+    ///   （以前这里挂着一个 `@AppStorage("qr.engineBackend")` ⇒ 2026-10-25 退役老引擎后它**已是死的**）
+    private var currentBackendName: String { EngineMode.current == .webView
+        ? EngineBackend.Kind.webView.rawValue : EngineBackend.Kind.swiftNew.rawValue }
+    /// 主链路是不是走 WebView 引擎（阅读2.0 同款）
+    private var isNewEngine: Bool { !EngineMode.usesWebViewEngine }
     /// 当前是不是新引擎在服务
     private var servingIsNew: Bool { EngineBackend.current == .swiftNew }
     /// 一行「标签：值」
