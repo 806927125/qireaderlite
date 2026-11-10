@@ -275,6 +275,19 @@ struct EngineLogSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("好") { dismiss() }
                 }
+                // ⭐⭐⭐⭐⭐ **引擎切换开关**（2026-11-10 · 按阅读2.0 的架构重做引擎）
+                //   开着 = WebView 引擎（阅读2.0 同款：Swift 宿主 + WebView 内规则求值）
+                //   关着 = 自研 Swift 引擎（legado-engine）
+                // ⇒ 一键切 ⇒ **换引擎不用出新包**（真机对拍随时做）⭐⭐⭐
+                ToolbarItem(placement: .bottomBar) {
+                    Toggle(isOn: Binding(
+                        get: { EngineMode.usesWebViewEngine },
+                        set: { EngineMode.current = $0 ? .webView : .swiftEngine })) {
+                        Label(EngineMode.label, systemImage: "cpu")
+                            .font(.system(size: 13))
+                    }
+                    .padding(.bottom, 4)
+                }
             }
         }
     }
@@ -290,7 +303,7 @@ struct EngineLogSheet: View {
         lines.append("生成时间：\(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium))")
         lines.append("App：\(AppPaths.appVersionLine)")
         lines.append("设备：\(UIDevice.current.model) · iOS \(UIDevice.current.systemVersion)")
-        lines.append("引擎：新 Swift 引擎（legado-engine）· 老 JS 引擎已退役")
+        lines.append("引擎：\(EngineMode.label)")
         lines.append("引擎状态：\(EngineBackend.current.rawValue)")
         if let e = EngineBackend.lastError { lines.append("引擎错误：\(e)") }
         lines.append("")

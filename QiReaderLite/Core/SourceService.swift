@@ -207,6 +207,13 @@ final class SourceService {
 
     private static func invokeEngine(_ op: String, _ payload: [String: Any],
                                      source: BookSource) async throws -> Any {
+        // ⭐⭐⭐⭐⭐ **引擎选择**（2026-11-10 · 按「阅读2.0」的架构重做引擎）
+        //   · `.webView`     = WebView 引擎（阅读2.0 同款：Swift 宿主 + WebView 内规则求值）
+        //   · `.swiftEngine` = 自研 Swift 引擎（legado-engine）⇒ 保留作**回退**
+        // ⇒ 切换开关在【自检面板】一键可切（`EngineMode`）⇒ 换引擎不用出新包
+        if EngineMode.usesWebViewEngine {
+            return try await invokeWebViewEngine(op, payload, source: source)
+        }
         // ⭐⭐⭐ **只有一个引擎了**（老 JS 引擎 2026-10-25 退役）
         //   ⇒ 不再有「开关」⇒ 不再有「回退」⇒ **失败就是失败**，如实报出来 ⭐⭐⭐
         //
@@ -240,6 +247,38 @@ final class SourceService {
             EngineBackend.lastError = "「\(op)」失败：\(error)"
             throw error
         }
+    }
+
+    // MARK: - ⭐⭐⭐⭐⭐ WebView 引擎通路（阅读2.0 同款架构）
+
+    /// ⭐⭐⭐⭐⭐ **走 WebView 引擎**（2026-11-10 · 按阅读2.0 的架构）
+    ///
+    /// ⭐ 架构同款点：**规则求值全在 WebView 的 JS 里做**，原生只负责
+    ///   ① 网络 ② 存储 ③ 宿主 API（`java.*` / `source.*` / `cookie.*` / `cache.*`）
+    ///   ⇒ 原生与 JS 之间**只过字符串** ⇒ 「执行 JavaScript 返回结果的类型不受支持」这类
+    ///   **完成值桥接**问题从结构上消失 ⭐⭐⭐
+    ///
+    /// ⚠️ **两条通路的返回契约必须一致**（否则「站方变量形态证据」会失效）：
+    ///   老引擎返回 `__sourceVars` / `__sourceVariable`，但**不返回** `__sourceVariableChanged`
+    ///   ⇒ 这里**自己判**：回传值与「灌进去的种子」不同 ⇒ 站方真改过 ⇒ 置 true ⭐⭐⭐
+    ///   （判据见 `SourceVariables.stationVariableToSeed` 的注释：证据不许自证）
+    private static func invokeWebViewEngine(_ op: String, _ payload: [String: Any],
+                                            source: BookSource) async throws -> Any {
+        let raw = try await RuleSandbox.shared.invoke(op, payload, source: source)
+        // ⚠️ 老引擎把异常包成 `{error: "…"}` 返回（不抛）⇒ 必须翻译成失败，否则会当成成功
+        if let obj = raw as? [String: Any], let err = obj["error"] as? String, !err.isEmpty {
+            let msg = "[引擎] WebView 引擎跑「\(op)」失败：\(err)"
+            RuleSandbox.shared.appendLog(msg)
+            EngineBackend.lastError = "「\(op)」失败：\(err)"
+            throw ServiceError.engineFailed(err)
+        }
+        guard var obj = raw as? [String: Any] else { return raw }
+        // ⭐⭐⭐ 「站方变量有没有被站方改过」⇒ 与种子逐字比较
+        let seeded = (payload["source"] as? [String: Any])?["__variable"] as? String
+        if let returned = obj["__sourceVariable"] as? String {
+            obj["__sourceVariableChanged"] = (returned != seeded)
+        }
+        return obj
     }
 
     /// ⭐⭐⭐ **新引擎调用**（**必须离开主线程**）
