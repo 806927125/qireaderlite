@@ -433,8 +433,20 @@ final class SourceService {
         guard let dict = r as? [String: Any] else { return "返回格式不对" }
         switch op {
         case "exploreKinds":
-            let n = (dict["kinds"] as? [[String: Any]])?.count ?? 0
-            return "只解析出 \(n) 个分类（站方正常是几十上百个 ⇒ 多半是站方兜底的「未分组」）"
+            let kinds = dict["kinds"] as? [[String: Any]] ?? []
+            let n = kinds.count
+            // ⭐⭐⭐⭐⭐ **把「实际拿到的分类标题」摆出来**（2026-11-10 真机「发现页只剩 1 个分类」）
+            //
+            // ⚠️ **为什么必须摆标题**：站方聚合源的 discover 页**自己**会造「兜底分类」，
+            //   而兜底分类的标题**直接点名是哪个平台挂了**：
+            //     「🦄 UAA（分类加载失败）」/「🐹 次元姬（未登录）」/「🐹 次元姬（分类加载失败）」
+            //   ⇒ 摆出来 ⇒ 用户一眼看到「哪个平台的分类接口没通」⇒ 不用猜 ⭐⭐⭐
+            //
+            // ⚠️ 旧文案说「多半是站方兜底的『未分组』」⇒ **站方根本没有这个名字** ⇒ 误导 ⭐⭐⭐
+            let titles = kinds.prefix(6).map { ($0["title"] as? String ?? "?") }.joined(separator: "、")
+            let extra = titles.isEmpty ? "" : "（实际拿到：\(titles)）"
+            return "只解析出 \(n) 个分类\(extra)"
+                + "（站方正常是几十上百个 ⇒ 说明站方的分类接口没通）"
         case "explore":
             return "书单 0 本"
         case "bookInfo":

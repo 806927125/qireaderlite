@@ -280,6 +280,44 @@ else
   echo "⚠️  没找到 LegadoCore 模块（$LEGADO_MODULES）⇒ 跳过新引擎适配层的门禁"
 fi
 
+# ── 第六组：解锁态 ⇒ 分类能出来（2026-11-10 真机「发现页只剩 1 个分类」）──
+#   ⇒ 站方 exploreUrl 首句是 `if (!nhAuth()) { return ""; }`
+#   ⇒ 解锁态必须能进【引擎的两个变量盒子】⇒ 否则永远「未解锁」⇒ 交白卷 ⭐⭐⭐
+if [ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]; then
+  echo
+  echo "=== 编译「解锁态 ⇒ 分类」门禁（swiftc 真编）==="
+  mkdir -p "$TMP/unlock"
+  cp test/explore-e2e-real.swift "$TMP/unlock/main.swift"
+  if ! "$SWIFTC" -O -I "$LEGADO_MODULES" \
+        "$TMP/unlock/main.swift" \
+        test/linux-shims/EngineBackendStubs.swift \
+        QiReaderLite/Core/BookSource.swift \
+        QiReaderLite/Core/SourceRawArchive.swift \
+        QiReaderLite/Core/LegadoCompat.swift \
+        QiReaderLite/Core/SourceVariables.swift \
+        QiReaderLite/Core/EngineLog.swift \
+        QiReaderLite/Core/StationVarForm.swift \
+        QiReaderLite/Core/EngineBackend.swift \
+        QiReaderLite/Core/ServiceError.swift \
+        QiReaderLite/Core/LegadoEngineBackend.swift \
+        "$LEGADO_BUILD"/LegadoCore.build/*.o \
+        "$LEGADO_BUILD"/SwiftSoup.build/*.o \
+        -o "$TMP/unlock-test" 2>"$TMP/err6.txt"; then
+    echo "❌ 编译失败："
+    cat "$TMP/err6.txt" | head -30
+    exit 1
+  fi
+  echo "✓ 编译通过"
+  echo
+  "$TMP/unlock-test" | tee "$TMP/out6.txt"
+  rc6=${PIPESTATUS[0]}
+  [ $rc6 -ne 0 ] && rc=$rc6
+  _sum "$TMP/out6.txt"
+else
+  echo
+  echo "⚠️  没找到 LegadoCore 模块 ⇒ 跳过「解锁态 ⇒ 分类」的门禁"
+fi
+
 # ⚠️ 汇总行必须**只有一行**、且是**合并后的总数** ——
 #    跑器的汇总解析取「最后一行」⇒ 三组各打一行会把总数算错。
 echo

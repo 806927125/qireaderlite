@@ -117,6 +117,7 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
 
         let box = ResultBox()
         let sem = DispatchSemaphore(value: 0)
+        let started = Date()
         session.dataTask(with: req) { data, resp, err in
             if let err { box.fail(err); sem.signal(); return }
             let http = resp as? HTTPURLResponse
@@ -134,9 +135,28 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         // ⭐ 超时比请求超时多给 5 秒 ⇒ 别把「网络慢」误报成「引擎卡死」
         // ⚠️⚠️ **必须用 effectiveTimeout**（不是 request.timeout）⇒ 否则下限改了也没用 ⭐⭐⭐
         if sem.wait(timeout: .now() + effectiveTimeout + 5) == .timedOut {
+            // ⭐⭐⭐⭐⭐ **失败也要留下证据**（2026-11-10 真机「发现页只剩 1 个分类」）
+            //   ⇒ 站方的分类接口没通时，**看日志就知道是哪个 URL、卡了多久** ⭐⭐⭐
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            engineLog("[请求] ✗ 超时 \(ms)ms op=\(LegadoEngineBackend.currentOp) \(request.url)")
             throw SourceError.requestFailed(request.url, "请求超时（\(Int(effectiveTimeout))s）")
         }
-        return try box.take()
+        // ⭐⭐⭐⭐⭐ **每个请求留一行**（成功也留 ⇒ 慢请求与空响应一眼可见）
+        //   ⇒ 站方聚合源的分类接口挂了时，日志里能直接看到「哪个 URL 返回了什么」⭐⭐⭐
+        do {
+            let resp = try box.take()
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            let kb = resp.body.count / 1024
+            let mark = resp.statusCode >= 400 ? "✗" : "✓"
+            engineLog("[请求] \(mark) \(resp.statusCode) \(kb)KB \(ms)ms op=\(LegadoEngineBackend.currentOp) "
+                      + String(request.url.prefix(150)))
+            return resp
+        } catch {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            engineLog("[请求] ✗ 失败 \(ms)ms op=\(LegadoEngineBackend.currentOp) \(request.url)"
+                      + " ⇒ \(String(describing: error).prefix(120))")
+            throw error
+        }
     }
 
     /// ⭐ **`data:` 伪 URL 的载荷**
@@ -335,6 +355,68 @@ final class EngineHostAPI: JSHostAPIProvider, StationVariableSourceProviding, @u
             //   ⚠️ 本文件**不许碰 UIKit / RuleSandbox**（沙盒在 Linux 上编译 ⇒ import UIKit 编不过）⭐⭐⭐
             //   ⇒ App 启动时（`RuleSandbox`，那边有 UIKit）把真设备 ID 写进来 ⭐
             return .string(UserDefaults.standard.string(forKey: "qr.deviceID") ?? "")
+        // ⭐⭐⭐⭐⭐ **`java.deviceID`**（2026-11-10 真机「发现页只剩兜底分类」实证）
+        //
+        // ⚠️ **症状**：✿UAA 聚合源的 `nhMyUrl` 拼的头是
+        //   `"X-Device-ID": "yd-" + nhMyDid()` ⇒ **服务端按这个头鉴权/限流**
+        //   ⇒ 新引擎链路上 **`java.deviceID()` 没人实现**（引擎只在契约清单里登记了它，
+        //     真的实现是宿主的事 ⇒ 而 App 的 `EngineHostAPI` **没有这个 case**）
+        //   ⇒ 站方拿到空/异常值 ⇒ **头非法 ⇒ 服务端拒绝 ⇒ 分类接口失败**
+        //   ⇒ 站方兜底造 1 个「未分组」分类 ⇒ **App 判「结果不可信」⇒ 发现页空** ⭐⭐⭐
+        //
+        // ⭐ **老引擎有**（`RuleSandbox` 的 `case "deviceID"`）⇒ **新引擎链路缺** ⇒ 静默失效 ⭐⭐⭐
+        // ⇒ 与 `androidId` **同源**（老引擎的 androidId 就是 deviceID 的别名）⭐
+        case "deviceID":
+            return .string(UserDefaults.standard.string(forKey: "qr.deviceID") ?? "")
+        // ⭐⭐⭐⭐⭐ **补齐「老引擎有、新引擎没有」的宿主能力**（2026-11-10 对账实证）
+        //
+        // ⚠️⚠️ **为什么必须补**：老引擎（`RuleSandbox`）实现了 **22 个**宿主能力，
+        //   新引擎链路（`EngineHostAPI`）当时只有 **8 个** ⇒ **14 个在真机上静默失效** ⭐⭐⭐
+        //   ⇒ 症状不是「某个 API 报错」⇒ 而是「请求头/参数缺失 ⇒ 服务端拒绝 ⇒ 整页空」⭐
+        //   ⇒ **站方把 `X-Device-ID` 这类头交给宿主取** ⇒ 宿主缺 ⇒ 头非法 ⇒ 服务端拒 ⭐⭐⭐
+        //
+        // ⭐ **判据**：凡是老引擎有、新引擎没有的 ⇒ 真机新引擎链路上就是坏的（能力面体检看不出来）⭐⭐⭐
+        case "getWebViewUA":
+            // 老引擎：`Self.userAgent` ⇒ 同源（纯 Foundation ⇒ Linux 门禁能编）⭐
+            return .string(LegadoCompat.userAgent)
+        case "sourceHeader":
+            // 老引擎：`currentSource?.header` ⇒ 源级请求头（54 个源在用）⭐
+            // ⇒ 引擎侧是 `sourceHeaders`（已解析成字典）⇒ 拼回 JSON 文本 ⭐
+            let hs = session.engine?.sourceHeaders ?? [:]
+            if let data = try? JSONSerialization.data(withJSONObject: hs),
+               let txt = String(data: data, encoding: .utf8) {
+                return .string(txt)
+            }
+            return .string("")
+        case "getStringArray":
+            // 老引擎：数组逐项 base64 ⇒ 站方拿到的是数组（不是 Promise）⭐
+            // ⇒ JSONValue 没有数组访问器 ⇒ 用 foundationValue 取 ⭐
+            var arr: [String] = []
+            if args.count > 1 {
+                let fv = args[1].foundationValue
+                if let a = fv as? [Any] {
+                    arr = a.map { String(describing: $0) }
+                } else if let a = fv as? [String] {
+                    arr = a
+                }
+            }
+            return .array(arr.map { .string($0) })
+        case "cachePut":
+            // 老引擎：转发到 `LegadoCompat.Cache`（纯 Foundation）⭐
+            let k = first
+            let v = args.count > 1 ? args[1].scalarString : ""
+            LegadoCompat.Cache.put(k, v)
+            return .string("1")
+        case "cacheGet":
+            return .string(LegadoCompat.Cache.get(first))
+        case "cacheRemove":
+            LegadoCompat.Cache.remove(first)
+            return .string("1")
+        case "readCache":
+            // 老引擎：读缓存文件（内容型缓存）⇒ 走同一个 Cache ⭐
+            return .string(LegadoCompat.Cache.get(first))
+        case "cacheText":
+            return .string(LegadoCompat.Cache.get(first))
         // ⭐⭐ **浏览器类**（`startBrowserAwait` 27 处 / `startBrowserDp` 6 处 / `showReadingBrowser` 6 处）
         //   老引擎是**同步等用户关掉**（两遍跑机制）⇒ 新引擎是同步引擎 ⇒ 没法在这儿等
         //   ⇒ 先**触发打开**（不等）⇒ 站方第二遍再来取 cookie ⇒ 与老引擎的「两遍跑」同思路 ⭐⭐⭐
@@ -563,7 +645,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
         // ⭐⭐⭐ **源级变量**（站方 `server` / `tab` / `sources` / `find_source` …）
         //   轻阅存在 `SourceVariables`（一个 JSON 串）⇒ 引擎存在 `varBox`（键值表）
         //   ⇒ **双向同步**：进（轻阅 → 引擎）/ 出（引擎 → 轻阅，落盘）
-        Self.seedVars(from: payload, into: engine.varBox)
+        // ⭐⭐⭐⭐⭐ **两个盒子都灌**（站方 `source.get()` 读的是 `javaVars` ⇒ 只灌 varBox ⇒ 解锁态读不到）
+        Self.seedVars(from: payload, into: engine.varBox, and: engine.javaVars)
         // ⭐⭐⭐ **站方变量**（Legado 语义）⇒ 灌进引擎的槽位（`source.getVariable()` 读它）⭐
         //   ⚠️ 与「书源变量」（varBox）**分开** ⇒ 站方 setVariable 不会冲掉 get/put 的项 ⭐
         // ⭐⭐⭐ **记下「灌进去的是哪一串」** ⇒ 出的时候才知道**站方到底改没改** ⭐⭐⭐
@@ -624,7 +707,8 @@ final class LegadoEngineBackend: @unchecked Sendable {
         }
         // ⭐ **站方 JS 改过的源级变量** ⇒ 回传给轻阅（落盘 ⇒ 下次直接生效）
         if var dict = out as? [String: Any] {
-            dict["__sourceVars"] = Self.varsJSON(engine.varBox)
+            // ⭐⭐⭐⭐⭐ **两个盒子都导出**（站方 `source.put()` 写的解锁态要能落盘 ⇒ 下次启动仍然有效）
+            dict["__sourceVars"] = Self.varsJSON(engine.varBox, and: engine.javaVars)
             // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 回传给轻阅（落盘）⭐
             if let sv = engine.sourceVariable {
                 dict["__sourceVariable"] = sv.text
@@ -675,7 +759,23 @@ final class LegadoEngineBackend: @unchecked Sendable {
     private static let varsParseLock = NSLock()
     private static var varsParseCache: [String: [String: Any]] = [:]
 
+    /// ⭐⭐⭐⭐⭐ **灌变量：必须灌【两个盒子】**（2026-11-10 真机「发现页只剩兜底分类」实证）
+    ///
+    /// ⚠️⚠️ **根因**：引擎里有**两个**变量盒子：
+    ///   - `varBox`  = 规则/模板读写的源级变量
+    ///   - `javaVars` = **`source.get/put` / `java.get/put` 读写的那个**（引擎 `engineJava` 的 `get`/`put`）
+    /// ⇒ 而轻阅以前**只灌 `varBox`** ⇒ **站方 `source.get("nhAuthed")` 永远读不到解锁态** ⭐⭐⭐
+    /// ⇒ **✿UAA 聚合源**每个字段首句都是 `if (!nhAuth()) { return ""; }`
+    ///   ⇒ 解锁态读不到 ⇒ **永远「未解锁」⇒ 全源交白卷 ⇒ 发现页只剩站方兜底的「未分组」** ⭐⭐⭐
+    /// ⇒ **症状与真机截图逐字吻合**：「exploreKinds 结果不可信：只解析出 1 个分类」
+    ///
+    /// ⭐ **修法**：灌的时候**两个盒子都灌** ⇒ 站方 `source.get()` 与规则读 `varBox` 都能看到。
     static func seedVars(from payload: [String: Any], into box: VarBox) {
+        seedVars(from: payload, into: box, and: nil)
+    }
+
+    /// ⭐⭐⭐ **同时灌两个盒子**（`varBox` + `javaVars`）
+    static func seedVars(from payload: [String: Any], into box: VarBox, and javaBox: VarBox?) {
         guard let srcDict = payload["source"] as? [String: Any],
               let text = srcDict["__variables"] as? String, !text.isEmpty
         else { return }
@@ -695,14 +795,28 @@ final class LegadoEngineBackend: @unchecked Sendable {
         }
         guard let obj else { return }
         for (k, v) in obj {
-            if let s = v as? String { box.set(k, s) }
-            else if let n = v as? NSNumber { box.set(k, n.stringValue) }
+            let s: String
+            if let sv = v as? String { s = sv }
+            else if let n = v as? NSNumber { s = n.stringValue }
+            else { continue }
+            box.set(k, s)
+            // ⭐⭐⭐ **`javaVars` 也要灌**（站方 `source.get()` 读的是它 ⇒ 解锁态/令牌都在那儿）
+            javaBox?.set(k, s)
         }
     }
 
     /// ⭐ **源级变量：引擎 → 轻阅**（一个 JSON 串）
-    static func varsJSON(_ box: VarBox) -> String {
-        let all = box.all
+    ///
+    /// ⭐⭐⭐⭐⭐ **必须合并【两个盒子】**（2026-11-10 真机「发现页只剩兜底分类」实证）
+    ///   - `varBox`   = 规则/模板读写的源级变量
+    ///   - `javaVars` = **站方 `source.get/put` 写的那个**（含 `nhAuthed` 解锁态、令牌 …）
+    /// ⇒ 只导出 `varBox` ⇒ **站方自己写的东西（解锁态）落不了盘** ⇒ 下次启动又「未解锁」⭐⭐⭐
+    /// ⇒ 合并导出 ⇒ 两个盒子都落盘 ⇒ 灌回来时两个盒子都有 ⇒ 闭环成立 ⭐⭐⭐
+    static func varsJSON(_ box: VarBox, and javaBox: VarBox? = nil) -> String {
+        var all = box.all
+        if let javaBox {
+            for (k, v) in javaBox.all where all[k] == nil { all[k] = v }
+        }
         guard !all.isEmpty,
               let data = try? JSONSerialization.data(withJSONObject: all),
               let text = String(data: data, encoding: .utf8) else { return "" }
