@@ -137,3 +137,81 @@
 3. `ruleContent.replaceRegex` / `ruleToc.formatJs` 等字段补齐（两引擎同步）
 4. `webJs` 模式（栖阅独有）—— 观察真实源里有没有用到
 5. XPath 子集外表达式 ⇒ 真出现再搬 Kanna
+
+---
+
+## 10. 2026-11-18 晚：拿到 **legado-E 源码** ⇒ 语义口径升级为「源码级」
+
+> 用户决定：「整个搬过来，现在这个引擎不要了」⇒ 于是把 **legado-E**（阅读Sigma = legado 的继承，GPL-3.0，**个人自用不触发分发义务**）拉下来当**源码级底稿**，
+> 而**不是**猜规格 ⇒ 这一节把「谁是权威」彻底定死。
+
+### 10.1 权威口径的优先级（重要，别再混）
+
+| 参照物 | 地位 | 理由 |
+|---|---|---|
+| **栖阅 / 柴阅** | ⭐⭐⭐ **最终权威**（语义） | 柴阅 = 栖阅同构 ⇒ **用户真机在用的就是它** ⇒ 「同源柴阅可以」的标准答案 |
+| **legado-E** | ⭐⭐ **结构与底稿**（规则切分/URL 选项/字段清单） | Kotlin 源码可读 ⇒ 比反推规格精确得多 ⇒ 用来**逐条核对** |
+| 栖阅的**反推规格** | ⭐ 辅助 | 只有规格没有源码 ⇒ 用来补 legado-E 没有的部分 |
+
+⇒ ⇒ **落地方针：语义按栖阅，结构按 legado-E，缺的部分两边的规格补齐。**
+
+### 10.2 legado-E 源码给出的**正统 Legado 语义**（`model/webBook/BookInfo.kt` + `analyzeRule/AnalyzeRule.kt`）
+
+```kotlin
+analyzeRule.setContent(body)                                    // content = 详情页原文
+if (infoRule.init.isNotBlank())
+    analyzeRule.setContent(analyzeRule.getElement(it))            // ⭐ init 的输出【替换 content】
+analyzeRule.getString(infoRule.name)                            // 字段规则以【init 的输出】为基准
+```
+```kotlin
+fun evalJS(jsStr: String, result: Any? = null): Any? {
+    bindings["result"] = result        // ⭐ result = 【当前 content】
+    bindings["src"]   = content        // ⭐ src   = 【当前 content】（另一个名字）
+    ...
+}
+```
+
+⇒ 三条结论：
+1. **init 的输出替换 content** ⇒ 后续字段规则的基准 = init 输出（轻阅两个引擎本来就这么做 ✔）
+2. **`result` = 当前 content** ⇒ **不是**「解析后的对象」⇒ `String(result)` 天然就是页面原文
+3. **`src` 是 content 的别名** ⇒ 站方也可以用 `src`（轻阅两个引擎**都没有 `src`** ⇒ 缺口 ⭐⭐⭐）
+
+### 10.3 ⭐⭐⭐ **栖阅比 legado-E 多的那一层：JSON 对象的 `toString` 桥**
+
+| | `result` 绑 JSON 对象时 | `String(result)` |
+|---|---|---|
+| **legado-E**（Rhino 原生对象） | 对象 | `"[object Object]"` ⇒ `JSON.parse` **抛** |
+| **栖阅 / 柴阅** | 对象（`makeJavaScriptJSONObjectValue`） | **原始 JSON 文本** ⇒ `JSON.parse` **可用** ✔ |
+
+⇒ ⇒ **这就是「同源柴阅可以、轻阅不行」的第一性解释**：
+聚合源的详情字段写的是 `JSON.parse(String(result))` ⇒ **必须有那层桥** ⇒ 轻阅两个引擎都缺 ⇒ 六个详情字段一起空。
+⇒ ⇒ 轻阅已补（老引擎 `engine.js` 的 init 输出挂 `toString`/`valueOf`；Swift 引擎 `JSHostAPI.resultBinding`）⭐⭐⭐
+
+⇒ ⇒ ⚠️ **推论**：**照 legado-E 照抄语义会把柴阅的能力再弄丢一次** ⇒ ⇒ 必须「以栖阅为准」。
+
+### 10.4 legado-E 的 **URL 选项全集**（`analyzeRule/AnalyzeUrl.kt` 240~267 行逐项读出）
+
+`method` `headers` `body` `type` **`charset`** **`retry`** **`useWebView`** **`webJs`** **`bodyJs`** `js` **`dnsIp`** **`serverID`** **`webViewDelayTime`** `proxy`
+（栖阅再多：`initialHeaderMap` `requestContextVariables` `sourceRegex` `overrideUrlRegex` `requestTimeout`）
+
+⇒ ⇒ 轻阅原来只支持 **3 个**（method/headers/body）⇒ **这就是「同源 A 不行 B 可以」的结构性原因** ⭐⭐⭐
+⇒ ⇒ 已移植进 Swift 引擎（`URLBuilder.Built` + `HTTPRequest` 透传 + `PageFetcher` 实现 `retry`），宿主侧实现 `charset` 解码。
+
+### 10.5 legado-E 的 `BookSource` 字段清单（`data/entities/BookSource.kt`）
+
+⇒ `ruleBookInfo`：`name author coverUrl intro kind lastChapter wordCount updateTime init tocUrl canReName downloadUrls preUpdateJs`
+⇒ `ruleToc`：`chapterList chapterName chapterUrl formatJs isVolume isVip isPay updateTime nextTocUrl preUpdateJs`
+⇒ `ruleContent`：`content title subContent nextContentUrl replaceRegex webJs sourceRegex imageStyle imageDecode payAction callBackJs`
+⇒ **轻阅两个引擎缺的**：`updateTime` `canReName` `downloadUrls` `preUpdateJs` `formatJs` `isVip` `isPay` `subContent` `replaceRegex` `sourceRegex` `imageDecode` `payAction` `callBackJs` `imageStyle` `src` 变量
+
+### 10.6 本轮落地
+
+| 项 | 状态 |
+|---|---|
+| 默认引擎 = 自研 Swift 引擎（WebView 降为面板可切的退路） | ✅ build293 |
+| URL 选项全集（17 键）+ 站方 `retry` | ✅ legado-engine `043f0b2` |
+| `charset` 宿主侧解码（GBK/GB2312/Big5/EUC-JP） | ✅ build293 |
+| `@js:` 前缀 ⇒ 整条当 JS（不取尾部） | ✅ build291 |
+| `result` 的 JSON 对象 toString 桥 | ✅ build291（老引擎）/ Swift 引擎同步补 |
+| `src` 变量（content 的别名） | ⏳ 待补 |
+| 其余字段（`replaceRegex` / `formatJs` / `isVip` / `payAction` / `callBackJs` / `updateTime` / `preUpdateJs` …） | ⏳ 待补（可按 legado-E 源码逐条移植） |

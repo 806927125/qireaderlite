@@ -1118,6 +1118,11 @@
       //
       //   ⚠️ baseUrl 已经是「当前页 URL」（markContent 里 ctx.baseUrl = page.url）
       //      ⇒ 站方靠 `baseUrl.indexOf("aaccoo.com")` 判断平台的写法也就成立了 ✅
+      // ⭐⭐⭐ **`src` = 当前页原文**（Legado/legado-E/栖阅 都有 ⇒ 我们原来缺）
+      //   Legado 的 `bindings["src"] = content` ⇒ 站方可以写 `String(src)` 拿整页
+      //   ⇒ 缺了 ⇒ 站方这类写法直接 ReferenceError ⇒ **整条规则死** ⭐⭐⭐
+      // ⚠️ 三元**必须带 else 分支**（照抄下面 `raw` 的两行写法时漏了 `:` ⇒ 语法错）⭐⭐⭐
+      src: (ctx && ctx.raw != null) ? ctx.raw : '',
       raw: (ctx && ctx.raw != null) ? ctx.raw
            : ((base && base.__raw != null) ? base.__raw : ''),
       // ⚠️ 必须包一层：站方 JS 直接调 source.getVariable()，
