@@ -38,6 +38,9 @@ declare -a GATES=(
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "explore-groups:test/explore-groups.test.js"
   "js-no-interpolate:test/js-no-interpolate.test.js"
+  # ⭐⭐⭐⭐⭐ `@js:` 规则不许在正文里被「尾部 JS」腰斩（2026-11-18 真机真凶：
+  #   聚合源 6 个详情字段一起空 ⇒ 修在 rule-analyzer.js 的 isJsPrefixed）
+  "js-rule-tail:test/js-rule-tail-contract.test.js"
   "login-formvalues:test/login-formvalues.test.js"
   "source-getput:test/source-getput.test.js"
   "js-booklist:test/js-booklist.test.js"
@@ -133,6 +136,7 @@ declare -a GATES=(
   #   ⇒ 「门禁全绿」有两种可能：① 实现对 ② 门禁没抓到东西（平凡通过）⭐⭐⭐
   #   ⇒ 这一层专门证伪 ②（会真的改源码 ⇒ 跑之前要 commit）
   "mutation-station-var:test/mutation-station-var.test.js"
+  "mutation-js-rule-tail:test/mutation-js-rule-tail.test.js"
   # ⭐⭐⭐⭐⭐ **站方能力面体检**（通用性的地基 · 2026-10-27）
   #   ⇒ 扫真实语料（125 源 + 聚合源）用到的站方 API 面 ⇒ 跟轻阅实现的面对账
   #   ⇒ **新出现的站方 API 必须当场定性**（实现 / 登记为例外）⇒ 不用人肉适配 ⭐

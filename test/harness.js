@@ -3,7 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const ENGINE_DIR = path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
+// ⭐⭐⭐ **可用 QR_ENGINE_DIR 指向别的引擎副本**（基座/变异对照要用）
+//   ⇒ 变异脚本把「改坏的引擎」放临时目录 ⇒ 用这个环境变量指过去 ⇒ 不用改真实文件
+const ENGINE_DIR = process.env.QR_ENGINE_DIR
+  || path.join(__dirname, '..', 'QiReaderLite', 'Resources', 'engine');
 // 顺序必须与 QiReaderLite/Core/RuleSandbox.swift 的 ResourceLocator.scripts 完全一致 ——
 // 不一致会让"沙盒能跑、真机不跑"或者反过来。
 const FILES = [

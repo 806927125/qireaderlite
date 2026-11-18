@@ -1869,6 +1869,25 @@
                 var t = b.replace(/^[\s]+|[\s]+$/g, '');
                 if (t.charAt(0) === '{' || t.charAt(0) === '[') {
                   try { b = JSON.parse(t); } catch (e) { /* 保持原样 */ }
+                  // ⭐⭐⭐⭐⭐ **`result` 的 JSON 对象语义**（2026-11-18 · 对齐栖阅 AnalyzeRule）
+                  //
+                  // ⚠️ **为什么必须**：站方的详情字段常这么写（起点聚合 / 大灰狼 / UAA…）：
+                  //      var _R = String(typeof result !== 'undefined' && result != null ? result : "");
+                  //      var _MB = JSON.parse(_R) || {};      // ← 拿 result 当**页面原文**解 JSON
+                  //   ⇒ 而 init 的输出被我们 **parse 成了对象** ⇒ `String(result)` = "[object Object]"
+                  //   ⇒ `JSON.parse` 抛 ⇒ 字段全空 ⇒ **整本书详情空**（差集=0 的「共同缺口」）⭐⭐⭐
+                  //
+                  // ⭐ **栖阅的做法**（`AnalyzeRule.makeJavaScriptJSONObjectValue`）：
+                  //   把 JSON 文本解析成对象，**并覆写 toString / valueOf 回到原始文本**
+                  //   ⇒ `result.book_id` 能用（对象）· `String(result)` 也是原始 JSON 文本（文本）⇒ **两边都对**
+                  try {
+                    Object.defineProperty(b, 'toString', {
+                      value: function () { return t; }, enumerable: false, configurable: true, writable: true
+                    });
+                    Object.defineProperty(b, 'valueOf', {
+                      value: function () { return t; }, enumerable: false, configurable: true, writable: true
+                    });
+                  } catch (e) { /* 冻结对象 ⇒ 忽略（退化成默认 toString） */ }
                 }
               }
               return b;

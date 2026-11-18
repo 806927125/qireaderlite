@@ -845,10 +845,25 @@
     // 拆出尾部后处理：##正则##替换 / <js>...</js>
     var tail = '';
     var body = String(rule);
-    var jsTailIdx = findJsTail(body);
-    if (jsTailIdx >= 0) { tail = body.slice(jsTailIdx); body = body.slice(0, jsTailIdx).trim(); }
-    var rgIdx = findRegexTail(body);
-    if (rgIdx > 0) { tail = body.slice(rgIdx) + (tail || ''); body = body.slice(0, rgIdx).trim(); }
+    // ⭐⭐⭐⭐⭐ **`@js:` 前缀的规则 ⇒ 整条就是 JS 代码 ⇒ 【不许切尾部】**（2026-11-18 · 对齐栖阅 AnalyzeRule）
+    //
+    // ⚠️⚠️⚠️ **这是真机「详情字段全空」的真凶**（聚合源 6 个字段一起死）：
+    //   站方的 `@js:` 规则正文里**提到过 `@js:`**（例如注释）：
+    //     // 命中就覆盖 out（不 return —— @js: 是 evaluateString 语义，顶层 return 会抛）
+    //   ⇒ 以前 `findJsTail()` 用 `indexOf('@js:', 4)` 找「尾部 JS」⇒ **在注释那一处把规则腰斩** ⭐⭐⭐
+    //   ⇒ 腰斩后 `try { … }` 失去 catch ⇒ **SyntaxError: Missing catch or finally after try**
+    //   ⇒ 规则整体死 ⇒ name/author/kind/lastChapter/coverUrl/wordCount **全空** ⭐⭐⭐
+    //   ⇒ 而站方在**栖阅**上是好的（用户真机一直在用）⇒ ⇒ 说明栖阅**不切 `@js:` 里的尾部** ⭐⭐⭐
+    //
+    // ✅ 正确口径（与自研引擎 `RuleParser` 的 ②' 一致）：
+    //   `@js:` 前缀 ⇒ **整条当 JS**（跟 `<js>…</js>` 整块同待遇）⇒ 不找尾部、不按 `||`/`&&` 拆 ⭐⭐⭐
+    var isJsPrefixed = /^\s*@js:/i.test(String(rule || ''));
+    if (!isJsPrefixed) {
+      var jsTailIdx = findJsTail(body);
+      if (jsTailIdx >= 0) { tail = body.slice(jsTailIdx); body = body.slice(0, jsTailIdx).trim(); }
+      var rgIdx = findRegexTail(body);
+      if (rgIdx > 0) { tail = body.slice(rgIdx) + (tail || ''); body = body.slice(0, rgIdx).trim(); }
+    }
     kind = classify(body);
     // ⚠️⭐⭐ **`result.xxx` 是 Legado 允许的 JSONPath 写法**（意思是「相对当前结果」）
     //   轻阅以前**不认** ⇒ 它落进「选择器」分支 ⇒ 0 命中
