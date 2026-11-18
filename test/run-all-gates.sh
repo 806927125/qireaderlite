@@ -23,132 +23,26 @@ cd "$(dirname "$0")/.."
 
 # 有些门禁依赖本机文件（书源 JSON），没有就自己跳过 —— 那是「跳过」不是「通过」
 declare -a GATES=(
-  "login-status:test/login-status.test.js"
-  "engine-lint:test/engine-lint.test.js"
-  "engine-smoke:test/engine-smoke.test.js"
-  "login-card:test/live-login-card.test.js"
-  "toc-diag-truth:test/toc-diag-truth.test.js"
-  "b64-url-mangle:test/b64-url-mangle.test.js"
-  "ajax-retry:test/ajax-retry.test.js"
-  "ajax-candidate-group:test/ajax-candidate-group.test.js"
-  "explore-filter:test/explore-filter.test.js"
-  "host-failover:test/host-failover.test.js"
-  "toc-placeholder:test/toc-placeholder.test.js"
-  "global-isolation:test/global-isolation.test.js"
+  # ⭐⭐⭐⭐⭐ **引擎替换契约**（2026-11-19：老的两条引擎全删 ⇒ 换成 `LegadoEngine`）
+  #   ⇒ 钉住：老引擎痕迹为零 · 新引擎在位 · op 接线齐全 · 变量契约不丢 · 新引擎自带测试绿
+  "engine-replacement-contract:test/engine-replacement-contract.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
-  "explore-groups:test/explore-groups.test.js"
-  "js-no-interpolate:test/js-no-interpolate.test.js"
-  # ⭐⭐⭐⭐⭐ `@js:` 规则不许在正文里被「尾部 JS」腰斩（2026-11-18 真机真凶：
-  #   聚合源 6 个详情字段一起空 ⇒ 修在 rule-analyzer.js 的 isJsPrefixed）
-  "js-rule-tail:test/js-rule-tail-contract.test.js"
-  "login-formvalues:test/login-formvalues.test.js"
-  "source-getput:test/source-getput.test.js"
-  "js-booklist:test/js-booklist.test.js"
-  "data-url-guard:test/data-url-guard.test.js"
-  "global-restore:test/global-restore.test.js"
-  "book-raw:test/book-raw.test.js"
-  "js-no-tail:test/js-no-tail.test.js"
-  "data-url-bookid:test/data-url-bookid.test.js"
-  "result-semantics:test/result-semantics.test.js"
-  "rule-syntax-compat:test/rule-syntax-compat.test.js"
-  "swift-dto-tolerant:test/swift-dto-tolerant.test.js"
-  "filter-action:test/filter-action.test.js"
   "source-test:test/source-test.test.js"
-  "browser-sync:test/browser-sync.test.js"
-  "timeout-budget:test/request-timeout-budget.test.js"
-  "qiyue-parity:test/qiyue-parity.test.js"
-  "analyze-url-parity:test/analyze-url-parity.test.js"
-  "source-vars:test/source-vars.test.js"
-  "fq-login:test/live-fq-login.test.js"
-  "live-explore:test/live-explore.test.js"
-  "live-toc:test/live-toc.test.js"
-  "live-bookinfo:test/live-bookinfo.test.js"
   "reader-settings:test/reader-settings.test.js"
   "reader-native-paging:test/reader-native-paging.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
   "reader-jsapi:test/reader-jsapi.test.js"
-  "native-bridge:test/native-bridge.test.js"
-  "jsoup-xpath:test/jsoup-xpath.test.js"
-  "engine-api-parity:test/engine-api-parity.test.js"
-  "engine-java-api:test/engine-java-api.test.js"
-  "engine-packages:test/engine-packages.test.js"
   "packages-native:test/packages-native.test.js"
-  "packages-source:test/packages-source.test.js"
-  "engine-script-toplevel:test/engine-script-toplevel.test.js"
-  "dahulang-adapt:test/dahulang-adapt.test.js"
-  "mfzs:test/mfzs.test.js"
-  "pack125-adapt:test/pack125-adapt.test.js"
   "powenxue:test/powenxue.test.js"
   "paging-algorithm:test/paging-algorithm.test.js"
-  "rules:test/rules.test.js"
-  "e2e:test/e2e.test.js"
   "swift-bookdto:test/swift-bookdto.test.js"
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
   "real-timeout-guard:test/real-timeout-guard.test.js"
-  # ⭐⭐⭐⭐⭐ **Linux 编译门禁**（2026-10-25 build253 CI 失败事故）：
-  #   改了 SourceService.swift 沙盒却全绿 ⇒ 因为它**根本没被编过** ⇒ 多一个 } 就把 CI 挂了
-  #   ⇒ 现在用 stub 让它**真被 swiftc 编译** ⇒ 3 秒抓到 ⇒ 不用等 5 分钟 CI
+  # ⭐⭐⭐⭐⭐ **Linux 编译门禁**（改了 Core/ 沙盒却全绿 ⇒ 因为它**根本没被编过**）
+  #   ⇒ 现在 swiftc 真编 + **链真引擎** ⇒ 3 秒抓到 ⇒ 不用等 5 分钟 CI
   "linux-compile:test/linux-compile-gate.test.js"
-  # ⭐⭐⭐ 发现页过滤 + 文件导入（2026-10-26 用户反馈三条）
-  "source-import-discover:test/source-import-discover.test.js"
-  # ⭐⭐⭐⭐⭐ **op 结构一致性**（2026-10-25 真机 build253 实证）：
-  #   runBookInfo 返回 ["book": {...}]（嵌套）而 isTrustworthy 读顶层 ⇒ 详情页 100% 失败
-  #   ⇒ 沙盒对拍**直接调引擎** ⇒ 绕过 App 侧这层 ⇒ 永远抓不到 ⭐⭐⭐
-  "op-shape-consistency:test/op-shape-consistency.test.js"
-  # ⭐⭐⭐⭐⭐ **op 分流契约**（2026-10-29 真机回归：「发现都没了」的根因）
-  #   ⇒ 把 `login`/`filterAction` 切到新引擎 ⇒ 引擎的 runXxx **没传 source**
-  #     ⇒ 全局 `source` 没有宿主方法 ⇒ 站方 `source.put('order',…)` 写不进去
-  #     ⇒ 筛选栏 0 个 + explore 的 order_type 取旧值 ⇒ **HTTP 500** ⇒ 发现页全空 ⭐⭐⭐
-  #   ⇒ **要写变量的 op 必须走老引擎**（老引擎会把 `g.source` 挂到全局）⭐
-  "op-routing-contract:test/op-routing-contract.test.js"
-  # ⭐⭐⭐⭐⭐ **登录 op 的【行为】门禁**（2026-10-29 真机回归：aid 写不进去 ⇒ explore 500 ⇒ 发现页空）
-  #   ⇒ 真跑一遍 login op ⇒ 断言站方 `source.put('aid',…)` 落进了书源变量 ⭐⭐⭐
-  #   ⇒ **行为级**（不是静态匹配源码）⇒ 比 op-routing-contract 更硬 ⭐
-  "login-writes-vars:test/login-writes-vars.test.js"
-  # ⭐⭐⭐ UAA 四合一（知秋）：「获取Token」链路（2026-10-27 用户报「获取 token 不了」）
-  #   ⇒ 真服务器回 403「无效JWT」⇒ 根因：`source.getVariable()` 在轻阅返回的是整份变量 JSON
-  #   ⇒ 轻阅版源把 token 改存「书源变量·token」项 + 没有 token 就不发 authorization 头
-  "uaa-token:test/uaa-token.test.js"
-  # ⭐⭐⭐ **站方变量 / 书源变量 拆两套**（Legado 语义 · 通用书源系统的地基）
-  #   ⇒ 混成一套 ⇒ UAA 源 403「无效JWT」拿不到 token + NovelHub 改筛选冲掉解锁态
-  "source-variable-contract:test/source-variable-contract.test.js"
-  # ⭐⭐⭐⭐⭐ **站方变量的两种形态**（map 形态 vs 凭据形态）
-  #   ⇒ App 把「书籍变量/线路表」写进站方变量 ⇒ 凭据形态的源（UAA：token）被毁
-  #   ⇒ `Bearer {"androidId":"…"}` ⇒ 服务端 403「无效JWT」⇒ 「获取 token」永远失败
-  "source-variable-shape:test/source-variable-shape.test.js"
-  # ⭐⭐⭐⭐⭐ **原版 UAA 的站方变量语义**（拿**真源**当断言对象，不是 mock）
-  #   ⇒ 真源：站方变量 = **纯 token**（`Bearer ${source.getVariable()}` + `source.setVariable(token)`）
-  #   ⇒ 共享服 api / 文件域名 / aid 全在【书源变量】⇒ App 的选线不受影响
-  #   ⇒ 一旦 App 往那一格塞 map ⇒ `Bearer {…}` ⇒ 403「无效JWT」⇒「获取Token」永远失败
-  "uaa-original-station-var:test/uaa-original-station-var.test.js"
-  # ⭐⭐⭐⭐⭐ **站方变量感知的 source（宿主侧兜底 · 2026-10-28）**
-  #   ⇒ 引擎在 toc/content 里重建 sourceObject 时**漏传站方变量槽**
-  #   ⇒ 那个对象 getVariable() = 整份 varBox（map）⇒ 站方 `Bearer {map}` ⇒ 403「无效JWT」
-  #   ⇒ 宿主侧包一层（getVariable/setVariable 走槽，其余原样委托）⇒ 目录/正文也能拿到 token
-  "station-var-bridge:test/station-var-bridge.test.js"
-  # ⭐⭐⭐⭐⭐ **JSON 列表项的字段规则改写 + 带后缀的图片 URL**（2026-10-29 真机）
-  #   ⇒ 目录「有行、点得开、就是没标题」：引擎的字段规则按【页面】判 isJSON
-  #     而 ✿UAA 的目录页正文是纯数字 id ⇒ 裸字段名被当 CSS ⇒ 抽不到
-  #   ⇒ 封面全是占位图：站方封面 URL 带 `,{…}` 后缀（要 Referer）⇒ 不拆 + 不带头 ⇒ 403
-  "toc-jsonpath-rewrite:test/toc-jsonpath-rewrite.test.js"
-  # ⭐⭐⭐⭐⭐ **变异测试**：把实现改坏 9 种 ⇒ 门禁必须红
-  #   ⇒ 「门禁全绿」有两种可能：① 实现对 ② 门禁没抓到东西（平凡通过）⭐⭐⭐
-  #   ⇒ 这一层专门证伪 ②（会真的改源码 ⇒ 跑之前要 commit）
-  "mutation-station-var:test/mutation-station-var.test.js"
-  "mutation-js-rule-tail:test/mutation-js-rule-tail.test.js"
-  # ⭐⭐⭐⭐⭐ **站方能力面体检**（通用性的地基 · 2026-10-27）
-  #   ⇒ 扫真实语料（125 源 + 聚合源）用到的站方 API 面 ⇒ 跟轻阅实现的面对账
-  #   ⇒ **新出现的站方 API 必须当场定性**（实现 / 登记为例外）⇒ 不用人肉适配 ⭐
-  "station-capability-audit:test/station-capability-audit.test.js"
-  "host-capability-coverage:test/host-capability-coverage.test.js"
-  "explore-network-e2e:test/explore-network-e2e.test.js"
-  # ⭐⭐⭐⭐⭐ **jsLib 顶层 let/const 的全局可见性**（2026-10-27 真机「详情目录都不能用」）
-  #   ⇒ 间接 eval 里 `let`/`const` 是 **eval 局部** ⇒ 规则里看不见 ⇒ URL 空
-  #   ⇒ 引擎 JSC/Node 有「显式导出」⇒ **只有 App 的 WebView 后端漏了** ⇒ 沙盒绿、真机挂
-  "jslib-global-export:test/jslib-global-export.test.js"
 )
-
 TOTAL_PASS=0
 TOTAL_FAIL=0
 CRASHED=()
@@ -293,27 +187,6 @@ if git diff --quiet -- QiReaderLite/ 2>/dev/null; then
 else
   printf "%-24s %-22s %s\n" "变异(凭据双写)" "⚠️ 跳过" "QiReaderLite/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
   SKIPPED+=("变异(凭据双写)")
-fi
-
-printf "%s\n" "────────────────────────────────────────────────────"
-
-# ── 变异测试（shell 层）：op 分流契约 ──
-# ⭐⭐⭐⭐⭐ 2026-10-29 新增：把「要写变量的 op」切回新引擎 ⇒ 门禁必须红
-#   ⇒ 变异脚本会**真的改源码** ⇒ 跑之前必须 commit（否则改坏的东西会留在工作区）⭐⭐⭐
-if git diff --quiet -- QiReaderLite/ 2>/dev/null; then
-  if bash test/mutation-op-routing.sh > /tmp/mutation-routing.out 2>&1; then
-    printf "%-24s %-22s %s\n" "变异(op分流)" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-routing.out | tail -1)"
-    MP="$(grep -oE '通过 [0-9]+' /tmp/mutation-routing.out | tail -1 | grep -oE '[0-9]+')"
-    TOTAL_PASS=$((TOTAL_PASS + ${MP:-0}))
-  else
-    printf "%-24s %-22s %s\n" "变异(op分流)" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-routing.out | tail -1)"
-    grep -E "✗" /tmp/mutation-routing.out | head -5
-    TOTAL_FAIL=$((TOTAL_FAIL+1))
-    FAILED+=("变异(op分流)")
-  fi
-else
-  printf "%-24s %-22s %s\n" "变异(op分流)" "⚠️ 跳过" "QiReaderLite/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
-  SKIPPED+=("变异(op分流)")
 fi
 
 printf "%s\n" "────────────────────────────────────────────────────"

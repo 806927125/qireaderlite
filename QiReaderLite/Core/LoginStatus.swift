@@ -192,7 +192,7 @@ enum LoginStatus {
         if let ua = header["User-Agent"] { req.setValue(ua, forHTTPHeaderField: "User-Agent") }
         if let rf = header["Referer"] { req.setValue(rf, forHTTPHeaderField: "Referer") }
         if req.value(forHTTPHeaderField: "User-Agent") == nil {
-            req.setValue(RuleSandbox.userAgent, forHTTPHeaderField: "User-Agent")
+            req.setValue(EngineLog.userAgent, forHTTPHeaderField: "User-Agent")
         }
         if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
 

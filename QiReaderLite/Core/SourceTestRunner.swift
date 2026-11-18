@@ -87,7 +87,7 @@ struct SourceTestReport {
         }
         lines.append("")
         lines.append("—— 引擎日志 ——")
-        lines.append(RuleSandbox.shared.fullLogText())
+        lines.append(EngineLogPanel.shared.fullLogText())
         return lines.joined(separator: "\n")
     }
 }

@@ -14,24 +14,20 @@ struct EngineLogSheet: View {
     @State private var copied = false
     @State private var resetNote = ""
     /// 同步通道（window.prompt）—— **默认关**：它有把 JS 线程卡死的风险
-    @AppStorage(EngineSyncChannel.key) private var syncChannel = false
 
     // MARK: - ⭐⭐ 当前引擎
     //
     // ⭐⭐⭐ **2026-10-25：老 JS 引擎退役** ⇒ 「用哪个引擎」「失败回不退」两个开关**都删了**
     //   ⇒ 用户不再需要操心这件事 ⇒ 只剩新 Swift 引擎（legado-engine）⭐⭐⭐
     // ⭐⭐⭐ 2026-11-10：旧的 `@AppStorage("qr.engineBackend")` 已删除
-    //   （2026-10-25 老引擎退役后它就是**死的**；现在引擎开关统一由 `EngineMode` 承担 ⇒ 两个开关不许并存）⭐⭐⭐
+    //   ⇒ 2026-11-19：老的两条引擎全部退役 ⇒ **没有任何引擎开关**了（只剩 `LegadoEngine`）⭐⭐⭐
 
-    /// 当前后端（`EngineMode` 的原文）
-    /// ⭐⭐⭐ **真相源统一到 `EngineMode`**（2026-11-10）⇒ 面板的显示与真实通路**不会漂移**
-    ///   （以前这里挂着一个 `@AppStorage("qr.engineBackend")` ⇒ 2026-10-25 退役老引擎后它**已是死的**）
-    private var currentBackendName: String { EngineMode.current == .webView
-        ? EngineBackend.Kind.webView.rawValue : EngineBackend.Kind.swiftNew.rawValue }
-    /// 主链路是不是走 WebView 引擎（阅读2.0 同款）
-    private var isNewEngine: Bool { !EngineMode.usesWebViewEngine }
-    /// 当前是不是新引擎在服务
-    private var servingIsNew: Bool { EngineBackend.current == .swiftNew }
+    /// ⭐⭐⭐ **只有一个引擎**（2026-11-19：老的两条引擎全部退役 ⇒ 换成 `LegadoEngine`）
+    private var currentBackendName: String { EngineBackend.current.rawValue }
+    /// 主链路是不是走新引擎（永远是 ⇒ 保留这个语义，UI 少改）
+    private var isNewEngine: Bool { true }
+    /// 当前是不是新引擎在服务（永远是）
+    private var servingIsNew: Bool { true }
     /// 一行「标签：值」
     private func engineRow(_ label: String, _ value: String, isError: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 6) {
@@ -46,8 +42,8 @@ struct EngineLogSheet: View {
         }
     }
 
-    private var summary: String { RuleSandbox.shared.diagnose() }
-    private var logs: [String] { RuleSandbox.shared.recentLogs }
+    private var summary: String { EngineLogPanel.shared.diagnose() }
+    private var logs: [String] { EngineLogPanel.shared.recentLogs }
 
     // MARK: - 诊断时间线（对齐栖阅：分步 + 计时 + 出错一眼看见）
     //
@@ -104,10 +100,10 @@ struct EngineLogSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 10) {
                             Button {
-                                RuleSandbox.shared.resetEngine()
-                                resetNote = "引擎已重置，正在重新注入脚本…"
+                                EngineBackend.dropAllSessions()
+                                resetNote = "已清空引擎会话（变量/登录态重置）"
                             } label: {
-                                Label("重置引擎", systemImage: "arrow.clockwise")
+                                Label("重置会话", systemImage: "arrow.clockwise")
                                     .font(.system(size: 14, weight: .medium))
                             }
                             .buttonStyle(.borderedProminent)
@@ -118,21 +114,6 @@ struct EngineLogSheet: View {
                                     .foregroundStyle(Theme.sub)
                             }
                         }
-                        Toggle(isOn: $syncChannel) {
-                            Text("用 Swift 同步通道（实验）")
-                                .font(.system(size: 13))
-                        }
-                        .onChange(of: syncChannel) { _, on in
-                            // 立刻生效：不用重启引擎
-                            Task { @MainActor in
-                                _ = try? await RuleSandbox.shared.applySyncChannel(on)
-                            }
-                        }
-                        Text(syncChannel
-                             ? "已开：java.timeFormat 走 Swift 原生实现。若又卡了，先关掉它再「重置引擎」。"
-                             : "默认关：走纯 JS 兜底（语义跟 Swift 一致）。开着有把 JS 线程卡死的风险。")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.sub)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(12)
@@ -237,7 +218,7 @@ struct EngineLogSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        UIPasteboard.general.string = RuleSandbox.shared.fullLogText()
+                        UIPasteboard.general.string = EngineLogPanel.shared.fullLogText()
                         copied = true
                     } label: {
                         Label(copied ? "已复制" : "复制日志",
@@ -258,7 +239,7 @@ struct EngineLogSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     // ⭐ 「测试完日志要清空」—— 一键清掉，避免旧日志混着新日志看花眼
                     Button {
-                        RuleSandbox.shared.clearLogs()
+                        EngineLogPanel.shared.clearLogs()
                     } label: {
                         Label("清空日志", systemImage: "trash")
                     }
@@ -277,19 +258,6 @@ struct EngineLogSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("好") { dismiss() }
                 }
-                // ⭐⭐⭐⭐⭐ **引擎切换开关**（2026-11-10 · 按阅读2.0 的架构重做引擎）
-                //   开着 = WebView 引擎（阅读2.0 同款：Swift 宿主 + WebView 内规则求值）
-                //   关着 = 自研 Swift 引擎（legado-engine）
-                // ⇒ 一键切 ⇒ **换引擎不用出新包**（真机对拍随时做）⭐⭐⭐
-                ToolbarItem(placement: .bottomBar) {
-                    Toggle(isOn: Binding(
-                        get: { EngineMode.usesWebViewEngine },
-                        set: { EngineMode.current = $0 ? .webView : .swiftEngine })) {
-                        Label(EngineMode.label, systemImage: "cpu")
-                            .font(.system(size: 13))
-                    }
-                    .padding(.bottom, 4)
-                }
             }
         }
     }
@@ -305,16 +273,16 @@ struct EngineLogSheet: View {
         lines.append("生成时间：\(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium))")
         lines.append("App：\(AppPaths.appVersionLine)")
         lines.append("设备：\(UIDevice.current.model) · iOS \(UIDevice.current.systemVersion)")
-        lines.append("引擎：\(EngineMode.label)")
-        lines.append("引擎状态：\(EngineBackend.current.rawValue)")
+        lines.append("引擎：\(EngineBackend.current.rawValue)")
+
         if let e = EngineBackend.lastError { lines.append("引擎错误：\(e)") }
         lines.append("")
-        let disk = RuleSandbox.diskLogText()
+        let disk = EngineLog.diskLogText()
         lines.append("======== 磁盘日志（\(disk.count) 字符 · 含崩溃前）========")
         lines.append(disk.isEmpty ? "（磁盘日志是空的）" : disk)
         lines.append("")
         lines.append("======== 当前内存日志 ========")
-        lines.append(RuleSandbox.shared.fullLogText())
+        lines.append(EngineLogPanel.shared.fullLogText())
         return lines.joined(separator: "\n")
     }
 

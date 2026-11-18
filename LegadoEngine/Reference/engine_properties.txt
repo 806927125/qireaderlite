@@ -1,0 +1,74 @@
+LegadoR.AnalyzeRule.(bridge in _EAF91AB88018CBC6EC43D86D92EBB843) : Swift.Optional<LegadoR.JSBridge>
+LegadoR.AnalyzeRule.(cachedDefault in _EAF91AB88018CBC6EC43D86D92EBB843) : Swift.Optional<LegadoR.ByDefault>
+LegadoR.AnalyzeRule.(cachedJSON in _EAF91AB88018CBC6EC43D86D92EBB843) : Swift.Optional<LegadoR.ByJSONPath>
+LegadoR.AnalyzeRule.(cachedXPath in _EAF91AB88018CBC6EC43D86D92EBB843) : Swift.Optional<LegadoR.ByXPath>
+LegadoR.AnalyzeRule.(isJSON in _EAF91AB88018CBC6EC43D86D92EBB843) : Swift.Bool
+LegadoR.AnalyzeRule.(isRegex in _EAF91AB88018CBC6EC43D86D92EBB843) : Swift.Bool
+LegadoR.AnalyzeRule.(ruleCache in _EAF91AB88018CBC6EC43D86D92EBB843) : Swift.Dictionary<Swift.String, Swift.Array<LegadoR.AnalyzeRule.SourceRule>>
+LegadoR.AnalyzeRule.baseUrl : Swift.Optional<Swift.String>
+LegadoR.AnalyzeRule.book : Swift.Optional<LegadoR.Book>
+LegadoR.AnalyzeRule.chapter : Swift.Optional<LegadoR.BookChapter>
+LegadoR.AnalyzeRule.content : Swift.Optional<Any>
+LegadoR.AnalyzeRule.key : Swift.Optional<Swift.String>
+LegadoR.AnalyzeRule.nextChapterUrl : Swift.Optional<Swift.String>
+LegadoR.AnalyzeRule.page : Swift.Optional<Swift.Int>
+LegadoR.AnalyzeRule.redirectUrl : Swift.Optional<Swift.String>
+LegadoR.AnalyzeRule.source : Swift.Optional<LegadoR.BookSource>
+LegadoR.AnalyzeRule.variables : LegadoR.RuleVariables
+LegadoR.AnalyzeRule.writesToSource : Swift.Bool
+LegadoR.AnalyzeUrl.(baseUrl in _74FC5AA082E2846C0A910458E74AE544) : Swift.String
+LegadoR.AnalyzeUrl.(body in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.(bodyJs in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.(bridge in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<LegadoR.JSBridge>
+LegadoR.AnalyzeUrl.(charset in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.(encodedForm in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.(encodedQuery in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.(rateLimiter in _74FC5AA082E2846C0A910458E74AE544) : LegadoR.ConcurrentRateLimiter
+LegadoR.AnalyzeUrl.(retry in _74FC5AA082E2846C0A910458E74AE544) : Swift.Int
+LegadoR.AnalyzeUrl.(urlNoQuery in _74FC5AA082E2846C0A910458E74AE544) : Swift.String
+LegadoR.AnalyzeUrl.(webViewDelayTime in _74FC5AA082E2846C0A910458E74AE544) : Swift.Double
+LegadoR.AnalyzeUrl.book : Swift.Optional<LegadoR.Book>
+LegadoR.AnalyzeUrl.chapter : Swift.Optional<LegadoR.BookChapter>
+LegadoR.AnalyzeUrl.dnsIp : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.headers : Swift.Dictionary<Swift.String, Swift.String>
+LegadoR.AnalyzeUrl.key : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.method : Swift.String
+LegadoR.AnalyzeUrl.origin : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.page : Swift.Optional<Swift.Int>
+LegadoR.AnalyzeUrl.proxy : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.ruleUrl : Swift.String
+LegadoR.AnalyzeUrl.source : Swift.Optional<LegadoR.BookSource>
+LegadoR.AnalyzeUrl.type : Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.url : Swift.String
+LegadoR.AnalyzeUrl.useWebView : Swift.Bool
+LegadoR.AnalyzeUrl.variables : LegadoR.RuleVariables
+LegadoR.AnalyzeUrl.webJs : Swift.Optional<Swift.String>
+LegadoR.ByDefault.element : SwiftSoup.Element
+LegadoR.ByJSONPath.root : Any
+LegadoR.ByXPath.(docSearch in _B3F64A316E391893A146A809ECD0D46E) : Swift.Optional<Kanna.Searchable>
+LegadoR.ByXPath.(isNode in _B3F64A316E391893A146A809ECD0D46E) : Swift.Bool
+LegadoR.ByXPath.(owner in _B3F64A316E391893A146A809ECD0D46E) : Swift.Optional<Any>
+LegadoR.ByXPath.(root in _B3F64A316E391893A146A809ECD0D46E) : Swift.Optional<Kanna.XMLElement>
+LegadoR.ConcurrentRateLimiter.(key in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<Swift.String>
+LegadoR.ConcurrentRateLimiter.(rate in _74FC5AA082E2846C0A910458E74AE544) : Swift.Optional<Swift.String>
+LegadoR.HTTPClient.(proxyLock in _791FECD98F47696C875401AE8A1E2ABD) : __C.NSLock
+LegadoR.HTTPClient.(proxySessions in _791FECD98F47696C875401AE8A1E2ABD) : Swift.Dictionary<Swift.String, __C.NSURLSession>
+LegadoR.HTTPClient.session : __C.NSURLSession
+LegadoR.JSBridge.bitmaps : LegadoR.JSBitmapStore
+LegadoR.JSBridge.book : Swift.Optional<LegadoR.Book>
+LegadoR.JSBridge.chapter : Swift.Optional<LegadoR.BookChapter>
+LegadoR.JSBridge.context : __C.JSContext
+LegadoR.JSBridge.host : Swift.Optional<LegadoR.JSHost>
+LegadoR.JSBridge.lastError : Swift.Optional<Swift.String>
+LegadoR.JSBridge.source : Swift.Optional<LegadoR.BookSource>
+LegadoR.JSBridge.variables : LegadoR.RuleVariables
+LegadoR.JSJsoupStringBox.(_value in _BAA5A4102F328CAA97B493C36A44D090) : Swift.Optional<Swift.String>
+LegadoR.JSJsoupStringBox.(lock in _BAA5A4102F328CAA97B493C36A44D090) : __C.NSLock
+LegadoR.RuleSplitter.(chars in _D5306C8FC2FCE19BDC869B8C0B159DD3) : Swift.Array<Swift.Character>
+LegadoR.RuleSplitter.(code in _D5306C8FC2FCE19BDC869B8C0B159DD3) : Swift.Bool
+LegadoR.RuleSplitter.elementsType : Swift.String
+LegadoR.RuleVariables.map : Swift.Dictionary<Swift.String, Swift.String>
+LegadoR.WebFetcher.(finishedCount in _97FCF45401A46CE01136F1F1C8B8FA5F) : Swift.Int
+LegadoR.WebFetcher.(isRedirect in _97FCF45401A46CE01136F1F1C8B8FA5F) : Swift.Bool
+LegadoR.WebFetcher.(loadError in _97FCF45401A46CE01136F1F1C8B8FA5F) : Swift.Optional<Swift.Error>
+LegadoR.WebFetcher.(webView in _97FCF45401A46CE01136F1F1C8B8FA5F) : Swift.Optional<__C.WKWebView>

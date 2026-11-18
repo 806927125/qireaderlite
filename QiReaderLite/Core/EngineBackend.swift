@@ -10,30 +10,27 @@ import Foundation
 public enum EngineBackend {
     private static let key = "qr.engineBackend"
 
-    /// 当前后端（⭐ 真相源 = `EngineMode` ⇒ 展示与实际不会漂移）
+    /// ⭐⭐⭐ **只有一个引擎了**（2026-11-19 用户决定：「整个搬过来，现在这个引擎不要了」）
+    ///   · 引擎 = `LegadoEngine`（Legado 3.0 语义，从「六阅 LegadoR iOS」二进制逆向重建）
+    ///   · 老的两条（WebView JS 引擎 / 自研 Swift 引擎）**已物理删除** ⇒ 没有开关、没有回退 ⭐⭐⭐
     public enum Kind: String {
-        /// ⭐ WebView 引擎（阅读2.0 同款架构）—— **默认**
-        case webView = "WebView 引擎（阅读2.0 同款）"
-        /// 自研 Swift 引擎（legado-engine）—— 回退用
-        case swiftNew = "新 Swift 引擎（legado-engine）"
+        case legado = "LegadoEngine（Legado 3.0 语义）"
     }
 
     /// 当前后端
-    public static var current: Kind {
-        EngineMode.current == .webView ? .webView : .swiftNew
-    }
+    public static var current: Kind { .legado }
 
     // MARK: - ⭐⭐⭐ 三件**必须分开显示**的事（各管各的，别混成一句）
 
-    /// **① 引擎**（现在有两种 ⇒ 显示当前那个）
+    /// **① 引擎**（只有一个 ⇒ 显示它）
     public static var switchState: String { current.rawValue }
 
     /// **② 当前是谁在服务**
-    public static var servingText: String {
-        switch current {
-        case .webView: return "WebView 引擎（阅读2.0 同款）"
-        case .swiftNew: return "新 Swift 引擎"
-        }
+    public static var servingText: String { current.rawValue }
+
+    /// ⭐⭐⭐ **清空所有引擎会话**（诊断面板的「重置会话」按钮）
+    public static func dropAllSessions() {
+        LegadoEngineBackend.shared.dropAllSessions()
     }
 
     /// **③ 最后一次失败原因**（没有它 ⇒ 用户只看到「引擎在服务」⇒ 不知道出了什么事）

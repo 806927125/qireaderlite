@@ -22,31 +22,11 @@ struct QiReaderLiteApp: App {
         UserDefaults.standard.removeObject(forKey: "qr.useNewEngine")
         UserDefaults.standard.removeObject(forKey: "qr.fallbackLegacy")
         UserDefaults.standard.removeObject(forKey: "qr.engine.legacy240")
-        // 引擎沙盒尽早起来，首个界面就要用到
-        Task { @MainActor in
-            RuleSandbox.shared.boot()
-            // ⭐⭐⭐ **JS 后端 = WKWebView（独立进程·跟老引擎一样）** ⇒ 站方 JS 再野也炸不到 App
-            Self.installJSBackend()
-        }
-    }
-
-    /// ⭐⭐⭐ **装 JS 后端**（Core 不能 import WebKit ⇒ 由这里注册实现）
-    @MainActor
-    static func installJSBackend() {
-        let raw = UserDefaults.standard.string(forKey: JSEngineFactory.Kind.storageKey)
-            ?? JSEngineFactory.Kind.webView.storageValue
-        let kind = JSEngineFactory.Kind(storageValue: raw) ?? .webView
-        JSEngineFactory.setKind(kind)
-        switch kind {
-        case .webView:
-            // ⭐ 站方 JS 跑在 **WebContent 独立进程** ⇒ 一次吃几 GB 也炸不到 App 进程
-            WebViewJSHost.shared.boot()
-            // ⭐ 同步通道装一次（老引擎同款：JS 用 prompt 同步问原生）
-            WebViewJSHost.shared.syncHandler = { payload in
-                WebViewJSBridge.shared.handleSync(payload)
-            }
-            JSEngineFactory.install { api in WebViewJSExecutor(api: api) }
-        }
+        // ⭐⭐⭐ **日志出口挂上**（诊断要能进「引擎日志」面板 ⇒ 用户直接看到）⭐⭐⭐
+        EngineLog.sink = { line in EngineLogPanel.shared.appendLog(line) }
+        // ⭐⭐⭐ 2026-11-19：老引擎（WebView JS + 自研 Swift）**全部退役**
+        //   ⇒ 引擎 = `LegadoEngine`（Legado 3.0 语义，引擎自带 JSC + 自己的网络层）
+        //   ⇒ **没有 JS 后端要装、也没有引擎沙盒要起** ⭐⭐⭐
     }
 
     var body: some Scene {
@@ -69,7 +49,6 @@ struct QiReaderLiteApp: App {
                 // 玻璃浓度注入 environment → 全站 25 处玻璃调用点自动跟随
                 // （0 = 纯玻璃，0.85 = 乳白玻璃 ≈ 栖阅的 rgba(255,255,255,.82)）
                 .environment(\.glassTint, glassTintPercent / 100 * GlassTintStore.maxVeil)
-                .task { RuleSandbox.shared.boot() }
         }
     }
 }

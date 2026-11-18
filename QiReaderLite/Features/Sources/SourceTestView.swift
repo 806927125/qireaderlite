@@ -22,7 +22,7 @@ struct SourceTestView: View {
     /// 展开的源码段
     @State private var showCode: String?
 
-    private var logs: [String] { RuleSandbox.shared.recentLogs }
+    private var logs: [String] { EngineLogPanel.shared.recentLogs }
     private var groups: [EngineLogTimeline.Group] { EngineLogTimeline.groups(logs) }
     private var timings: [(step: String, ms: Int)] { EngineLogTimeline.timings(logs) }
 
@@ -43,7 +43,7 @@ struct SourceTestView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         UIPasteboard.general.string = report?.reportText()
-                            ?? RuleSandbox.shared.fullLogText()
+                            ?? EngineLogPanel.shared.fullLogText()
                         copied = true
                     } label: {
                         Label(copied ? "已复制" : "复制报告",
@@ -54,7 +54,7 @@ struct SourceTestView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     // ⭐ 「测试完日志要清空」—— 手动一键清
                     Button {
-                        RuleSandbox.shared.clearLogs()
+                        EngineLogPanel.shared.clearLogs()
                     } label: {
                         Label("清空日志", systemImage: "trash")
                     }
@@ -300,7 +300,7 @@ struct SourceTestView: View {
         report = nil
         // ⚠️ **开始测试前先清空日志** ⇒ 报告里只有**本次**的日志，
         //    不会混着上一次跑剩下的（用户要「测试完日志要清空」）
-        RuleSandbox.shared.clearLogs()
+        EngineLogPanel.shared.clearLogs()
         let r = await SourceTestRunner.run(source)
         report = r
         running = false

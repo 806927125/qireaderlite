@@ -215,3 +215,19 @@ fun evalJS(jsStr: String, result: Any? = null): Any? {
 | `result` 的 JSON 对象 toString 桥 | ✅ build291（老引擎）/ Swift 引擎同步补 |
 | `src` 变量（content 的别名） | ⏳ 待补 |
 | 其余字段（`replaceRegex` / `formatJs` / `isVip` / `payAction` / `callBackJs` / `updateTime` / `preUpdateJs` …） | ⏳ 待补（可按 legado-E 源码逐条移植） |
+
+### 10.7 这一批已经移植完的（legado-E 源码逐条对齐）
+
+| 项 | legado-E 源码依据 | 移植结果 |
+|---|---|---|
+| `isTrue()` 口径 | `StringExtensions.kt:76` | ✅ 空/null/false/no/not/0/0.0 ⇒ 假（以前「非空即真」⇒ 一堆假 VIP） |
+| `ruleContent.replaceRegex` | `BookContent.kt:168` | ✅ 三形态全覆盖：`##pat##` 删除 · `##pat##rep` 替换（`$1` 展开）· `@js:` 脚本（正文当 `result`）<br>⚠️ 真实语料里 **57 个源在用**；以前只认老格式 `=>` ⇒ 站方标准写法**完全没生效** |
+| `ruleToc.formatJs` | `BookChapterList.kt:139` | ✅ 每章跑一次，绑定 `index`(1-based)/`title`/`chapter`/`gInt` |
+| `ruleToc.isPay` | `BookChapterList.kt:229` | ✅ Chapter 模型加 `isPay` |
+| `ruleToc.updateTime` / `ruleBookInfo.updateTime` | `BookChapterList.kt:230` / `BookInfo.kt` | ✅ Chapter / BookInfo 各自带 `updateTime` |
+| `ruleContent.subContent` | `BookContent.kt` | ✅ 模型已加（接线待补） |
+| `EvalContext.extra` | —（我们自己的通道） | ✅ 为 `formatJs` 的额外绑定开的口子 |
+
+### 10.8 还没搬的（下一批）
+
+`webJs` 模式（WebView 里跑 JS）· `ruleReview`（段评，栖阅独有）· `ruleBookInfo.canReName / downloadUrls / preUpdateJs` · `ruleToc.preUpdateJs` · `ruleContent.imageStyle / imageDecode / payAction / callBackJs` · `ruleSearch.checkKeyWord`

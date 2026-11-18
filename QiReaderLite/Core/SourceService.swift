@@ -47,7 +47,10 @@ final class SourceService {
         //   ⇒ 老引擎的 login op **会把 `g.source` 挂上**（engine.js:1249）⇒ 站方写变量才有效 ⭐
         //   ⇒ ⚠️ **代价**：登录用的站方变量语义仍是老引擎那套（整份书源变量）
         //     ⇒ 但登录本来就是「写」的 ⇒ 语义一致 ⇒ **不影响** ⭐⭐⭐
-        let raw = try await RuleSandbox.shared.invoke("login", p, source: source)
+        // ⭐⭐⭐ **登录调用必须离开主线程**（引擎内部全同步 ⇒ 占主线程会卡 UI）
+        let raw = try await Task.detached(priority: .userInitiated) {
+            try LegadoEngineBackend.shared.invoke("login", p, source: source)
+        }.value
         // 登录动作会改书籍变量 / 登录信息 → 落盘
         if let obj = raw as? [String: Any] {
             if let v = obj["__sourceVars"] as? String {
@@ -56,14 +59,14 @@ final class SourceService {
                 //   ⇒ 站方登录写的是 `source.put('aid', 账号id)` ⇒ **落进书源变量**
                 //   ⇒ 这一行让用户一眼看出「账号 id 有没有写进去」⇒ 不用猜 ⭐⭐⭐
                 let vm = SourceVariables.varsMap(for: source.bookSourceUrl)
-                RuleSandbox.shared.appendLog(
+                EngineLogPanel.shared.appendLog(
                     "[登录] 站方写入的书源变量：aid=\(vm["aid"] ?? "(空)") "
                     + "account_id=\(vm["account_id"] ?? "(空)") "
                     + "token=\(vm["token"].map { $0.isEmpty ? "(空)" : "有(\($0.count)字)" } ?? "(无)")")
                 if (vm["aid"] ?? "").isEmpty {
-                    RuleSandbox.shared.appendLog(
+                    EngineLogPanel.shared.appendLog(
                         "[登录] ⚠️⭐⭐⭐ **账号 id（aid）没写进去** ⇒ 发现页的请求会带 `aid=0` ⇒ 服务端 500 ⇒ 发现页全空")
-                    RuleSandbox.shared.appendLog(
+                    EngineLogPanel.shared.appendLog(
                         "[登录] ⇒ 请**重新登录一次**（登录面板 → 账号密码 → 登录）；"
                         + "若仍失败 ⇒ 看站方 toast 原文（「服务端没返回账号 id」= 服务端没认这次登录）")
                 }
@@ -210,10 +213,6 @@ final class SourceService {
         // ⭐⭐⭐⭐⭐ **引擎选择**（2026-11-10 · 按「阅读2.0」的架构重做引擎）
         //   · `.webView`     = WebView 引擎（阅读2.0 同款：Swift 宿主 + WebView 内规则求值）
         //   · `.swiftEngine` = 自研 Swift 引擎（legado-engine）⇒ 保留作**回退**
-        // ⇒ 切换开关在【自检面板】一键可切（`EngineMode`）⇒ 换引擎不用出新包
-        if EngineMode.usesWebViewEngine {
-            return try await invokeWebViewEngine(op, payload, source: source)
-        }
         // ⭐⭐⭐ **只有一个引擎了**（老 JS 引擎 2026-10-25 退役）
         //   ⇒ 不再有「开关」⇒ 不再有「回退」⇒ **失败就是失败**，如实报出来 ⭐⭐⭐
         //
@@ -230,19 +229,19 @@ final class SourceService {
                 EngineBackend.lastError = nil
                 if !newEngineAnnounced {
                     newEngineAnnounced = true
-                    RuleSandbox.shared.appendLog(
+                    EngineLogPanel.shared.appendLog(
                         "[引擎] 主链路使用**新 Swift 引擎**（legado-engine）· 搜索/发现/详情/目录/正文")
                 }
                 return r
             }
             let why = Self.untrustworthyReason(op, r)
-            RuleSandbox.shared.appendLog(
+            EngineLogPanel.shared.appendLog(
                 "[引擎] 新引擎的「\(op)」结果不可信（\(why)）")
             EngineBackend.lastError = "「\(op)」结果不可信：\(why)"
             throw ServiceError.engineFailed("「\(op)」结果不可信：\(why)")
         } catch {
             let msg = "[引擎] 新引擎跑「\(op)」失败：\(error)"
-            RuleSandbox.shared.appendLog(msg)
+            EngineLogPanel.shared.appendLog(msg)
             // ⭐⭐⭐ **失败原因留下来** ⇒ UI 能直接告诉用户「为什么」
             EngineBackend.lastError = "「\(op)」失败：\(error)"
             throw error
@@ -262,29 +261,6 @@ final class SourceService {
     ///   老引擎返回 `__sourceVars` / `__sourceVariable`，但**不返回** `__sourceVariableChanged`
     ///   ⇒ 这里**自己判**：回传值与「灌进去的种子」不同 ⇒ 站方真改过 ⇒ 置 true ⭐⭐⭐
     ///   （判据见 `SourceVariables.stationVariableToSeed` 的注释：证据不许自证）
-    private static func invokeWebViewEngine(_ op: String, _ payload: [String: Any],
-                                            source: BookSource) async throws -> Any {
-        let raw = try await RuleSandbox.shared.invoke(op, payload, source: source)
-        // ⚠️ 老引擎把异常包成 `{error: "…"}` 返回（不抛）⇒ 必须翻译成失败，否则会当成成功
-        if let obj = raw as? [String: Any], let err = obj["error"] as? String, !err.isEmpty {
-            let msg = "[引擎] WebView 引擎跑「\(op)」失败：\(err)"
-            RuleSandbox.shared.appendLog(msg)
-            EngineBackend.lastError = "「\(op)」失败：\(err)"
-            throw ServiceError.engineFailed(err)
-        }
-        guard var obj = raw as? [String: Any] else { return raw }
-        // ⭐⭐⭐ 「站方变量有没有被站方改过」⇒ 与种子逐字比较
-        let seeded = (payload["source"] as? [String: Any])?["__variable"] as? String
-        if let returned = obj["__sourceVariable"] as? String {
-            obj["__sourceVariableChanged"] = (returned != seeded)
-        }
-        return obj
-    }
-
-    /// ⭐⭐⭐ **新引擎调用**（**必须离开主线程**）
-    ///
-    /// ⚠️⚠️ **引擎内部全同步**（URLSession 用信号量等回调）⇒ 在主线程跑会卡死 UI
-    /// ⇒ 丢到后台队列 ⇒ 主线程只等结果。
     private static func invokeNewEngine(_ op: String, _ payload: [String: Any],
                                          source: BookSource) async throws -> Any? {
         // ⭐⭐⭐ **新引擎的 op 也必须有超时**（2026-10-24 真机「app 死机」）
@@ -339,7 +315,7 @@ final class SourceService {
             //   ⇒ **连续超时 ⇒ 熔断这个源**（明确告诉用户，不再无限重试）⭐⭐⭐
             Self.newEngineTimeouts += 1
             let fatal = Self.newEngineTimeouts >= Self.newEngineFatalTimeoutCount
-            RuleSandbox.shared.appendLog(
+            EngineLogPanel.shared.appendLog(
                 "[引擎] 新引擎「\(op)」超时（\(Int(budget)) 秒）⇒ 已换掉卡死的会话"
                 + (fatal ? " ⇒ ⚠️ **连续 \(Self.newEngineTimeouts) 次超时 ⇒ 这个源的站方 JS 死循环了 ⇒ 已熔断**"
                          : "（这个源现在能用）"))
@@ -375,7 +351,7 @@ final class SourceService {
         stuckThreadCount += 1
         let n = stuckThreadCount
         stuckThreadLock.unlock()
-        RuleSandbox.shared.appendLog(
+        EngineLogPanel.shared.appendLog(
             "[引擎] ⚠️ 站方 JS 死循环 ⇒ 引擎线程收不回来了（当前 \(n)/\(Self.maxStuckThreads)）"
             + " ⇒ 手机会发烫 ⇒ 满额后不再启动新引擎调用")
     }
@@ -970,7 +946,7 @@ final class SourceService {
         }
         let msg = "[选线] 已切到 \(bestHost)（\(bestMs)ms）"
         NSLog("%@", msg)
-        RuleSandbox.shared.appendLog(msg)
+        EngineLogPanel.shared.appendLog(msg)
         return bestHost
     }
 
@@ -1047,7 +1023,7 @@ final class SourceService {
                                     isMapStyle: SourceVariables.form(for: source.bookSourceUrl, jsLib: source.jsLib) == .map,
                                     jsLib: source.jsLib)
         Self.fastLineCache[source.bookSourceUrl] = (host, Date())
-        RuleSandbox.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
+        EngineLogPanel.shared.appendLog("[线路] 测速 8 条 ⇒ 选了最快的：\(host)")
         return host
     }
 
@@ -1162,7 +1138,10 @@ final class SourceService {
         //     ⇒ 站方 action 里的 `source.put('order', 2)` / `source.put('type', …)` **写不进去** ⭐⭐⭐
         //     ⇒ 症状：发现页「**筛选栏 0 个**」+ explore 的 `order_type` 取旧值 ⇒ **HTTP 500** ⭐⭐⭐
         //   ⇒ 老引擎的 filterAction **会把 `g.source` 挂上**（engine.js:1468）⇒ 站方写变量才有效 ⭐
-        let raw = try await RuleSandbox.shared.invoke("filterAction", p, source: source)
+        // ⭐⭐⭐ 走**新引擎**（老引擎已退役）⇒ 必须在后台线程（引擎内部全同步）⭐⭐⭐
+        let raw = try await Task.detached(priority: .userInitiated) {
+            try LegadoEngineBackend.shared.invoke("filterAction", p, source: source)
+        }.value
         // 站方自己写的源级变量 → 落盘（下次 exploreKinds 直接生效）
         if let obj = raw as? [String: Any],
            let v = obj["__sourceVars"] as? String {
@@ -1193,7 +1172,9 @@ final class SourceService {
         // ⚠️ 必须带 book：站方 chapterList 第一句就调 book.getVariable('custom')
         //   → 不给就抛异常 → 目录一条不剩 → 诊断还误报「规则没命中」。
         if let b = book { payload["book"] = b.rawJSON }
-        let raw = try await RuleSandbox.shared.invoke("explainToc", payload, source: source)
+        let raw = try await Task.detached(priority: .userInitiated) {
+            try LegadoEngineBackend.shared.invoke("explainToc", payload, source: source)
+        }.value
         guard let dict = raw as? [String: Any] else { return "引擎没有返回诊断数据" }
         var out: [String] = []
         for k in ["请求URL", "最终URL", "状态码", "响应字节", "页面标题",
@@ -1213,8 +1194,10 @@ final class SourceService {
 
     /// 诊断一次发现页请求，把 URL / 状态码 / 字节数 / 命中元素数拼成人话。
     func explain(source: BookSource, kindUrl: String, page: Int = 1) async throws -> String {
-        let raw = try await RuleSandbox.shared.invoke("explain",
-            ["kindUrl": kindUrl, "page": page], source: source)
+        let raw = try await Task.detached(priority: .userInitiated) {
+            try LegadoEngineBackend.shared.invoke("explain",
+                ["kindUrl": kindUrl, "page": page], source: source)
+        }.value
         guard let dict = raw as? [String: Any] else { return "引擎没有返回诊断数据" }
         var out: [String] = []
         for k in ["请求URL", "最终URL", "方式", "状态码", "响应字节", "页面标题",
@@ -1244,7 +1227,7 @@ final class SourceService {
             + " | 传入bookUrl=" + b(bookUrl)
             + " | book.tocUrl=" + b(bookTocUrl)
             + " | book.cleanBookUrl=" + b(bookUrlOfBook)
-        RuleSandbox.shared.appendLog(msg)
+        EngineLogPanel.shared.appendLog(msg)
     }
 
     func bookInfo(source: BookSource, bookUrl: String, fallback: Book? = nil) async throws -> Book {
@@ -1292,7 +1275,7 @@ final class SourceService {
                bookUrlOfBook: book?.cleanBookUrl ?? "", bookTocUrl: book?.tocUrl ?? "")
         let dto: TocDTO = try await call("toc", p, as: TocDTO.self, source: source)
         if let e = dto.error, !e.isEmpty { throw ServiceError.engineFailed(e) }
-        RuleSandbox.shared.appendLog("[目录出参] 章节数=\(dto.chapters.count)")
+        EngineLogPanel.shared.appendLog("[目录出参] 章节数=\(dto.chapters.count)")
         return TocResult(
             chapters: dto.chapters.map {
                 Chapter(url: $0.url, title: $0.title, index: $0.index, isVolume: $0.isVolume, tag: $0.tag)

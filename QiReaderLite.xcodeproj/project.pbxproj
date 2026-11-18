@@ -11,13 +11,9 @@
 /* End PBXFileReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		FE0000000000000000000020 /* XCRemoteSwiftPackageReference "legado-engine" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/806927125/legado-engine.git";
-			requirement = {
-				kind = branch;
-				branch = "feat/sextant-jsonpath";
-			};
+		FE0000000000000000000020 /* XCLocalSwiftPackageReference "LegadoEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LegadoEngine;
 		};
 /* End XCRemoteSwiftPackageReference section */
 
@@ -76,7 +72,7 @@
 			);
 			name = "轻阅";
 			packageProductDependencies = (
-				FE0000000000000000000021 /* XCSwiftPackageProductDependency "LegadoCore" */,
+				FE0000000000000000000021 /* XCSwiftPackageProductDependency "LegadoEngine" */,
 			);
 			productName = "轻阅";
 			productReference = FE0000000000000000000003 /* 轻阅.app */;
@@ -108,7 +104,7 @@
 			mainGroup = FE0000000000000000000005;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				FE0000000000000000000020 /* XCRemoteSwiftPackageReference "legado-engine" */,
+				FE0000000000000000000020 /* XCLocalSwiftPackageReference "LegadoEngine" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FE0000000000000000000006 /* Products */;
@@ -141,9 +137,9 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		FE0000000000000000000021 /* XCSwiftPackageProductDependency "LegadoCore" */ = {
+		FE0000000000000000000021 /* XCSwiftPackageProductDependency "LegadoEngine" */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = LegadoCore;
+			productName = LegadoEngine;
 		};
 /* End XCSwiftPackageProductDependency section */
 

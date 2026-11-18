@@ -4,7 +4,7 @@ import Foundation
 ///
 /// ⚠️ **为什么要做成「闭包出口」**（2026-10-28）：
 ///   诊断要能被**隔离编译**的那层（`Core/SourceVariables.swift`）调用
-///   ⇒ 而 `RuleSandbox` 依赖 UIKit ⇒ 隔离编译编不动 ⇒ 不能直接依赖它 ⭐⭐⭐
+///   ⇒ 而 `EngineLogPanel`（带 UIKit）隔离编译编不动 ⇒ 不能直接依赖它 ⭐⭐⭐
 ///   ⇒ 这里只留一个出口；App 启动时把真正的「写进引擎日志面板」挂上 ⭐⭐⭐
 enum EngineLog {
     /// App 侧挂上（写进「引擎日志」面板 ⇒ 用户能直接看到）

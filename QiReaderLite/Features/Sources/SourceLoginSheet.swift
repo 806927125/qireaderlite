@@ -785,7 +785,7 @@ struct SourceLoginSheet: View {
 
     /// 引擎卡死时的急救：换掉那个卡死的 WKWebView
     private func resetEngine() {
-        RuleSandbox.shared.resetEngine()
+        LegadoEngineBackend.shared.dropSession(for: "")
         message = "引擎已重置，可以再试一次了"
         failed = false
     }

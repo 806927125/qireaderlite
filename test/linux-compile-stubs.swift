@@ -15,19 +15,21 @@ import LegadoCore
 // ⚠️⚠️ **本文件里的每个符号，都必须对应 App 侧真实文件里的一个符号**
 //   ⇒ 重复定义会报 `invalid redeclaration` ⇒ 门禁自己就红 ⇒ 逼你同步 ⭐⭐⭐
 
-// MARK: - Stub：`RuleSandbox`（真身在 RuleSandbox.swift，import UIKit ⇒ Linux 编不到）
+// MARK: - Stub：`EngineLogPanel`（真身在 EngineLogPanel.swift，import UIKit ⇒ Linux 编不到）
 
 /// ⭐ 只给签名 —— 真身有 UIKit ⇒ Linux 编不到
-final class RuleSandbox {
-    static let shared = RuleSandbox()
-    /// ⭐ 真身：`func invoke(_ op: String, _ payload: [String: Any] = [:], source: BookSource? = nil) async throws -> Any`
-    func invoke(_ op: String, _ payload: [String: Any] = [:], source: BookSource? = nil) async throws -> Any {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
+/// ⚠️ 2026-11-19：老 `RuleSandbox`（WebView 引擎壳）已删 ⇒ 日志/诊断搬到 `EngineLogPanel`
+///   ⇒ 而**纯 Foundation 的日志出口**是 `EngineLog.swift`（真文件 ⇒ 门禁真编）⭐⭐⭐
+final class EngineLogPanel {
+    static let shared = EngineLogPanel()
     /// ⭐ 真身：`func appendLog(_ line: String)`
     func appendLog(_ line: String) {
         fatalError("stub：门禁只做编译检查，不许真跑")
     }
+    /// ⭐ 真身：`static func diskLogText() -> String`
+    static func diskLogText() -> String { "" }
+    /// ⭐ 真身：`static var userAgent: String`
+    static var userAgent: String { "stub" }
 }
 
 // MARK: - Stub：`CookieJar`（真身在 RuleSandbox.swift）
@@ -106,28 +108,18 @@ enum AppDecoder {
     }
 }
 
-// MARK: - ⭐⭐⭐⭐⭐ 引擎版本片段（与 `RuleSandbox.swift` 的**真代码逐字一致**）
+// MARK: - ⭐⭐⭐⭐⭐ 引擎版本片段（2026-11-19：引擎整个换成 `LegadoEngine`）
 //
-// ⚠️⚠️ **这段必须与 `QiReaderLite/Core/RuleSandbox.swift` 保持一致**
-//   ⇒ 门禁会**比对两边** ⇒ 改了一边忘了另一边 ⇒ 门禁红 ⭐⭐⭐
-//   ⚠️ 2026-10-25 build254 CI 实证：真实代码里写的是 `Self.engineRevision`
+// ⚠️ 2026-10-25 build254 CI 实证：真实代码里写的是 `Self.engineRevision`
 //   ⇒ Swift 报 `covariant 'Self' type cannot be referenced from a stored property initializer`
 //   ⇒ **CI 必挂** ⇒ 这里也必须用**显式类型名** ⭐⭐⭐
 
-/// ⭐⭐⭐ **引擎版本串的拼装**（与 `RuleSandbox.swift` 里的**真代码逐字一致**）
-enum LegadoEngineInfo {
-    static func version(revision: String) -> String {
-        "legado-engine \(revision) · 老 JS 引擎已退役，只剩新引擎"
-    }
-}
-
-/// ⭐⭐⭐ **revision 常量**（与 `RuleSandbox.swift` 里的**真代码逐字一致**）
+/// ⭐⭐⭐ **revision 常量**（与 `EngineRevision.generated.swift` 里的**真代码逐字一致**）
 enum EngineRevision {
     static let generated: String = "unknown"
 }
 
-enum RuleSandboxVersionProbe {
+enum LegadoEngineVersionProbe {
     /// ⭐⭐⭐⭐⭐ **这里就是 CI 挂过的那一行**（`Self.` ⇒ Swift 编译错误 ⇒ CI 必挂）
     static let engineRevision: String = EngineRevision.generated
-    static let engineVersion = LegadoEngineInfo.version(revision: RuleSandboxVersionProbe.engineRevision)
 }

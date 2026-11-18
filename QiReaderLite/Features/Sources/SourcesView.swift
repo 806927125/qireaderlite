@@ -73,7 +73,7 @@ struct SourcesView: View {
                     Button {
                         netDiagBusy = true
                         Task {
-                            netDiagText = await RuleSandbox.shared.probePlainHTTP()
+                            netDiagText = await EngineLogPanel.shared.probePlainHTTP()
                             netDiagBusy = false
                         }
                     } label: {
@@ -126,11 +126,11 @@ struct SourcesView: View {
     /// 不然「搜不出东西」和「引擎根本没起来」在用户眼里长得一模一样。
     @ViewBuilder
     private var engineBanner: some View {
-        if !RuleSandbox.shared.ready {
+        if !EngineLogPanel.shared.ready {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Text(RuleSandbox.shared.statusText)
+                Text(EngineLogPanel.shared.statusText)
                     .font(.caption)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(3)

@@ -1,0 +1,224 @@
+LegadoR.AISourceGuard.commit(_: LegadoR.BookSource, raw: Swift.Optional<Swift.Dictionary<Swift.String, Any>>, action: Swift.String) async -> Swift.Dictionary<Swift.String, Any>
+LegadoR.AnalyzeRule.(cachedRules in _EAF91AB88018CBC6EC43D86D92EBB843)(Swift.String) -> Swift.Array<LegadoR.AnalyzeRule.SourceRule>
+LegadoR.AnalyzeRule.(defaultAnalyzer in _EAF91AB88018CBC6EC43D86D92EBB843)(Any, Swift.Bool) -> LegadoR.ByDefault
+LegadoR.AnalyzeRule.(getElementsImpl in _EAF91AB88018CBC6EC43D86D92EBB843)(Swift.String) throws -> Swift.Array<Any>
+LegadoR.AnalyzeRule.(getString in _EAF91AB88018CBC6EC43D86D92EBB843)(_: Swift.Array<LegadoR.AnalyzeRule.SourceRule>, isUrl: Swift.Bool, unescape: Swift.Bool) throws -> Swift.String
+LegadoR.AnalyzeRule.(getStringList in _EAF91AB88018CBC6EC43D86D92EBB843)(_: Swift.Array<LegadoR.AnalyzeRule.SourceRule>, isUrl: Swift.Bool) throws -> Swift.Array<Swift.String>
+LegadoR.AnalyzeRule.(jsonAnalyzer in _EAF91AB88018CBC6EC43D86D92EBB843)(Any, Swift.Bool) -> LegadoR.ByJSONPath
+LegadoR.AnalyzeRule.(makeSourceRule in _EAF91AB88018CBC6EC43D86D92EBB843)(Swift.String, LegadoR.AnalyzeRule.Mode) -> LegadoR.AnalyzeRule.SourceRule
+LegadoR.AnalyzeRule.(putRule in _EAF91AB88018CBC6EC43D86D92EBB843)(Swift.Dictionary<Swift.String, Swift.String>) throws -> ()
+LegadoR.AnalyzeRule.(xpathAnalyzer in _EAF91AB88018CBC6EC43D86D92EBB843)(Any, Swift.Bool) -> LegadoR.ByXPath
+LegadoR.AnalyzeRule.__deallocating_deinit
+LegadoR.AnalyzeRule.asText(Any) -> Swift.String
+LegadoR.AnalyzeRule.deinit
+LegadoR.AnalyzeRule.evalJS(_: Swift.String, result: Swift.Optional<Any>) throws -> Swift.Optional<Any>
+LegadoR.AnalyzeRule.get(Swift.String) -> Swift.String
+LegadoR.AnalyzeRule.getElement(Swift.String) throws -> Swift.Optional<Any>
+LegadoR.AnalyzeRule.getElements(Swift.String) throws -> Swift.Array<Any>
+LegadoR.AnalyzeRule.getString(_: Swift.Optional<Swift.String>, isUrl: Swift.Bool, unescape: Swift.Bool) throws -> Swift.String
+LegadoR.AnalyzeRule.getStringList(_: Swift.Optional<Swift.String>, isUrl: Swift.Bool) throws -> Swift.Array<Swift.String>
+LegadoR.AnalyzeRule.imageDecode(_: Swift.String, bytes: Foundation.Data, src: Swift.String) -> Swift.Optional<Foundation.Data>
+LegadoR.AnalyzeRule.splitSourceRule(_: Swift.String, allInOne: Swift.Bool) -> Swift.Array<LegadoR.AnalyzeRule.SourceRule>
+LegadoR.AnalyzeRule.webJsResult(_: Swift.String, result: Swift.Optional<Any>) throws -> Swift.String
+LegadoR.AnalyzeUrl.(analyzeJs in _74FC5AA082E2846C0A910458E74AE544)() throws -> ()
+LegadoR.AnalyzeUrl.(analyzeUrl in _74FC5AA082E2846C0A910458E74AE544)() throws -> ()
+LegadoR.AnalyzeUrl.(dataUriResponse in _74FC5AA082E2846C0A910458E74AE544)() -> Swift.Optional<LegadoR.HTTPClient.Response>
+LegadoR.AnalyzeUrl.(encodeParams in _74FC5AA082E2846C0A910458E74AE544)(_: Swift.String, isQuery: Swift.Bool) -> Swift.String
+LegadoR.AnalyzeUrl.(fetchWeb in _74FC5AA082E2846C0A910458E74AE544)(ruleWebJs: Swift.Optional<Swift.String>, sourceRegex: Swift.Optional<Swift.String>) async throws -> LegadoR.HTTPClient.Response
+LegadoR.AnalyzeUrl.(fetchWebSync in _74FC5AA082E2846C0A910458E74AE544)() -> Swift.Optional<LegadoR.HTTPClient.Response>
+LegadoR.AnalyzeUrl.(headerValue in _74FC5AA082E2846C0A910458E74AE544)(Swift.String) -> Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.(loadSourceHeaderRule in _74FC5AA082E2846C0A910458E74AE544)() throws -> ()
+LegadoR.AnalyzeUrl.(loadSourceHeaders in _74FC5AA082E2846C0A910458E74AE544)(Swift.Optional<Swift.Dictionary<Swift.String, Swift.String>>) throws -> ()
+LegadoR.AnalyzeUrl.(postProcess in _74FC5AA082E2846C0A910458E74AE544)(LegadoR.HTTPClient.Response) throws -> LegadoR.HTTPClient.Response
+LegadoR.AnalyzeUrl.(replaceKeyPageJs in _74FC5AA082E2846C0A910458E74AE544)() throws -> ()
+LegadoR.AnalyzeUrl.(webJsToUse in _74FC5AA082E2846C0A910458E74AE544)(Swift.Optional<Swift.String>) -> Swift.Optional<Swift.String>
+LegadoR.AnalyzeUrl.__deallocating_deinit
+LegadoR.AnalyzeUrl.deinit
+LegadoR.AnalyzeUrl.evalJS(_: Swift.String, result: Swift.Optional<Any>) throws -> Swift.Optional<Any>
+LegadoR.AnalyzeUrl.fetch(webJs: Swift.Optional<Swift.String>, sourceRegex: Swift.Optional<Swift.String>) async throws -> LegadoR.HTTPClient.Response
+LegadoR.AnalyzeUrl.fetchChecked(webJs: Swift.Optional<Swift.String>, sourceRegex: Swift.Optional<Swift.String>) async throws -> LegadoR.HTTPClient.Response
+LegadoR.AnalyzeUrl.fetchSync() -> Swift.Optional<LegadoR.HTTPClient.Response>
+LegadoR.AnalyzeUrl.jsGet(Swift.String) -> Swift.String
+LegadoR.AnalyzeUrl.loginCheck(LegadoR.HTTPClient.Response) throws -> LegadoR.HTTPClient.Response
+LegadoR.AnalyzeUrl.makeRequest() throws -> Foundation.URLRequest
+LegadoR.AppStore.applyBackup(books: Swift.Array<LegadoR.Book>, sources: Swift.Array<LegadoR.BookSource>, rules: Swift.Array<LegadoR.ReplaceRule>, config: Swift.Optional<LegadoR.ReadConfig>) -> ()
+LegadoR.AppStore.enabledSources.getter : Swift.Array<LegadoR.BookSource>
+LegadoR.AppStore.source(for: Swift.String) -> Swift.Optional<LegadoR.BookSource>
+LegadoR.AppStore.sources.getter : Swift.Array<LegadoR.BookSource>
+LegadoR.AppStore.sources.setter : Swift.Array<LegadoR.BookSource>
+LegadoR.AppStore.upsertSources(Swift.Array<LegadoR.BookSource>) -> ()
+LegadoR.BookInfoRule.(CodingKeys in _0155E54FE942257F13B35D55139FF055).stringValue.getter : Swift.String
+LegadoR.BookInfoRule.encode(to: Swift.Encoder) throws -> ()
+LegadoR.BookInfoRule.hash(into: inout Swift.Hasher) -> ()
+LegadoR.BookInfoRule.srcEditInit.getter : Swift.Optional<Swift.String>
+LegadoR.BookSource.CodingKeys.rawValue.getter : Swift.String
+LegadoR.BookSource.checkAddErrorComment(Swift.String) -> ()
+LegadoR.BookSource.checkAddGroup(Swift.String) -> ()
+LegadoR.BookSource.checkInvalidGroupNames.getter : Swift.String
+LegadoR.BookSource.checkInvalidGroups.getter : Swift.Array<Swift.String>
+LegadoR.BookSource.checkKeyword(default: Swift.String) -> Swift.String
+LegadoR.BookSource.checkRemoveErrorComment() -> ()
+LegadoR.BookSource.checkRemoveGroup(Swift.String) -> ()
+LegadoR.BookSource.encode(to: Swift.Encoder) throws -> ()
+LegadoR.BookSource.hash(into: inout Swift.Hasher) -> ()
+LegadoR.BookSource.isHtmlSource.getter : Swift.Bool
+LegadoR.BookSource.reviewRuleTopLevel.getter : Swift.Optional<LegadoR.RToolReviewRule>
+LegadoR.BookSource.webHasLogin.getter : Swift.Bool
+LegadoR.ByDefault.(resultList in _4DFE34551777EEA7C1B9366F00B594E3)(Swift.String) -> Swift.Array<Swift.String>
+LegadoR.ByDefault.__deallocating_deinit
+LegadoR.ByDefault.getString(Swift.String) -> Swift.Optional<Swift.String>
+LegadoR.ByDefault.getStringList(Swift.String) -> Swift.Array<Swift.String>
+LegadoR.ByDefault.init(_: Any, baseUrl: Swift.Optional<Swift.String>) -> LegadoR.ByDefault
+LegadoR.ByJSONPath.__deallocating_deinit
+LegadoR.ByJSONPath.getList(Swift.String) -> Swift.Array<Any>
+LegadoR.ByJSONPath.getString(Swift.String) -> Swift.Optional<Swift.String>
+LegadoR.ByJSONPath.getStringList(Swift.String) -> Swift.Array<Swift.String>
+LegadoR.ByXPath.(select in _B3F64A316E391893A146A809ECD0D46E)(Swift.String) -> Swift.Array<LegadoR.XPathNode>
+LegadoR.ByXPath.__deallocating_deinit
+LegadoR.ByXPath.getElements(Swift.String) -> Swift.Array<LegadoR.XPathNode>
+LegadoR.ByXPath.getString(Swift.String) -> Swift.Optional<Swift.String>
+LegadoR.ByXPath.getStringList(Swift.String) -> Swift.Array<Swift.String>
+LegadoR.ByXPath.init(Any) -> LegadoR.ByXPath
+LegadoR.CheckSourceManageHooks.(invalidSources in _2A465558732F425730671F562339629E).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.CheckSourceService.(run in _20129F45F2C476D810026C9B1794404C)(Swift.Array<LegadoR.BookSource>, LegadoR.CheckSourceOptions) async -> ()
+LegadoR.ClassicExploreView.(kindCell in _CF1C3503ED793146993A8A2896CFA170)(LegadoR.BookSource, LegadoR.ExploreKind) -> some
+LegadoR.ClassicExploreView.(kindGrid in _CF1C3503ED793146993A8A2896CFA170)(LegadoR.BookSource, Swift.Array<LegadoR.ExploreKind>) -> some
+LegadoR.ClassicExploreView.(sourceRow in _CF1C3503ED793146993A8A2896CFA170)(LegadoR.BookSource) -> some
+LegadoR.ClassicExploreView.(toTop in _CF1C3503ED793146993A8A2896CFA170)(LegadoR.BookSource) -> ()
+LegadoR.ClassicExploreView.(toggle in _CF1C3503ED793146993A8A2896CFA170)(LegadoR.BookSource) -> ()
+LegadoR.ConcurrentRateLimiter.(fetchStart in _74FC5AA082E2846C0A910458E74AE544)() -> Swift.Int64
+LegadoR.ConcurrentRateLimiter.__deallocating_deinit
+LegadoR.ConcurrentRateLimiter.init(Swift.Optional<LegadoR.BookSource>) -> LegadoR.ConcurrentRateLimiter
+LegadoR.ContentRule.(CodingKeys in _0155E54FE942257F13B35D55139FF055).stringValue.getter : Swift.String
+LegadoR.ContentRule.encode(to: Swift.Encoder) throws -> ()
+LegadoR.ContentRule.hash(into: inout Swift.Hasher) -> ()
+LegadoR.ExploreSourcePicker.(filtered in _CF1C3503ED793146993A8A2896CFA170).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.HTTPClient.(makeResponse in _791FECD98F47696C875401AE8A1E2ABD)(data: Foundation.Data, resp: __C.NSURLResponse, req: Foundation.URLRequest, charset: Swift.Optional<Swift.String>) -> LegadoR.HTTPClient.Response
+LegadoR.HTTPClient.__deallocating_deinit
+LegadoR.HTTPClient.init() -> LegadoR.HTTPClient
+LegadoR.HTTPClient.request(_: Foundation.URLRequest, charset: Swift.Optional<Swift.String>, proxy: Swift.Optional<Swift.String>) async throws -> LegadoR.HTTPClient.Response
+LegadoR.HTTPClient.requestSync(_: Foundation.URLRequest, charset: Swift.Optional<Swift.String>, proxy: Swift.Optional<Swift.String>, followRedirects: Swift.Bool) -> Swift.Optional<LegadoR.HTTPClient.Response>
+LegadoR.HTTPClient.urlSession(proxy: Swift.Optional<Swift.String>) -> __C.NSURLSession
+LegadoR.HTTSEngine.asBookSource(speakText: Swift.Optional<Swift.String>, speakSpeed: Swift.Optional<Swift.Int>) -> LegadoR.BookSource
+LegadoR.HtmlSourceRuntime.(in _97DFA899FE4144EF38815EDD333D2E9C).init(source: LegadoR.BookSource) -> LegadoR.HtmlSourceRuntime
+LegadoR.JSBridge.(installNative in _E95BDD06599FFF8EE8D0490FC875E194)() -> ()
+LegadoR.JSBridge.(installObjects in _E95BDD06599FFF8EE8D0490FC875E194)() -> ()
+LegadoR.JSBridge.(respDict in _E95BDD06599FFF8EE8D0490FC875E194)(Swift.Optional<LegadoR.HTTPClient.Response>) -> Swift.Optional<Any>
+LegadoR.JSBridge.__deallocating_deinit
+LegadoR.JSBridge.analyzeUrlSync(_: Swift.String, headerMapF: Swift.Optional<Swift.Dictionary<Swift.String, Swift.String>>) -> Swift.Optional<LegadoR.HTTPClient.Response>
+LegadoR.JSBridge.deinit
+LegadoR.JSBridge.eval(_: Swift.String, bindings: Swift.Dictionary<Swift.String, Swift.Optional<Any>>) throws -> Swift.Optional<Any>
+LegadoR.JSBridge.evalImageDecode(_: Swift.String, bytes: Foundation.Data, src: Swift.String) -> Swift.Optional<Foundation.Data>
+LegadoR.JSBridge.init(source: Swift.Optional<LegadoR.BookSource>, book: Swift.Optional<LegadoR.Book>, chapter: Swift.Optional<LegadoR.BookChapter>, variables: LegadoR.RuleVariables, host: Swift.Optional<LegadoR.JSHost>) -> LegadoR.JSBridge
+LegadoR.JSBridge.installBitmapNatives(__C.JSValue) -> ()
+LegadoR.JSBridge.installExtNatives(__C.JSValue) -> ()
+LegadoR.JSBridge.installFileNatives(__C.JSValue) -> ()
+LegadoR.JSBridge.installJavaNatives(__C.JSValue) -> ()
+LegadoR.JSBridge.installTTFNatives(__C.JSValue) -> ()
+LegadoR.JSJsoupStringBox.__deallocating_deinit
+LegadoR.ModernExploreView.(currentSource in _CF1C3503ED793146993A8A2896CFA170).getter : Swift.Optional<LegadoR.BookSource>
+LegadoR.OnlineSearchView.(scopedSources in _AD7ED95C97B27E74BB62AE55B7B8ED6B).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.PubBatchSubmitView.(filtered in _80C15CE43F824830FCE20EDED46E4427).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.PubBatchSubmitView.(invert in _80C15CE43F824830FCE20EDED46E4427)(Swift.Array<LegadoR.BookSource>) -> ()
+LegadoR.PubBatchSubmitView.(row in _80C15CE43F824830FCE20EDED46E4427)(LegadoR.BookSource) -> some
+LegadoR.PubBatchSubmitView.(selectAll in _80C15CE43F824830FCE20EDED46E4427)(Swift.Array<LegadoR.BookSource>) -> ()
+LegadoR.PubBatchSubmitView.(selectedSources in _80C15CE43F824830FCE20EDED46E4427).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.PubBatchSubmitView.(toggle in _80C15CE43F824830FCE20EDED46E4427)(LegadoR.BookSource) -> ()
+LegadoR.PubBatchSubmitView.init(preselected: Swift.Array<LegadoR.BookSource>) -> LegadoR.PubBatchSubmitView
+LegadoR.PubSubmitView.init(source: LegadoR.BookSource) -> LegadoR.PubSubmitView
+LegadoR.RToolReviewSheet.(countAll in _550315C88EB66A8C6A447069EE3282F4)(rule: LegadoR.RToolReviewRule, source: LegadoR.BookSource, chapter: LegadoR.BookChapter) -> ()
+LegadoR.ReaderImageStore.prepare(text: Swift.String, book: LegadoR.Book, chapter: Swift.Optional<LegadoR.BookChapter>, source: Swift.Optional<LegadoR.BookSource>, budget: Swift.Double, onLate: @Swift.MainActor () -> ()) async -> ()
+LegadoR.RuleSplitter.__deallocating_deinit
+LegadoR.RuleSplitter.splitRule(Swift.String...) -> Swift.Array<Swift.String>
+LegadoR.RuleVariables.__deallocating_deinit
+LegadoR.SearchModel.search(_: Swift.String, sources: Swift.Optional<Swift.Array<LegadoR.BookSource>>) -> ()
+LegadoR.SearchRule.(CodingKeys in _0155E54FE942257F13B35D55139FF055).stringValue.getter : Swift.String
+LegadoR.SearchRule.encode(to: Swift.Encoder) throws -> ()
+LegadoR.SearchRule.hash(into: inout Swift.Hasher) -> ()
+LegadoR.SearchScope.filter(Swift.Array<LegadoR.BookSource>) -> Swift.Array<LegadoR.BookSource>
+LegadoR.SearchScope.resolved(in: Swift.Array<LegadoR.BookSource>) -> LegadoR.SearchScope
+LegadoR.SearchScope.title(in: Swift.Array<LegadoR.BookSource>) -> Swift.String
+LegadoR.SearchScopePickerSheet.(filteredSources in _AD7ED95C97B27E74BB62AE55B7B8ED6B).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.SearchScopePickerSheet.(searchable in _AD7ED95C97B27E74BB62AE55B7B8ED6B).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.SourceDebugView.init(source: LegadoR.BookSource) -> LegadoR.SourceDebugView
+LegadoR.SourceManageView.(filtered in _5C00E15107C8ABC701893A9F052A9508).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.SourceManageView.(grouped in _5C00E15107C8ABC701893A9F052A9508)(Swift.Array<LegadoR.BookSource>) -> Swift.Array<(Swift.String, Swift.Array<LegadoR.BookSource>)>
+LegadoR.SourceManageView.(hasExploreUrl in _5C00E15107C8ABC701893A9F052A9508)(LegadoR.BookSource) -> Swift.Bool
+LegadoR.SourceManageView.(invalidSources in _5C00E15107C8ABC701893A9F052A9508).getter : Swift.Array<LegadoR.BookSource>
+LegadoR.SrcEditView.(save in _65035E7C58B7F929AC95F645BA3437A5)() -> Swift.Optional<LegadoR.BookSource>
+LegadoR.SrcEditView.init(original: Swift.Optional<LegadoR.BookSource>) -> LegadoR.SrcEditView
+LegadoR.SrcSourceFilter.matches(LegadoR.BookSource) -> Swift.Bool
+LegadoR.TocRule.(CodingKeys in _0155E54FE942257F13B35D55139FF055).stringValue.getter : Swift.String
+LegadoR.TocRule.encode(to: Swift.Encoder) throws -> ()
+LegadoR.TocRule.hash(into: inout Swift.Hasher) -> ()
+LegadoR.VideoPlayerModel.source.getter : Swift.Optional<LegadoR.BookSource>
+LegadoR.WebFetcher.(evaluate in _97FCF45401A46CE01136F1F1C8B8FA5F)(Swift.String) async -> (Swift.Optional<Swift.String>, Swift.Optional<Swift.String>)
+LegadoR.WebFetcher.(handleFailure in _97FCF45401A46CE01136F1F1C8B8FA5F)(Swift.Error) -> ()
+LegadoR.WebFetcher.(makeWebView in _97FCF45401A46CE01136F1F1C8B8FA5F)(headers: Swift.Dictionary<Swift.String, Swift.String>) -> __C.WKWebView
+LegadoR.WebFetcher.(run in _97FCF45401A46CE01136F1F1C8B8FA5F)(url: Swift.Optional<Swift.String>, html: Swift.Optional<Swift.String>, headers: Swift.Dictionary<Swift.String, Swift.String>, webJs: Swift.Optional<Swift.String>, sourceRegex: Swift.Optional<Swift.String>, delay: Swift.Double, timeout: Swift.Double) async throws -> LegadoR.WebFetchResult
+LegadoR.WebFetcher.(sniffResource in _97FCF45401A46CE01136F1F1C8B8FA5F)(__C.NSRegularExpression) async -> Swift.Optional<Swift.String>
+LegadoR.WebFetcher.__deallocating_deinit
+LegadoR.WebLoginFormModel.init(source: LegadoR.BookSource, loginUi: Swift.String) -> LegadoR.WebLoginFormModel
+LegadoR.WebLoginPageModel.init(source: LegadoR.BookSource) -> LegadoR.WebLoginPageModel
+static LegadoR.AnalyzeRule.(evalPattern in _EAF91AB88018CBC6EC43D86D92EBB843) : __C.NSRegularExpression
+static LegadoR.AnalyzeRule.(putPattern in _EAF91AB88018CBC6EC43D86D92EBB843) : __C.NSRegularExpression
+static LegadoR.AnalyzeRule.(regexPattern in _EAF91AB88018CBC6EC43D86D92EBB843) : __C.NSRegularExpression
+static LegadoR.AnalyzeRule.jsPattern : __C.NSRegularExpression
+static LegadoR.AnalyzeRule.webJsPattern : __C.NSRegularExpression
+static LegadoR.ByDefault.getElements(SwiftSoup.Element, Swift.String) -> Swift.Array<SwiftSoup.Element>
+static LegadoR.ByJSONPath.(apply in _38C7032003CEDF9649679CD4567D5299)(_: LegadoR.ByJSONPath.(Step in _38C7032003CEDF9649679CD4567D5299), _: Any, _: inout Swift.Array<Any>, afterDeep: Swift.Bool) -> ()
+static LegadoR.ByJSONPath.(collectDeep in _38C7032003CEDF9649679CD4567D5299)(Any, inout Swift.Array<Any>) -> ()
+static LegadoR.ByJSONPath.(matchFilter in _38C7032003CEDF9649679CD4567D5299)(Swift.String, Any) -> Swift.Bool
+static LegadoR.ByJSONPath.(operand in _38C7032003CEDF9649679CD4567D5299)(Swift.String, Any) -> Swift.Optional<Any>
+static LegadoR.ByJSONPath.evaluate(_: Swift.String, on: Any) -> Swift.Optional<Any>
+static LegadoR.ByRegex.getElement(Swift.String, Swift.Array<Swift.String>, Swift.Int) -> Swift.Optional<Swift.Array<Swift.String>>
+static LegadoR.ByRegex.getElements(Swift.String, Swift.Array<Swift.String>, Swift.Int) -> Swift.Array<Swift.Array<Swift.String>>
+static LegadoR.CheckSourceRunner.check(_: LegadoR.BookSource, options: LegadoR.CheckSourceOptions) async -> LegadoR.CheckSourceResult
+static LegadoR.ConcurrentRateLimiter.(lock in _74FC5AA082E2846C0A910458E74AE544) : __C.NSLock
+static LegadoR.ConcurrentRateLimiter.(records in _74FC5AA082E2846C0A910458E74AE544) : Swift.Dictionary<Swift.String, LegadoR.ConcurrentRateLimiter.(Record in _74FC5AA082E2846C0A910458E74AE544)>
+static LegadoR.HTTPClient.(proxyRegex in _791FECD98F47696C875401AE8A1E2ABD) : Swift.Optional<__C.NSRegularExpression>
+static LegadoR.HTTPClient.decode(_: Foundation.Data, charset: Swift.Optional<Swift.String>, contentType: Swift.Optional<Swift.String>) -> Swift.String
+static LegadoR.HTTPClient.encoding(named: Swift.Optional<Swift.String>) -> Swift.Optional<(extension in Foundation):Swift.String.Encoding>
+static LegadoR.HTTPClient.lenientString(Foundation.Data, (extension in Foundation):Swift.String.Encoding) -> Swift.Optional<Swift.String>
+static LegadoR.HTTPClient.lossyGB18030(Foundation.Data) -> Swift.String
+static LegadoR.HTTPClient.shared : LegadoR.HTTPClient
+static LegadoR.HtmlSourceBook.(books in _69CA479603D1BD21DF3E09AA9952217E)(_: Swift.Optional<Swift.String>, source: LegadoR.BookSource) -> Swift.Array<LegadoR.SearchBook>
+static LegadoR.HtmlSourceBook.bookInfo(source: LegadoR.BookSource, book: LegadoR.Book) async throws -> LegadoR.Book
+static LegadoR.HtmlSourceBook.chapterList(source: LegadoR.BookSource, book: LegadoR.Book) async throws -> Swift.Array<LegadoR.BookChapter>
+static LegadoR.HtmlSourceBook.explore(source: LegadoR.BookSource, url: Swift.String, page: Swift.Int) async throws -> Swift.Array<LegadoR.SearchBook>
+static LegadoR.HtmlSourceBook.exploreKinds(source: LegadoR.BookSource) async throws -> Swift.Array<LegadoR.ExploreKind>
+static LegadoR.HtmlSourceBook.search(source: LegadoR.BookSource, key: Swift.String, page: Swift.Int) async throws -> Swift.Array<LegadoR.SearchBook>
+static LegadoR.HtmlSourceRuntime.baseURL(LegadoR.BookSource) -> Swift.Optional<Foundation.URL>
+static LegadoR.JSBridge.(bareLengthCallRegex in _E95BDD06599FFF8EE8D0490FC875E194) : Swift.Optional<__C.NSRegularExpression>
+static LegadoR.JSBridge.(rhinoArrowRegex in _E95BDD06599FFF8EE8D0490FC875E194) : Swift.Optional<__C.NSRegularExpression>
+static LegadoR.JSBridge.contentArg(__C.JSValue) -> Swift.Optional<Any>
+static LegadoR.JSBridge.ruleArgs(Swift.Array<__C.JSValue>) -> (content: Swift.Optional<Any>, isUrl: Swift.Bool)
+static LegadoR.JSBridge.toSwift(__C.JSValue) -> Swift.Optional<Any>
+static LegadoR.JSExt.(chnMap in _5A9ECE343C58A28B76B7171DB948DB3B) : Swift.Dictionary<Swift.Character, Swift.Int>
+static LegadoR.JSExt.(titleNum in _5A9ECE343C58A28B76B7171DB948DB3B) : __C.NSRegularExpression
+static LegadoR.JSExtCache.(kvLock in _D70B718F2F760CDAAE703BDF89523C1E) : __C.NSLock
+static LegadoR.JSExtCache.(lock in _D70B718F2F760CDAAE703BDF89523C1E) : __C.NSLock
+static LegadoR.JSExtCache.(memOrder in _D70B718F2F760CDAAE703BDF89523C1E) : Swift.Array<Swift.String>
+static LegadoR.JSExtCache.(memory in _D70B718F2F760CDAAE703BDF89523C1E) : Swift.Dictionary<Swift.String, Swift.String>
+static LegadoR.JSExtCache.(migrated in _D70B718F2F760CDAAE703BDF89523C1E) : Swift.Bool
+static LegadoR.JSExtCache.(ud in _D70B718F2F760CDAAE703BDF89523C1E) : __C.NSUserDefaults
+static LegadoR.JSExtCache.(writeKV in _D70B718F2F760CDAAE703BDF89523C1E)(_: Swift.String, _: Swift.String, deadline: Swift.Int64) -> ()
+static LegadoR.JSExtCache.delete(Swift.String) -> ()
+static LegadoR.JSExtCache.diskDelete(Swift.String) -> ()
+static LegadoR.JSExtCache.diskGet(Swift.String) -> Swift.Optional<Swift.String>
+static LegadoR.JSExtCache.fileURL(Swift.String) -> Foundation.URL
+static LegadoR.JSExtCache.get(_: Swift.String, onlyDisk: Swift.Bool) -> Swift.Optional<Swift.String>
+static LegadoR.JSExtCache.getFileData(Swift.String) -> Swift.Optional<Foundation.Data>
+static LegadoR.JSExtCache.kvDir.getter : Foundation.URL
+static LegadoR.JSExtCache.kvURL(Swift.String) -> Foundation.URL
+static LegadoR.JSExtCache.migrateFromDefaultsIfNeeded() -> ()
+static LegadoR.JSExtCache.putFile(_: Swift.String, _: Foundation.Data, saveTime: Swift.Double) -> ()
+static LegadoR.JSExtCrypto.(digestInfoPrefix in _C18C9ED63713A1D940CA518F88DFE3EE) : Swift.Dictionary<Swift.String, Swift.Array<Swift.UInt8>>
+static LegadoR.JSExtCrypto.output(Foundation.Data, Swift.String) -> Any
+static LegadoR.JSExtFiles.relative(Foundation.URL) -> Swift.String
+static LegadoR.JSExtFiles.resolve(Swift.String) -> Swift.Optional<Foundation.URL>
+static LegadoR.JSExtFiles.unArchive(Swift.String) throws -> Swift.String
+static LegadoR.JSExtFiles.write(_: Foundation.Data, name: Swift.String) -> Swift.Optional<Swift.String>
+static LegadoR.JSExtJava.(crcTable in _A11DD1FB87A5DF3BE271A482409247BA) : Swift.Array<Swift.UInt32>
+static LegadoR.ServicesJSON.bookSources(Foundation.Data) -> Swift.Array<LegadoR.BookSource>
+static LegadoR.VideoResolver.resolve(source: LegadoR.BookSource, book: LegadoR.Book, chapter: LegadoR.BookChapter, nextChapterUrl: Swift.Optional<Swift.String>) async throws -> LegadoR.VideoPlayLink

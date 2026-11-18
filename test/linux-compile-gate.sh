@@ -55,10 +55,9 @@ FILES=(
   "QiReaderLite/Core/SourceRawArchive.swift"
   "QiReaderLite/Core/LegadoCompat.swift"
   "QiReaderLite/Core/ServiceError.swift"      # ⭐⭐⭐ 错误类型独立文件 ⇒ 两组都能编
-  # ⭐⭐⭐⭐⭐ **`EngineLog.swift` 也要编**（2026-10-29 补）
-  #   ⚠️⚠️ `LegadoEngineBackend.swift` / `SourceVariables.swift` 都调 `engineLog(...)`
-  #   ⇒ 它**在同一个模块** ⇒ 不编它 ⇒ typecheck 报「cannot find 'engineLog' in scope」
-  #   ⇒ **这个门禁从加进清单那天起就一直是红的**（⇒ 事实上的假绿：没人看它）⭐⭐⭐
+  # ⭐ **`EngineLog.swift`**（纯 Foundation 的日志出口）⇒ 真文件可编 ⭐⭐⭐
+  # ⚠️ **`EngineLogPanel.swift` 不在这儿**：它 import UIKit ⇒ Linux 编不到
+  #   ⇒ 走 `test/linux-compile-stubs.swift` 里的 **同名 stub**（只给签名）⭐⭐⭐
   "QiReaderLite/Core/EngineLog.swift"
   "QiReaderLite/Core/AnalyzeUrl.swift"
 )
@@ -82,18 +81,40 @@ echo "=== 编译 App 侧 Core/（swiftc 真编 ⇒ 抓语法/类型错）==="
 echo "=== typecheck（抓类型错：parse 抓不到）==="
 # ⭐⭐⭐ **要链【真引擎】**（`SourceService.swift` 也用 `LegadoEngineBackend`）
 #   ⇒ 找不到引擎产物 ⇒ **显式 SKIP**（不许假绿）⭐⭐⭐
-ENGINE_DIR="$(cd .. && pwd)/legado-engine"
+ENGINE_DIR="$(pwd)/LegadoEngine"
 ENGINE_MODULES=""
-for d in "$ENGINE_DIR/.build/x86_64-unknown-linux-gnu/debug/Modules" \
-         "$ENGINE_DIR/.build/debug/Modules"; do
-  if [ -f "$d/LegadoCore.swiftmodule" ]; then ENGINE_MODULES="$d"; break; fi
-done
+find_modules() {
+  for d in "$ENGINE_DIR/.build/x86_64-unknown-linux-gnu/debug/Modules" \
+           "$ENGINE_DIR/.build/debug/Modules"; do
+    if [ -f "$d/LegadoEngine.swiftmodule" ]; then echo "$d"; return 0; fi
+  done
+  return 1
+}
+ENGINE_MODULES="$(find_modules || true)"
+# ⭐⭐⭐ **没有产物 ⇒ 先编一次**（新引擎是本地包 ⇒ 首次要拉 SwiftSoup/Kanna ⇒ 需要网）
+#   ⇒ 编不出来 ⇒ **显式 SKIP**（本组没验到 ⇒ 不许假绿）⭐⭐⭐
+if [ -z "$ENGINE_MODULES" ] && [ -d "$ENGINE_DIR" ]; then
+  echo "  （先编一次本地引擎包 LegadoEngine/ ……）"
+  (cd "$ENGINE_DIR" && "$SWIFTC" --version >/dev/null 2>&1) && \
+    (cd "$ENGINE_DIR" && timeout 900 swift build >/dev/null 2>&1)
+  ENGINE_MODULES="$(find_modules || true)"
+fi
 if [ -z "$ENGINE_MODULES" ]; then
-  echo "  ⚠️ 跳过：没找到 legado-engine 的 SPM 产物（先在 legado-engine/ 跑 swift build）"
+  echo "  ⚠️ 跳过：没找到 LegadoEngine 的 SPM 产物（先在 LegadoEngine/ 跑 swift build）"
   echo "     ⇒ 本组**没验到**（不等于通过）"
 else
+  # ⭐⭐⭐ **Kanna 的 libxml2 是 C 模块** ⇒ 还得给编译器指 modulemap
+  #   ⇒ 不给 ⇒ `missing required module 'libxml2'` ⇒ 整组编不了 ⭐⭐⭐
+  KANNA_MAP="$(dirname "$(find "$ENGINE_DIR/.build/checkouts/Kanna" -name 'module.modulemap' -path '*Modules*' 2>/dev/null | head -1)")"
+  EXTRA_FLAGS=()
+  if [ -n "$KANNA_MAP" ] && [ -f "$KANNA_MAP/module.modulemap" ]; then
+    # ⚠️ libxml2 的头在 `/usr/include/libxml2` ⇒ 还得给这个 include 路径
+    EXTRA_FLAGS=(-Xcc -fmodule-map-file="$KANNA_MAP/module.modulemap"
+                 -Xcc -I"$KANNA_MAP" -Xcc -I/usr/include/libxml2)
+  fi
   if ! "$SWIFTC" -swift-version 5 -strict-concurrency=minimal -typecheck \
-        -I "$ENGINE_MODULES" "$TMP/main.swift" "${FILES[@]}" > "$TMP/tc.txt" 2>&1; then
+        -I "$ENGINE_MODULES" "${EXTRA_FLAGS[@]}" \
+        "$TMP/main.swift" "${FILES[@]}" > "$TMP/tc.txt" 2>&1; then
     echo "❌ typecheck 失败："
     grep -E "error:" "$TMP/tc.txt" | head -20 | sed 's/^/     /'
     exit 1
@@ -103,39 +124,21 @@ fi
 
 # ⭐⭐⭐ **`LegadoEngineBackend.swift` 已并入上面那一组**（一起链真引擎编）⭐⭐⭐
 
-# ⭐⭐⭐⭐⭐ **一致性比对**：stub 里的「引擎版本片段」必须与 `RuleSandbox.swift` 里的**真代码一致**
+# ⭐⭐⭐⭐⭐ **一致性比对**：stub 里的「引擎 revision 片段」必须与 `EngineRevision.generated.swift` 一致
 #   ⇒ 改了一边忘了另一边 ⇒ 门禁红（防止两边漂移 ⇒ 假的）⭐⭐⭐
-echo "=== 引擎版本片段：stub ⇔ RuleSandbox 一致性 ==="
-RS="QiReaderLite/Core/RuleSandbox.swift"
+echo "=== 引擎 revision 片段：stub ⇔ EngineRevision.generated.swift 一致性 ==="
+RS="QiReaderLite/Core/EngineRevision.generated.swift"
 if [ -f "$RS" ]; then
-  # 抽两边的关键行
-  probe_rev="$(grep -oE 'static let engineRevision: String = .*' "$RS" | head -1)"
-  probe_ver="$(grep -oE 'static let engineVersion = .*' "$RS" | head -1)"
-  stub_rev="$(grep -oE 'static let engineRevision: String = .*' test/linux-compile-stubs.swift | head -1)"
-  stub_ver="$(grep -oE 'static let engineVersion = .*' test/linux-compile-stubs.swift | head -1)"
-  if [ -z "$probe_rev" ] || [ -z "$probe_ver" ]; then
-    echo "  ✗ ⭐⭐⭐ RuleSandbox 里找不到 engineRevision / engineVersion 的定义（⇒ 有人改了？）"
+  probe_rev="$(grep -oE 'static let generated: String = .*' "$RS" | head -1)"
+  stub_rev="$(grep -oE 'static let generated: String = .*' test/linux-compile-stubs.swift | head -1)"
+  if [ -z "$probe_rev" ] || [ -z "$stub_rev" ]; then
+    echo "  ✗ ⭐⭐⭐ 找不到 engine revision 的定义（⇒ 有人改了？）"
     exit 1
   fi
-  # ⭐⭐⭐ **不许用 `Self.`**（Swift 硬错误：`covariant 'Self' type cannot be referenced
-  #   from a stored property initializer` ⇒ **CI 必挂** ⇒ 沙盒必须能抓）⭐⭐⭐
-  #   （build254 CI 实证：就是这一行挂的 ⇒ 沙盒全绿 ⇒ 白等一轮）⭐⭐⭐
-  if echo "$probe_ver" | grep -qE '\bSelf\.engineRevision\b'; then
-    echo "  ✗ ⭐⭐⭐⭐⭐ RuleSandbox 的 engineVersion 用了 \`Self.engineRevision\`"
-    echo "     ⇒ Swift 报 \`covariant 'Self' type cannot be referenced from a stored property initializer\`"
-    echo "     ⇒ **CI 必挂** ⇒ 改成**显式类型名**（如 \`RuleSandbox.engineRevision\`）⭐⭐⭐"
-    exit 1
-  fi
-  if echo "$stub_ver" | grep -qE '\bSelf\.engineRevision\b'; then
-    echo "  ✗ ⭐⭐⭐ stub 里用了 \`Self.engineRevision\` ⇒ 同样会让 CI 挂 ⇒ 改成显式类型名"
-    exit 1
-  fi
-  # 关键：两边的**调用形态**必须一致（类型名不同是允许的 ⇒ 只比调用结构）⭐
-  norm() { echo "$1" | sed -E 's/[A-Za-z_][A-Za-z0-9_]*\.engineRevision/<TYPE>.engineRevision/g'; }
-  if [ "$(norm "$probe_ver")" != "$(norm "$stub_ver")" ]; then
-    echo "  ✗ ⭐⭐⭐⭐⭐ 引擎版本拼装**两边不一致**（⇒ stub 里验的就不是真代码 ⇒ 假绿）"
-    echo "     RuleSandbox: $probe_ver"
-    echo "     stub       : $stub_ver"
+  if [ "$probe_rev" != "$stub_rev" ]; then
+    echo "  ✗ ⭐⭐⭐⭐⭐ 引擎 revision 片段**两边不一致**（⇒ stub 里验的就不是真代码 ⇒ 假绿）"
+    echo "     真代码: $probe_rev"
+    echo "     stub  : $stub_rev"
     exit 1
   fi
   echo "  ✅ 一致"

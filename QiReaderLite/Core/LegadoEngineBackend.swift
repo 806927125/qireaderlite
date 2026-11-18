@@ -1,1393 +1,364 @@
 import Foundation
-import LegadoCore
+import LegadoEngine
 
-// ⚠️ Linux（沙盒 swiftc）上 URLSession 在 FoundationNetworking 里，iOS 上在 Foundation
-//    ⇒ 条件导入，两边都能编 ✅
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-
-// MARK: - 类型别名（轻阅的模型 vs 引擎的模型）
-
-/// ⭐⭐⭐ **引擎的书源模型**（`legado-engine` 的 `BookSource`）
-typealias EngineSource = LegadoCore.BookSource
-/// ⭐⭐ **引擎的书模型**
-typealias EngineBook = LegadoCore.Book
-/// ⭐⭐ **引擎的章节模型**
-typealias EngineChapter = LegadoCore.Chapter
-/// ⭐⭐ **引擎的详情模型**
-typealias EngineBookInfo = LegadoCore.BookInfo
-/// ⭐⭐ **引擎的 cookie 罐**（⚠️ 轻阅自己也有一个 `CookieJar` ⇒ 必须带限定名）
-typealias EngineCookieJar = LegadoCore.CookieJar
-
-// MARK: - ① 传输层
-
-/// ⭐⭐⭐ **URLSession 传输**（**同步**）
+/// ⭐⭐⭐⭐⭐ **轻阅 ⇄ LegadoEngine 接线层**（2026-11-19 · 老的两条引擎全部退役）
 ///
-/// ⚠️ **同步是引擎的硬要求**（引擎内部全同步）⇒ 这里用信号量等 `URLSession` 的回调。
-/// ⇒ ⚠️ **绝不能在主线程调用**（会卡死 UI）⇒ 调用方（`SourceService`）把它丢到后台队列。
+/// **老引擎（已删）**
+/// · ① WebView JS 引擎（`Resources/engine/*.js` + `Engine/WebViewJSExecutor.swift`）
+/// · ② 自研 Swift 引擎（`legado-engine` 这个 SPM 包）
 ///
-/// ⭐ **三件必须跟老引擎对齐的事**：
-/// ① **`data:` 伪 URL 绝不能真去 fetch**（站方聚合源的 bookUrl / tocUrl 是
-///    `data:;base64,<载荷>,{"type":"qingtian"}` ⇒ 真 fetch 会抛
-///    「illegal base64 data at input byte 9」⇒ **整本书崩**）⭐
-/// ② **cookie 走系统共享罐**（`HTTPCookieStorage.shared`）⇒ 登录态自动带上 / 自动存回
-/// ③ **源级请求头**由引擎塞进 `request.headers`（54 个源在用 ⇒ 缺了就 403）
-final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
-
-    private let session: URLSession
-
-    init() {
-        let cfg = URLSessionConfiguration.default
-        // ⭐ cookie 走**系统共享罐** ⇒ 登录态自动带上 / Set-Cookie 自动存回
-        cfg.httpCookieStorage = HTTPCookieStorage.shared
-        cfg.httpShouldSetCookies = true
-        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
-        // ⭐⭐⭐ **请求超时 30 秒 → 8 秒**（2026-10-24 真机「app 死机」）
-        //   老引擎的「两遍跑」**只抓同组第一条** ⇒ 站方 8 条线路一次操作只发 1 个请求
-        //   ⇒ 新引擎是「每次 java.ajax 都真发」⇒ 站方 catch 循环里 **8 条线路各发一次**
-        //   ⇒ 死线路（服务器不回包）**每条 30 秒** ⇒ 8 条 = 4 分钟 ⇒ 一次发现页 = 十几分钟
-        //   ⇒ 用户看到的就是「app 死机」⭐⭐⭐
-        //   ⇒ 现在：**8 秒** ⇒ 8 条死线路最坏 64 秒（而且 op 本身有 60 秒兜底）
-        //   ⇒ 活着���线路照旧很快（正常几百 ms）⭐
-        cfg.timeoutIntervalForRequest = 8
-        session = URLSession(configuration: cfg)
-    }
-
-    /// ⭐⭐⭐⭐⭐ **当前 op 的单请求超时【下限】**（2026-11-01 真机「发现页全空」实证）
-    ///
-    /// ⚠️ **背景**：引擎的 `PageFetcher.fetch` 不传 timeout ⇒ 固定 8 秒
-    ///   ⇒ 分类接口（几百个分类 · 100KB+ 响应）在 5G 下**经常超时** ⇒ 分类全废 ⇒ 发现页空 ⭐⭐⭐
-    ///   ⇒ 而**老引擎的原生 `request` 会重试 3 次** ⇒ 实际耐受度是 3 倍 ⇒ 切引擎后悄悄降了 3 倍 ⭐⭐⭐
-    ///
-    /// ⭐⭐⭐ **分档依据 = op 层的总预算**（`newEngineTimeoutSeconds`）：
-    ///   · 交互类（搜索 / 发现 / 分类）⇒ op 预算 60 秒 ⇒ 单请求给 **20 秒**
-    ///     ⇒ 一次 op 最多试 3 条慢线路；全死时 op 层先超时（总闸）⇒ 不会更糟 ⭐
-    ///   · 内容类（详情 / 目录 / 正文）⇒ op 预算 300 秒 ⇒ 单请求给 **30 秒**
-    ///     ⇒ 慢接口能过；线路全死时 op 层兜底 ⇒ 不会更糟 ⭐
-    ///   · 其余 ⇒ **保持 8 秒**（诊断 / 登录等轻量请求 ⇒ 不放宽）⭐
-    static func minimumTimeoutForCurrentOp() -> TimeInterval {
-        switch LegadoEngineBackend.currentOp {
-        case "search", "explore", "exploreKinds":
-            return 20
-        case "bookInfo", "toc", "content":
-            return 30
-        default:
-            return 8
-        }
-    }
-
-    func send(_ request: HTTPRequest) throws -> HTTPResponse {
-        // ① ⭐⭐⭐ **`data:` 伪 URL** ⇒ 载荷就是「页面内容」⇒ 直接当响应体返回
-        if request.url.lowercased().hasPrefix("data:") {
-            let payload = Self.dataPayload(request.url)
-            return HTTPResponse(statusCode: 200, headers: [:],
-                                body: Data(payload.utf8), finalURL: request.url)
-        }
-        guard let url = URL(string: request.url) else {
-            throw SourceError.requestFailed(request.url, "URL 非法")
-        }
-        var req = URLRequest(url: url)
-        req.httpMethod = request.method
-        // ⭐⭐⭐⭐⭐ **单请求超时的【下限】**（2026-11-01 真机「发现页全空」实证）
-        //
-        // ⚠️ **现象**：分类接口 `/console/explore`（几百个分类 · 响应 100KB+）在 5G 下
-        //   **8 秒没回** ⇒ `NSURLErrorDomain Code=-1001 请求超时` ⇒ 站方拿到空
-        //   ⇒ `JSON Parse error: Unexpected identifier "undefined"` ⇒ **分类全废 ⇒ 发现页空** ⭐⭐⭐
-        //
-        // ⭐ **为什么引擎的 8 秒不够**：
-        //   引擎的 `PageFetcher.fetch` **不传 timeout** ⇒ 用默认 8 秒；
-        //   而**老引擎的原生 `request` 会重试 3 次**（每次 timeout/3）⇒ **实际能撑 3 倍** ⭐⭐⭐
-        //   ⇒ **切新引擎后，慢接口的耐受度悄悄降了 3 倍** ⇒ 这是切引擎带来的隐性回归 ⭐⭐⭐
-        //
-        // ⭐⭐⭐ **为什么提高下限【不会】把 App 拖死**（大灰狼 8 条死线路的担心）：
-        //   · 正常情况**第一条线路就通** ⇒ 单请求超时常量不影响正常路径 ✔
-        //   · 8 条全死时：单请求 20 秒 × 8 = 160 秒，**但 op 层预算是 60 秒**
-        //     ⇒ **op 层先超时**（总闸）⇒ 用户体感仍是 60 秒，不是 160 秒 ✔✔✔
-        //   ⇒ **提高单请求下限只放宽「单条慢线路」，不放宽「整个 op」** ⭐⭐⭐
-        //
-        // ⚠️⚠️ **URLRequest 的超时**和**主线程等待的超时**必须**用同一个值**
-        //   ⇒ 否则 URLRequest 还在等，主线程已经判超时返回了（改动等于没改）⭐⭐⭐
-        let effectiveTimeout = max(request.timeout, Self.minimumTimeoutForCurrentOp())
-        req.timeoutInterval = effectiveTimeout
-        for (k, v) in request.headers { req.setValue(v, forHTTPHeaderField: k) }
-        req.httpBody = request.body
-        // ⚠️ cookie **交给 URLSession 的共享罐**处理（`HTTPCookieStorage.shared`）
-        // ⇒ 不用手工塞 Cookie 头（塞了会和共享罐打架 ⇒ 两个 Cookie 头）
-
-        let box = ResultBox()
-        let sem = DispatchSemaphore(value: 0)
-        let started = Date()
-        session.dataTask(with: req) { data, resp, err in
-            if let err { box.fail(err); sem.signal(); return }
-            let http = resp as? HTTPURLResponse
-            var headers: [String: String] = [:]
-            for (k, v) in http?.allHeaderFields ?? [:] {
-                guard let k = k as? String else { continue }
-                headers[k] = (v as? String) ?? String(describing: v)
-            }
-            // ⭐⭐⭐⭐⭐ **站方指定的 charset 优先**（2026-11-18 · 对齐 Legado/栖阅）
-            //
-            // ⚠️ **为什么必须**：老站（GBK/GB2312）**常不声明或声明错** `Content-Type` 的 charset
-            //   ⇒ 只按响应头/UTF-8 解 ⇒ **正文与标题全乱码** ⇒ 用户看到「这个源在轻阅不行」
-            //   ⇒ 而柴阅（栖阅同构）按站方 `url,…,{"charset":"gbk"}` 解 ⇒ **正常** ⇒ 两边表现不一致 ⭐⭐⭐
-            //   ⇒ 本地 125 源语料实测 **15 个源**用 charset（吾爱小说 / 晋江 / 998读书 / 同人小说…）⭐⭐⭐
-            //
-            // ⚠️ **解码在这里做**（不是引擎里）⇒ 因为 iOS 才有 CFString 的 GB18030/Big5 编码
-            //   ⇒ 引擎（Linux 也能编）只负责把 charset **透传**给宿主 ⭐⭐⭐
-            var outBody = data ?? Data()
-            if !request.charset.isEmpty,
-               let enc = Self.encoding(forCharset: request.charset),
-               let s = String(data: outBody, encoding: enc) {
-                outBody = Data(s.utf8)
-            }
-            box.succeed(HTTPResponse(statusCode: http?.statusCode ?? 0,
-                                      headers: headers,
-                                      body: outBody,
-                                      finalURL: http?.url?.absoluteString))
-            sem.signal()
-        }.resume()
-        // ⭐ 超时比请求超时多给 5 秒 ⇒ 别把「网络慢」误报成「引擎卡死」
-        // ⚠️⚠️ **必须用 effectiveTimeout**（不是 request.timeout）⇒ 否则下限改了也没用 ⭐⭐⭐
-        if sem.wait(timeout: .now() + effectiveTimeout + 5) == .timedOut {
-            // ⭐⭐⭐⭐⭐ **失败也要留下证据**（2026-11-10 真机「发现页只剩 1 个分类」）
-            //   ⇒ 站方的分类接口没通时，**看日志就知道是哪个 URL、卡了多久** ⭐⭐⭐
-            let ms = Int(Date().timeIntervalSince(started) * 1000)
-            engineLog("[请求] ✗ 超时 \(ms)ms op=\(LegadoEngineBackend.currentOp) \(request.url)")
-            throw SourceError.requestFailed(request.url, "请求超时（\(Int(effectiveTimeout))s）")
-        }
-        // ⭐⭐⭐⭐⭐ **每个请求留一行**（成功也留 ⇒ 慢请求与空响应一眼可见）
-        //   ⇒ 站方聚合源的分类接口挂了时，日志里能直接看到「哪个 URL 返回了什么」⭐⭐⭐
-        do {
-            let resp = try box.take()
-            let ms = Int(Date().timeIntervalSince(started) * 1000)
-            let kb = resp.body.count / 1024
-            let mark = resp.statusCode >= 400 ? "✗" : "✓"
-            engineLog("[请求] \(mark) \(resp.statusCode) \(kb)KB \(ms)ms op=\(LegadoEngineBackend.currentOp) "
-                      + String(request.url.prefix(150)))
-            return resp
-        } catch {
-            let ms = Int(Date().timeIntervalSince(started) * 1000)
-            engineLog("[请求] ✗ 失败 \(ms)ms op=\(LegadoEngineBackend.currentOp) \(request.url)"
-                      + " ⇒ \(String(describing: error).prefix(120))")
-            throw error
-        }
-    }
-
-    /// ⭐⭐⭐ **站方 `charset` ⇒ 字符串编码**（Legado/栖阅 口径）
-    ///
-    /// ⚠️ 老站常用：GBK / GB2312（⇒ 一律用 GB18030 解，覆盖 GBK/GB2312）· Big5 · EUC-JP
-    /// ⇒ 认不出来就返回 nil ⇒ 落回 UTF-8（与宿主行为一致）
-    static func encoding(forCharset raw: String) -> String.Encoding? {
-        let n = raw.lowercased().trimmingCharacters(in: .whitespaces)
-        if n.isEmpty { return nil }
-        if n.contains("gb") {
-            return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
-                CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
-        }
-        if n.contains("big5") {
-            return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
-                CFStringEncoding(CFStringEncodings.big5.rawValue)))
-        }
-        if n.contains("euc") {
-            return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
-                CFStringEncoding(CFStringEncodings.EUC_JP.rawValue)))
-        }
-        if n.contains("utf") || n.contains("ascii") { return .utf8 }
-        return nil
-    }
-
-    /// ⭐ **`data:` 伪 URL 的载荷**
-    ///
-    /// 格式：`data:;base64,<载荷>,{"type":"qingtian2"}`
-    /// ⇒ 载荷在 `;base64,` 之后、**下一个逗号**之前。
-    ///
-    /// ⚠️ **解不了就返回原文**（不许崩、不许返回乱码）⇒ 上层至少还能显示点东西
-    static func dataPayload(_ raw: String) -> String {
-        let rest = String(raw.dropFirst("data:".count))
-        guard let firstComma = rest.firstIndex(of: ",") else { return rest }
-        let mediatype = String(rest[rest.startIndex..<firstComma])
-        let isBase64 = mediatype.lowercased().contains("base64")
-        var payload = String(rest[rest.index(after: firstComma)...])
-        if isBase64, let comma = payload.firstIndex(of: ",") {
-            payload = String(payload[payload.startIndex..<comma])
-        }
-        if isBase64 {
-            if let d = Data(base64Encoded: payload, options: []),
-               let s = String(data: d, encoding: .utf8) { return s }
-            // ⚠️ 非法 base64 ⇒ **明确失败**（返回空串）而不是乱码
-            //   （乱码 ⇒ 站方 JSON.parse 炸 ⇒ 整条规则挂掉）
-            return ""
-        }
-        return payload
-    }
-
-    /// 线程安全的单值盒子（URLSession 回调 → 等待方）
-    final class ResultBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value: Result<HTTPResponse, Error>?
-        func succeed(_ r: HTTPResponse) { lock.lock(); value = .success(r); lock.unlock() }
-        func fail(_ e: Error) { lock.lock(); value = .failure(e); lock.unlock() }
-        func take() throws -> HTTPResponse {
-            lock.lock(); defer { lock.unlock() }
-            switch value {
-            case .success(let r): return r
-            case .failure(let e): throw e
-            case .none: throw SourceError.requestFailed("?", "请求没有返回结果")
-            }
-        }
-    }
-}
-
-/// ⭐⭐⭐ **日志回主线程**（文件级 ⇒ 适配层里谁都能用）
+/// **新引擎**
+/// · `LegadoEngine`（Legado 3.0 语义，从「六阅 LegadoR iOS」二进制逆向重建）
+///   - 规则层：`AnalyzeRule` / `AnalyzeUrl` / `RuleSplitter`
+///   - 解析层：SwiftSoup（默认规则）· **Kanna（真 XPath）** · JSONPath · 正则
+///   - JS 层：JavaScriptCore + 从原二进制 1:1 提取的 Rhino 兼容 shim
+///   - 网络层：自带 `HTTPClient`（用 `HTTPCookieStorage.shared` ⇒ **登录态与 App 共用一个罐** ✔）
 ///
-/// ⚠️ `RuleSandbox` 是 **`@MainActor`** ⇒ 后台线程（引擎在那边跑）**不能直接调**
-/// ⇒ 否则编译期就报「call to main actor-isolated instance method in a synchronous
-///    nonisolated context」（**真机 CI 才暴露** ⇒ 沙盒 stub 必须也标 `@MainActor` 才拦得住）⭐
-
-/// ⭐⭐⭐ **把引擎日志挂到「引擎日志」面板**（App 启动时挂一次 ⇒ 别处直接用 `engineLog`）
-///
-/// ⚠️ **为什么要挂**（2026-10-28）：诊断写在 `NSLog` 里 ⇒ **只进设备控制台，用户看不到**
-///   ⇒ 真机排查只能靠「让用户去 Xcode 看控制台」⇒ 一轮一条信息 ⇒ 极慢 ⭐⭐⭐
-///   ⇒ 挂上面板 ⇒ 用户「复制日志」就有 ⭐⭐⭐
-enum EngineLogBootstrap {
-    static func install() {
-        EngineLog.sink = { message in
-            Task { @MainActor in RuleSandbox.shared.appendLog(message) }
-        }
-    }
-}
-
-// ⭐⭐⭐ **把【引擎的诊断】送进 App 的「引擎日志」**（2026-10-24 真机栽的）
-//
-// ⚠️⚠️ **以前 App 没给引擎传 logger** ⇒ 引擎算出了什么、哪条规则没命中、
-//   `java.ajax` 为什么失败 ⇒ **一条都看不到** ⇒ 只能靠猜 ⭐⭐
-//   （真机表现：发现页冒出「未分组」假分类 ⇒ 但日志里只有 App 自己那两行）
-//
-// ⇒ 现在引擎的每条诊断（分支 / 失败原因 / 规则名）都会进同一个日志面板
-//   ⇒ 用户把「引擎日志」贴回来 ⇒ 就是**可证伪的观测**（不用再猜）⭐
-final class EngineDiagnosticLogger: EngineLogger, @unchecked Sendable {
-    func log(_ message: String) { engineLog("[新引擎] " + message) }
-}
-
-// MARK: - ② 站方 JS 的宿主 API
-
-/// ⭐⭐⭐⭐⭐ **站方变量感知的 source 宿主对象**（App 侧自有协议）
-///
-/// ⚠️⚠️⚠️ **为什么需要这一层（2026-10-28 真机 403 实证 · 根因在引擎）**：
-///
-///   引擎的 `SourceEngine.toc()` / `content()` 会**重建** `sourceObject`：
-///   ```swift
-///   sourceObject = Self.makeSourceObject(source, varBox: varBox, loginInfo: loadLoginInfo())
-///   //                                                       ↑↑↑ 漏传 sourceVariable:
-///   ```
-///   ⇒ 那个对象退回**老语义**：`getVariable()` = **整份 varBox JSON**（一个 map）
-///     而不是**站方变量那一串**（token）⭐⭐⭐
-///   ⇒ 站方（✿UAA）`authorization: Bearer ${source.getVariable()}`
-///   ⇒ 请求头变成 `Bearer {"androidId":"…"}` ⇒ 服务端 **403「无效JWT」** ⭐⭐⭐
-///
-/// ⭐ **为什么只有目录/正文 403、详情却是好的**：
-///   引擎的 `bookInfo()` 重建时**传了** `sourceVariable:` ⇒ 详情那步 `getVariable()` 正确
-///   ⇒ 拿到 token ✔ ⇒ 而 `toc()` / `content()` 漏传 ⇒ 只有这两步是 map ❌ ⭐
-///
-/// ⇒ 宿主侧兜底：**把引擎那个「漏传槽」的对象包一层**
-///   · `getVariable` / `setVariable` ⇒ 走**站方变量槽**（Legado 语义）
-///   · 其余方法 ⇒ **原样委托**给引擎那个对象（不重复实现 ⇒ 不会漂）⭐⭐⭐
-///
-/// ⚠️ **引擎那边修好之后（`toc`/`content` 也传槽）**，这一层依然正确
-///   ⇒ 委托 + 覆盖 ⇒ 同一个值 ⇒ **幂等** ⇒ 两边可以各自修、不会互相打架 ⭐
-protocol StationVariableSourceProviding: AnyObject {
-    /// 站方变量感知的 `source` 宿主对象（`getVariable()` = 站方变量那一串）
-    func stationVariableSourceObject() -> HostObject?
-}
-
-/// ⭐⭐⭐ **站方 JS 的宿主 API**（`JSHostAPIProvider`）
-///
-/// 站方 JS 会调：`java.toast` / `java.log` / `java.getCookie` / `java.cacheFile` /
-/// `source.getVariable` / `book.getVariable` / `chapter.xxx` …
-///
-/// ⚠️ **书源 / 书籍 / 章节对象由引擎自己管**（`SourceEngine.bookObject` 等）
-/// ⇒ 这里直接转发给引擎 ⇒ 不会出现「两套对象、内容不一致」。
-final class EngineHostAPI: JSHostAPIProvider, StationVariableSourceProviding, @unchecked Sendable {
-
-    private let session: LegadoEngineBackend.Session
-
-    init(session: LegadoEngineBackend.Session) { self.session = session }
-
-    func hostObject(named name: String) -> HostObject? {
-        switch name {
-        // ⭐⭐⭐ **source 用「站方变量感知」那份**（引擎在 toc/content 里重建的那份漏传槽）
-        //   ⇒ 站方 `getVariable()` 会读到整份 varBox（map）⇒ `Bearer {map}` ⇒ 403 ⭐⭐⭐
-        //   ⇒ 属性（name / bookSourceUrl …）仍然来自引擎那个对象 ⇒ 不会过期 ⭐
-        case "source": return stationVariableSourceObject() ?? session.engine?.sourceObject
-        case "book": return session.engine?.bookObject
-        case "chapter": return session.engine?.chapterObject
-        // ⭐⭐ **cookie 宿主对象**（站方 `cookie.*` —— 真实语料 205 处）
-        case "cookie": return session.engine?.cookieObject
-        default: return nil
-        }
-    }
-
-    // MARK: - ⭐⭐⭐⭐⭐ 站方变量感知的 source（引擎漏传槽 ⇒ 宿主侧兜底）
-
-    /// ⭐⭐⭐⭐⭐ **站方变量感知的 `source` 宿主对象**（2026-10-28 真机 403 实证）
-    ///
-    /// ⚠️ **根因在引擎**：`SourceEngine.toc()` / `content()` 重建 `sourceObject` 时
-    ///   **漏传 `sourceVariable:`** ⇒ 那个对象退回**老语义**：
-    ///   `getVariable()` = **整份 varBox JSON**（一个 map）而不是**站方变量那一串** ⭐⭐⭐
-    ///   ⇒ 站方（✿UAA）`authorization: Bearer ${source.getVariable()}`
-    ///   ⇒ 请求头变成 `Bearer {"androidId":"…"}` ⇒ 服务端 **403 无效JWT** ⭐⭐⭐
-    ///   （详情 op 传了槽 ⇒ 详情那步能拿到 token ⇒ **只有目录/正文 403** ⭐）
-    ///
-    /// ⇒ 宿主侧兜底：**把引擎那个对象包一层** ⇒
-    ///   · `getVariable` / `setVariable` ⇒ 走**站方变量槽**（Legado 语义）
-    ///   · 其余方法 ⇒ **原样委托**给引擎那个对象（不重复实现 ⇒ 不会漂）⭐⭐⭐
-    func stationVariableSourceObject() -> HostObject? {
-        guard let base = session.engine?.sourceObject else { return nil }
-        let slot = session.sourceVariable
-        let varBox = session.engine?.varBox
-        var methods = base.methods
-        // ⭐⭐⭐ **站方变量（Legado 语义：一整串）** —— 与「书源变量」（map）**分开** ⭐
-        methods["getVariable"] = { _ in .string(slot.text) }
-        methods["setVariable"] = { args in
-            let a = args.first
-            if args.count > 1 {
-                // ② `setVariable(key, value)` ⇒ 改**书源变量**的一项（老宿主也这么用）
-                let k = args[0].scalarString
-                if !k.isEmpty { varBox?.set(k, args[1].scalarString) }
-            } else if case .object(let o)? = a {
-                // ① 传对象 ⇒ 序列化成串存进站方变量（站方极少这么用）
-                var flat: [String: String] = [:]
-                for (k, v) in o { flat[k] = v.scalarString }
-                let data = (try? JSONSerialization.data(withJSONObject: flat)) ?? Data()
-                slot.text = String(data: data, encoding: .utf8) ?? ""
-            } else {
-                // ③ `setVariable(jsonString)` ⇒ 站方变量 = 那一串（**原样存**）⭐
-                //    ⚠️ 老语义会把它**并进 varBox** ⇒ 站方 setVariable(token) 把书源变量整份冲掉 ⭐⭐⭐
-                slot.text = a?.scalarString ?? ""
-            }
-            return .string("")
-        }
-        return HostObject(name: base.name, methods: methods, properties: base.properties)
-    }
-
-    func callJava(_ method: String, _ args: [JSONValue]) -> JSONValue? {
-        let first = args.first?.scalarString ?? ""
-        switch method {
-        case "toast":
-            Toast.show(first)
-            return .string("")
-        // ⭐⭐⭐ **`java.longToast` = `java.toast` 的别名**（老引擎 `java-api.js` 里两者代码逐字相同）
-        //   ⇒ 站方 125 源实测 **114 处**在用 ⇒ 不实现 ⇒ 站方 JS 第一句就 TypeError ⇒ **整条规则死定**
-        //   （2026-10-25 真机实证：build247 的「发现功能」就炸在这）⭐⭐⭐
-        case "longToast":
-            Toast.show(first)
-            return .string("")
-        // ⭐⭐⭐ **`java.androidId`**（站方 125 源实测 **18 处**）
-        //   老引擎：`androidId: function () { return java.deviceID(); }` ⇒ 就是 deviceID 的别名
-        //   ⇒ 站方写法：`try { raw = java.androidId(); } catch (e) { try { raw = java.deviceID(); } catch (e2) {} }`
-        //   ⇒ **两个都要有**（站方拿它当设备标识 ⇒ 登录态/解锁状态会绑到它上面）⭐⭐⭐
-        //   ⚠️ 同步上下文 ⇒ 直接取 `identifierForVendor`（与 `RuleSandbox` 的 `deviceID` op 同源）⭐
-        case "androidId":
-            // ⭐⭐⭐ **设备 ID 走 `UserDefaults` 传递**（纯 Foundation ⇒ 沙盒 swift 门禁能编）
-            //   ⚠️ 本文件**不许碰 UIKit / RuleSandbox**（沙盒在 Linux 上编译 ⇒ import UIKit 编不过）⭐⭐⭐
-            //   ⇒ App 启动时（`RuleSandbox`，那边有 UIKit）把真设备 ID 写进来 ⭐
-            return .string(UserDefaults.standard.string(forKey: "qr.deviceID") ?? "")
-        // ⭐⭐⭐⭐⭐ **`java.deviceID`**（2026-11-10 真机「发现页只剩兜底分类」实证）
-        //
-        // ⚠️ **症状**：✿UAA 聚合源的 `nhMyUrl` 拼的头是
-        //   `"X-Device-ID": "yd-" + nhMyDid()` ⇒ **服务端按这个头鉴权/限流**
-        //   ⇒ 新引擎链路上 **`java.deviceID()` 没人实现**（引擎只在契约清单里登记了它，
-        //     真的实现是宿主的事 ⇒ 而 App 的 `EngineHostAPI` **没有这个 case**）
-        //   ⇒ 站方拿到空/异常值 ⇒ **头非法 ⇒ 服务端拒绝 ⇒ 分类接口失败**
-        //   ⇒ 站方兜底造 1 个「未分组」分类 ⇒ **App 判「结果不可信」⇒ 发现页空** ⭐⭐⭐
-        //
-        // ⭐ **老引擎有**（`RuleSandbox` 的 `case "deviceID"`）⇒ **新引擎链路缺** ⇒ 静默失效 ⭐⭐⭐
-        // ⇒ 与 `androidId` **同源**（老引擎的 androidId 就是 deviceID 的别名）⭐
-        case "deviceID":
-            return .string(UserDefaults.standard.string(forKey: "qr.deviceID") ?? "")
-        // ⭐⭐⭐⭐⭐ **补齐「老引擎有、新引擎没有」的宿主能力**（2026-11-10 对账实证）
-        //
-        // ⚠️⚠️ **为什么必须补**：老引擎（`RuleSandbox`）实现了 **22 个**宿主能力，
-        //   新引擎链路（`EngineHostAPI`）当时只有 **8 个** ⇒ **14 个在真机上静默失效** ⭐⭐⭐
-        //   ⇒ 症状不是「某个 API 报错」⇒ 而是「请求头/参数缺失 ⇒ 服务端拒绝 ⇒ 整页空」⭐
-        //   ⇒ **站方把 `X-Device-ID` 这类头交给宿主取** ⇒ 宿主缺 ⇒ 头非法 ⇒ 服务端拒 ⭐⭐⭐
-        //
-        // ⭐ **判据**：凡是老引擎有、新引擎没有的 ⇒ 真机新引擎链路上就是坏的（能力面体检看不出来）⭐⭐⭐
-        case "getWebViewUA":
-            // 老引擎：`Self.userAgent` ⇒ 同源（纯 Foundation ⇒ Linux 门禁能编）⭐
-            return .string(LegadoCompat.userAgent)
-        case "sourceHeader":
-            // 老引擎：`currentSource?.header` ⇒ 源级请求头（54 个源在用）⭐
-            // ⇒ 引擎侧是 `sourceHeaders`（已解析成字典）⇒ 拼回 JSON 文本 ⭐
-            let hs = session.engine?.sourceHeaders ?? [:]
-            if let data = try? JSONSerialization.data(withJSONObject: hs),
-               let txt = String(data: data, encoding: .utf8) {
-                return .string(txt)
-            }
-            return .string("")
-        case "getStringArray":
-            // 老引擎：数组逐项 base64 ⇒ 站方拿到的是数组（不是 Promise）⭐
-            // ⇒ JSONValue 没有数组访问器 ⇒ 用 foundationValue 取 ⭐
-            var arr: [String] = []
-            if args.count > 1 {
-                let fv = args[1].foundationValue
-                if let a = fv as? [Any] {
-                    arr = a.map { String(describing: $0) }
-                } else if let a = fv as? [String] {
-                    arr = a
-                }
-            }
-            return .array(arr.map { .string($0) })
-        case "cachePut":
-            // 老引擎：转发到 `LegadoCompat.Cache`（纯 Foundation）⭐
-            let k = first
-            let v = args.count > 1 ? args[1].scalarString : ""
-            LegadoCompat.Cache.put(k, v)
-            return .string("1")
-        case "cacheGet":
-            return .string(LegadoCompat.Cache.get(first))
-        case "cacheRemove":
-            LegadoCompat.Cache.remove(first)
-            return .string("1")
-        case "readCache":
-            // 老引擎：读缓存文件（内容型缓存）⇒ 走同一个 Cache ⭐
-            return .string(LegadoCompat.Cache.get(first))
-        case "cacheText":
-            return .string(LegadoCompat.Cache.get(first))
-        // ⭐⭐ **浏览器类**（`startBrowserAwait` 27 处 / `startBrowserDp` 6 处 / `showReadingBrowser` 6 处）
-        //   老引擎是**同步等用户关掉**（两遍跑机制）⇒ 新引擎是同步引擎 ⇒ 没法在这儿等
-        //   ⇒ 先**触发打开**（不等）⇒ 站方第二遍再来取 cookie ⇒ 与老引擎的「两遍跑」同思路 ⭐⭐⭐
-        //   ⚠️ **绝不抛**（站方不少地方没包 try/catch ⇒ 抛了整条规则死定）⭐⭐⭐
-        case "startBrowserAwait", "startBrowserDp", "showReadingBrowser", "showBrowser", "startBrowser":
-            // ⭐⭐⭐ **绝不抛**（站方不少地方没包 try/catch ⇒ 抛了整条规则死定）⭐⭐⭐
-            //   老引擎是「同步等用户关掉」（两遍跑机制）⇒ 新引擎是同步引擎 ⇒ 这里等不了
-            //   ⇒ 先只记一笔；**弹浏览器**交给 `RuleSandbox` 的 op（那边有 UIKit）⭐
-            let title = args.count > 1 ? args[1].scalarString : ""
-            engineLog("[宿主] \(method)：\(first) \(title)")
-            // ⚠️ 本层不能碰 UIKit ⇒ 真正的「打开」由 `RuleSandbox` 的 op 负责（那边有 UIKit）⭐
-            return .string("")
-        case "log":
-            engineLog(first)
-            return .string("")
-        case "getCookie":
-            return .string(CookieJar.cookieString(for: first))
-        case "cacheFile":
-            if args.count >= 2 {
-                _ = CacheFiles.write(first, args[1].scalarString)
-            }
-            return .string("")
-        case "readFile":
-            return .string(CacheFiles.read(first) ?? "")
-        default:
-            // ⭐ 不接管 ⇒ 落回引擎侧（md5 / base64 / ajax / getString / put …）
-            return nil
-        }
-    }
-}
-
-// MARK: - ① 之二 cookie 服务（站方 `cookie.*` —— 真实语料 205 处）
-
-/// ⭐⭐ **cookie 服务**（站方 `cookie.getCookie` / `setCookie` / `removeCookie` / `replaceCookie`）
-///
-/// ⚠️ 轻阅的 cookie 罐就是**系统共享罐**（`HTTPCookieStorage.shared`）
-/// ⇒ 跟 `URLSession` 自动带的 cookie 是**同一份** ⇒ 站方改了立刻生效 ✅
-final class AppCookieService: CookieService, @unchecked Sendable {
-
-    func cookieHeader(for url: String) -> String {
-        CookieJar.cookieString(for: url)
-    }
-
-    func setCookie(_ value: String, for url: String) {
-        CookieJar.set(value, for: url)
-    }
-
-    func removeCookie(for url: String) {
-        CookieJar.remove(for: url)
-    }
-
-    func replaceCookie(_ value: String, for url: String) {
-        CookieJar.remove(for: url)
-        CookieJar.set(value, for: url)
-    }
-}
-
-// MARK: - ② 源级键值存储
-
-/// ⭐⭐ **源级键值存储**（登录信息 ⇒ 站方 `source.getLoginInfoMap()` 读它）
-///
-/// ⚠️ 轻阅的登录信息存在 `SourceVariables`（UserDefaults）⇒ 这里直接读写它
-/// ⇒ 站方 JS 改了就落盘 ⇒ 下次直接生效。
-final class SourceStorage: KeyValueStorage, @unchecked Sendable {
-    private let sourceUrl: String
-    init(sourceUrl: String) { self.sourceUrl = sourceUrl }
-
-    func string(forKey key: String) -> String? {
-        if key == SourceEngine.loginInfoKey {
-            let info = SourceVariables.loginInfo(for: sourceUrl)
-            guard !info.isEmpty else { return nil }
-            if let d = try? JSONSerialization.data(withJSONObject: info),
-               let t = String(data: d, encoding: .utf8) { return t }
-            return nil
-        }
-        // ⭐ **登录头**（站方 `source.getLoginHeader()` / `putLoginHeader`）
-        if key == SourceEngine.loginHeaderKey {
-            let h = SourceVariables.loginHeader(for: sourceUrl)
-            return h.isEmpty ? nil : h
-        }
-        return nil
-    }
-
-    func setString(_ value: String?, forKey key: String) {
-        if key == SourceEngine.loginInfoKey {
-            SourceVariables.setLoginInfoJSON(value ?? "", for: sourceUrl)
-        }
-        if key == SourceEngine.loginHeaderKey {
-            SourceVariables.setLoginHeader(value ?? "", for: sourceUrl)
-        }
-    }
-
-    func removeValue(forKey key: String) {
-        if key == SourceEngine.loginInfoKey {
-            SourceVariables.setLoginInfoJSON("", for: sourceUrl)
-        }
-        if key == SourceEngine.loginHeaderKey {
-            SourceVariables.setLoginHeader("", for: sourceUrl)
-        }
-    }
-
-    func allKeys() -> [String] { [SourceEngine.loginInfoKey, SourceEngine.loginHeaderKey] }
-}
-
-// MARK: - ③ 后端
-
-/// ⭐⭐⭐ **新引擎后端** —— 轻阅主链路的规则引擎。
-///
-/// ⚠️ **为什么要它**：老引擎是 11 个 JS 文件（9845 行）跑在 WKWebView 里（**异步**），
-/// 自研引擎（`legado-engine`）是纯 Swift（**全同步**、可诊断、跨平台）⇒
-///
-/// ⇒ 这个类负责三件事：
-/// ① **模型转换**：轻阅的 `BookSource` ⇒ 引擎的 `BookSource`
-/// ② **能力接线**：URLSession 传输 / 站方 JS 的宿主 API / 源级变量
-/// ③ **形状对齐**：op 的载荷与返回值，**和老引擎一模一样** ⇒ 上层（`SourceService`）不用改
-///
-/// ⭐ **每个源一个会话**（jsLib 定义的全局、源级变量要长期留着 ⇒ 不能每次重建）
-final class LegadoEngineBackend: @unchecked Sendable {
+/// ⚠️ **架构纪律**（沿用旧层的硬约束）
+/// · 本文件**不许 import UIKit**（沙盒 swift 门禁在 Linux 上编译它）⭐⭐⭐
+/// · 引擎调用**必须离开主线程**（引擎内部全同步 ⇒ 主线程会卡 UI）⭐⭐⭐
+/// · 失败必须**如实抛错**（不假成功）⭐⭐⭐
+final class LegadoEngineBackend {
 
     static let shared = LegadoEngineBackend()
 
-    private var sessions: [String: Session] = [:]
+    /// ⭐⭐⭐ **一个源一个会话**（站方变量/登录态要在 op 之间延续）
+    fileprivate final class Session {
+        let engineSource: LegadoEngineHost.Source
+        /// 站方变量（新引擎是**一个 map**；老引擎是两套 ⇒ 这里统一成 map）
+        let variables: LegadoEngineHost.Vars
+        /// 灌进去时的种子（判定「站方到底改没改」—— **证据不许自证**）⭐⭐⭐
+        let seeded: String
+
+        init(engineSource: LegadoEngineHost.Source, payload: [String: Any]) {
+            self.engineSource = engineSource
+            let raw = (payload["source"] as? [String: Any]) ?? [:]
+            let vars = LegadoEngineHost.Vars()
+            // ① 书源变量（map）
+            if let seed = raw["__variables"] as? String, !seed.isEmpty,
+               let d = seed.data(using: .utf8),
+               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                for (k, v) in o { vars.put(k, "\(v)") }
+            }
+            // ② 站方变量（Legado 语义：一整串 JSON）⇒ 也并进同一格
+            if let sv = raw["__variable"] as? String, !sv.isEmpty {
+                vars.putVariable(sv)
+            }
+            self.variables = vars
+            self.seeded = vars.getVariable()
+        }
+    }
+
     private let lock = NSLock()
+    private var sessions: [String: Session] = [:]
 
-    // MARK: 会话
+    // MARK: - 入口
 
-    /// ⭐ **一个源的会话**（引擎 + 源级变量 + cookie 罐）
-    final class Session: @unchecked Sendable {
-        let engineSource: EngineSource
-        /// ⭐ 引擎（**先建 API 再建引擎** ⇒ 两者互相引用）
-        var engine: SourceEngine?
-        let jar: EngineCookieJar
-        /// ⚠️ **必须是 `var`**：它要拿 `self` 构造（`EngineHostAPI(session: self)`）
-        ///   ⇒ 而那时 `let` 属性还没全初始化 ⇒ 用 `let` 编译不过（'self' used before all stored properties are initialized）
-        var api: EngineHostAPI!
-        /// ⭐ **源级键值存储**（登录信息 ⇒ 站方 `source.getLoginInfoMap()` 读它）
-        let storage: SourceStorage
-        /// ⭐⭐⭐ **站方变量槽**（Legado 语义：`source.getVariable()` = **这一串**）
-        ///
-        /// ⚠️⚠️ **为什么要跟「书源变量」（`source.get/put`）分开**（2026-10-27 实证）：
-        ///   Legado 是两套 ⇒ 混成一套 ⇒ 站方 `setVariable(token)` 会把 `put` 存的项冲掉
-        ///   ⇒ UAA 源 ⇒ 请求头 `Bearer {"androidId":…}` ⇒ 服务端 403「无效JWT」⇒ 拿不到 token ⭐⭐⭐
-        ///   ⇒ **槽位是引用（class）** ⇒ 每个 op 改 `text` 即可 ⇒ 已建好的 sourceObject 也看得见 ⭐
-        let sourceVariable = TextSlot()
-        /// ⭐⭐⭐ **站方 jsLib**（引擎的 `BookSource` 没这个字段 ⇒ 单独带进来）
-        ///
-        /// ⚠️ 它定义的是**全局**（`host` / `getArguments` …）⇒ 站方规则的**前提**
-        /// ⇒ 加载完必须 `markGlobalsAsBaseline()`，否则下次求值会被清掉 ⭐
-        let jsLib: String?
+    /// ⭐ **同步外壳 + 异步内核**（App 的调用点是同步的 ⇒ 这里用 Task + 信号量桥接）
+    /// ⚠️ 调用方**必须**在后台线程（`SourceService` 已经保证）⭐⭐⭐
+    func invoke(_ op: String, _ payload: [String: Any], source: BookSource) throws -> Any? {
+        let sem = DispatchSemaphore(value: 0)
+        var result: Result<Any?, Error> = .success(nil)
+        Task.detached(priority: .userInitiated) {
+            do {
+                let v = try await Self.run(op, payload, source: source, sessions: self)
+                result = .success(v)
+            } catch {
+                result = .failure(error)
+            }
+            sem.signal()
+        }
+        // ⚠️ **必须有上限**：引擎内部死循环（站方脚本）⇒ 不加就会永久卡住 ⭐⭐⭐
+        let budget = Self.timeoutSeconds(for: op)
+        if sem.wait(timeout: .now() + budget) == .timedOut {
+            throw ServiceError.engineFailed("「\(op)」超时（\(Int(budget))s）—— 引擎里可能有死循环")
+        }
+        switch result {
+        case .success(let v): return v
+        case .failure(let e): throw e
+        }
+    }
 
-        init(source: EngineSource, jar: EngineCookieJar, jsLib: String? = nil) throws {
-            self.engineSource = source
-            self.jar = jar
-            self.jsLib = jsLib
-            self.storage = SourceStorage(sourceUrl: source.bookSourceUrl)
-            // ⚠️ 这一行**必须**在所有 `let` 初始化之后（`api` 要拿 self）
-            self.api = EngineHostAPI(session: self)
-            // ⭐ JSC 后端（iOS/macOS 有 JavaScriptCore ⇒ 站方 JS 规则能跑）
-            #if canImport(JavaScriptCore)
-            // ⭐⭐⭐ **JSC 已从 App 里删除**（2026-10-26 用户明确：「JSC 给我彻底删掉哈」）
-            //   ⇒ 站方 JS 改由 **WKWebView 独立进程** 跑（跟老引擎一样）⇒ 它吃多少内存都炸不到 App ⭐⭐⭐
-            let js: JSExecutor? = JSEngineFactory.make(api)
-            #else
-            let js: JSExecutor? = nil
-            #endif
-            // ⭐⭐⭐ **HTTP 缓存**（2026-10-24 真机「app 死机」的第二根因）
-            //   引擎自带 `CachedTransport`（装饰器）⇒ 宿主按需启用
-            //   ⚠️ 之前**没接** ⇒ 每个 op 都**重新 ajax 站方**
-            //   ⇒ 大灰狼的 `exploreUrl` 每次都自己去 ajax `/discovestyle`（365 个分类）
-            //   ⇒ 发现页「拉分类 → 拉书 → 翻页」= **同一个 URL 跑 3 次** ⇒ 每次都等服务器
-            //   ⇒ 一次发现页 = 几十秒起步 ⇒ 用户以为 App 死了 ⭐⭐⭐
-            //   ⇒ 现在：60 秒 TTL 的缓存 ⇒ 同一个响应 60 秒内只请求一次 ⭐
-            //
-            // ⚠️ TTL 别太长（书源内容会变）⇒ 60 秒刚好够「一次发现页」复用 ⭐
-            let transport = CachedTransport(inner: URLSessionTransport(), ttl: 60, capacity: 64)
-            let engine = SourceEngine(source: source,
-                                      fetcher: PageFetcher(transport: transport, cookieJar: jar),
-                                      js: js,
-                                      storage: storage,
-                                      // ⭐⭐⭐ **必须传 logger** ⇒ 引擎的诊断才看得见
-                                      logger: EngineDiagnosticLogger(),
-                                      cookies: AppCookieService(),
-                                      // ⭐⭐⭐ 站方变量槽（Legado 两套语义）⭐
-                                      sourceVariable: sourceVariable)
-            self.engine = engine
-            // ⭐⭐⭐ **站方 jsLib** ⇒ 加载到 JS **全局**（它定义的 `host` / `getArguments` 等
-            //   是站方规则的前提）⇒ 加载完必须**重设基线**，否则下次求值会被清掉 ⭐
-            //
-            // ⚠️⚠️ **必须走 `loadJsLib`**（间接 eval ⇒ 全局作用域）——
-            //   普通规则求值用的是 **eval 局部作用域**（防 `let device_type` 撞全局）⭐
-            if let lib = jsLib, !lib.isEmpty {
+    /// 换掉卡死的会话（这个源的变量/登录态重置 ⇒ 下一个 op 重新开始）
+    func dropSession(for key: String) {
+        lock.lock(); sessions.removeValue(forKey: key); lock.unlock()
+    }
+
+    /// ⭐⭐⭐ **清空所有会话**（诊断面板「重置会话」）
+    func dropAllSessions() {
+        lock.lock(); sessions.removeAll(); lock.unlock()
+    }
+
+    /// op 的超时预算（内容类给得宽，因为站方会逐条试多条线路）
+    static func timeoutSeconds(for op: String) -> TimeInterval {
+        switch op {
+        case "bookInfo", "toc", "content": return 300
+        case "login", "loginProbe": return 120
+        default: return 60
+        }
+    }
+
+    // MARK: - 真正的实现（异步）
+
+    private static func run(_ op: String, _ payload: [String: Any],
+                            source: BookSource,
+                            sessions: LegadoEngineBackend) async throws -> Any? {
+        let engineSource = try parseSource(payload, fallback: source)
+        let session = LegadoEngineBackend.session(for: engineSource.bookSourceUrl,
+                                                 engineSource: engineSource,
+                                                 payload: payload, sessions: sessions)
+        var out: [String: Any]
+        #if canImport(JavaScriptCore) && !os(Linux)
+        // ⭐⭐⭐⭐⭐ **筛选栏 action**（2026-11-19 新引擎接线）
+        //   ⇒ 站方 action 里的 `source.put('order', 2)` / `source.put('type', …)` **必须写进去**
+        //   ⇒ 写不进去 ⇒ explore 的 `order_type` 取旧值 ⇒ **服务端 HTTP 500** ⇒ 发现页全空 ⭐⭐⭐
+        //   ⇒ 用引擎的 `JSBridge` 跑（它会自动加载站方 jsLib ⇒ 站方函数都在）⭐⭐⭐
+        if op == "filterAction" {
+            let action = (payload["action"] as? String) ?? ""
+            guard !action.isEmpty else {
+                out = ["ok": false, "error": "没有筛选动作", "msgs": []]
+                break
+            }
+            let host = LegadoJSHost()
+            let bridge = LegadoEngineHost.Bridge(source: engineSource, book: book(from: payload),
+                                                 chapter: nil, variables: session.variables, host: host)
+            do {
+                _ = try bridge.eval(action, bindings: ["result": [:]])
+                out = ["ok": true, "msgs": host.messages]
+            } catch {
+                out = ["ok": false, "error": String(describing: error), "msgs": host.messages]
+            }
+            out["__sourceVars"] = session.variables.getVariable()
+            out["__sourceVariable"] = session.variables.getVariable()
+            out["__sourceVariableChanged"] = (session.variables.getVariable() != session.seeded)
+            return out
+        }
+        // ⭐⭐⭐ **登录链路**：新引擎不含登录 UI ⇒ 宿主自己跑站方的 `loginUrl` 动作 / `loginCheckJs`
+        //   ⇒ 用引擎的 `JSBridge`（它会自动加载站方 jsLib ⇒ 站方函数都在）⭐⭐⭐
+        if op == "login" || op == "loginProbe" {
+            let host = LegadoJSHost()
+            let bridge = LegadoEngineHost.Bridge(source: engineSource, book: book(from: payload),
+                                                 chapter: nil, variables: session.variables, host: host)
+            if op == "login" {
+                let action = (payload["action"] as? String) ?? ""
+                guard !action.isEmpty else {
+                    out = ["ok": false, "error": "没有登录动作", "msgs": []]
+                    break
+                }
+                // 表单值先并进 `result`（站方 login(true) 第一步就是 putLoginInfo(result)）
+                let formValues = (payload["formValues"] as? [String: Any]) ?? [:]
                 do {
-                    try engine.loadJsLib(lib)
+                    _ = try bridge.eval(action, bindings: ["result": formValues])
+                    out = ["ok": true, "msgs": host.messages]
                 } catch {
-                    // ⚠️⚠️ **jsLib 加载失败必须「报出来」**（不能静默吞）
-                    //   ⇒ 站方 jsLib 挂了 ⇒ 站方 JS 会走兜底分支 ⇒ 分类变成假分类 ⇒ 整本书打不开
-                    //   ⇒ 而用户看到「失败原因」那行才知道**真凶**（2026-10-23 真机栽的）⭐
-                    engineLog("[新引擎] jsLib 加载失败：\(error)")
-                    throw error
+                    out = ["ok": false, "error": String(describing: error), "msgs": host.messages]
+                }
+            } else {
+                // 登录态探测：跑站方的 `loginCheckJs`
+                let js = engineSource.loginCheckJs ?? ""
+                if js.isEmpty {
+                    out = ["ok": false, "error": "书源没有 loginCheckJs", "msgs": []]
+                } else {
+                    do {
+                        _ = try bridge.eval(js, bindings: [:])
+                        out = ["ok": true, "msgs": host.messages]
+                    } catch {
+                        out = ["ok": false, "error": String(describing: error), "msgs": host.messages]
+                    }
                 }
             }
+            // ⭐⭐⭐ **站方 JS 改过的变量 ⇒ 回传**（宿主落盘 ⇒ 下次直接生效）
+            out["__sourceVars"] = session.variables.getVariable()
+            out["__sourceVariable"] = session.variables.getVariable()
+            out["__sourceVariableChanged"] = (session.variables.getVariable() != session.seeded)
+            return out
         }
-    }
-
-    // MARK: 对外
-
-    /// ⭐⭐⭐ **跑一个 op**
-    ///
-    /// - Returns: `nil` = **「这个 op 新引擎不支持」** ⇒ 调用方回退老引擎
-    ///   （登录 / 诊断 / 站方变量那几类还留在老引擎上）
-    /// ⭐⭐⭐ **当前正在跑的 op**（日志/桥接层要它 ⇒ 「是哪个 op 在搬大东西」一眼可见）
-    private static let opLock = NSLock()
-    private static var _currentOp: String = "—"
-    static var currentOp: String {
-        opLock.lock(); defer { opLock.unlock() }
-        return _currentOp
-    }
-    static func setCurrentOp(_ op: String) {
-        opLock.lock(); _currentOp = op; opLock.unlock()
-    }
-
-    func invoke(_ op: String, _ payload: [String: Any], source: BookSource) throws -> Any? {
-        Self.setCurrentOp(op)
-        let session = try session(for: source)
-        guard let engine = session.engine else { return nil }
-        // ⭐⭐⭐ **源级变量**（站方 `server` / `tab` / `sources` / `find_source` …）
-        //   轻阅存在 `SourceVariables`（一个 JSON 串）⇒ 引擎存在 `varBox`（键值表）
-        //   ⇒ **双向同步**：进（轻阅 → 引擎）/ 出（引擎 → 轻阅，落盘）
-        // ⭐⭐⭐⭐⭐ **两个盒子都灌**（站方 `source.get()` 读的是 `javaVars` ⇒ 只灌 varBox ⇒ 解锁态读不到）
-        Self.seedVars(from: payload, into: engine.varBox, and: engine.javaVars)
-        // ⭐⭐⭐ **站方变量**（Legado 语义）⇒ 灌进引擎的槽位（`source.getVariable()` 读它）⭐
-        //   ⚠️ 与「书源变量」（varBox）**分开** ⇒ 站方 setVariable 不会冲掉 get/put 的项 ⭐
-        // ⭐⭐⭐ **记下「灌进去的是哪一串」** ⇒ 出的时候才知道**站方到底改没改** ⭐⭐⭐
-        //   （判「map 形态还是凭据形态」的证据必须是「**站方自己改过**」）
-        //   ⇒ 站方没改（值一模一样）⇒ 那份值可能只是**宿主灌的污染被原样弹回来**
-        //   ⇒ 拿它当证据 = **自证** ⇒ 迁移永远不触发 ⇒ 真机上的污染清不掉 ⭐⭐⭐
-        var seededStationVariable: String?
-        if let sv = engine.sourceVariable,
-           let srcDict = payload["source"] as? [String: Any],
-           let text = srcDict["__variable"] as? String {
-            sv.text = text
-            seededStationVariable = text
-        }
-        // ⭐⭐⭐ **诊断**（2026-10-27 真机：Bearer 仍是污染 ⇒ 量出引擎里到底是哪一串）⭐
-        engineLog("[变量] 灌进引擎的站方变量=\(String((seededStationVariable ?? "<没有这格>").prefix(60)))")
-        if let sv = engine.sourceVariable {
-            engineLog("[变量] 引擎槽当前=\(String(sv.text.prefix(60)))（长度 \(sv.text.count)）")
-        } else {
-            engineLog("[变量] ⚠️ 引擎没有站方变量槽 ⇒ getVariable() 会回退成整份书源变量")
-        }
-        // ⭐⭐⭐⭐⭐ **直接问引擎对象**（2026-10-28 真机 403 实证：探针一条都没出现 ⇒ 疑 JS 后端不是 App 的）
-        //   ⇒ 这条**不经过 JS** ⇒ 一定能看到「引擎侧 source.getVariable() 到底返回什么」⭐
-        if let so = engine.sourceObject {
-            let v = so.call("getVariable", [])?.scalarString ?? "<nil>"
-            engineLog("[变量] 引擎 sourceObject.getVariable() = \(String(v.prefix(80)))（长度 \(v.count)）")
-            // ⭐⭐⭐⭐⭐ **再看「站方实际拿到的那份」**（宿主兜底后的）⇒ 一眼分辨是谁的问题 ⭐
-            //   ⇒ 引擎那份 = map（引擎漏传槽）而宿主那份 = token（兜底生效）⇒ 站方拿到的是 token ✔
-            //   ⇒ 两份都 = map ⇒ 兜底没生效（接线断了）⭐⭐⭐
-            if let hostObj = session.api.stationVariableSourceObject() {
-                let hv = hostObj.call("getVariable", [])?.scalarString ?? "<nil>"
-                engineLog("[变量] 站方实际拿到的 getVariable() = \(String(hv.prefix(80)))（长度 \(hv.count)）")
-            }
-        } else {
-            engineLog("[变量] ⚠️ 引擎没有 sourceObject")
-        }
-        // ⭐⭐⭐ **JS 后端是谁**（App 的 WebViewJSExecutor vs 引擎自带的 JSC）⇒ 决定宿主注入走哪条路
-        engineLog("[变量] 引擎类型 = \(String(describing: type(of: engine)))")
-        // ⭐⭐⭐ **cookie 也要灌进引擎的罐**（2026-10-24 真机栽的 ⇒ 详见 seedCookies 的注释）
-        Self.seedCookies(from: payload, into: engine.fetcher.cookieJar)
-        var out: Any?
+        #endif
         switch op {
-        case "search": out = try runSearch(session, engine, payload)
-        case "explore": out = try runExplore(session, engine, payload)
-        case "exploreKinds": out = try runExploreKinds(engine)
-        case "bookInfo": out = try runBookInfo(session, engine, payload)
-        case "toc": out = try runToc(session, engine, payload)
-        case "content": out = try runContent(session, engine, payload)
-        // ⭐⭐⭐ **登录也归新引擎了**（2026-10-25 老引擎退役 ⇒ 物理删除前的最后一步）
-        case "login": out = try runLogin(engine, payload)
-        case "loginProbe": out = try runLoginProbe(engine)
-        // ⭐⭐⭐ 老引擎退役 ⇒ 这三个 op 也归新引擎（2026-10-25）
-        case "sourceVars": out = ["vars": try engine.sourceVars()]
-        case "sourceHosts": out = ["hosts": try engine.sourceHosts()]
-        case "filterAction": out = try runFilterAction(engine, payload)
-        default:
-            // ⚠️ 其余 op（sourceVars / sourceHosts / filterAction / explain*）暂不接
-            return nil
-        }
-        // ⭐ **站方 JS 改过的源级变量** ⇒ 回传给轻阅（落盘 ⇒ 下次直接生效）
-        if var dict = out as? [String: Any] {
-            // ⭐⭐⭐⭐⭐ **两个盒子都导出**（站方 `source.put()` 写的解锁态要能落盘 ⇒ 下次启动仍然有效）
-            dict["__sourceVars"] = Self.varsJSON(engine.varBox, and: engine.javaVars)
-            // ⭐⭐⭐ 站方变量（Legado 语义）⇒ 回传给轻阅（落盘）⭐
-            if let sv = engine.sourceVariable {
-                dict["__sourceVariable"] = sv.text
-                // ⭐⭐⭐ **站方到底改没改这一格？**（判形态的证据只认「真改过」）⭐
-                //   ⇒ 没改 ⇒ 落盘时**不许**把它当成「站方自己写的」⇒ 不许拿来当证据 ⭐⭐⭐
-                dict["__sourceVariableChanged"] = (sv.text != (seededStationVariable ?? ""))
+        case "search":
+            let key = (payload["keyword"] as? String) ?? ""
+            let page = (payload["page"] as? Int) ?? 1
+            let books = try await LegadoEngine.search(source: engineSource, key: key,
+                                                      page: page, variables: session.variables)
+            out = ["books": books.map { bookListItem($0) }]
+            out["total"] = books.count
+            out["nextUrl"] = ""
+        case "exploreKinds":
+            let kinds = LegadoEngine.exploreKinds(source: engineSource)
+            out = ["kinds": kinds.map { ["title": $0.title, "url": $0.url] }, "filters": []]
+        case "explore":
+            let kind = LegadoEngineHost.Kind(title: (payload["kindTitle"] as? String) ?? "",
+                                            url: (payload["kindUrl"] as? String) ?? "")
+            let page = (payload["page"] as? Int) ?? 1
+            let books = try await LegadoEngine.explore(source: engineSource, kind: kind,
+                                                      page: page, variables: session.variables)
+            out = ["books": books.map { bookListItem($0) }]
+            out["total"] = books.count
+            out["nextUrl"] = ""
+        case "bookInfo":
+            let info = try await LegadoEngine.bookInfo(source: engineSource, book: book(from: payload),
+                                                       variables: session.variables)
+            out = ["book": bookPayload(info)]
+        case "toc":
+            let b = book(from: payload)
+            let chapters = try await LegadoEngine.chapters(source: engineSource, book: b,
+                                                          variables: session.variables)
+            let list: [[String: Any]] = chapters.map { c in
+                ["url": c.url, "title": c.title, "index": c.index,
+                 "isVolume": c.isVolume, "isVip": c.isVip, "isPay": c.isPay,
+                 "updateTime": c.updateTime ?? "", "tag": ""]
             }
-            out = dict
+            out = ["chapters": list, "rawCount": chapters.count, "bookName": b.name]
+        case "explain", "explainToc":
+            // ⭐⭐⭐ **诊断 op**（老引擎的 `explain` / `explainToc` 随老引擎一起退役）
+            //   ⇒ 用**新引擎的 AnalyzeUrl** 复刻：发一次请求，把 URL/状态/字节报出来 ⭐⭐⭐
+            let ruleUrl = (payload["tocUrl"] as? String) ?? (payload["kindUrl"] as? String)
+                ?? (payload["bookUrl"] as? String) ?? ""
+            do {
+                let au = try LegadoEngineHost.UrlBuilder(ruleUrl: ruleUrl,
+                                                        key: payload["keyword"] as? String,
+                                                        page: (payload["page"] as? Int) ?? 1,
+                                                        source: engineSource,
+                                                        book: book(from: payload),
+                                                        variables: session.variables)
+                let resp = try await au.fetch()
+                out = ["请求URL": ruleUrl, "最终URL": resp.url.absoluteString,
+                       "状态码": String(resp.statusCode), "响应字节": String(resp.body.utf8.count),
+                       "页面标题": "", "说明": "诊断已随老引擎退役 ⇒ 这里用新引擎的 AnalyzeUrl 复刻"]
+            } catch {
+                out = ["请求URL": ruleUrl, "错误": String(describing: error)]
+            }
+        case "content":
+            let ch = chapter(from: payload)
+            let text = try await LegadoEngine.content(source: engineSource, book: book(from: payload),
+                                                       chapter: ch, variables: session.variables)
+            out = ["title": ch.title, "content": text, "nextUrl": ""]
+        default:
+            // ⚠️ **不认识就明确报错**（不静默返回空 ⇒ 不假成功）⭐⭐⭐
+            throw ServiceError.engineFailed("新引擎不支持「\(op)」这个操作")
         }
+        // ⭐⭐⭐ **站方 JS 改过的变量 ⇒ 回传**（宿主落盘 ⇒ 下次直接生效）
+        out["__sourceVars"] = session.variables.getVariable()
+        out["__sourceVariable"] = session.variables.getVariable()
+        // ⭐⭐⭐ **「改没改」只认与种子比较**（证据不许自证）⭐⭐⭐
+        out["__sourceVariableChanged"] = (session.variables.getVariable() != session.seeded)
         return out
     }
 
-    /// ⭐⭐⭐ **源级变量：轻阅 → 引擎**
-    ///
-    /// ⚠️ **不做这一步的后果**（站方聚合源）：
-    ///   `server`（线路）/ `tab`（模式）/ `sources`（平台）都在变量里
-    ///   ⇒ 引擎拿不到 ⇒ 站方 jsLib 读到 undefined ⇒ 请求打错地址 / 分类全空 ⭐
-    /// ⭐⭐⭐ **把 App 的 cookie 罐灌进引擎的 cookie 罐**（2026-10-24 真机栽的）
-    ///
-    /// ⚠️⚠️ **症状**：🍅大灰狼的发现页只剩「**未分组**」一个分类 ⇒ 详情/目录/正文全断
-    ///   ⇒ 查下来：站方 `exploreUrl` 的 JS **自己去 ajax `/discovestyle`** 拿真分类
-    ///   ⇒ 那个 ajax 失败 ⇒ 站方只剩硬编码的 7 个筛选栏 + **一个兜底分类「未分组」**
-    ///   （App 自己的代码也记着这事：`discovestyle` 返 503 时「分类只剩 2 个（正常 365 个）」）
-    ///
-    /// ⚠️⚠️ **为什么老引擎能、新引擎不能**：
-    ///   · 老引擎的 `java.ajax` 走**原生桥** ⇒ 用的是 **App 的 cookie 罐**（**有登录态**）✅
-    ///   · 新引擎的 `java.ajax` 用的是**引擎自己的罐** ⇒ 每个源**从空开始** ⇒ **登录态丢了** ❌
-    ///   ⇒ 而且站方 JS 里的 `cookie.getCookie()` 读的也是**引擎的罐** ⇒ 同样看不到登录态 ⭐⭐
-    ///
-    /// ⇒ 修：每次 op 前把 App 的 cookie 快照（`HTTPCookieStorage.shared`）灌进引擎的罐
-    ///   ⇒ 引擎的 ajax + 站方 JS 的 `cookie.*` 就都有登录态了 ⭐
-    static func seedCookies(from payload: [String: Any], into jar: LegadoCore.CookieJar?) {
-        guard let jar else { return }
-        guard let snap = payload["cookieSnapshot"] as? [String: String] else { return }
-        // ⭐ 解析在纯 Foundation 层（LegadoCompat）⇒ 沙盒里能真编真跑 ⇒ 有门禁
-        for c in LegadoCompat.cookiePairs(from: snap) {
-            // ⭐ domain 写 host ⇒ 该域**及其子域**都能带上（引擎的 Cookie.matches 语义）
-            jar.set(LegadoCore.CookieJar.Cookie(name: c.name, value: c.value,
-                                                domain: c.host, host: c.host))
-        }
-    }
-
-    /// ⭐⭐⭐ **变量串的解析结果也缓存**（2026-10-24 真机「app 死机」）
-    ///
-    /// ⚠️ 崩溃日志里这个函数正卡在 Foundation 的 JSON 解析器上
-    ///   （`seedVars` → `_NSJSONReader parseData:`）⇒ 它在**跟主线程抢 malloc 锁** ⭐
-    /// ⇒ 同一个变量串**只解析一次**（按串本身做 key）
-    private static let varsParseLock = NSLock()
-    private static var varsParseCache: [String: [String: Any]] = [:]
-
-    /// ⭐⭐⭐⭐⭐ **灌变量：必须灌【两个盒子】**（2026-11-10 真机「发现页只剩兜底分类」实证）
-    ///
-    /// ⚠️⚠️ **根因**：引擎里有**两个**变量盒子：
-    ///   - `varBox`  = 规则/模板读写的源级变量
-    ///   - `javaVars` = **`source.get/put` / `java.get/put` 读写的那个**（引擎 `engineJava` 的 `get`/`put`）
-    /// ⇒ 而轻阅以前**只灌 `varBox`** ⇒ **站方 `source.get("nhAuthed")` 永远读不到解锁态** ⭐⭐⭐
-    /// ⇒ **✿UAA 聚合源**每个字段首句都是 `if (!nhAuth()) { return ""; }`
-    ///   ⇒ 解锁态读不到 ⇒ **永远「未解锁」⇒ 全源交白卷 ⇒ 发现页只剩站方兜底的「未分组」** ⭐⭐⭐
-    /// ⇒ **症状与真机截图逐字吻合**：「exploreKinds 结果不可信：只解析出 1 个分类」
-    ///
-    /// ⭐ **修法**：灌的时候**两个盒子都灌** ⇒ 站方 `source.get()` 与规则读 `varBox` 都能看到。
-    static func seedVars(from payload: [String: Any], into box: VarBox) {
-        seedVars(from: payload, into: box, and: nil)
-    }
-
-    /// ⭐⭐⭐ **同时灌两个盒子**（`varBox` + `javaVars`）
-    static func seedVars(from payload: [String: Any], into box: VarBox, and javaBox: VarBox?) {
-        guard let srcDict = payload["source"] as? [String: Any],
-              let text = srcDict["__variables"] as? String, !text.isEmpty
-        else { return }
-        varsParseLock.lock()
-        var obj = varsParseCache[text]
-        let hit = obj != nil
-        varsParseLock.unlock()
-        if !hit {
-            guard let data = text.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { return }
-            obj = parsed
-            varsParseLock.lock()
-            varsParseCache[text] = parsed
-            if varsParseCache.count > 32 { varsParseCache.removeAll() }
-            varsParseLock.unlock()
-        }
-        guard let obj else { return }
-        for (k, v) in obj {
-            let s: String
-            if let sv = v as? String { s = sv }
-            else if let n = v as? NSNumber { s = n.stringValue }
-            else { continue }
-            box.set(k, s)
-            // ⭐⭐⭐ **`javaVars` 也要灌**（站方 `source.get()` 读的是它 ⇒ 解锁态/令牌都在那儿）
-            javaBox?.set(k, s)
-        }
-    }
-
-    /// ⭐ **源级变量：引擎 → 轻阅**（一个 JSON 串）
-    ///
-    /// ⭐⭐⭐⭐⭐ **必须合并【两个盒子】**（2026-11-10 真机「发现页只剩兜底分类」实证）
-    ///   - `varBox`   = 规则/模板读写的源级变量
-    ///   - `javaVars` = **站方 `source.get/put` 写的那个**（含 `nhAuthed` 解锁态、令牌 …）
-    /// ⇒ 只导出 `varBox` ⇒ **站方自己写的东西（解锁态）落不了盘** ⇒ 下次启动又「未解锁」⭐⭐⭐
-    /// ⇒ 合并导出 ⇒ 两个盒子都落盘 ⇒ 灌回来时两个盒子都有 ⇒ 闭环成立 ⭐⭐⭐
-    static func varsJSON(_ box: VarBox, and javaBox: VarBox? = nil) -> String {
-        var all = box.all
-        if let javaBox {
-            for (k, v) in javaBox.all where all[k] == nil { all[k] = v }
-        }
-        guard !all.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: all),
-              let text = String(data: data, encoding: .utf8) else { return "" }
-        return text
-    }
-
-    /// ⭐ **拿（建）这个源的会话**
-    private func session(for source: BookSource) throws -> Session {
-        let key = source.bookSourceUrl
-        lock.lock()
-        if let s = sessions[key] { lock.unlock(); return s }
-        lock.unlock()
-
-        let engineSource = Self.convert(source)
-        let jar = EngineCookieJar()
-        let s = try Session(source: engineSource, jar: jar, jsLib: source.jsLib)
-        lock.lock()
-        // ⚠️ 可能有别的线程先建了 ⇒ 以先建的那个为准（本建的白扔）
-        if let exist = sessions[key] { lock.unlock(); return exist }
-        sessions[key] = s
-        lock.unlock()
+    /// 取（or 建）这个源的会话
+    fileprivate static func session(for key: String, engineSource: LegadoEngineHost.Source,
+                                     payload: [String: Any], sessions: LegadoEngineBackend) -> Session {
+        sessions.lock.lock()
+        if let s = sessions.sessions[key] { sessions.lock.unlock(); return s }
+        sessions.lock.unlock()
+        let s = Session(engineSource: engineSource, payload: payload)
+        sessions.lock.lock(); sessions.sessions[key] = s; sessions.lock.unlock()
         return s
     }
 
-    /// ⭐⭐⭐ **丢掉某个源的会话**（新引擎卡死时的急救）
-    ///
-    /// ⚠️⚠️ **为什么必须有**（2026-10-24 真机）：
-    ///   引擎的 JSC context 是**复用**的（一个源一个）⇒
-    ///   站方 JS 一旦在里面死循环 ⇒ **contextLock 永远拿不到**
-    ///   ⇒ 后面每一个 op 都卡在锁上 ⇒ 整个源永久报废
-    ///   ⇒ 所以**超时的时候必须把会话整个换掉**（不只是放弃这一次调用）⭐
-    ///   ⇒ 新的 context 是干净的 ⇒ 源立刻能用
-    func dropSession(for sourceUrl: String) {
-        lock.lock()
-        let existed = sessions.removeValue(forKey: sourceUrl) != nil
-        lock.unlock()
-        if existed {
-            NSLog("[engine] 丢弃卡死的会话：\(sourceUrl)")
-        }
-    }
+    // MARK: - 形状对齐（App 侧的契约）
 
-    // MARK: - op 实现
-
-    /// ⭐ **搜索**
-    private func runSearch(_ session: Session, _ engine: SourceEngine,
-                           _ payload: [String: Any]) throws -> Any {
-        let keyword = (payload["keyword"] as? String) ?? ""
-        let page = (payload["page"] as? Int) ?? 1
-        let books = try engine.search(keyword, page: page)
-        return Self.bookListPayload(books)
-    }
-
-    /// ⭐ **发现**
-    private func runExplore(_ session: Session, _ engine: SourceEngine,
-                            _ payload: [String: Any]) throws -> Any {
-        let rawKindUrl = (payload["kindUrl"] as? String) ?? ""
-        let page = (payload["page"] as? Int) ?? 1
-        // ⭐⭐⭐⭐⭐ **分类 URL 里的 `page` 参数要跟着请求的页码走**（2026-10-29 真机「发现页没有翻页功能」）
-        //   ⇒ 站方（✿UAA）的分类 URL 是 `/console/explore?type=novel&page=1&size=8`
-        //   ⇒ **`page=1` 是站方 JS 在算分类时烤死的**（`_page` 那时是 1）
-        //   ⇒ 翻第 2 页时如果还发这个 URL ⇒ **站方返回同一页** ⇒ `addedNew == 0`
-        //   ⇒ App 判定「没有更多了」⇒ **看起来像没有翻页功能** ⭐⭐⭐
-        //   ⇒ 修法：把 URL 里 query 的 `page=` 改成请求的页码（其余**一个字节都不动**）
-        let kindUrl = Self.exploreURL(rawKindUrl, page: page)
-        if page > 1 {
-            engineLog("[发现] 第 \(page) 页的分类 URL = \(String(kindUrl.prefix(140)))")
-        }
-        // ⭐⭐⭐⭐⭐ **失败时把【引擎的诊断行】带进错误**（2026-10-25 真机实证）
-        //   ⇒ 以前只有「emptyResult(\"bookList\")」⇒ 用户完全看不到引擎看到了什么 ⇒ 只能猜 ⭐⭐⭐
-        //   ⇒ 诊断行里有：**实际请求的 URL + 响应长度 + 响应前 200 字 + isJSON** ⇒ 一次定位 ⭐⭐⭐
-        do {
-            let books = try engine.explore(kindUrl, page: page)
-            return Self.bookListPayload(books)
-        } catch {
-            // ⭐⭐⭐⭐⭐ **失败时把「账号未登录」翻译成人话**（2026-10-29 真机回归）
-            //   ⇒ 现象：URL 里 `aid=0` ⇒ 服务端 500 ⇒ 整页「HTTP 500」天书 ⇒ 用户不知道该做什么
-            //   ⇒ 根因：站方登录写的 `source.put('aid', 账号id)` 没落进书源变量 ⇒ aid 一直是 0
-            //   ⇒ 站方 jsLib：`source.get('aid') || source.get('account_id') || '0'` ⇒ 缺了就退化成 '0' ⭐⭐⭐
-            let msg = String(describing: error)
-            if msg.contains("aid=0") || msg.contains("aid=0&") || msg.contains("&aid=0") {
-                let hint = "⭐⭐⭐ **账号未登录**（请求里 aid=0）⇒ 服务端 500 ⇒ "
-                    + "请到【登录界面】重新登录一次（登录会写入账号 id）"
-                engineLog("[发现] \(hint)")
-                throw ServiceError.engineFailed(hint + "\n（原始错误：" + msg.prefix(120) + "）")
-            }
-            throw Self.diagnose(engine, "发现页", error)
-        }
-    }
-
-    /// ⭐⭐⭐⭐⭐ **把分类 URL 里 query 的 `page=` 改成请求的页码**
-    ///
-    /// ⚠️⚠️ **只改 `page` 这一个参数的值**（其余**一个字节都不动**）：
-    ///   聚合源的 URL 常带**签名参数** ⇒ 重新拼 query 会把签名改坏 ⇒ 404 ⭐⭐⭐
-    ///
-    /// ⚠️ **没有 `page` 参数就不动**（有的源用 `offset` / `start` 等别的参数名）
-    ///   ⇒ 那种源的翻页由**站方自己的 `{{page}}` 模板**处理（引擎的模板插值）⭐
-    static func exploreURL(_ raw: String, page: Int) -> String {
-        guard page > 1, !raw.isEmpty else { return raw }
-        guard let qIdx = raw.firstIndex(of: "?") else { return raw }
-        let head = String(raw[raw.startIndex..<qIdx])
-        let query = String(raw[raw.index(after: qIdx)...])
-        // ⭐ 只替换 query 里**第一个** `page=`（值到 `&` 或结尾为止）
-        let items = query.components(separatedBy: "&")
-        var replaced = false
-        var outItems: [String] = []
-        for item in items {
-            if !replaced, let eq = item.firstIndex(of: "="),
-               String(item[item.startIndex..<eq]) == "page" {
-                outItems.append("page=\(page)")
-                replaced = true
-            } else {
-                outItems.append(item)
-            }
-        }
-        guard replaced else { return raw }
-        return head + "?" + outItems.joined(separator: "&")
-    }
-
-    /// ⭐⭐⭐⭐⭐ **把引擎的失败诊断拼进宿主错误**（真机日志能直接看出真凶）
-    static func diagnose(_ engine: SourceEngine, _ what: String, _ error: Error) -> Error {
-        let lines = engine.failureDiagnosticLines
-        guard !lines.isEmpty else { return error }
-        let detail = lines.joined(separator: " ／ ")
-        return ServiceError.engineFailed("\(what)失败：\(error.localizedDescription)（引擎诊断：\(detail)）")
-    }
-
-    /// ⭐ **发现页的分类 + 筛选栏**
-    /// ⭐⭐⭐ **登录**（老引擎 `engine.js` 的 `login` op 同款）
-    ///
-    /// ⚠️ **老引擎不是调 `login()`，而是跑【宿主传来的 action 表达式】**
-    ///   （App 的登录面板把 `loginUi` 里某个按钮的 `action` 传给宿主）⇒ 这里照抄 ⭐⭐⭐
-    /// ⇒ 站方只靠 `java.toast` / `java.log` 报结果 ⇒ `messages` 是**判断成败的唯一依据**⭐
-    private func runLogin(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
-        let action = payload["action"] as? String ?? ""
-        let formValues = payload["formValues"] as? [String: String] ?? [:]
-        let r = try engine.runLoginAction(action, formValues: formValues)
-        var d: [String: Any] = ["ok": r.ok, "messages": r.messages]
-        if r.ok { d["result"] = r.result } else { d["error"] = r.result }
-        // 站方 `putLoginInfo` / `putLoginHeader` 写进引擎的 storage ⇒ 取回落盘 ⭐⭐⭐
-        let info = engine.loadLoginInfo()
-        if !info.isEmpty, let j = try? JSONSerialization.data(withJSONObject: info) {
-            d["__loginInfo"] = String(data: j, encoding: .utf8)
-        }
-        let header = engine.currentLoginHeaderString()
-        if !header.isEmpty { d["__loginHeader"] = header }
-        engineLog("[新引擎] 登录动作完成：ok=\(r.ok) · 站方原文 \(r.messages.count) 条")
-        return d
-    }
-
-    /// ⭐⭐⭐ **登录状态检测**（老引擎 `loginProbe` 同款）
-    private func runLoginProbe(_ engine: SourceEngine) throws -> Any {
-        let r = try engine.probeLoginStatus()
-        engineLog("[新引擎] 登录态检测：baseUrl=\(r.baseUrl) · stationCheck=\(r.stationCheck) · 原文 \(r.messages.count) 条")
-        return ["baseUrl": r.baseUrl, "messages": r.messages, "stationCheck": r.stationCheck]
-    }
-
-    /// ⭐⭐⭐ **执行发现页筛选栏的 action**（老引擎 `filterAction` 同款）
-    private func runFilterAction(_ engine: SourceEngine, _ payload: [String: Any]) throws -> Any {
-        let action = payload["action"] as? String ?? ""
-        let title = payload["title"] as? String ?? ""
-        let value = payload["value"] as? String ?? ""
-        let r = try engine.runFilterAction(action: action, title: title, value: value)
-        var d: [String: Any] = ["ok": r.ok]
-        if !r.ok { d["error"] = r.error }
-        return d
-    }
-
-    private func runExploreKinds(_ engine: SourceEngine) throws -> Any {
-        // ⭐⭐⭐ 失败时带诊断（见 runExplore 的说明）⭐⭐⭐
-        let kinds: [SourceCategory]; let filters: [SourceFilter]
-        do {
-            (kinds, filters) = try engine.exploreKinds()
-        } catch {
-            // ⭐⭐⭐⭐⭐ **失败时翻译成人话**（2026-11-01 真机：分类接口超时 ⇒ 发现页整个空）
-            //   ⇒ 真机原文：「java.ajax 失败: Error Domain=NSURLErrorDomain Code=-1001 "请求超时。"」
-            //   ⇒ 站方拿到空 ⇒ `JSON Parse error: Unexpected identifier "undefined"` ⇒ 分类全废
-            let msg = String(describing: error)
-            if msg.contains("aid=0") {
-                let hint = "⭐⭐⭐ **账号未登录**（请求里 aid=0）⇒ 服务端认不出账号 ⇒ "
-                    + "请到【登录界面】重新登录一次（登录会写入账号 id）"
-                engineLog("[发现] \(hint)")
-                throw ServiceError.engineFailed(hint + "\n（原始错误：" + msg.prefix(140) + "）")
-            }
-            if msg.contains("-1001") || msg.contains("请求超时") {
-                let hint = "⭐⭐⭐ **站方接口请求超时**（单请求超时上限内没回）⇒ 分类拿不到 ⇒ 发现页空"
-                    + " ⇒ 可稍后重试；若一直超时 ⇒ 请到【登录界面】重新登录一次（未登录时服务端可能迟迟不回）"
-                engineLog("[发现] \(hint)")
-                throw ServiceError.engineFailed(hint + "\n（原始错误：" + msg.prefix(140) + "）")
-            }
-            throw Self.diagnose(engine, "发现页分类", error)
-        }
-        // ⭐⭐ **把分类/筛选栏的标题记下来**（2026-10-24 真机栽的）
-        //   ⭐ 站方聚合源在「ajax 失败」时会**造一个叫「未分组」的兜底分类**
-        //   ⇒ 看到「未分组」就知道是**站方接口没通**，不是分类规则写错 ⭐⭐
-        engineLog("[新引擎] 分类 \(kinds.count) 个 / 筛选栏 \(filters.count) 个："
-                  + kinds.map(\.title).joined(separator: "、"))
-        let kindList: [[String: Any]] = kinds.map { k in
-            var d: [String: Any] = ["title": k.title, "url": k.url, "style": k.style ?? ""]
-            d["group"] = k.group ?? ""
-            return d
-        }
-        let filterList: [[String: Any]] = filters.map { f in
-            var d: [String: Any] = ["title": f.title, "type": "select", "chars": f.chars]
-            d["default"] = f.defaultValue ?? ""
-            d["action"] = f.action ?? ""
-            d["paramKey"] = Self.paramKey(from: f.action)
-            return d
-        }
-        return ["kinds": kindList, "filters": filterList]
-    }
-
-    /// ⭐ **详情**
-    private func runBookInfo(_ session: Session, _ engine: SourceEngine,
-                             _ payload: [String: Any]) throws -> Any {
-        let bookUrl = (payload["bookUrl"] as? String) ?? ""
-        let raw = (payload["book"] as? [String: Any]) ?? [:]
-        let book = Self.book(from: raw, bookUrl: bookUrl)
-        let info: EngineBookInfo
-        do {
-            info = try engine.bookInfo(book, variables: Self.variables(from: raw))
-        } catch {
-            // ⭐⭐⭐⭐⭐ **失败时把引擎的诊断带出来**（2026-10-25 真机教训）
-            //   以前错误只说「书名/书 URL 是空的」⇒ 用户**完全不知道该查哪** ⇒ 白等一轮 ⭐⭐⭐
-            //   ⇒ 引擎明明知道「哪条规则走的哪个分支、为什么失败」⇒ 把它带出来 ⭐⭐⭐
-            let lines = engine.failureDiagnosticLines
-            // ⚠️ `ServiceError` 现在在**文件顶层**（不依赖 `@MainActor` 类）⇒ 两边都能引用 ⭐⭐⭐
-            throw Self.diagnose(engine, "详情页", error)
-        }
-        var rawMap: [String: String] = [:]
-        for (k, v) in raw { if let s = v as? String { rawMap[k] = s } }
-        // ⭐⭐⭐ **封面 URL 探针**（2026-10-29 真机：封面一直是占位图）
-        //   ⇒ 这一行能一眼分清：**引擎根本没给出 URL**（空）/ **给出了但请求失败**（看 [封面] 那行）⭐
-        engineLog("[封面] 引擎给的 coverUrl = \(String(info.coverUrl.prefix(120)))（长度 \(info.coverUrl.count)）")
-        let out = Self.bookPayload(info.name, author: info.author, intro: info.intro,
-                                   kind: info.kind, group: info.group, lastChapter: info.lastChapter,
-                                   coverUrl: info.coverUrl, bookUrl: info.bookUrl,
-                                   wordCount: info.wordCount, tocUrl: info.tocUrl,
-                                   raw: rawMap)
-        return ["book": out]
-    }
-
-    /// ⭐ **目录**
-    private func runToc(_ session: Session, _ engine: SourceEngine,
-                        _ payload: [String: Any]) throws -> Any {
-        let tocUrl = (payload["tocUrl"] as? String) ?? ""
-        let bookUrl = (payload["bookUrl"] as? String) ?? ""
-        let raw = (payload["book"] as? [String: Any]) ?? [:]
-        let book = Self.book(from: raw, bookUrl: bookUrl)
-        var info = EngineBookInfo()
-        info.bookUrl = bookUrl
-        // ⚠️ tocUrl 为空 ⇒ 目录规则跑在**详情页**上（Legado 语义）
-        info.tocUrl = tocUrl
-        let chapters: [EngineChapter]
-        do {
-            chapters = try engine.toc(info, book: book, variables: Self.variables(from: raw))
-        } catch {
-            throw Self.diagnose(engine, "目录", error)
-        }
-        let list: [[String: Any]] = chapters.map { c in
-            ["url": c.url, "title": c.name, "index": c.index, "isVolume": c.isVolume, "tag": ""]
-        }
-        var out: [String: Any] = ["chapters": list, "rawCount": chapters.count]
-        out["bookName"] = book.name
-        return out
-    }
-
-    /// ⭐ **正文**
-    private func runContent(_ session: Session, _ engine: SourceEngine,
-                            _ payload: [String: Any]) throws -> Any {
-        let chapterUrl = (payload["chapterUrl"] as? String) ?? ""
-        let chapterDict = (payload["chapter"] as? [String: Any]) ?? [:]
-        let title = (chapterDict["title"] as? String) ?? ""
-        let raw = (payload["book"] as? [String: Any]) ?? [:]
-        let book = Self.book(from: raw, bookUrl: (raw["bookUrl"] as? String) ?? "")
-        var chapter = EngineChapter()
-        chapter.name = title
-        chapter.url = chapterUrl
-        let text: String
-        do {
-            text = try engine.content(chapter, book: book, variables: Self.variables(from: raw))
-        } catch {
-            throw Self.diagnose(engine, "正文", error)
-        }
-        return ["title": title, "content": text, "nextUrl": ""]
-    }
-
-    // MARK: - 形状对齐
-
-    /// ⭐ **书单**（老引擎的形状）
-    static func bookListPayload(_ books: [EngineBook]) -> [String: Any] {
-        let list: [[String: Any]] = books.map { b in
-            bookPayload(b.name, author: b.author, intro: b.intro, kind: b.kind,
-                        lastChapter: b.lastChapter, coverUrl: b.coverUrl,
-                        bookUrl: b.bookUrl, wordCount: b.wordCount, tocUrl: "",
-                        raw: b.raw)
-        }
-        return ["books": list, "total": list.count, "nextUrl": ""]
-    }
-
-    /// ⭐ **一本书**（老引擎的形状）
-    static func bookPayload(_ name: String, author: String, intro: String, kind: String,
-                            group: String = "", lastChapter: String, coverUrl: String, bookUrl: String,
-                            wordCount: String, tocUrl: String,
-                            raw: [String: String]) -> [String: Any] {
-        var d: [String: Any] = [
-            "name": name, "author": author, "intro": intro, "kind": kind,
-            "group": group,
-            "lastChapter": lastChapter, "coverUrl": coverUrl, "bookUrl": bookUrl,
-            "wordCount": wordCount, "tocUrl": tocUrl,
+    private static func bookListItem(_ b: LegadoEngineHost.SearchResult) -> [String: Any] {
+        [
+            "name": b.name,
+            "author": b.author,
+            "intro": b.intro ?? "",
+            "kind": b.kind ?? "",
+            "lastChapter": b.lastChapter ?? "",
+            "coverUrl": b.coverUrl ?? "",
+            "bookUrl": b.bookUrl,
+            "wordCount": b.wordCount ?? "",
+            "tocUrl": "",
+            "group": b.originName,
+            "updateTime": b.updateTime ?? "",
+            "origin": b.origin,
         ]
-        if !raw.isEmpty { d["raw"] = raw }
-        return d
     }
 
-    /// ⭐ **站方 action 里的源级变量名**（`show(infoMap['平台'],'find_source')` ⇒ `find_source`）
-    static func paramKey(from action: String?) -> String {
-        guard let action, !action.isEmpty else { return "" }
-        // 取最后一对单引号里的内容
-        let parts = action.split(separator: "'")
-        guard parts.count >= 4 else { return "" }
-        return String(parts[parts.count - 2])
+    private static func bookPayload(_ b: LegadoEngineHost.BookModel) -> [String: Any] {
+        [
+            "name": b.name,
+            "author": b.author,
+            "intro": b.intro ?? "",
+            "kind": b.kind ?? "",
+            "group": "",
+            "lastChapter": b.latestChapterTitle ?? "",
+            "coverUrl": b.coverUrl ?? "",
+            "bookUrl": b.bookUrl,
+            "tocUrl": b.tocUrl,
+            "wordCount": b.wordCount ?? "",
+            "updateTime": String(b.latestChapterTime),
+        ]
     }
 
-    /// ⭐ **书（从老引擎的 book 字典还原）**
-    static func book(from raw: [String: Any], bookUrl: String) -> EngineBook {
-        var b = EngineBook()
+    /// 从 payload 里还原引擎的 `Book`
+    private static func book(from payload: [String: Any]) -> LegadoEngineHost.BookModel {
+        let raw = (payload["book"] as? [String: Any]) ?? [:]
+        var b = LegadoEngineHost.BookModel(bookUrl: (raw["bookUrl"] as? String) ?? (payload["bookUrl"] as? String) ?? "",
+                     origin: (raw["origin"] as? String) ?? "")
+        b.originName = (raw["group"] as? String) ?? ""
         b.name = (raw["name"] as? String) ?? ""
         b.author = (raw["author"] as? String) ?? ""
-        b.intro = (raw["intro"] as? String) ?? ""
-        b.kind = (raw["kind"] as? String) ?? ""
-        b.lastChapter = (raw["lastChapter"] as? String) ?? ""
-        b.coverUrl = (raw["coverUrl"] as? String) ?? ""
-        b.bookUrl = (raw["bookUrl"] as? String) ?? bookUrl
-        b.wordCount = (raw["wordCount"] as? String) ?? ""
-        var raws: [String: String] = [:]
-        for (k, v) in raw {
-            if let s = v as? String { raws[k] = s }
-        }
-        b.raw = raws
+        b.kind = raw["kind"] as? String
+        b.intro = raw["intro"] as? String
+        b.coverUrl = raw["coverUrl"] as? String
+        b.wordCount = raw["wordCount"] as? String
+        b.latestChapterTitle = raw["lastChapter"] as? String
+        b.tocUrl = (payload["tocUrl"] as? String) ?? (raw["tocUrl"] as? String) ?? ""
+        b.variable = raw["variable"] as? String
         return b
     }
 
-    /// ⭐ **书籍变量**（站方 `book.getVariable('custom')` 要读它）
-    static func variables(from raw: [String: Any]) -> [String: String] {
-        guard let vars = raw["variables"] as? [String: String] else { return [:] }
-        return vars
+    /// 从 payload 里还原引擎的 `BookChapter`
+    private static func chapter(from payload: [String: Any]) -> LegadoEngineHost.ChapterModel {
+        let raw = (payload["chapter"] as? [String: Any]) ?? [:]
+        let c = LegadoEngineHost.ChapterModel()
+        c.url = (payload["chapterUrl"] as? String) ?? (raw["url"] as? String) ?? ""
+        c.title = (raw["title"] as? String) ?? ""
+        c.index = (raw["index"] as? Int) ?? 0
+        c.isVolume = (raw["isVolume"] as? Bool) ?? false
+        c.isVip = (raw["isVip"] as? Bool) ?? false
+        c.isPay = (raw["isPay"] as? Bool) ?? false
+        c.updateTime = raw["updateTime"] as? String
+        c.variable = raw["variable"] as? String
+        return c
     }
 
-    /// ⭐⭐ **把登录头并进源级 header**
-    ///
-    /// ⚠️ 源级 header 有三种写法（JSON 对象 / JSON 字符串 / `key: value` 换行）
-    /// ⇒ 这里统一转成 **JSON 对象**（引擎认得）⇒ 别把原样丢给引擎
-    static func mergeHeader(_ raw: String?, loginHeader: String) -> String {
-        var headers: [String: String] = [:]
-        if let raw, !raw.isEmpty {
-            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if t.hasPrefix("{") {
-                if let d = t.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
-                    for (k, v) in obj { headers[k] = (v as? String) ?? String(describing: v) }
-                }
-            } else if t.hasPrefix("\"") {
-                if let d = t.data(using: .utf8),
-                   let inner = try? JSONSerialization.jsonObject(with: d) as? String {
-                    return mergeHeader(inner, loginHeader: loginHeader)
-                }
-            } else {
-                for line in t.components(separatedBy: .newlines) {
-                    let l = line.trimmingCharacters(in: .whitespaces)
-                    guard let c = l.firstIndex(of: ":") else { continue }
-                    let k = String(l[l.startIndex..<c]).trimmingCharacters(in: .whitespaces)
-                    let v = String(l[l.index(after: c)...]).trimmingCharacters(in: .whitespaces)
-                    if !k.isEmpty { headers[k] = v }
-                }
-            }
+    // MARK: - 书源解析
+
+    /// ⭐⭐⭐ **书源 JSON 优先用 payload 里那份**（带 `__variables` ⇒ 宿主注入的解锁态/登录态）
+    ///   ⇒ 不用 App 自己的模型回编 JSON（少一层漂移）⭐⭐⭐
+    private static func parseSource(_ payload: [String: Any],
+                                    fallback: BookSource) throws -> LegadoEngineHost.Source {
+        if let dict = payload["source"] as? [String: Any],
+           JSONSerialization.isValidJSONObject(dict),
+           let data = try? JSONSerialization.data(withJSONObject: dict),
+           let parsed = try? LegadoEngineHost.Source.parse(data), !parsed.isEmpty {
+            return parsed[0]
         }
-        // 登录头是 `key: value` 形式
-        if let c = loginHeader.firstIndex(of: ":") {
-            let k = String(loginHeader[loginHeader.startIndex..<c]).trimmingCharacters(in: .whitespaces)
-            let v = String(loginHeader[loginHeader.index(after: c)...]).trimmingCharacters(in: .whitespaces)
-            if !k.isEmpty { headers[k] = v }
+        // 兜底：用 App 的模型回编
+        if let data = try? JSONEncoder().encode(fallback),
+           let parsed = try? LegadoEngineHost.Source.parse(data), !parsed.isEmpty {
+            return parsed[0]
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: headers),
-              let text = String(data: data, encoding: .utf8) else { return raw ?? "" }
-        return text
-    }
-
-    // MARK: - 源转换
-
-    /// ⭐⭐⭐ **轻阅的 BookSource ⇒ 引擎的 BookSource**
-    ///
-    /// ⚠️ **规则字段的形状不一样**：
-    /// - 轻阅：`RuleValue`（字符串 / **字符串数组** / 没有）⇒ 数组要**合并成换行**（站方多规则写法）
-    /// - 引擎：`String?`
-    static func convert(_ s: BookSource) -> EngineSource {
-        var out = EngineSource(bookSourceName: s.bookSourceName, bookSourceUrl: s.bookSourceUrl)
-        out.bookSourceGroup = s.bookSourceGroup
-        out.bookSourceComment = s.bookSourceComment
-        out.header = s.header
-        // ⭐⭐ **登录头**（栖阅机制：`loginHeader` 自动注入到每次请求头）
-        //   ⇒ 不带 ⇒ 登录态的请求会被站方拒 ⇒ **登录过的源突然全挂**
-        let loginHeader = SourceVariables.loginHeader(for: s.bookSourceUrl)
-        if !loginHeader.isEmpty {
-            out.header = Self.mergeHeader(out.header, loginHeader: loginHeader)
-        }
-        out.exploreUrl = s.exploreUrl
-        out.searchUrl = s.searchUrl
-        out.loginUrl = s.loginUrl
-        out.loginUi = s.loginUi
-        out.enabled = s.enabled
-        out.enabledExplore = s.enabledExplore
-
-        out.ruleSearch = listRule(s.ruleSearch)
-        out.ruleExplore = listRule(s.ruleExplore)
-        out.ruleBookInfo = bookInfoRule(s.ruleBookInfo)
-        out.ruleToc = tocRule(s.ruleToc)
-        out.ruleContent = contentRule(s.ruleContent)
-        return out
-    }
-
-    /// ⭐ **规则字段 ⇒ 字符串**（数组 ⇒ 换行合并）
-    static func ruleText(_ v: RuleValue?) -> String? {
-        guard let v else { return nil }
-        switch v {
-        case .none: return nil
-        case .text(let s): return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : s
-        case .list(let a):
-            let lines = a.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            return lines.isEmpty ? nil : lines.joined(separator: "\n")
-        }
-    }
-
-    /// ⭐ **列表规则**（`ruleSearch` / `ruleExplore`）
-    static func listRule(_ r: ListRule) -> LegadoCore.RuleFields {
-        var f = LegadoCore.RuleFields()
-        f.bookList = ruleText(r.bookList)
-        f.name = ruleText(r.name)
-        f.author = ruleText(r.author)
-        f.intro = ruleText(r.intro)
-        f.kind = ruleText(r.kind)
-        f.lastChapter = ruleText(r.lastChapter)
-        f.coverUrl = ruleText(r.coverUrl)
-        f.bookUrl = ruleText(r.bookUrl)
-        f.wordCount = ruleText(r.wordCount)
-        f.searchUrl = ruleText(r.searchUrl)
-        // ⭐⭐ **`ruleExplore.exploreUrl`** —— 站方把发现页 URL 写在规则块里的那种
-        //   ⇒ 引擎的 exploreKinds 兜底要读它（顶层空 ⇒ 试它）
-        f.exploreUrl = ruleText(r.exploreUrl)
-        return f
-    }
-
-    /// ⭐ **详情规则**（`ruleBookInfo`）—— ⭐ 含 `init`
-    static func bookInfoRule(_ r: BookInfoRule) -> LegadoCore.RuleFields {
-        var f = LegadoCore.RuleFields()
-        f.name = ruleText(r.name)
-        f.author = ruleText(r.author)
-        f.intro = ruleText(r.intro)
-        f.kind = ruleText(r.kind)
-        f.lastChapter = ruleText(r.lastChapter)
-        f.coverUrl = ruleText(r.coverUrl)
-        f.tocUrl = ruleText(r.tocUrl)
-        f.wordCount = ruleText(r.wordCount)
-        // ⭐⭐⭐ **`init` 规则**（JSON 接口源几乎全靠它）⇒ 属性名是 `initRule`（`init` 是保留字）
-        f.initRule = ruleText(r.initRule)
-        return f
-    }
-
-    /// ⭐ **目录规则**（`ruleToc`）
-    static func tocRule(_ r: TocRule) -> LegadoCore.RuleFields {
-        var f = LegadoCore.RuleFields()
-        f.chapterList = ruleText(r.chapterList)
-        f.chapterName = ruleText(r.chapterName)
-        f.chapterUrl = ruleText(r.chapterUrl)
-        f.isVolume = ruleText(r.isVolume)
-        f.isVip = ruleText(r.isVip)
-        f.nextTocUrl = ruleText(r.nextTocUrl)
-        // ⭐⭐⭐⭐⭐ **JSON 列表项 ⇒ 字段规则要写成 JSONPath**（2026-10-29 真机：目录没标题）
-        if Self.listItemsAreJSON(f.chapterList) {
-            f.chapterName = Self.jsonPathForm(f.chapterName)
-            f.chapterUrl = Self.jsonPathForm(f.chapterUrl)
-            // ⭐⭐⭐ **isVolume 直接丢掉**（不是改写）⇒ 让引擎走兜底（「没有章节 URL ⇒ 是卷标题」）
-            //   ⚠️ 改写成 `$.isVolume` 是**错的**：站方用「字段**不存在**」表达「不是卷」，
-            //   而 JSON 的 `false` 取出来是**字符串 "false"**（非空）⇒ **每一章都成卷** ⭐⭐⭐
-            f.isVolume = nil
-        }
-        return f
-    }
-
-    /// ⭐⭐⭐⭐⭐ **列表项是不是 JSON 对象**（列表规则是 JS / JSONPath ⇒ 是）
-    ///
-    /// ⚠️⚠️ **为什么必须先判这个**（2026-10-29 真机实证）：
-    ///   引擎给**字段规则**用的 `isJSON` 标志取自**页面正文**
-    ///   （`SourceEngine.value(...)` ⇒ `isJSON: page.isJSON`）⭐⭐⭐
-    ///   ⇒ 而站方的目录页正文常常**不是 JSON**（✿UAA 是 `data:;base64,<纯数字 id>`）
-    ///   ⇒ `isJSON = false` ⇒ **裸字段名**（`title` / `url`）被当 **CSS 选择器**解析
-    ///   ⇒ **抽不到标题**（而 `url` 恰好是引擎的特殊字段名 ⇒ 能抽到
-    ///   ⇒ 症状 = 「目录有行、点得开、就是没名字」）⭐⭐⭐
-    ///
-    /// ⇒ **列表规则是 JS / JSONPath ⇒ 列表项一定是 JSON 对象** ⇒ 字段规则得按 JSON 取
-    /// ⇒ **DOM 源的列表项是节点 ⇒ 一个字都不改**（CSS 语义必须原样保持）⭐⭐⭐
-    static func listItemsAreJSON(_ listRule: String?) -> Bool {
-        guard let r = listRule?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty else { return false }
-        if r.hasPrefix("@js:") || r.hasPrefix("@JS:") { return true }
-        if r.hasPrefix("<js>") || r.hasPrefix("<JS>") { return true }
-        if r.hasPrefix("$.") || r.hasPrefix("$[") { return true }
-        if r.hasPrefix("result.") || r.hasPrefix("result[") { return true }
-        return false
-    }
-
-    /// ⭐⭐⭐ **把「裸字段路径」改写成 JSONPath 形态**（`title` ⇒ `$.title`）
-    ///
-    /// ⚠️ **只改「纯路径」**（字母/数字/`_`/`.`/`-`）：
-    ///   带 `@`（取值模式）/ `##`（正则）/ `||`（兜底）/ `{{}}`（模板）/ `$`（已是 JSONPath）
-    ///   ⇒ 一律**不动**（那些在 JSON 基准上本来也不成立 ⇒ 不制造新的行为变化）⭐
-    ///   ⇒ 例：NovelHub 的 `##^[^|]*\|\|…`（正则抠名）保持原样 ⭐⭐⭐
-    static func jsonPathForm(_ rule: String?) -> String? {
-        guard let r = rule?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty else { return rule }
-        if r.hasPrefix("$") { return rule }
-        let plain = r.allSatisfy { c in
-            c.isLetter || c.isNumber || c == "_" || c == "." || c == "-"
-        }
-        guard plain else { return rule }
-        return "$." + r
-    }
-
-    /// ⭐ **正文规则**（`ruleContent`）
-    static func contentRule(_ r: ContentRule) -> LegadoCore.RuleFields {
-        var f = LegadoCore.RuleFields()
-        f.content = ruleText(r.content)
-        f.nextContentUrl = ruleText(r.nextContentUrl)
-        f.replaceRegex = ruleText(r.replaceRegex)
-        f.sourceRegex = ruleText(r.sourceRegex)
-        return f
+        throw ServiceError.engineFailed("书源 JSON 解析失败")
     }
 }
+
+/// ⭐⭐⭐ **站方 JS 的宿主**（新引擎 `JSHost` 协议）
+///
+/// ⚠️ 站方**只用 toast / log 报登录结果**（「✅️登录成功」/「💔登录失败」）
+///   ⇒ toast 一闪而过 ⇒ 用户根本不知道成没成 ⇒ 这里**把原文收回来**给 UI 显示 ⭐⭐⭐
+#if canImport(JavaScriptCore) && !os(Linux)
+final class LegadoJSHost: LegadoEngineHost.Host {
+    private(set) var messages: [String] = []
+
+    func jsLog(_ msg: String) {
+        messages.append(msg)
+    }
+
+    func jsToast(_ msg: String) {
+        messages.append(msg)
+    }
+}
+#endif
