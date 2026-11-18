@@ -42,14 +42,37 @@ echo "=== ⓪ 基准：不改任何东西 ⇒ 门禁必须绿 ==="
 run_gate; rc=$?
 [ $rc -eq 0 ] && ok 0 "基准：门禁绿 ✅" || { ok 1 "基准：门禁**不绿**（改之前就红 ⇒ 先修基准）"; tail -12 "$TMP/gate.txt"; }
 
-echo "=== ① 基座必红：用 git HEAD 的引擎（未修）⇒ 门禁必须红 ==="
-# 用 HEAD 版的 rule-analyzer.js + engine.js 组成一个「修复前」的引擎副本
+echo "=== ① 基座必红：用【修复前】的引擎 ⇒ 门禁必须红 ==="
+# ⭐⭐⭐ **基座不能取 HEAD**（修复提交后 HEAD 就是修好的版本了 ⇒ 基座变绿 ⇒ 门禁变成摆设）
+#   ⇒ 正确取法：**引入修复的那个 commit 的父版本**（`git log -S` 找）
+#   ⇒ 找不到（浅克隆 / CI）⇒ 退回「去掉保护」当基座（等价于修复前的行为）⭐⭐⭐
 mkdir -p "$TMP/base-engine"
 cp QiReaderLite/Resources/engine/*.js "$TMP/base-engine/" 2>/dev/null
-git show HEAD:"$ANL" > "$TMP/base-engine/rule-analyzer.js" 2>/dev/null
-git show HEAD:"QiReaderLite/Resources/engine/engine.js" > "$TMP/base-engine/engine.js" 2>/dev/null
+FIX_COMMIT="$(git log -S 'isJsPrefixed' --format='%H' -- "$ANL" 2>/dev/null | tail -1)"
+BASE_COMMIT=""
+if [ -n "$FIX_COMMIT" ]; then
+  BASE_COMMIT="$(git rev-parse "${FIX_COMMIT}^" 2>/dev/null || true)"
+fi
+if [ -n "$BASE_COMMIT" ]; then
+  git show "${BASE_COMMIT}:$ANL" > "$TMP/base-engine/rule-analyzer.js" 2>/dev/null
+  git show "${BASE_COMMIT}:QiReaderLite/Resources/engine/engine.js" > "$TMP/base-engine/engine.js" 2>/dev/null
+  echo "    (基座 = 修复前的 commit ${BASE_COMMIT:0:8})"
+else
+  # 兜底：把「保护」去掉 = 修复前的行为
+  echo "    (找不到修复前的 commit ⇒ 用「去掉保护」当基座)"
+  python3 - <<'PYMUTBASE'
+p = "QiReaderLite/Resources/engine/rule-analyzer.js"
+s = open(p, encoding="utf-8").read()
+old = "if (!isJsPrefixed) {"
+new = "if (true) {"
+assert old in s, "锚点没找到"
+open(p, "w", encoding="utf-8").write(s.replace(old, new, 1))
+PYMUTBASE
+  cp "$ANL" "$TMP/base-engine/rule-analyzer.js"
+  restore
+fi
 if [ ! -s "$TMP/base-engine/rule-analyzer.js" ]; then
-  ok 1 "取不到 HEAD 版的 rule-analyzer.js（git show 失败）"
+  ok 1 "取不到修复前的 rule-analyzer.js（git show 失败）"
 else
   QR_ENGINE_DIR="$TMP/base-engine" node test/js-rule-tail-contract.test.js > "$TMP/base.txt" 2>&1
   rc=$?
