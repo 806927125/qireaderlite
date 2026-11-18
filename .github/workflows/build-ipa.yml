@@ -57,16 +57,27 @@ jobs:
             -resolvePackageDependencies \
             > resolve.log 2>&1 || true
           # ⚠️ resolve 失败也要看得见（否则后面 revision 抓不到 ⇒ 显示 unknown）
-          grep -E "error:|Checking out main" resolve.log | head -10 || true
+          grep -E "error:|Checking out main|Fetching|Cloning" resolve.log | head -10 || true
+          # ⭐⭐⭐ **2026-11-19：本地包也要解析它的远程依赖**（SwiftSoup / Kanna）
+          #   ⚠️ 这两个依赖必须从 GitHub 拉 ⇒ runner 网络抖 ⇒ 失败要**看得见**（不许假绿）⭐⭐⭐
+          echo "--- 本地包的依赖 checkout ---"
+          ls build/dd/SourcePackages/checkouts/ 2>/dev/null | head -10 || echo "(无 SPM checkout 目录)"
           # ⭐⭐⭐ 抓引擎真实 revision（**直接读 SPM checkout 出来的引擎目录的 git HEAD**）
           #   ⚠️⚠️ **别去 grep `b.log`**（那句 `Checking out main (...)` 在 **SPM resolve 的输出**里
           #   ⇒ 不在 b.log ⇒ 抓不到 ⇒ 注入成了空值 ⇒ 二进制里显示 unknown）⭐⭐⭐
-          ENG_DIR="build/dd/SourcePackages/checkouts/legado-engine"
-          # ⭐⭐⭐ **用完整 40 位 sha**（不是 short=12）
+          # ⭐⭐⭐⭐⭐ **2026-11-19：引擎已整体替换 ⇒ 不再有「SPM checkout 出来的引擎目录」**
+          #   老引擎是**远程 SPM 包**（`legado-engine`）⇒ revision 取它 checkout 目录的 git HEAD；
+          #   现在引擎 = **仓库内本地包**（`LegadoEngine/`）⇒ 它的 revision 就是**本仓库的 HEAD** ⭐⭐⭐
+          #   ⇒ 引擎代码与 App 代码同仓 ⇒ 同一个 sha 既是 App 修订也是引擎修订（更准）⭐⭐⭐
+          # ⚠️ **用完整 40 位 sha**（不是 short=12）
           #   ⚠️ **12 位会被 Swift 内联成 SmallString** ⇒ 二进制里**不连续** ⇒ **搜不到** ⇒
           #   ⇒ 验包时以为「没注入」，其实是**注入成功了但搜不到** ⇒ 白查一轮 ⭐⭐⭐
           #   ⇒ 40 位（40 字节）⇒ 不内联 ⇒ 连续存放 ⇒ **可搜、可验** ⭐⭐⭐
-          LEGADO_REV="$(git -C "$ENG_DIR" rev-parse HEAD 2>/dev/null || true)"
+          LEGADO_REV="$(git rev-parse HEAD 2>/dev/null || true)"
+          # （老路径兜底：万一哪天又换回远程 SPM 包）
+          if [ -z "$LEGADO_REV" ]; then
+            LEGADO_REV="$(git -C build/dd/SourcePackages/checkouts/legado-engine rev-parse HEAD 2>/dev/null || true)"
+          fi
           if [ -z "$LEGADO_REV" ]; then LEGADO_REV="unknown"; fi
           echo "注入的引擎 revision = $LEGADO_REV"
           # ⭐⭐⭐⭐⭐ **生成 revision 文件**（2026-10-25 真机教训 ⇒ 不用 `-D` 宏）
