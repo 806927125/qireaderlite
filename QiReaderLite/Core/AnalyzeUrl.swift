@@ -32,6 +32,13 @@ public struct AnalyzedURL {
     public var headers: [String: String]
     public var body: String
     public var baseUrl: String
+    /// ⭐⭐⭐ **站方在 URL 选项里显式指定的字符集**（`url,…,{"charset":"gbk"}`）
+    ///
+    /// ⚠️ **为什么要它**：老站（GBK/GB2312/Big5）**常常不声明或声明错** `Content-Type` 的 charset
+    ///   ⇒ 只按响应头解码 ⇒ **乱码** ⇒ 轻阅里「书能出来、标题全是乱码」
+    ///   ⇒ 而栖阅（AnalyzeUrl 的选项键全集里有 `charset`）能正常 ⇒ **两边表现不一致**
+    ///   ⇒ 站方显式指定的 charset **优先于**响应头 ⭐⭐⭐
+    public var charset: String
 }
 
 public enum AnalyzeUrl {
@@ -163,7 +170,7 @@ public enum AnalyzeUrl {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
         if lower.hasPrefix("data:") || lower.hasPrefix("blob:") || lower.hasPrefix("qireaderlite:") {
-            return AnalyzedURL(url: trimmed, method: "GET", headers: [:], body: "", baseUrl: trimmed)
+            return AnalyzedURL(url: trimmed, method: "GET", headers: [:], body: "", baseUrl: trimmed, charset: "")
         }
         let (urlPart, opt) = splitOptions(raw)
 
@@ -215,8 +222,11 @@ public enum AnalyzeUrl {
             }
         }
 
+        // ⭐⭐⭐ 站方显式指定的字符集（`url,…,{"charset":"gbk"}`）⇒ 优先于响应头
+        let charset = String((opt["charset"] as? String) ?? "")
+
         return AnalyzedURL(url: abs, method: method, headers: headers,
-                           body: body, baseUrl: dirOf(abs))
+                           body: body, baseUrl: dirOf(abs), charset: charset)
     }
 
     // MARK: - 字符判定

@@ -1099,6 +1099,12 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
         let hasOption = AnalyzeUrl.hasOptionSuffix(raw)
         let methodFromOptions = hasOption ? parsed.method : (args["method"] as? String ?? "GET")
         let bodyFromOptions = hasOption ? parsed.body : (args["body"] as? String ?? "")
+        // ⭐⭐⭐ **站方显式指定的字符集**（`url,…,{"charset":"gbk"}`）
+        //   ① URL 里还带着选项 ⇒ 直接用 AnalyzeUrl 解出来的
+        //   ② 引擎已经把选项剥掉了（JS 侧 analyzeUrl 干的）⇒ 用 JS 透传过来的 args["charset"]
+        //   ⚠️ **站方指定的优先于响应头**（老站常不声明或声明错 ⇒ 只按响应头解会乱码）⭐⭐⭐
+        var charsetName = hasOption ? parsed.charset : (args["charset"] as? String ?? "")
+        if charsetName.isEmpty { charsetName = (args["charset"] as? String ?? "") }
         guard let u = Self.parseURL(parsed.url) else {
             return ["ok": false, "error": "URL 非法: \(args["url"] as? String ?? "nil")"]
         }
@@ -1191,7 +1197,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
             let per = max(3.0, timeout / Double(attempts - i))   // 越重试越短，别把总时长吃光
             var r1 = req
             r1.timeoutInterval = per
-            result = await Self.perform(req: r1, session: session)
+            result = await Self.perform(req: r1, session: session, charsetName: charsetName)
             let code = result["code"] as? Int ?? 0
             let failed = (result["error"] != nil) || code == 0
             if !failed {
@@ -1217,7 +1223,7 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
                 req2.httpMethod = method
                 req2.httpBody = req.httpBody
                 req2.allHTTPHeaderFields = req.allHTTPHeaderFields
-                var r2 = await Self.perform(req: req2, session: session)
+                var r2 = await Self.perform(req: req2, session: session, charsetName: charsetName)
                 if r2["ok"] as? Bool == true {
                     r2["httpsUpgraded"] = true
                     result = r2
@@ -1228,11 +1234,15 @@ final class RuleSandbox: NSObject, ObservableObject, WKScriptMessageHandler {
     }
 
     /// 真发一次请求。抽出来是为了能在 ATS 拦截时**换 https 再试一次**。
-    private static func perform(req: URLRequest, session: URLSession) async -> [String: Any] {
+    private static func perform(req: URLRequest, session: URLSession,
+                                charsetName: String = "") async -> [String: Any] {
         do {
             let (data, resp) = try await session.data(for: req)
             let http = resp as? HTTPURLResponse
-            let charset = Self.charset(of: http?.textEncodingName)
+            // ⭐ 站方指定的 charset **优先**；没有才按响应头（老站常不声明 ⇒ 乱码）
+            let charset = charsetName.isEmpty
+                ? Self.charset(of: http?.textEncodingName)
+                : Self.charset(of: charsetName)
             let text = String(data: data, encoding: charset)
                 ?? String(data: data, encoding: .utf8)
                 ?? ""

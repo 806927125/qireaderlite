@@ -163,5 +163,20 @@ ok(rawSplit.url == "https://cdn.uaa010.com/file/bucket-media/image/cover/x.jpg",
 ok(rawSplit.optionsJSON.hasPrefix("{") && rawSplit.optionsJSON.contains("Referer"),
    "⭐ splitOptionsRaw 返回原始后缀文本（带请求头）")
 
+// ───────── ⑥ charset（站方 URL 选项）──
+print("\n── 6. charset（站方 URL 选项 `,\"charset\":\"gbk\"`）──")
+// ⚠️ 为什么要它：老站（GBK/GB2312）**常不声明或声明错** Content-Type 的 charset
+//   ⇒ 只按响应头解码 ⇒ **乱码**（柴阅/栖阅按站方指定的解 ⇒ 正常）
+//   ⇒ 语料里 3 个源用它：同人小说（gb2312）/ 晋江文学（gbk）/ 998读书（GBK）⭐⭐⭐
+let gbk = AnalyzeUrl.parse("http://x.com/s?k=1,{\"charset\":\"gbk\"}", baseUrl: "")
+ok(gbk.charset == "gbk", "⭐⭐⭐ 选项里的 charset 被解析出来（gbk）")
+ok(gbk.url == "http://x.com/s?k=1", "⭐ charset 不影响 URL 本身")
+let gb2312 = AnalyzeUrl.parse("http://x.com/r/0/1.html?t=1&k={{key}},{\"charset\": \"gb2312\"}", baseUrl: "")
+ok(gb2312.charset == "gb2312", "⭐ gb2312 也认（JSON 里带空格的那种写法）")
+let noCs = AnalyzeUrl.parse("https://x.com/s?k=1", baseUrl: "")
+ok(noCs.charset == "", "没有选项 ⇒ charset 为空（⇒ 原生按响应头解）")
+ok(noCs.charset.isEmpty && AnalyzeUrl.parse("https://x.com/y", baseUrl: "").charset.isEmpty,
+   "⭐ 普通 URL 不受影响")
+
 print("\n" + (fail == 0 ? "✅" : "❌") + " 通过 \(pass) / 失败 \(fail)")
 exit(fail == 0 ? 0 : 1)

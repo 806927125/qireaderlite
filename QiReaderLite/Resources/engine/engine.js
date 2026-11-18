@@ -454,7 +454,10 @@
       method: method,
       body: body,
       headers: headers,
-      baseUrl: newBase
+      baseUrl: newBase,
+      // ⭐⭐⭐ **站方显式指定的字符集**（`url,…,{"charset":"gbk"}`）⇒ 原生按它解码
+      //   ⇒ 老站（GBK/GB2312）常不声明 charset ⇒ 只按响应头解 ⇒ **乱码**（栖阅正常）⭐⭐⭐
+      charset: String(opt.charset || '')
     };
   }
 
@@ -746,7 +749,7 @@
     }
     return QR.java.rawRequest(target.url, target.method || 'GET',
                               target.headers || {}, target.body || '',
-                              target.timeout || 20000)
+                              target.timeout || 20000, target.charset || '')
       .then(function (resp) {
         runtime.baseUrl = resp.url || target.url;
         return {
@@ -1585,7 +1588,8 @@
           out.方式 = target.method || 'GET';
           if (!target.url) { out.结论 = '分类 URL 为空'; return out; }
           return QR.java.rawRequest(target.url, target.method || 'GET',
-                                    target.headers || {}, target.body || '', 20000)
+                                    target.headers || {}, target.body || '', 20000,
+                                    target.charset || '')
             .then(function (resp) {
               var body = resp._body || resp.body || '';
               out.最终URL = resp.url || resp._url || '';
@@ -1841,7 +1845,8 @@
         .then(function (tgt) {
         var url = tgt.url;
         if (!url) return { book: null, error: '书籍 URL 为空' };
-        return fetchPage({ url: url, method: tgt.method, headers: tgt.headers || {}, body: tgt.body },
+        return fetchPage({ url: url, method: tgt.method, headers: tgt.headers || {}, body: tgt.body,
+                          charset: tgt.charset || '' },
                          { baseUrl: url }).then(function (page) {
           var ctx = { baseUrl: page.url, source: src, book: p.book };
           markContent(ctx, page);
@@ -1998,7 +2003,8 @@
             url: u,
             method: (offset === 0 ? tgt.method : 'GET'),
             headers: (offset === 0 ? (tgt.headers || {}) : {}),
-            body: (offset === 0 ? (tgt.body || '') : '')
+            body: (offset === 0 ? (tgt.body || '') : ''),
+            charset: (offset === 0 ? (tgt.charset || '') : '')
           }, ctx).then(function (page) {
             try {
               QR.java.log('[目录] 返回 最终url=' + brief(page.url) +
@@ -2168,7 +2174,8 @@
         //    「Cannot read properties of undefined (reading 'getVariable')」
         //    → 整条规则静默失效 → **正文是空的**（标题倒是对的，因为那条规则不用 book）
         var ctx = { baseUrl: url, source: src, chapter: p.chapter, book: p.book };
-        return fetchPage({ url: url, method: tgt.method, headers: tgt.headers || {}, body: tgt.body },
+        return fetchPage({ url: url, method: tgt.method, headers: tgt.headers || {}, body: tgt.body,
+                          charset: tgt.charset || '' },
                          ctx).then(function (page) {
           markContent(ctx, page);
           // webJs：给站方解密/改写正文用，跑完拿它吐出的 HTML

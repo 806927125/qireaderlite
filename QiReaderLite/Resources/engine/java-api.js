@@ -393,7 +393,7 @@
     return out;
   }
 
-  function rawRequest(url, method, headers, data, timeout, _swapped) {
+  function rawRequest(url, method, headers, data, timeout, charset, _swapped) {
     // ⚠️⚠️⚠️ **`data:` 伪 URL 绝不能真去 fetch**（2026-10-22 真机栽在这）
     //   聚合源（🍅大灰狼）的 bookUrl / tocUrl / chapterUrl 全是这种：
     //       data:;base64,<载荷>,{"type":"qingtian2"}
@@ -440,7 +440,11 @@
       method: String(method || 'GET').toUpperCase(),
       headers: headers || {},
       body: data == null ? '' : String(data),
-      timeout: __t
+      timeout: __t,
+      // ⭐⭐⭐ **站方显式指定的字符集**（`url,…,{"charset":"gbk"}`）
+      //   ⇒ 原生按它解码（老站常不声明或声明错 charset ⇒ 只按响应头解会乱码）
+      //   ⇒ 栖阅的 URL 选项键全集里就有 `charset` ⇒ **两边行为对齐** ⭐⭐⭐
+      charset: charset ? String(charset) : ''
     }, __waitMs).then(function (r) {
       if (!r || r.ok === false) throw new Error((r && r.error) || '请求失败');
       // ⚠️⚠️⚠️ **5xx ⇒ 这条线路挂了 ⇒ 自动换一条线路重试**（2026-10-22 真机「QQ 阅读目录出不来」）
@@ -475,7 +479,7 @@
             QR.java.log('[换线] ' + __code + ' ⇒ 这条线路挂了 ⇒ 换 ' + picked
               + ' 重试一次：' + String(url).slice(0, 120));
           } catch (e) {}
-          return rawRequest(alt, method, headers, data, timeout, true).then(function (r2) {
+          return rawRequest(alt, method, headers, data, timeout, charset, true).then(function (r2) {
             // ⚠️ 换过去的那条**也失败**了 ⇒ 把它也记进「已试挂」
             //   （不记 ⇒ 每轮都在同样两条线之间来回打 ⇒ 白白多打一倍请求）
             try {
