@@ -7,6 +7,18 @@
 > · **栖阅** = 用户真机在用的宿主（**语义权威**）
 > · **轻阅老引擎** = `QiReaderLite/Resources/engine/*.js`（WKWebView，**产品默认**，`EngineMode.webView`）
 > · **legado-engine** = 自研 Swift 引擎（**回退**，`EngineMode.swiftEngine`）
+>
+> ---
+>
+> ## ⚠️ 2026-11-19 · 本文档的「三列」已过期
+>
+> 引擎已**整体替换**为用户提供的 `LegadoEngine` ⇒ **轻阅老引擎**与 **legado-engine** 都已**物理删除**：
+> · 现在的产品引擎 = **`LegadoEngine/`**（用户上传的包：AnalyzeRule / AnalyzeUrl / Kanna 真 XPath / Rhino 兼容 JS shim / 自带 HTTPClient）
+> · 语义权威仍是**栖阅**；本对照表的「轻阅缺哪些」⇒ 现在的缺口是「**新引擎缺哪些**」
+> · 替换记录 / 门禁 / 未验证项 ⇒ 见 **[`引擎整体替换-用户提供的LegadoEngine.md`](引擎整体替换-用户提供的LegadoEngine.md)**
+>
+> ⭐ 本文档的**结论部分**（10.7 已移植的字段、10.8 待搬清单）仍是**有效的工作底账**：
+>   那些语义（在 legado-E / 栖阅口径下）**新引擎要么已有、要么照单逐条补**。
 
 ---
 
