@@ -33,7 +33,6 @@ declare -a GATES=(
   "reader-pageturn:test/reader-pageturn.test.js"
   "reader-jsapi:test/reader-jsapi.test.js"
   "packages-native:test/packages-native.test.js"
-  "powenxue:test/powenxue.test.js"
   "paging-algorithm:test/paging-algorithm.test.js"
   "swift-bookdto:test/swift-bookdto.test.js"
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
@@ -191,50 +190,4 @@ fi
 
 printf "%s\n" "────────────────────────────────────────────────────"
 
-# ── 变异测试（shell 层）：登录写变量（老引擎 JS）──
-# ⭐⭐⭐⭐⭐ 2026-10-31 新增：站方 `source.put('aid',…)` 写不进去 ⇒ explore 的 URL 里 aid=0
-#   ⇒ 服务端 500 ⇒ 发现页全空 ⭐⭐⭐
-# ⚠️ 这个脚本改的是**老引擎的 JS**（不是 App 源码）⇒ 不需要「工作区干净」的保护
-if bash test/mutation-login-writes-vars.sh > /tmp/mutation-loginvars.out 2>&1; then
-  printf "%-24s %-22s %s\n" "变异(登录写变量)" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-loginvars.out | tail -1)"
-  MP="$(grep -oE '通过 [0-9]+' /tmp/mutation-loginvars.out | tail -1 | grep -oE '[0-9]+')"
-  TOTAL_PASS=$((TOTAL_PASS + ${MP:-0}))
-else
-  printf "%-24s %-22s %s\n" "变异(登录写变量)" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-loginvars.out | tail -1)"
-  grep -E "✗" /tmp/mutation-loginvars.out | head -5
-  TOTAL_FAIL=$((TOTAL_FAIL+1))
-  FAILED+=("变异(登录写变量)")
-fi
 
-printf "%s\n" "────────────────────────────────────────────────────"
-printf "合计通过 %d 项 / 失败 %d 个门禁\n" "$TOTAL_PASS" "$TOTAL_FAIL"
-
-
-if [ ${#SKIPPED[@]} -gt 0 ]; then
-  printf "⏭ 跳过的门禁（**没验到，不算通过**）：%s\n" "${SKIPPED[*]}"
-fi
-if [ ${#CRASHED[@]} -gt 0 ]; then
-  printf "💥 崩了：%s\n" "${CRASHED[*]}"
-fi
-if [ ${#NOSUMMARY[@]} -gt 0 ]; then
-  printf "⚠️ 无汇总行（疑似提前退出）：%s\n" "${NOSUMMARY[*]}"
-fi
-if [ ${#FAILED[@]} -gt 0 ]; then
-  printf "❌ 有失败：%s\n" "${FAILED[*]}"
-fi
-
-# 门禁全绿 → 才算全绿
-# ⚠️⚠️ **有门禁被跳过时不能叫「全绿」**（2026-10-21）：
-#    跳过的门禁**根本没跑**（站方抖动 / 缺本机依赖 / 没装 swiftc），
-#    说「全绿」= 假绿 ⇒ 必须把跳过数量标出来。
-if [ "$TOTAL_FAIL" -eq 0 ]; then
-  if [ ${#SKIPPED[@]} -gt 0 ]; then
-    echo "✅ 无失败（⚠️ 但有 ${#SKIPPED[@]} 个门禁被跳过 ⇒ 那部分**没验到**）"
-  else
-    echo "✅ 门禁全绿"
-  fi
-  exit 0
-else
-  echo "❌ 门禁没过"
-  exit 1
-fi

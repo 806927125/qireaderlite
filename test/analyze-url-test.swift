@@ -122,12 +122,12 @@ print("\n=== ⑤ 原生请求层必须走 AnalyzeUrl（2026-10-21 真机「目�
 //    ⇒ 🍅大灰狼的 book_id 是 base64 ⇒ **book_id 被损坏** ⇒ 「有的书能开、有的书开不了」。
 // ⇒ 断言：**原生请求代码里必须有 AnalyzeUrl.parse**，别让它退回死代码。
 if let path = ProcessInfo.processInfo.environment["QR_REPO_DIR"],
-   let text = try? String(contentsOfFile: path + "/QiReaderLite/Core/RuleSandbox.swift", encoding: .utf8) {
+   let text = try? String(contentsOfFile: path + "/QiReaderLite/Core/EngineLogPanel.swift", encoding: .utf8) {
     let code = text.replacingOccurrences(of: "//.*\n", with: "\n", options: .regularExpression)
     ok(code.contains("AnalyzeUrl.parse("), "原生请求层调了 AnalyzeUrl.parse（query 语义跟沙盒一致）")
     ok(code.contains("AnalyzeUrl.hasOptionSuffix("), "原生请求层用 hasOptionSuffix 区分两条链")
 } else {
-    ok(false, "拿不到 RuleSandbox.swift（QR_REPO_DIR 没设）")
+    ok(false, "拿不到 EngineLogPanel.swift（QR_REPO_DIR 没设）")
 }
 // data: 伪 URL 必须原样（载荷是 base64，百分号编码会改掉里面的 + /）
 let dataParsed = AnalyzeUrl.parse("data:;base64,eyJib29rX2lkIjoiTnpBNE5qYzQ+,{\"type\":\"qingtian3\"}", baseUrl: "")

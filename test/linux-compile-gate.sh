@@ -59,6 +59,9 @@ FILES=(
   # ⚠️ **`EngineLogPanel.swift` 不在这儿**：它 import UIKit ⇒ Linux 编不到
   #   ⇒ 走 `test/linux-compile-stubs.swift` 里的 **同名 stub**（只给签名）⭐⭐⭐
   "QiReaderLite/Core/EngineLog.swift"
+  # ⭐ **`HostKit.swift`**（纯 Foundation：请求头编解码 / cookie 罐 / 缓存 / 沙盒 FS）⭐⭐⭐
+  "QiReaderLite/Core/HostKit.swift"
+  "QiReaderLite/Core/AppPaths.swift"
   "QiReaderLite/Core/AnalyzeUrl.swift"
 )
 

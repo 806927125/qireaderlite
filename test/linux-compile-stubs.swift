@@ -1,9 +1,9 @@
 import Foundation
-// ⭐⭐⭐⭐⭐ **链【真引擎】**（`legado-engine` 的 SPM 产物）⇒ 能编 `LegadoEngineBackend.swift`
-//   ⇒ 那个文件 import LegadoCore ⇒ 光靠 stub 隔不掉 ⇒ 必须链真模块 ⭐⭐⭐
-//   ⚠️ 门禁在「找不到 LegadoCore 模块」时**显式 SKIP**（不许假绿）⭐
-#if canImport(LegadoCore)
-import LegadoCore
+// ⭐⭐⭐⭐⭐ **链【真引擎】**（`LegadoEngine/` 本地包的 SPM 产物）⇒ 能编 `LegadoEngineBackend.swift`
+//   ⇒ 那个文件 import LegadoEngine ⇒ 光靠 stub 隔不掉 ⇒ 必须链真模块 ⭐⭐⭐
+//   ⚠️ 门禁在「找不到 LegadoEngine 模块」时**显式 SKIP**（不许假绿）⭐
+#if canImport(LegadoEngine)
+import LegadoEngine
 #endif
 
 // MARK: - ⭐⭐⭐⭐⭐ **本文件是「Linux 编译门禁」的夹具**（不是生产代码）
@@ -19,7 +19,6 @@ import LegadoCore
 
 /// ⭐ 只给签名 —— 真身有 UIKit ⇒ Linux 编不到
 /// ⚠️ 2026-11-19：老 `RuleSandbox`（WebView 引擎壳）已删 ⇒ 日志/诊断搬到 `EngineLogPanel`
-///   ⇒ 而**纯 Foundation 的日志出口**是 `EngineLog.swift`（真文件 ⇒ 门禁真编）⭐⭐⭐
 final class EngineLogPanel {
     static let shared = EngineLogPanel()
     /// ⭐ 真身：`func appendLog(_ line: String)`
@@ -30,40 +29,6 @@ final class EngineLogPanel {
     static func diskLogText() -> String { "" }
     /// ⭐ 真身：`static var userAgent: String`
     static var userAgent: String { "stub" }
-}
-
-// MARK: - Stub：`CookieJar`（真身在 RuleSandbox.swift）
-
-enum CookieJar {
-    /// ⭐ 真身：`CookieJar.snapshot() -> [String: String]`
-    static func snapshot() -> [String: String] {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CookieJar.cookieString(for url: String) -> String`
-    static func cookieString(for url: String) -> String {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CookieJar.set(_ cookie: String, for url: String)`
-    static func set(_ cookie: String, for url: String) {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CookieJar.remove(for url: String)`
-    static func remove(for url: String) {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-}
-
-// MARK: - Stub：`CacheFiles`（真身在 RuleSandbox.swift）
-
-enum CacheFiles {
-    /// ⭐ 真身：`CacheFiles.write(_ path: String, _ text: String) -> Bool`
-    static func write(_ path: String, _ text: String) -> Bool {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
-    /// ⭐ 真身：`CacheFiles.read(_ path: String) -> String?`
-    static func read(_ path: String) -> String? {
-        fatalError("stub：门禁只做编译检查，不许真跑")
-    }
 }
 
 // MARK: - Stub：`EngineBackend`（真身在 EngineBackend.swift）
@@ -108,7 +73,7 @@ enum AppDecoder {
     }
 }
 
-// MARK: - ⭐⭐⭐⭐⭐ 引擎版本片段（2026-11-19：引擎整个换成 `LegadoEngine`）
+// MARK: - ⭐⭐⭐⭐⭐ 引擎 revision 片段（2026-11-19：引擎整个换成 `LegadoEngine`）
 //
 // ⚠️ 2026-10-25 build254 CI 实证：真实代码里写的是 `Self.engineRevision`
 //   ⇒ Swift 报 `covariant 'Self' type cannot be referenced from a stored property initializer`
