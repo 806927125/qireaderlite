@@ -26,6 +26,7 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **引擎替换契约**（2026-11-19：老的两条引擎全删 ⇒ 换成 `LegadoEngine`）
   #   ⇒ 钉住：老引擎痕迹为零 · 新引擎在位 · op 接线齐全 · 变量契约不丢 · 新引擎自带测试绿
   "engine-replacement-contract:test/engine-replacement-contract.test.js"
+  "engine-package-deps:test/engine-package-deps.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"
