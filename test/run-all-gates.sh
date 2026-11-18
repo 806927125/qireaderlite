@@ -141,6 +141,25 @@ done
 
 printf "%s\n" "────────────────────────────────────────────────────"
 
+# ── 变异测试（shell 层）：⭐⭐⭐ **引擎替换契约**（2026-11-19）──
+#   ⇒ 把新引擎接线的「变量回传 / op 接线 / SPM 依赖」改坏 ⇒ 门禁必须红（证明门禁有牙齿）⭐⭐⭐
+#   ⇒ 变异脚本会**真的改源码** ⇒ 跑之前必须 commit（否则改坏的东西会留在工作区）⭐⭐⭐
+if git diff --quiet -- QiReaderLite/ 2>/dev/null; then
+  if bash test/mutation-engine-replacement.sh > /tmp/mutation-repl.out 2>&1; then
+    printf "%-24s %-22s %s\n" "变异(引擎替换)" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-repl.out | tail -1)"
+    MP="$(grep -oE '通过 [0-9]+' /tmp/mutation-repl.out | tail -1 | grep -oE '[0-9]+')"
+    TOTAL_PASS=$((TOTAL_PASS + ${MP:-0}))
+  else
+    printf "%-24s %-22s %s\n" "变异(引擎替换)" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-repl.out | tail -1)"
+    grep -E "✗" /tmp/mutation-repl.out | head -5
+    TOTAL_FAIL=$((TOTAL_FAIL+1))
+    FAILED+=("变异(引擎替换)")
+  fi
+else
+  printf "%-24s %-22s %s\n" "变异(引擎替换)" "⚠️ 跳过" "QiReaderLite/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
+  SKIPPED+=("变异(引擎替换)")
+fi
+
 # ── Swift 原生层：swiftc 真编真跑（Core/ 是纯 Foundation → 沙盒里能跑）──
 # ⚠️ 这一步是「引擎能力用 Swift 写」能落地的**前提**：
 #    能力写在 Swift 里，就得能在沙盒里验（3 秒出结果，不用等 CI）。
