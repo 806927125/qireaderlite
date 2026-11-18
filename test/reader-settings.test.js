@@ -475,27 +475,8 @@ ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假
 ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
    '分隔线是发丝线 1/scale pt（@3x 下 1 物理像素）');
 
-// ── 引擎 JS 桥接（真机报过 code 5）──
-{
-  const fs2 = require('fs');
-  const sb = fs2.readFileSync(path.join(ROOT, 'Core/RuleSandbox.swift'), 'utf8');
-  // ⚠️ JSON.stringify 对 **函数 / Symbol** 返回 undefined（不是字符串），
-  //    脚本返回 undefined → WebKit 抛 code 5「返回结果的类型不受支持」。
-  //    之前只处理了 v === undefined，函数/Symbol 漏了。
-  ok(/typeof s !== 'string'/.test(sb),
-     'JS 桥接：JSON.stringify 结果必须再判一次 typeof（函数/Symbol 会返回 undefined）');
-  ok(/JSON 序列化失败/.test(sb), 'JSON.stringify 抛异常（循环引用）时有兜底错误信息');
-  ok(/JSON 序列化失败/.test(sb) && /typeof s !== 'string'/.test(sb),
-     '脚本无论如何都返回字符串');
-  // 并发：同一个 WKWebView 上并发 callAsyncJavaScript 会让结果类型不受支持。
-  ok(/invokeTail/.test(sb) && /let prev = invokeTail/.test(sb),
-     'invoke 走串行链（并发会触发 code 5）');
-  // ⚠️ 这个类整体是 @MainActor —— 同文件里再声明独立 actor 会被继承全局 actor，
-  //    编译报 "actor ... cannot have a global actor"。所以串行用 Task 链实现。
-  ok(!/private actor InvokeSerializer/.test(sb),
-     '不声明独立 actor（会被 @MainActor 继承 → 编译错）');
-}
-
+// ⭐⭐⭐ 2026-11-19：老引擎的 JS 桥接（`RuleSandbox.swift` 里的 `JSON.stringify` 兜底）
+//   已随老引擎退役 ⇒ 这段断言随之删除（新引擎的桥在 `LegadoEngine/…/JS/`）⭐⭐⭐
 // ── 换阅读背景要**立刻**生效 ──
 // 真机症状：「换背景只有状态栏生效，要重进正文才变过来」。
 // 根因：layoutConfig 是 computed（主题色在里面），但只有 syncPager 重新求值
