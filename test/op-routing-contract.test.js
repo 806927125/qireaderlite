@@ -96,7 +96,9 @@ ok(/invokeWebViewEngine/.test(svc), '⭐⭐⭐ 有 WebView 引擎通路（阅读
 ok(/invokeNewEngine/.test(svc), '⭐⭐⭐ 自研 Swift 引擎通路保留（回退用）');
 ok(/RuleSandbox\.shared\.invoke\(op, payload, source: source\)/.test(svc),
    '⭐⭐⭐ WebView 通路真的走 RuleSandbox.invoke（规则求值在 WebView 里做）');
-ok(/return \.webView/.test(mode), '⭐⭐⭐⭐⭐ 默认引擎 = WebView 引擎（阅读2.0 同款架构）');
+// ⭐⭐⭐⭐⭐ **默认引擎 = 自研 Swift 引擎**（2026-11-18：语义口径统一到 legado-E/栖阅 那一套）
+ok(/return \.swiftEngine/.test(mode), '⭐⭐⭐⭐⭐ 默认引擎 = 自研 Swift 引擎（已对齐 legado-E/栖阅 语义）');
+ok(!/return \.webView/.test(mode), '⭐⭐⭐⭐⭐ 默认不再是 WebView 引擎（口径分叉 ⇒ 对拍无从下手）');
 ok(/case swiftEngine/.test(mode), '⭐⭐⭐ 自研 Swift 引擎仍可切（回退）');
 
 console.log('=== ⑤ 两条通路的返回契约必须一致（站方变量「改没改」不能自证）===');
@@ -105,7 +107,7 @@ ok(/returned != seeded/.test(svc), '⭐⭐⭐⭐⭐ 「改没改」是与种子�
 ok(/ServiceError\.engineFailed/.test(svc), '⭐⭐⭐ WebView 通路把 {error:…} 翻译成失败（不被当成成功）');
 ok(fs.existsSync(path.join(root, 'QiReaderLite/Core/RuleSandbox.swift'))
    && fs.readFileSync(path.join(root, 'QiReaderLite/Core/RuleSandbox.swift'), 'utf8').includes('class RuleSandbox'),
-   "⭐⭐⭐ RuleSandbox 还在（**现在是主引擎** ⇒ 更不能删）");
+   "⭐⭐⭐ RuleSandbox 还在（WebView 引擎降为**手动退路** ⇒ 先留着，别删）");
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

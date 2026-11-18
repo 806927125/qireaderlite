@@ -126,9 +126,24 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
                 guard let k = k as? String else { continue }
                 headers[k] = (v as? String) ?? String(describing: v)
             }
+            // ⭐⭐⭐⭐⭐ **站方指定的 charset 优先**（2026-11-18 · 对齐 Legado/栖阅）
+            //
+            // ⚠️ **为什么必须**：老站（GBK/GB2312）**常不声明或声明错** `Content-Type` 的 charset
+            //   ⇒ 只按响应头/UTF-8 解 ⇒ **正文与标题全乱码** ⇒ 用户看到「这个源在轻阅不行」
+            //   ⇒ 而柴阅（栖阅同构）按站方 `url,…,{"charset":"gbk"}` 解 ⇒ **正常** ⇒ 两边表现不一致 ⭐⭐⭐
+            //   ⇒ 本地 125 源语料实测 **15 个源**用 charset（吾爱小说 / 晋江 / 998读书 / 同人小说…）⭐⭐⭐
+            //
+            // ⚠️ **解码在这里做**（不是引擎里）⇒ 因为 iOS 才有 CFString 的 GB18030/Big5 编码
+            //   ⇒ 引擎（Linux 也能编）只负责把 charset **透传**给宿主 ⭐⭐⭐
+            var outBody = data ?? Data()
+            if !request.charset.isEmpty,
+               let enc = Self.encoding(forCharset: request.charset),
+               let s = String(data: outBody, encoding: enc) {
+                outBody = Data(s.utf8)
+            }
             box.succeed(HTTPResponse(statusCode: http?.statusCode ?? 0,
                                       headers: headers,
-                                      body: data ?? Data(),
+                                      body: outBody,
                                       finalURL: http?.url?.absoluteString))
             sem.signal()
         }.resume()
@@ -157,6 +172,29 @@ final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
                       + " ⇒ \(String(describing: error).prefix(120))")
             throw error
         }
+    }
+
+    /// ⭐⭐⭐ **站方 `charset` ⇒ 字符串编码**（Legado/栖阅 口径）
+    ///
+    /// ⚠️ 老站常用：GBK / GB2312（⇒ 一律用 GB18030 解，覆盖 GBK/GB2312）· Big5 · EUC-JP
+    /// ⇒ 认不出来就返回 nil ⇒ 落回 UTF-8（与宿主行为一致）
+    static func encoding(forCharset raw: String) -> String.Encoding? {
+        let n = raw.lowercased().trimmingCharacters(in: .whitespaces)
+        if n.isEmpty { return nil }
+        if n.contains("gb") {
+            return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
+                CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+        }
+        if n.contains("big5") {
+            return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
+                CFStringEncoding(CFStringEncodings.big5.rawValue)))
+        }
+        if n.contains("euc") {
+            return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
+                CFStringEncoding(CFStringEncodings.EUC_JP.rawValue)))
+        }
+        if n.contains("utf") || n.contains("ascii") { return .utf8 }
+        return nil
     }
 
     /// ⭐ **`data:` 伪 URL 的载荷**

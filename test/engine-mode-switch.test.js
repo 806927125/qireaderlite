@@ -36,7 +36,10 @@ function check({ mode, svc, sheet, backend }) {
   const p = [];
   if (!/enum EngineMode/.test(m)) p.push('缺 EngineMode');
   if (!/case webView/.test(m) || !/case swiftEngine/.test(m)) p.push('EngineMode 缺两条引擎分支');
-  if (!/return \.webView/.test(m)) p.push('默认不是 WebView 引擎（阅读2.0 同款架构）');
+  // ⭐⭐⭐⭐⭐ **默认引擎 = 自研 Swift 引擎**（2026-11-18 用户决定：整个搬过来，老引擎不要了）
+  //   ⇒ 语义口径统一在一处（legado-E / 栖阅 口径）⇒ 差异可对拍 ⇒ 两个引擎并存没法排查
+  if (!/return \.swiftEngine/.test(m)) p.push('⭐⭐⭐ 默认不是自研 Swift 引擎（应已按 legado-E/栖阅 口径对齐）');
+  if (/return \.webView/.test(m)) p.push('默认还是 WebView 引擎 ⇒ 语义口径分叉 ⇒ 对拍无从下手');
   if (!/qr\.engine\.mode/.test(m)) p.push('缺 UserDefaults 键（面板一键切）');
   if (!/EngineMode\.usesWebViewEngine/.test(s)) p.push('invokeEngine 没按引擎模式分流');
   if (!/invokeWebViewEngine/.test(s)) p.push('缺 WebView 引擎通路');
@@ -68,7 +71,7 @@ base.forEach(p => ok(false, p));
 
 /* ---------- 变异对照：门禁必须报红（证明有牙齿） ---------- */
 const mutations = [
-  ['默认改成 swift 引擎', { mode: modeRaw.replace('return .webView', 'return .swiftEngine') }],
+  ['默认改回 webView 引擎', { mode: modeRaw.replace('return .swiftEngine', 'return .webView') }],
   ['分流判断去掉', { svc: svcRaw.replace(/if EngineMode\.usesWebViewEngine \{[\s\S]*?\n        \}/, '') }],
   ['WebView 通路不翻译 error', { svc: svcRaw.replace(/ServiceError\.engineFailed/g, '_ = 0') }],
   ['不判「改没改」', { svc: svcRaw.replace(/returned != seeded/g, 'false') }],

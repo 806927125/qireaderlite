@@ -18,11 +18,17 @@ enum EngineMode: String {
     /// ⭐ UserDefaults 键（自检面板里可一键切）
     static let defaultsKey = "qr.engine.mode"
 
-    /// ⭐⭐⭐ **当前模式**（默认 = WebView 引擎 = 阅读2.0 同款架构）
+    /// ⭐⭐⭐⭐⭐ **当前模式**（默认 = **自研 Swift 引擎**）
+    ///
+    /// ⚠️ **2026-11-18 改默认**（用户决定：「整个搬过来，现在这个引擎不要了」）：
+    ///   把 **legado-E / 栖阅 的规则语义**整体对齐进自研 Swift 引擎 ⇒ 它才是主力
+    ///   ⇒ 默认走它；`.webView`（阅读2.0 同款架构）降为**面板里可手动切的退路**
+    ///   ⇒ 理由：语义口径统一在一处 ⇒ 差异可对拍（差集=0 的四环已成立）⇒
+    ///     两个引擎并存时「同源两个结果不同」没法排查 ⭐⭐⭐
     static var current: EngineMode {
         get {
-            guard let raw = UserDefaults.standard.string(forKey: defaultsKey) else { return .webView }
-            return EngineMode(rawValue: raw) ?? .webView
+            guard let raw = UserDefaults.standard.string(forKey: defaultsKey) else { return .swiftEngine }
+            return EngineMode(rawValue: raw) ?? .swiftEngine
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
