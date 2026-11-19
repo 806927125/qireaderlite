@@ -327,7 +327,7 @@ final class LegadoEngineBackend {
             }
             // ⭐⭐⭐ **站方变量读回**（站方 JS 里的 `source.put(...)` 写进副本了 ⇒ 取出来）⭐⭐⭐
             // ⭐⭐⭐ **剥掉 loginInfo 项**（明文密码不许混进站方变量槽）⭐⭐⭐
-            let stationVar = Self.stripLoginInfo(from: session.collectStationVariable {
+            let stationVar = Session.stripLoginInfo(from: session.collectStationVariable {
                 (try? bridge.eval("source.getVariable()")) as? String
             })
             out["__sourceVars"] = session.variables.getVariable()
@@ -361,12 +361,12 @@ final class LegadoEngineBackend {
                 //     ⇒ 点「🔓 解锁整个源」必然提示「请在下面输入框里填密码」⇒ **永远解锁不了** ⭐⭐⭐
                 //   ⇒ 而「整源解锁密码」正是**这次表单填的** ⇒ 必须并进去 ⭐⭐⭐
                 //   ⇒ 合并规则：**已存的登录信息做底 + 本次表单值覆盖**（与 Legado 语义一致）⭐⭐⭐
-                let mergedLogin = Self.mergeLoginInfo(existing: engineSource.variable.flatMap { Self.loginInfoDict(from: $0) },
+                let mergedLogin = Session.mergeLoginInfo(existing: engineSource.variable.flatMap { Session.loginInfoDict(from: $0) },
                                                       formValues: formValues)
                 var srcWithLogin = engineSource
                 if !mergedLogin.isEmpty {
                     // ⭐ 写进引擎那一格（不动 App 自己的存储 ⇒ 由站方自己 putLoginInfo 决定要不要存）
-                    var m = Self.variableDict(engineSource.variable) ?? [:]
+                    var m = Session.variableDict(engineSource.variable) ?? [:]
                     m["loginInfo"] = mergedLogin
                     if let d = try? JSONSerialization.data(withJSONObject: m),
                        let js = String(data: d, encoding: .utf8) {
@@ -399,7 +399,7 @@ final class LegadoEngineBackend {
             // ⭐⭐⭐ **站方 JS 改过的变量 ⇒ 回传**（宿主落盘 ⇒ 下次直接生效）
             // ⭐⭐⭐ **站方变量读回**（站方 JS 里的 `source.put(...)` 写进副本了 ⇒ 取出来）⭐⭐⭐
             // ⭐⭐⭐ **剥掉 loginInfo 项**（明文密码不许混进站方变量槽）⭐⭐⭐
-            let stationVar = Self.stripLoginInfo(from: session.collectStationVariable {
+            let stationVar = Session.stripLoginInfo(from: session.collectStationVariable {
                 (try? bridge.eval("source.getVariable()")) as? String
             })
             out["__sourceVars"] = session.variables.getVariable()
