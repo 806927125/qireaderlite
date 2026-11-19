@@ -46,6 +46,10 @@ FILES=(
   #   （`ServiceError` 作用域那个错就是这么漏到 CI 的）⭐⭐⭐
   #   ⇒ 现在链**真引擎**编 ⇒ 它的类型错 3 秒就能抓 ⭐⭐⭐
   "QiReaderLite/Core/LegadoEngineBackend.swift"
+  # ⭐⭐⭐⭐⭐ **`ExploreKindsNormalizer.swift`**（2026-11-19 build296 真机实证）
+  #   ⇒ 站方 exploreUrl 的分类归一化（**只依赖 Foundation** ⇒ 沙盒能编能跑）
+  #   ⇒ 独立成文件 ⇒ 对拍门禁能【直接编它】⇒ App 与门禁同源 ⇒ 永不漂 ⭐⭐⭐
+  "QiReaderLite/Core/ExploreKindsNormalizer.swift"
   "QiReaderLite/Core/SourceService.swift"      # ⭐⭐⭐ 本次事故的主角（引擎调用的入口）
   "QiReaderLite/Core/BookSource.swift"
   "QiReaderLite/Core/Book.swift"

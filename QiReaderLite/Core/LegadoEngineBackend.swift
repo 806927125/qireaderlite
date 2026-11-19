@@ -188,8 +188,53 @@ final class LegadoEngineBackend {
             out["total"] = books.count
             out["nextUrl"] = ""
         case "exploreKinds":
-            let kinds = LegadoEngine.exploreKinds(source: engineSource)
-            out = ["kinds": kinds.map { ["title": $0.title, "url": $0.url] }, "filters": []]
+            // ⭐⭐⭐⭐⭐ **动态 exploreUrl 必须【求值】才能拿到分类**（2026-11-19 真机 build296 实证）
+            //
+            //   ⚠️⚠️ **根因**：`LegadoEngine.exploreKinds` 是**静态**解析 `source.exploreUrl`
+            //     （只认 JSON 数组 / `标题::url` 两行式）⇒ **从不求值 `@js:`** ⭐⭐⭐
+            //     而 NovelHub（🍒NovelHub）的 `exploreUrl` 是 **`@js:` 薄壳**（正文在 jsLib 里）
+            //     ⇒ 静态解析把 `@js:` 那行当成 `标题::url` 的「标题」⇒ **url 为空**
+            //     ⇒ `AnalyzeUrl` 对空 url 求值 ⇒ `url 解析失败: ` ⇒ **LegadoError 错误 1** ⭐⭐⭐
+            //     ⇒ **与真机日志逐字吻合**（「url 解析失败:」冒号后为空）⭐⭐⭐
+            //
+            //   ⭐ **权威规格 = 已删的旧引擎**（git `0b5c481^:QiReaderLite/Resources/engine/engine.js`
+            //     的 `exploreKinds`）：**先求值 `@js:`** ⇒ 再 `normalizeKinds`（分类 + 筛选栏 + 分组）
+            //     ⇒ 本函数照抄那条语义 ⭐⭐⭐（引擎换装时丢的就是这条能力 ⇒ 属**能力回退**）
+            //
+            //   ⭐ **为什么在宿主层补、而不是改引擎包**：
+            //     · `LegadoEngine/` 是用户在另一窗口自研的引擎 ⇒ **不越界改它的语义**
+            //     · 宿主层已有先例：`filterAction` / `login` 都是「宿主自己跑站方 JS」
+            //     · 引擎的 `JSBridge` 会自动加载站方 jsLib ⇒ 站方 helper 全都在 ⭐⭐⭐
+            let spec = engineSource.exploreUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if spec.isEmpty {
+                out = ["kinds": [], "filters": []]
+            } else if ExploreKindsNormalizer.isJSRule(spec) {
+                #if canImport(JavaScriptCore) && !os(Linux)
+                // ⭐⭐⭐ **站方 JS 求值**（`@js:` / `<js>`）⇒ 拿站方给的分类 + 筛选栏
+                let host = LegadoJSHost()
+                let bridge = LegadoEngineHost.Bridge(source: engineSource, book: nil,
+                                                     chapter: nil, variables: session.variables, host: host)
+                do {
+                    let raw = try bridge.eval(ExploreKindsNormalizer.stripJSWrapper(spec),
+                                              bindings: ["result": NSNull(), "baseUrl": engineSource.bookSourceUrl,
+                                                         "page": 1, "key": ""])
+                    let norm = ExploreKindsNormalizer.normalizeKinds(raw, baseUrl: engineSource.bookSourceUrl)
+                    out = ["kinds": norm.kinds, "filters": norm.filters]
+                } catch {
+                    // ⚠️⚠️ **不许假成功**（静默返回空 ⇒ 用户看到「没解析出分类」却不知道哪错了）⭐⭐⭐
+                    out = ["kinds": [], "filters": [],
+                           "error": "exploreUrl 求值失败: \(String(describing: error))"]
+                }
+                #else
+                // ⚠️ Linux CI 沙盒没有 JSC ⇒ 无法求值 ⇒ **如实报错**（不假成功）
+                out = ["kinds": [], "filters": [],
+                       "error": "当前平台没有 JavaScriptCore，无法求值 @js: 形式的 exploreUrl"]
+                #endif
+            } else {
+                // ⭐ **静态写法**（JSON 数组 / `标题::url` 两行式）⇒ 引擎那条路是对的，保留
+                let kinds = LegadoEngine.exploreKinds(source: engineSource)
+                out = ["kinds": kinds.map { ["title": $0.title, "url": $0.url] }, "filters": []]
+            }
         case "explore":
             let kind = LegadoEngineHost.Kind(title: (payload["kindTitle"] as? String) ?? "",
                                             url: (payload["kindUrl"] as? String) ?? "")
@@ -261,6 +306,10 @@ final class LegadoEngineBackend {
     }
 
     // MARK: - 形状对齐（App 侧的契约）
+
+    // MARK: - ⭐⭐⭐⭐⭐ 站方 exploreUrl 的 JS 求值 + 归一化（2026-11-19 build296 真机实证）
+
+    /// 归一化结果：**分类**（点得动的）+ **筛选栏**（点不动的 select 项）+ 分组
 
     private static func bookListItem(_ b: LegadoEngineHost.SearchResult) -> [String: Any] {
         [

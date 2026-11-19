@@ -37,6 +37,12 @@ declare -a GATES=(
   #      ⇒ 满屏「cannot find 'EngineLogPanel'」⇒ **沙盒完全看不见**（那个文件 import UIKit ⇒ 只留了 stub）⭐⭐⭐
   #   ⇒ 现在静态扫全工程源码 ⇒ 撞名 / 引用不存在的 `X.shared` **3 秒就抓** ⭐⭐⭐
   "app-type-sanity:test/app-type-sanity.test.js"
+  # ⭐⭐⭐⭐⭐ **站方 exploreUrl 的分类归一化：旧引擎 JS ⇔ 新 Swift 双实现对拍**
+  #   （2026-11-19 真机 build296 实证：换装新引擎丢了「先求值 @js: 的 exploreUrl」⇒ 分类 url 为空
+  #     ⇒ `url 解析失败: ` ⇒ LegadoError 错误 1 ⇒ **发现页整个用不了**⭐⭐⭐）
+  #   ⇒ oracle = git 里**已删的旧引擎**（0b5c481^）的 normalizeKinds/filterParamKey/absolutize
+  #   ⇒ 新 Swift 实现（App 真文件）必须**逐字段一致** ⇒ 抄歪了立刻红 ⭐⭐⭐
+  "explore-kinds-parity:test/explore-kinds-parity.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"
