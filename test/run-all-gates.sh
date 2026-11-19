@@ -52,6 +52,11 @@ declare -a GATES=(
   #     ⇒ 站方 JS 读 `source.get("nhAuthed")` 恒空 ⇒ `nhAuth()` 恒 false ⇒ **主动交白卷**⭐⭐⭐
   #   ⇒ 本门禁钉死：① 灌进 `variable` ② 读回走 `collectStationVariable` ③ 两格不许混 ⭐⭐⭐
   "station-var-channel:test/station-var-channel.test.js"
+  # ⭐⭐⭐⭐⭐ **Apple-only 块的类型错**（2026-11-19 CI build300 实证）
+  #   ⇒ 那段代码在 `#if canImport(JavaScriptCore) && !os(Linux)` 里 ⇒ **Linux 沙盒门禁编不到** ⭐⭐⭐
+  #   ⇒ 我把方法加在【嵌套的 Session】里、调用点却写 `Self.` ⇒ Apple 平台编译失败 ⭐⭐⭐
+  #   ⇒ 静态扫 `Self.<方法>` 的作用域归属 ⇒ **3 秒抓**（不用等 CI 5 分钟）⭐⭐⭐
+  "apple-only-typecheck:test/apple-only-typecheck.test.js"
   "workflow-yaml-gate:test/workflow-yaml-gate.test.js"
   "explore-kinds-parity:test/explore-kinds-parity.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"

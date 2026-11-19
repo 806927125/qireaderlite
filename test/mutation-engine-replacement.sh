@@ -40,9 +40,14 @@ echo "=== ① 变异：把「__sourceVariableChanged」回传删掉 ⇒ 门禁�
 python3 - <<'PYMUT'
 p = "QiReaderLite/Core/LegadoEngineBackend.swift"
 s = open(p, encoding="utf-8").read()
-old = 'out["__sourceVariableChanged"] = (session.variables.getVariable() != session.seeded)'
+# ⚠️⚠️ **锚点必须【跟着实现走】**（2026-11-19 实证）：
+#   站方变量改成【两格合并】后，回传的形态变成 `stationVar != session.stationSeeded`
+#   ⇒ 旧锚点找不到 ⇒ **变异无效 ⇒ 门禁没牙齿**（差点被放过）⭐⭐⭐
+#   ⇒ 而且要**删掉全部两处**（`String.replace` 不带 g 只换第一处！）⭐⭐⭐
+old = 'out["__sourceVariableChanged"] = (stationVar != session.stationSeeded)'
 assert old in s, "锚点没找到（代码形状变了？）"
-open(p, "w", encoding="utf-8").write(s.replace(old, '// 变异：删掉「站方到底改没改」的回传', 1))
+s = s.replace(old, '// 变异：删掉「站方到底改没改」的回传')
+open(p, "w", encoding="utf-8").write(s)
 PYMUT
 run_gate; rc=$?
 [ $rc -ne 0 ] && { ok 0 "变异①（删掉 __sourceVariableChanged）⇒ 门禁红 ✅"; grep -E "✗" "$TMP/gate.txt" | head -3 | sed 's/^/      /'; } \

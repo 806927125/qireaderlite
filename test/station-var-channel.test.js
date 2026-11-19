@@ -88,7 +88,7 @@ console.log('\n=== 2c. 静态断言：回传时必须【剥掉 loginInfo】（�
 //   ⇒ 站方自己的 nhAuthWipe() 也是为了这个（「密码就明文躺在源文件里了」）⭐⭐⭐
 ok(/stripLoginInfo/.test(src), '有 stripLoginInfo（回传前剥掉 loginInfo 项）');
 ok(/stripLoginInfo\(from:/.test(src), '回传时真的调用了 stripLoginInfo');
-ok(/let stationVar = Self\.stripLoginInfo\(from:/.test(src),
+ok(/let stationVar = (?:Self|Session)\.stripLoginInfo\(from:/.test(src),
    '★ 回传的 stationVar 走过 stripLoginInfo（明文密码不进站方变量槽）');
 
 console.log('\n=== 3. 静态断言：书籍变量与站方变量【不许混】 ===');
@@ -163,7 +163,7 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
       fails.push('合并没把书籍变量并进去（nhAuthed 读不到）');
     }
     if (!/m\["loginInfo"\]\s*=\s*mergedLogin/.test(text)) fails.push('loginInfo 没写进引擎那一格（解锁按钮永远失败）');
-    if (!/let stationVar = Self\.stripLoginInfo\(from:/.test(text)) fails.push('回传没剥 loginInfo（明文密码躺盘）');
+    if (!/let stationVar = (?:Self|Session)\.stripLoginInfo\(from:/.test(text)) fails.push('回传没剥 loginInfo（明文密码躺盘）');
     if (!/mergeLoginInfo/.test(text)) fails.push('没有 mergeLoginInfo');
     return fails;
   };
@@ -186,7 +186,9 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     ['loginInfo 不并进引擎那一格（★ 解锁按钮永远失败）',
       (t) => t.replace('m["loginInfo"] = mergedLogin', 'm["loginInfoUnused"] = mergedLogin')],
     ['回传时不剥 loginInfo（★ 明文密码躺盘）',
-      (t) => t.split('Self.stripLoginInfo(from: session.collectStationVariable {')
+      (t) => t.split('Session.stripLoginInfo(from: session.collectStationVariable {')
+              .join('session.collectStationVariable {')
+              .split('Self.stripLoginInfo(from: session.collectStationVariable {')
               .join('session.collectStationVariable {')],
     // ⚠️⚠️ **变异必须【换掉读回的实现】、不是「包一层」**（2026-11-19 实证）：
     //   「包一层 if false」在**文本上**仍留着 `collectStationVariable { … bridge.eval(` ⇒
