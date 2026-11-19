@@ -28,6 +28,10 @@ declare -a GATES=(
   "engine-replacement-contract:test/engine-replacement-contract.test.js"
   "engine-package-deps:test/engine-package-deps.test.js"
   "engine-apple-api:test/engine-apple-api.test.js"
+  # ⭐⭐⭐⭐⭐ **变异对照**（2026-11-19 实证）：证明上面那条门禁**可证伪**
+  #   ⇒ 上一版门禁**断言了错误结论** ⇒ 门禁一直绿 + CI 一直红 ⇒ 两个都对不了 ⭐⭐⭐
+  #   ⇒ 变异＝把实现改坏 ⇒ 门禁**必须红** ⇒ 否则那条断言就是摆设 ⭐⭐⭐
+  "engine-apple-api-mutation:test/engine-apple-api.mutation.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"

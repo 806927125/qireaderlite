@@ -181,7 +181,9 @@ extension JSBridge {
         case "jInflate": return Self.signedArray(Self.deflate(Self.dataArg(a.first), compress: false, nowrap: bool(a, 1)))
         case "jRandomBytes":
             var d = Data(count: max(0, Int(num(a, 0) ?? 0)))
-            _ = d.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!) }
+            _ = d.withUnsafeMutableBytes { (b: UnsafeMutableRawBufferPointer) in
+                SecRandomCopyBytes(kSecRandomDefault, b.count, b.baseAddress!)
+            }
             return Self.signedArray(d)
         case "b64Bytes": return Self.dataArg(a.first).base64EncodedString()
         case "hexBytes": return Self.dataArg(a.first).map { String(format: "%02x", $0) }.joined()
@@ -645,7 +647,9 @@ extension JSBridge {
         case "SHA1": return Data(Insecure.SHA1.hash(data: data))
         case "SHA224":
             var out = [UInt8](repeating: 0, count: Int(CC_SHA224_DIGEST_LENGTH))
-            data.withUnsafeBytes { _ = CC_SHA224($0.baseAddress, CC_LONG(data.count), &out) }
+            data.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
+                _ = CC_SHA224(b.baseAddress, CC_LONG(data.count), &out)
+            }
             return Data(out)
         case "SHA256": return Data(SHA256.hash(data: data))
         case "SHA384": return Data(SHA384.hash(data: data))
@@ -666,7 +670,7 @@ extension JSBridge {
         case "SHA1": return Data(HMAC<Insecure.SHA1>.authenticationCode(for: msg, using: k))
         case "SHA224":
             var out = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-            key.withUnsafeBytes { kk in msg.withUnsafeBytes { mm in
+            key.withUnsafeBytes { (kk: UnsafeRawBufferPointer) in msg.withUnsafeBytes { (mm: UnsafeRawBufferPointer) in
                 CCHmac(CCHmacAlgorithm(kCCHmacAlgSHA224), kk.baseAddress, key.count, mm.baseAddress, msg.count, &out)
             } }
             return Data(out.prefix(Int(CC_SHA224_DIGEST_LENGTH)))
@@ -703,55 +707,56 @@ extension JSBridge {
         //   · `compression_algorithm(rawValue:)`         0=ZLIB
         //   · `compression_status(rawValue:)`            0=OK 1=END -1=ERROR
         //   · `compression_stream_flags(rawValue:)`      1=FINALIZE
-        var stream = compression_stream()
-        // ⚠️⚠️⚠️ **CI 自省（读 SDK compression.h）拿到的真实值**（2026-11-19）：
+        // ⭐⭐⭐⭐⭐⭐ **CI 编译器自己的 note 给出的真身**（2026-11-19 build296 实证）：
+        //   note: 'init(dst_ptr:dst_size:src_ptr:src_size:state:)' declared here
+        //   ⇒ C struct 被 Swift 导入成**成员构造器要 5 个参数** ⇒ **没有零参 init** ⭐⭐⭐
+        //   ⇒ 之前写 `compression_stream()` ⇒ 编译器转而挑 `compression_decode_buffer` 重载
+        //      ⇒ 报「missing arguments for parameters 'dst_ptr'...」**极具误导性** ⭐⭐⭐
+        var stream = compression_stream(dst_ptr: nil, dst_size: 0, src_ptr: nil, src_size: 0, state: nil)
+        // ⭐⭐⭐⭐⭐ **CI 自省（读 SDK compression.h）拿到的权威值**（2026-11-19）：
         //   COMPRESSION_STREAM_ENCODE = 0 / COMPRESSION_STREAM_DECODE = 1
-        //   COMPRESSION_ZLIB           = **0x205**（不是 0！！）⭐⭐⭐
+        //   COMPRESSION_ZLIB           = **0x205**（不是 0！！写 0 会静默用错算法）⭐⭐⭐
         //   COMPRESSION_STATUS_OK = 0 / END = 1 / ERROR = -1
         //   COMPRESSION_STREAM_FINALIZE = 0x0001
-        // ⚠️ **rawValue 是 UInt32** ⇒ `Int32(...)` 编不过 ⇒ **ERROR 的 -1 也编不过**（UInt32 没有负数）
-        //   ⇒ ⇒ 不构造 ERROR，改用「不是 OK 也不是 END ⇒ 失败」⭐⭐⭐
-        // ⭐⭐⭐⭐⭐ **CI 自省（读 SDK compression.h）拿到的权威值**：
-        //   COMPRESSION_STREAM_ENCODE = 0 / COMPRESSION_STREAM_DECODE = 1
-        //   COMPRESSION_ZLIB           = **0x205**（不是 0！！）⭐⭐⭐
-        //   COMPRESSION_STATUS_OK = 0 / END = 1 / ERROR = -1
-        //   COMPRESSION_STREAM_FINALIZE = 0x0001
-        // ⚠️ 这些枚举在 Apple 上是 **uint32_t 基础类型** ⇒ **直接传 UInt32 数值**，
-        //   不包 `compression_*` 类型（包了类型不对 ⇒ 编译器会挑别的重载 ⇒ 报
-        //   「missing arguments for parameters dst_ptr...」这个**极具误导性**的错）⭐⭐⭐
-        let ccOp = UInt32(encode ? 0 : 1)      // COMPRESSION_STREAM_ENCODE / _DECODE
-        let ccAlg = UInt32(0x205)              // COMPRESSION_ZLIB
-        let ccStatusOK = UInt32(0)             // COMPRESSION_STATUS_OK
-        let ccStatusEND = UInt32(1)            // COMPRESSION_STATUS_END
-        // ⭐ `compression_stream_process` 的 flags 参数是 Int32 ⇒ 用 bitPattern 转
-        let finalizeFlag = Int32(bitPattern: UInt32(0x0001))   // COMPRESSION_STREAM_FINALIZE
-        guard compression_stream_init(&stream, ccOp, ccAlg) == ccStatusOK else { return Data() }
+        // ⚠️ **rawValue 是 UInt32**（CI 实测：`Int32(...)` 编不过）⇒ ERROR 的 -1 也编不过
+        //   ⇒ ⇒ 不构造 ERROR，改用「既不是 OK 也不是 END ⇒ 失败」⭐⭐⭐
+        // ⚠️⚠️⚠️ **必须包成 `compression_*` 类型**（不是直接传 UInt32 数值！）⭐⭐⭐
+        //   ⇒ `compression_stream_init` 的 C 签名是
+        //      (compression_stream*, compression_stream_operation, compression_algorithm)
+        //   ⇒ 直接传 UInt32 ⇒ 类型不匹配 ⇒ 编译器又挑别的重载 ⇒ 又报那个误导性的错 ⭐⭐⭐
+        let op = compression_stream_operation(rawValue: UInt32(encode ? 0 : 1))
+        let alg = compression_algorithm(rawValue: UInt32(0x205))       // ⭐ COMPRESSION_ZLIB
+        let statusOK = compression_status(rawValue: 0)
+        let statusEND = compression_status(rawValue: 1)
+        // ⭐ `compression_stream_process` 的 flags 参数是 Int32 ⇒ UInt32 ⇒ Int32 要用 bitPattern
+        let finalizeFlag = Int32(bitPattern: compression_stream_flags(rawValue: 1).rawValue)
+        guard compression_stream_init(&stream, op, alg) == statusOK else { return Data() }
         defer { compression_stream_destroy(&stream) }
         let bufSize = 65536
         let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { dst.deallocate() }
         var output = Data()
         var emptyByte: UInt8 = 0
-        let status: UInt32 = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> UInt32 in
+        let status: compression_status = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> compression_status in
             if let base = src.baseAddress {
                 stream.src_ptr = base.assumingMemoryBound(to: UInt8.self)
             } else {
                 withUnsafeMutablePointer(to: &emptyByte) { stream.src_ptr = UnsafePointer($0) }
             }
             stream.src_size = src.count
-            var st = ccStatusOK
+            var st = statusOK
             repeat {
                 stream.dst_ptr = dst
                 stream.dst_size = bufSize
                 st = compression_stream_process(&stream, finalizeFlag)
-                if st == ccStatusOK || st == ccStatusEND {
+                if st == statusOK || st == statusEND {
                     output.append(dst, count: bufSize - stream.dst_size)
                 }
-            } while st == ccStatusOK && (stream.src_size > 0 || stream.dst_size == 0)
+            } while st == statusOK && (stream.src_size > 0 || stream.dst_size == 0)
             return st
         }
         // ⚠️ 不比较 ERROR（ERROR = -1 ⇒ UInt32 装不下）⇒ 「既不是 OK 也不是 END ⇒ 失败」
-        return (status == ccStatusOK || status == ccStatusEND) ? output : Data()
+        return (status == statusOK || status == statusEND) ? output : Data()
     }
 
     static func deflate(_ data: Data, compress: Bool, nowrap: Bool) -> Data {
@@ -891,27 +896,31 @@ extension JSBridge {
         //   ⇒ 原代码多传了一个 `0` ⇒ 编译不过 ⭐⭐⭐
         // ⚠️ `kCCModeOptionCTR_BE` **只在 CTR 模式**能传（ECB/CBC 传了 ⇒ kCCParamError）⭐⭐⭐
         let ccOptions: CCModeOptions = (mode == "CTR") ? CCModeOptions(kCCModeOptionCTR_BE) : CCModeOptions(0)
-        // ⭐⭐⭐⭐⭐⭐ **CI 自省 + swiftc 探针（build296）：Apple 上 `kCCPaddingPKCS7` /
-        //   `kCCPaddingNoPadding` / `kCCPKCS7Padding` / `ccNoPadding` **全部不在作用域** ⭐⭐⭐
-        //   ⇒ **不猜名字了** ⇒ 直接用 `CCPadding` 的 raw 值：
-        //     0 = 无填充 / 1 = PKCS7（CommonCrypto 的 CCPadding 枚举值）⭐⭐⭐
-        // ⭐⭐⭐ **不写类型标注** ⇒ 让 Swift 隐式转成参数类型（CCPadding 是 uint32_t 基础类型）
-        //   ⇒ 之前写 `CCPadding(1)` 报「generic parameter 'ContentType' could not be inferred」
-        //      ⇒ 说明 `CCPadding` 被导入成了**泛型别名** ⇒ 压根别碰它，直接给字面量 ⭐⭐⭐
-        let ccPadding = usePadding ? 1 : 0      // 1 = PKCS7 / 0 = 无填充
-        let createStatus = iv.withUnsafeBytes { ivPtr in
-            keyData.withUnsafeBytes { keyPtr in
+        // ⭐⭐⭐⭐⭐⭐ **Apple 官方 CommonCryptor.h 的权威签名**（2026-11-19 取自 opensource.apple.com）：
+        //   CCCryptorCreateWithMode(CCOperation op, CCMode mode, CCAlgorithm alg, CCPadding padding,
+        //                           const void *iv, const void *key, size_t keyLength,
+        //                           const void *tweak, size_t tweakLength, int numRounds,
+        //                           CCModeOptions options, CCCryptorRef *cryptorRef)
+        //   ⇒ **12 个参数**（tweak/tweakLength/numRounds 是给 XTS/自定义轮数用的 ⇒ 传 nil/0/0）⭐⭐⭐
+        //   ⇒ 之前传 11 个（少一个）⇒ 编译不过 ⭐⭐⭐
+        // ⭐⭐⭐⭐⭐ **padding 的真名就是 `ccPKCS7Padding` / `ccNoPadding`**（Apple 头文件里的 enum）
+        //   ⚠️⚠️⚠️ 之前误判成「Apple 上没有任何可用的 padding 常量名」——
+        //   **探针第 14 行 `CCPadding(ccNoPadding)` 根本没报错** ⇒ 名字一直都在
+        //   ⇒ 是**读探针输出读错了**（只看了前 3 行报错就下结论）⇒ 害得连 padding 语义一起改错 ⭐⭐⭐
+        //   ⇒ **教训**：探针有多行报错时，要看【全部】输出再下结论 ⭐⭐⭐
+        let ccPadding: CCPadding = usePadding ? ccPKCS7Padding : ccNoPadding
+        // ⭐⭐⭐⭐⭐ **`Data.withUnsafeBytes` 有两个重载**（`UnsafeRawBufferPointer` 那个 + 泛型 `UnsafePointer<T>` 那个）
+        //   ⇒ 不写类型 ⇒ 编译器推不出 T ⇒ 报「generic parameter 'ContentType' could not be inferred」
+        //   ⇒ **显式标注闭包参数类型** ⇒ 只可能选中 `UnsafeRawBufferPointer` 那个重载 ⭐⭐⭐
+        //   ⇒ 之前误把这个错归因给 `CCPadding` ⇒ 改了半天的 padding 白改 ⭐⭐⭐
+        let createStatus = iv.withUnsafeBytes { (ivPtr: UnsafeRawBufferPointer) in
+            keyData.withUnsafeBytes { (keyPtr: UnsafeRawBufferPointer) in
                 // ⚠️ ECB 模式**必须传 NULL IV**（传了 ⇒ kCCParamError ⇒ 旧代码 ECB/CBC 拿不到结果）
-                // ⭐⭐⭐ **CI 实证：`withUnsafeBytes` 的 `ivPtr` 是 `UnsafeRawBufferPointer`**
-                //   ⇒ 它**不能**直接当 `UnsafeRawPointer?` 用 ⇒ 要经 `baseAddress` 转一下 ⭐⭐⭐
-                // ⭐⭐⭐ **CI 实证：`ivPtr.baseAddress` 的类型是 `UnsafeRawPointer<Element>?`（泛型）**
-                //   ⇒ 直接赋给 `UnsafeRawPointer?` 编不过 ⇒ **要显式转成非泛型的 UnsafeRawPointer** ⭐⭐⭐
-                let ivArg: UnsafeRawPointer? = (mode == "ECB")
-                    ? nil
-                    : ivPtr.baseAddress.map { UnsafeRawPointer($0) }
+                // ⭐ **不写 `UnsafeRawPointer?` 标注** ⇒ 让编译器自己推 ⇒ 免得 SDK 改了泛型签名就编不过 ⭐⭐⭐
+                let ivArg = (mode == "ECB") ? nil : ivPtr.baseAddress
                 CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,
                     ivArg, keyPtr.baseAddress, keyData.count,
-                    nil, 0, ccOptions, &cryptor)
+                    nil, 0, 0, ccOptions, &cryptor)
             }
         }
         guard createStatus == kCCSuccess, let cr = cryptor else {
@@ -919,14 +928,14 @@ extension JSBridge {
         }
         defer { CCCryptorRelease(cr) }
         var result = Data()
-        let updateStatus = inputData.withUnsafeBytes { inPtr in
-            out.withUnsafeMutableBytes { outPtr in
+        let updateStatus = inputData.withUnsafeBytes { (inPtr: UnsafeRawBufferPointer) in
+            out.withUnsafeMutableBytes { (outPtr: UnsafeMutableRawBufferPointer) in
                 CCCryptorUpdate(cr, inPtr.baseAddress, inputData.count, outPtr.baseAddress, outCap, &moved)
             }
         }
         guard updateStatus == kCCSuccess else { jsThrow("CCCryptorUpdate 失败 (\(updateStatus))"); return nil }
         result.append(out.prefix(moved))
-        let finalStatus = out.withUnsafeMutableBytes { outPtr in
+        let finalStatus = out.withUnsafeMutableBytes { (outPtr: UnsafeMutableRawBufferPointer) in
             CCCryptorFinal(cr, outPtr.baseAddress, outCap, &moved)
         }
         guard finalStatus == kCCSuccess else { jsThrow("CCCryptorFinal 失败 (\(finalStatus))"); return nil }
