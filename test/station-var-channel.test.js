@@ -38,8 +38,8 @@ const ok = (c, m, extra) => {
 const src = fs.readFileSync(APP, 'utf8');
 
 console.log('=== 1. 静态断言：站方变量必须【灌进 engineSource.variable】 ===');
-ok(/src\.variable\s*=\s*sv/.test(src),
-   '宿主把站方变量灌进了 engineSource.variable（引擎的 srcGet 读的就是这一格）');
+ok(/src\.variable\s*=\s*merged/.test(src),
+   '宿主把【合并后的 map】灌进了 engineSource.variable（引擎的 srcGet 读的就是这一格）');
 ok(/engineSourceForJS/.test(src),
    'op 跑 JS 时用的 engineSource 是【灌好站方变量】的那份');
 ok(/__variable/.test(src),
@@ -102,7 +102,7 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
   //   ⇒ 否则「断言写了但检测逻辑写错」⇒ 变异抓不到 ⇒ 门禁是摆设 ⭐⭐⭐
   const assertOn = (text) => {
     const fails = [];
-    if (!/src\.variable\s*=\s*sv/.test(text)) fails.push('没灌 variable');
+    if (!/src\.variable\s*=\s*merged/.test(text)) fails.push('没灌 variable');
     if (!/engineSourceForJS/.test(text)) fails.push('没用 engineSourceForJS');
     if (!/collectStationVariable/.test(text)) fails.push('没有 collectStationVariable');
     if (!/source\.getVariable\(\)/.test(text)) fails.push('没用 source.getVariable() 读回');
@@ -114,6 +114,11 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     if (!/self\.stationSeeded\s*=\s*sv/.test(text)) fails.push('站方变量的种子不等于灌进去的值');
     // ⭐⭐⭐ **读回必须【走 collectStationVariable】**（不能拿书籍变量那一格冒充）⭐⭐⭐
     if (!/let stationVar = session\.collectStationVariable \{/.test(text)) fails.push('读回没走 collectStationVariable');
+    // ⭐⭐⭐ **合并必须【把书籍变量的项也并进去】**（`nhAuthed` 就在那一格）⭐⭐⭐
+    //   ⇒ 只判「调用了 mergeStationMap」不够（变异把调用换掉、函数名仍在别处 ⇒ 抓不到）⭐⭐⭐
+    if (!/mergeStationMap\(bookVars:\s*(vars|variables),\s*stationRaw:\s*sv\)/.test(text)) {
+      fails.push('合并没把书籍变量并进去（nhAuthed 读不到）');
+    }
     return fails;
   };
   const cases = [
@@ -121,7 +126,13 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     //   注释掉的那行**仍然会被正则匹配到** ⇒ 断言照样绿 ⇒ 变异白做 ⭐⭐⭐
     //   ⇒ 正解：**改掉赋值目标**（灌到别的地方 / 换回错的格）⇒ 断言才红 ⭐⭐⭐
     ['不再灌 engineSource.variable（读方向断 ⇒ 站方读不到 nhAuthed）',
-      (t) => t.replace(/src\.variable\s*=\s*sv/, 'src.variable = ""')],
+      // ⚠️⚠️ **两处都要断**（`src.variable = merged` 与 `engineSource.variable = merged`）
+      //   ⇒ 只断一处 ⇒ 另一处仍灌 ⇒ 变异无效 ⇒ 门禁没牙齿 ⭐⭐⭐ ⇒ 用 split/join 全局替换 ⭐⭐⭐
+      (t) => t.split('src.variable = merged').join('src.variable = ""')
+              .split('engineSource.variable = merged').join('engineSource.variable = ""')],
+    ['不再合并两格（只灌站方整串 ⇒ nhAuthed 读不到）',
+      (t) => t.split('Self.mergeStationMap(bookVars: vars, stationRaw: sv)').join('sv')
+              .split('Self.mergeStationMap(bookVars: variables, stationRaw: sv)').join('sv')],
     // ⚠️⚠️⚠️ **变异必须【整段换掉】，不能只是「前面加一句」**
     //   （前面加一句 ⇒ 原串仍在 ⇒ 断言照样匹配 ⇒ 变异白做）⭐⭐⭐
     // ⚠️⚠️⚠️ **变异必须【全部替换】**（`String.replace` 只换第一处 ⇒ 第二处原封不动

@@ -234,7 +234,7 @@ final class SourceService {
                 }
                 return r
             }
-            let why = Self.untrustworthyReason(op, r)
+            let why = Self.untrustworthyReason(op, r, sourceUrl: source.bookSourceUrl)
             EngineLogPanel.shared.appendLog(
                 "[引擎] 新引擎的「\(op)」结果不可信（\(why)）")
             EngineBackend.lastError = "「\(op)」结果不可信：\(why)"
@@ -444,7 +444,7 @@ final class SourceService {
     ///   以前只说「书名/书 URL 是空的」⇒ 用户看到这句话**完全不知道该查哪** ⇒
     ///   ⇒ 白等一轮（真机就是这么卡住的）⭐⭐⭐
     ///   ⇒ 现在：**逐个字段点名** + **带上引擎的实际返回**（截断）⇒ 一次就能定位 ⭐⭐⭐
-    static func untrustworthyReason(_ op: String, _ r: Any?) -> String {
+    static func untrustworthyReason(_ op: String, _ r: Any?, sourceUrl: String = "") -> String {
         guard let dict = r as? [String: Any] else { return "返回格式不对" }
         switch op {
         case "exploreKinds":
@@ -460,8 +460,26 @@ final class SourceService {
             // ⚠️ 旧文案说「多半是站方兜底的『未分组』」⇒ **站方根本没有这个名字** ⇒ 误导 ⭐⭐⭐
             let titles = kinds.prefix(6).map { ($0["title"] as? String ?? "?") }.joined(separator: "、")
             let extra = titles.isEmpty ? "" : "（实际拿到：\(titles)）"
+            // ⭐⭐⭐⭐⭐ **点名【最可能的原因】**（2026-11-19 真机 0 分类实证）
+            //
+            // ⚠️⚠️ **站方聚合源自带「整源密码门禁」**：`exploreUrl` 第一行就是
+            //   `if (!nhAuth()) { return ""; }` ⇒ **未解锁 ⇒ 站方主动交白卷（不报错）** ⭐⭐⭐
+            //   ⇒ 「0 个分类」**最常见**就是这个 ⇒ 旧文案「站方的分类接口没通」是**误导** ⭐⭐⭐
+            //
+            // ⭐ **怎么判「是不是没解锁」**：站方把解锁态存在**书源变量**的 `nhAuthed` 项
+            //   ⇒ 宿主看自己那份书源变量里有没有 `nhAuthed` 就能给准信 ⭐⭐⭐
+            var hint = ""
+            if !sourceUrl.isEmpty,
+               let raw = UserDefaults.standard.string(forKey: "sourcevars." + sourceUrl),
+               let d = raw.data(using: .utf8),
+               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+               (o["nhAuthed"] as? String ?? "").isEmpty {
+                hint = "｜⭐ 多半是【站方的整源密码门禁没解锁】"
+                    + "（站方 exploreUrl 第一行就是 nhAuth() 检查 ⇒ 未解锁就交白卷）"
+                    + " ⇒ 去【书源登录】面板的「整源解锁密码」填密码 → 点「🔓 解锁整个源」"
+            }
             return "只解析出 \(n) 个分类\(extra)"
-                + "（站方正常是几十上百个 ⇒ 说明站方的分类接口没通）"
+                + "（站方正常是几十上百个 ⇒ 说明站方的分类没出来）\(hint)"
         case "explore":
             return "书单 0 本"
         case "bookInfo":

@@ -41,7 +41,12 @@ final class LegadoEngineBackend {
         ///
         /// ⚠️ **为什么不用 `session.variables`**（RuleVariables map）：
         ///   它是【书籍变量】那格（`book.getVariable` 走 `varGet`）⇒ 与站方变量**不是同一格** ⇒ 不能混 ⭐⭐⭐
-        let engineSource: LegadoEngineHost.Source
+        /// ⚠️⚠️⚠️ **必须是 var**（2026-11-19 真机 build298 实证）：
+        ///   `Session` 是**按源缓存**的 ⇒ 第一次 op 时灌进去的变量会被**一直沿用**
+        ///   ⇒ 用户后来在登录面板**解锁**（写了 `nhAuthed`）⇒ **缓存里的还是旧值（空）** ⭐⭐⭐
+        ///   ⇒ 站方 `nhAuth()` 仍恒 false ⇒ **仍然交白卷** ⇒ 症状与没修一模一样 ⭐⭐⭐
+        ///   ⇒ 正解：**每个 op 都用最新的 `__variable` 重新灌**（见 `refreshStationVariable`）⭐⭐⭐
+        var engineSource: LegadoEngineHost.Source
         /// 站方变量（Legado 语义：一整串 JSON）⇒ **引擎读写的正是这一格** ⭐⭐⭐
         var stationVariable: String
         /// 站方变量（**书籍变量**那格；新引擎是一个 map）⇒ 走 `varGet`/`varPut`
@@ -53,14 +58,7 @@ final class LegadoEngineBackend {
 
         init(engineSource: LegadoEngineHost.Source, payload: [String: Any]) {
             let raw = (payload["source"] as? [String: Any]) ?? [:]
-            // ① **站方变量那格**（引擎读写的正是它 ⇒ 必须先灌进 engineSource.variable）⭐⭐⭐
-            let sv = (raw["__variable"] as? String) ?? ""
-            var src = engineSource
-            if !sv.isEmpty { src.variable = sv }
-            self.engineSource = src
-            self.stationVariable = sv
-            self.stationSeeded = sv
-            // ② 书籍变量（map）⇒ 走 `varGet`/`varPut`（**与站方变量不是同一格**）⭐⭐⭐
+            // ① 书籍变量（map）⇒ 走 `varGet`/`varPut`（**与站方变量不是同一格**）⭐⭐⭐
             let vars = LegadoEngineHost.Vars()
             if let seed = raw["__variables"] as? String, !seed.isEmpty,
                let d = seed.data(using: .utf8),
@@ -69,6 +67,52 @@ final class LegadoEngineBackend {
             }
             self.variables = vars
             self.seeded = vars.getVariable()
+            // ② ⭐⭐⭐⭐⭐ **站方变量那格**（Legado 语义：**一整串** JSON）⭐⭐⭐
+            let sv = (raw["__variable"] as? String) ?? ""
+            self.stationVariable = sv
+            self.stationSeeded = sv
+            // ③ ⭐⭐⭐⭐⭐ **把两格【合并】灌进 `engineSource.variable`** ⭐⭐⭐
+            //
+            //   ⚠️⚠️⚠️ **为什么必须合并**（2026-11-19 真机 build297/298 实证）：
+            //     引擎**只有一格** `BookSource.variable`（是个 JSON map）⇒ 而站方**两格混用** ⭐⭐⭐
+            //       · `source.get("nhAuthed")` / `source.put(k,v)` ⇒ **map 的某一项** ⭐⭐⭐
+            //       · `source.getVariable()` / `source.setVariable(str)` ⇒ **整份 map 的 JSON 串**
+            //         （站方 `JSON.parse` 它拿 NH_D ⇒ 所以它也期望那是一份 map！）⭐⭐⭐
+            //     ⇒ **灌「整串站方变量」是不够的**：`source.get("nhAuthed")` 会去 map 里找
+            //       `nhAuthed` ⇒ 找不到 ⇒ 恒空 ⇒ `nhAuth()` 恒 false ⇒ **交白卷** ⭐⭐⭐
+            //     ⇒ **正解：把【书籍变量 map 的项】和【站方变量整串解析后的项】合并成一份 map** ⭐⭐⭐
+            //       · 书籍变量 map 的项 ⇒ 覆盖 `source.get/put` 的项（含 `nhAuthed`）⭐⭐⭐
+            //       · 站方变量整串解析后的项 ⇒ 覆盖 `source.getVariable()` 的内容（NH_D 等）⭐⭐⭐
+            var src = engineSource
+            let merged = Self.mergeStationMap(bookVars: vars, stationRaw: sv)
+            if !merged.isEmpty { src.variable = merged }
+            self.engineSource = src
+        }
+
+        /// ⭐⭐⭐ **合并两格变量**（书籍变量 map + 站方变量整串）⇒ 引擎那一格的 JSON map ⭐⭐⭐
+        ///
+        /// ⚠️⚠️ **优先级**：
+        ///   · 书籍变量的项（`nhAuthed` / `nhPlatSwitch` / `token` …）**优先**
+        ///     ⇒ 它们是 `source.get/put` 的项 ⇒ 站方按 map 项读 ⭐⭐⭐
+        ///   · 站方变量的项（`src` / `gender` / `status` …）填进去 ⇒ `source.getVariable()`
+        ///     解析出来就有它们（站方 `JSON.parse` 整串拿 NH_D）⭐⭐⭐
+        static func mergeStationMap(bookVars: LegadoEngineHost.Vars, stationRaw: String) -> String {
+            var out: [String: Any] = [:]
+            // ① 站方变量整串（可能是一份 map ⇒ 直接并入；也可能是一串凭据 ⇒ 跳过）
+            if let d = stationRaw.data(using: .utf8),
+               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                for (k, v) in o { out[k] = v }
+            }
+            // ② 书籍变量 map 的项（优先）
+            let bv = bookVars.getVariable()
+            if let d = bv.data(using: .utf8),
+               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                for (k, v) in o { out[k] = v }
+            }
+            guard !out.isEmpty else { return "" }
+            guard let d = try? JSONSerialization.data(withJSONObject: out),
+                  let s = String(data: d, encoding: .utf8) else { return "" }
+            return s
         }
 
         /// ⭐⭐⭐ **站方 JS 跑完之后：把引擎那格读回来**（站方 `source.put(...)` 的写回）⭐⭐⭐
@@ -89,6 +133,32 @@ final class LegadoEngineBackend {
 
         /// ⭐⭐⭐ **给 JS 用的 engineSource**（已灌好站方变量那一格）⭐⭐⭐
         var engineSourceForJS: LegadoEngineHost.Source { engineSource }
+
+        /// ⭐⭐⭐⭐⭐ **每个 op 前：用【最新的】站方变量重新灌**（build298 真机实证的关键）⭐⭐⭐
+        ///
+        /// ⚠️⚠️⚠️ **为什么必须每次重灌**（Session 是按源缓存的）：
+        ///   ① 用户先进发现页 ⇒ Session 创建（此时 `nhAuthed` 还**没有** ⇒ 灌的是空的）
+        ///   ② 用户去登录面板**解锁** ⇒ App 落盘了 `nhAuthed`
+        ///   ③ 用户回发现页 ⇒ **复用同一个 Session** ⇒ 变量还是**旧的（空）** ⭐⭐⭐
+        ///      ⇒ 站方 `nhAuth()` 恒 false ⇒ **交白卷** ⇒ 症状与「没修」一模一样 ⭐⭐⭐
+        ///   ⇒ 正解：每次 op 都把 payload 里**最新的** `__variable` 灌进去 ⭐⭐⭐
+        ///   ⇒ （同时保留 Session 里已写回的改动：站方 put 的值不能被空值覆盖 ⭐⭐⭐）
+        func refreshStationVariable(from payload: [String: Any]) {
+            let raw = (payload["source"] as? [String: Any]) ?? [:]
+            let sv = (raw["__variable"] as? String) ?? ""
+            // ⭐⭐⭐ **书籍变量也要刷新**（`nhAuthed` 就在这一格 ⇒ 用户解锁后要立刻生效）⭐⭐⭐
+            if let seed = raw["__variables"] as? String, !seed.isEmpty,
+               let d = seed.data(using: .utf8),
+               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                for (k, v) in o { variables.put(k, "\(v)") }
+            }
+            guard !sv.isEmpty else { return }   // ⚠️ 空值**不覆盖**（别把已写回的解锁态抹掉）
+            if sv == stationVariable { return }
+            stationVariable = sv
+            // ⭐⭐⭐ **重新合并两格**（不是只灌站方整串！`nhAuthed` 在书籍变量那格）⭐⭐⭐
+            let merged = Self.mergeStationMap(bookVars: variables, stationRaw: sv)
+            if !merged.isEmpty { engineSource.variable = merged }
+        }
     }
 
     private let lock = NSLock()
@@ -165,6 +235,8 @@ final class LegadoEngineBackend {
         //
         //   ⚠️ **为什么不能用 `session.variables`（RuleVariables map）**：那是【书籍变量】那格
         //     （`book.getVariable` 走 `varGet`）⇒ 与站方变量**不是同一格** ⇒ 不能混 ⭐⭐⭐
+        // ⭐⭐⭐⭐⭐ **每个 op 都用【最新的】站方变量重新灌**（Session 缓存 ⇒ 不重灌就吃旧值）⭐⭐⭐
+        session.refreshStationVariable(from: payload)
         let engineSource = session.engineSourceForJS
         var out: [String: Any]
         #if canImport(JavaScriptCore) && !os(Linux)

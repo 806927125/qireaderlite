@@ -108,10 +108,22 @@ function makeSource(varsJson) {
   //   ⇒ 现在：`vars` 只放**书籍变量**（真实场景里书源变量 map 另有一格）
   // ⭐⭐⭐⭐⭐ **书籍变量那格【不许含 nhAuthed】**（否则读错格也读得到 ⇒ 变异抓不到）⭐⭐⭐
   //   ⇒ 真实场景：书籍变量 = 书/用户级变量；站方变量 = 书源级变量 ⇒ **两格内容不同** ⭐⭐⭐
-  const bookVarsOnly = {};
-  const stationOnly = { nhAuthed: vars.nhAuthed };   // 站方变量那格（只有站方的）
-  let stationVariable = JSON.stringify(stationOnly);
-  vars = bookVarsOnly;                                // 书籍变量那格（不含 nhAuthed）
+  // ⭐⭐⭐⭐⭐ **模拟【宿主真实的合并接线】**（2026-11-19 真机 build297/298 实证）⭐⭐⭐
+  //
+  //   ⚠️⚠️⚠️ **引擎只有一格 `BookSource.variable`（一个 JSON map）**，而站方**两格混用** ⭐⭐⭐
+  //     · `source.get("nhAuthed")` / `source.put(k,v)` ⇒ **map 的某一项** ⭐⭐⭐
+  //     · `source.getVariable()` / `source.setVariable(str)` ⇒ **整份 map 的 JSON 串** ⭐⭐⭐
+  //   ⇒ 宿主必须把【书籍变量 map 的项】+【站方变量整串的项】**合并成一份 map** 灌进去 ⭐⭐⭐
+  //   ⇒ `nhAuthed` 在**书籍变量那格** ⇒ 只灌「站方整串」⇒ 读不到 ⇒ **交白卷**（真机症状）⭐⭐⭐
+  //
+  //   ⭐⭐⭐ **两格必须【内容不同】**（否则「读错的格」照样读得到 ⇒ 变异抓不到 ⇒ 门禁没牙齿）⭐⭐⭐
+  //     · 书籍变量那格：`{ nhAuthed:<hash>, nhPlatSwitch:'' }`  ← `source.get/put` 的项 ⭐⭐⭐
+  //     · 站方变量那格：`{ src:'书旗', gender:'全部', ... }`   ← `source.getVariable()` 的内容 ⭐⭐⭐
+  const bookVarsOnly = { nhAuthed: vars.nhAuthed, nhPlatSwitch: '' };
+  const stationOnly = { src: '书旗', gender: '全部', status: '不限', sort: '最热', line: '自动' };
+  vars = bookVarsOnly;                                // 书籍变量那格（**含 nhAuthed**）
+  // ⭐ **合并成一份 map**（= 宿主灌进引擎 `variable` 的那份）⇒ 与真机同构 ⭐⭐⭐
+  let stationVariable = JSON.stringify(Object.assign({}, stationOnly, bookVarsOnly));
   const src = {
     bookSourceUrl: source.bookSourceUrl || '',
     bookSourceName: source.bookSourceName || '',
@@ -285,9 +297,13 @@ console.log('\n=== 4. 变异对照（读错的格 ⇒ 必须复现真机症状�
     console.log(`\n通过 ${pass} / 失败 ${fail}`);
     process.exit(1);
   }
+  // ⭐⭐⭐ **变异要真的「读不到」**（2026-11-19 实证）：
+  //   合并后 `stationVariable` 里**也含** nhAuthed ⇒ 变异若读它 ⇒ 照样读得到 ⇒ 变异无效 ⭐⭐⭐
+  //   ⇒ 正解：变异读**【不含 nhAuthed 的那一格】**（站方变量那格的内容）⇒ 读不到 ⇒ 必须红 ⭐⭐⭐
   const mutated = orig.replace(
     /get: function \(k\) \{[\s\S]*?\n    \},/,
-    "get: function (k) { return vars[String(k)] === undefined ? '' : String(vars[String(k)]); },");
+    "get: function (k) { var o = { src: '书旗', gender: '全部' };"
+    + " return o[String(k)] === undefined ? '' : String(o[String(k)]); },")
   if (mutated === orig) {
     ok(false, '变异「读错的格」：锚点命中', '锚点没命中 ⇒ 变异无效');
   } else {
