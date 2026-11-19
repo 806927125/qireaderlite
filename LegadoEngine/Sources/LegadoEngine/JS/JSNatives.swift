@@ -721,7 +721,7 @@ extension JSBridge {
         //   ⇒ 正解：**先分配缓冲区**（init 时长度给 0 ⇒ 不会读也不会写）
         //      ⇒ 下面循环里再填真实指针和长度 ⭐⭐⭐
         var stream = compression_stream(dst_ptr: dst, dst_size: 0,
-                                        src_ptr: UnsafePointer(mutating: dst), src_size: 0, state: nil)
+                                        src_ptr: UnsafePointer(dst), src_size: 0, state: nil)
         // ⭐⭐⭐⭐⭐ **CI 自省（读 SDK compression.h）拿到的权威值**（2026-11-19）：
         //   COMPRESSION_STREAM_ENCODE = 0 / COMPRESSION_STREAM_DECODE = 1
         //   COMPRESSION_ZLIB           = **0x205**（不是 0！！写 0 会静默用错算法）⭐⭐⭐
@@ -917,8 +917,8 @@ extension JSBridge {
         // ⚠️⚠️⚠️ **`ccPKCS7Padding` / `ccNoPadding` 在 Swift 里是 `Int`**（C 枚举常量被导入成 Int）
         //   ⇒ 直接赋给 `CCPadding`（= UInt32）⇒ 报「cannot convert value of type 'Int' to specified
         //      type 'CCPadding' (aka 'UInt32')」⭐⭐⭐
-        //   ⇒ 正解：用 Apple 头文件里的**枚举数值**（0=ccNoPadding / 1=ccPKCS7Padding）⭐⭐⭐
-        let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)
+        //   ⇒ 正解：**显式包一层** `CCPadding(...)`（CI 探针已实证这个写法编译通过）⭐⭐⭐
+        let ccPadding: CCPadding = usePadding ? CCPadding(ccPKCS7Padding) : CCPadding(ccNoPadding)
         // ⭐⭐⭐⭐⭐ **`Data.withUnsafeBytes` 有两个重载**（`UnsafeRawBufferPointer` 那个 + 泛型 `UnsafePointer<T>` 那个）
         //   ⇒ 不写类型 ⇒ 编译器推不出 T ⇒ 报「generic parameter 'ContentType' could not be inferred」
         //   ⇒ **显式标注闭包参数类型** ⇒ 只可能选中 `UnsafeRawBufferPointer` 那个重载 ⭐⭐⭐

@@ -140,6 +140,12 @@ for (const [f, code] of codeNoC) {
     check(`${path.basename(f)}：compression_stream 的 dst_ptr/src_ptr 不许传 nil`,
           !/dst_ptr:\s*nil/.test(code) && !/src_ptr:\s*nil/.test(code),
           "'nil' is not compatible with expected argument type 'UnsafeMutablePointer<UInt8>'");
+    // ⭐⭐⭐ `src_ptr` 的实参必须是 `UnsafePointer(...)` **无标签**构造
+    //   （`UnsafePointer(mutating:)` 这个标签在 Swift 里**不存在** ⇒ 报 extraneous argument label）⭐⭐⭐
+    const srcArg = code.match(/src_ptr:\s*([^,\n]+)/);
+    check(`${path.basename(f)}：src_ptr 用 UnsafePointer(...) 无标签构造`,
+          !!srcArg && /UnsafePointer\(\s*\w+\s*\)/.test(srcArg[1]),
+          srcArg ? `实际：${srcArg[1].trim()}` : '找不到 src_ptr 实参');
   }
 }
 
@@ -157,9 +163,14 @@ for (const [f, code] of codeNoC) {
     //   ⇒ 直接赋给 `CCPadding`（= UInt32）⇒ 报「cannot convert value of type 'Int' to
     //      specified type 'CCPadding' (aka 'UInt32')」⭐⭐⭐
     //   ⇒ 正解：用 Apple 头文件里的枚举**数值**（0=ccNoPadding / 1=ccPKCS7Padding）⭐⭐⭐
-    check(`${path.basename(f)}：padding 用 CCPadding(1) / CCPadding(0)（cc* 常量在 Swift 是 Int）`,
-          /CCPadding\(1\)/.test(code) && /CCPadding\(0\)/.test(code),
-          'ccPKCS7Padding / ccNoPadding 是 Int ⇒ 不能直接赋给 CCPadding(=UInt32)');
+    // ⭐⭐⭐⭐⭐ **CI 探针实证**：`CCPadding(ccPKCS7Padding)` **编译通过**（常量折叠），
+    //   但**不能隐式**赋给 CCPadding（cc* 是 Int ⇒ 三元表达式类型是 Int ⇒ 报「cannot convert」）⭐⭐⭐
+    check(`${path.basename(f)}：padding 显式包 CCPadding(ccPKCS7Padding) / CCPadding(ccNoPadding)`,
+          /CCPadding\(ccPKCS7Padding\)/.test(code) && /CCPadding\(ccNoPadding\)/.test(code),
+          'cc* 是 Int ⇒ 必须显式包一层 CCPadding(...)');
+    check(`${path.basename(f)}：padding 不许把 cc* 常量【隐式】赋给 CCPadding`,
+          !/ccPadding\s*:\s*CCPadding\s*=\s*usePadding\s*\?\s*cc/.test(code),
+          '三元里直接用 ccPKCS7Padding ⇒ 类型是 Int ⇒ 编不过');
     check(`${path.basename(f)}：padding 显式标注 CCPadding 类型`,
           /ccPadding\s*:\s*CCPadding\s*=/.test(code),
           '应当是 `let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)`');

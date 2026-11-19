@@ -67,13 +67,14 @@ const MUTATIONS = [
   {
     // ⭐ 锚点必须打在【代码行】上 ⇒ 直接打三元表达式 ⇒ 不会误命中注释里的名字 ⭐⭐⭐
     name: 'padding 用不存在的常量名 kCCPaddingPKCS7',
-    from: 'usePadding ? CCPadding(1) : CCPadding(0)',
-    to: 'usePadding ? kCCPaddingPKCS7 : CCPadding(0)',
+    from: 'CCPadding(ccPKCS7Padding)',
+    to: 'CCPadding(kCCPaddingPKCS7)',
   },
   {
     name: 'padding 丢掉「无填充」那一支（只剩 PKCS7）',
-    from: 'let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)',
-    to: 'let ccPadding: CCPadding = CCPadding(0)',
+    // ⭐ 锚点带前导 ': ' ⇒ 只可能命中【代码行】（注释里那处是 `` `CCPadding(ccNoPadding)` ``）⭐⭐⭐
+    from: ': CCPadding(ccNoPadding)',
+    to: ': CCPadding(ccPKCS7Padding)',
   },
   {
     name: 'CCCryptorCreateWithMode 少传一个参数（11 个）',
@@ -91,9 +92,14 @@ const MUTATIONS = [
     to: 'var stream = compression_stream(dst_ptr: nil, dst_size: 0,',
   },
   {
-    name: 'padding 直接用 ccPKCS7Padding（Swift 里是 Int ⇒ 不能赋给 CCPadding）',
-    from: 'usePadding ? CCPadding(1) : CCPadding(0)',
+    name: 'padding 直接用 ccPKCS7Padding（Swift 里是 Int ⇒ 不能隐式赋给 CCPadding）',
+    from: 'usePadding ? CCPadding(ccPKCS7Padding) : CCPadding(ccNoPadding)',
     to: 'usePadding ? ccPKCS7Padding : ccNoPadding',
+  },
+  {
+    name: 'src_ptr 用 UnsafePointer(mutating:)（这个标签在 Swift 里不存在）',
+    from: 'src_ptr: UnsafePointer(dst), src_size: 0, state: nil)',
+    to: 'src_ptr: UnsafePointer(mutating: dst), src_size: 0, state: nil)',
   },
   {
     name: 'crypto 闭包去掉 return（多语句闭包无隐式返回 ⇒ createStatus 退化成 ()）',
