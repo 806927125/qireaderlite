@@ -117,7 +117,11 @@ final class LegadoEngineBackend {
             let action = (payload["action"] as? String) ?? ""
             guard !action.isEmpty else {
                 out = ["ok": false, "error": "没有筛选动作", "msgs": []]
-                break
+                // ⚠️⚠️ **这里原来写的是 `break`**（老代码是 switch 分支 ⇒ break 跳 switch）
+                //   ⇒ 现在改成 **if 链** ⇒ break 不在 loop/switch 里 ⇒ 编不过
+                //      「unlabeled 'break' is only allowed inside a loop or switch」⭐⭐⭐
+                //   ⇒ 正解：直接 return（下面 switch op 的分支都走 return out）⭐⭐⭐
+                return out
             }
             let host = LegadoJSHost()
             let bridge = LegadoEngineHost.Bridge(source: engineSource, book: book(from: payload),
@@ -143,7 +147,7 @@ final class LegadoEngineBackend {
                 let action = (payload["action"] as? String) ?? ""
                 guard !action.isEmpty else {
                     out = ["ok": false, "error": "没有登录动作", "msgs": []]
-                    break
+                    return out   // ⭐ 同上：if 链里不能 break ⇒ 直接 return ⭐⭐⭐
                 }
                 // 表单值先并进 `result`（站方 login(true) 第一步就是 putLoginInfo(result)）
                 let formValues = (payload["formValues"] as? [String: Any]) ?? [:]

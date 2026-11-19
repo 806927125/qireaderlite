@@ -13,8 +13,14 @@ import UIKit
 ///   ⇒ **不许 import UIKit** ⇒ 凡是要 UIKit 的东西**留在本文件**，别的层通过
 ///   `UserDefaults` / 本文件的静态方法拿 ⇒ 纯 Foundation ⇒ 两边都能编 ⭐⭐⭐
 @MainActor
-final class EngineLog: NSObject, ObservableObject {
-    static let shared = EngineLog()
+// ⭐⭐⭐⭐⭐ **类型名必须是 `EngineLogPanel`**（2026-11-19 CI build296 实证）：
+//   之前这个文件里的类**也叫 `EngineLog`** ⇒ 和 `Core/EngineLog.swift` 里的 `enum EngineLog`
+//   **撞名** ⇒ 「invalid redeclaration of 'EngineLog'」⭐⭐⭐
+//   ⇒ 而全工程 30+ 处引用的是 `EngineLogPanel.shared` ⇒ 这个类型**压根不存在**
+//      ⇒ 「cannot find 'EngineLogPanel' in scope」满屏 ⭐⭐⭐
+//   ⇒ 正解：类名 = 文件名 = `EngineLogPanel`（沙盒门禁的 stub 里也是这个名）⭐⭐⭐
+final class EngineLogPanel: NSObject, ObservableObject {
+    static let shared = EngineLogPanel()
 
     // MARK: - 日志
 
@@ -108,6 +114,11 @@ final class EngineLog: NSObject, ObservableObject {
     }
 
     // MARK: - 状态与诊断
+
+    /// ⭐⭐⭐ **引擎是否就绪**（没有报错就是就绪）
+    ///   ⇒ 「搜不出东西」和「引擎根本没起来」在用户眼里长得一模一样
+    ///   ⇒ 所以发现页顶上要有一条横幅提示（`SourcesView` 用它）⭐⭐⭐
+    var ready: Bool { EngineBackend.lastError == nil }
 
     /// 状态行（面板用）
     var statusText: String {
