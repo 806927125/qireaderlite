@@ -74,8 +74,10 @@ console.log('\n=== 2b. 静态断言：登录信息必须进引擎那一格的 lo
 //   ⇒ 引擎的 `loginInfoGet` ⇒ **`BookSource.variable["loginInfo"]`** ⭐⭐⭐
 //   ⇒ 不并进去 ⇒ 站方读到空 map ⇒ 点「🔓 解锁整个源」必然失败 ⇒ 永远交白卷 ⭐⭐⭐
 ok(/mergeLoginInfo/.test(src), '有 mergeLoginInfo（合并「已存登录信息 + 本次表单值」）');
-ok(/m\["loginInfo"\]\s*=\s*mergedLogin/.test(src),
+ok(/m\["loginInfo"\]\s*=\s*merged/.test(src),
    'login op 把合并后的登录信息写进引擎那一格的 loginInfo 项');
+ok(/engineSourceWithLoginInfo/.test(src),
+   '★ 合并逻辑放在【非平台相关】的 Session 方法里（Linux 沙盒门禁编得到 ⇒ 类型错 3 秒暴露）');
 ok(/mergeStationMap\(bookVars:[^)]*loginInfo:/.test(src),
    'mergeStationMap 把 loginInfo 也并进引擎那一格');
 ok(/loginInfoGet/.test(src) === false || /loginInfo/.test(src),
@@ -162,7 +164,7 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     if (!/mergeStationMap\(bookVars:\s*(vars|variables),\s*stationRaw:\s*sv\)/.test(text)) {
       fails.push('合并没把书籍变量并进去（nhAuthed 读不到）');
     }
-    if (!/m\["loginInfo"\]\s*=\s*mergedLogin/.test(text)) fails.push('loginInfo 没写进引擎那一格（解锁按钮永远失败）');
+    if (!/m\["loginInfo"\]\s*=\s*merged/.test(text)) fails.push('loginInfo 没写进引擎那一格（解锁按钮永远失败）');
     if (!/let stationVar = (?:Self|Session)\.stripLoginInfo\(from:/.test(text)) fails.push('回传没剥 loginInfo（明文密码躺盘）');
     if (!/mergeLoginInfo/.test(text)) fails.push('没有 mergeLoginInfo');
     return fails;
@@ -184,7 +186,7 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     // ⚠️⚠️⚠️ **变异必须【全部替换】**（`String.replace` 只换第一处 ⇒ 第二处原封不动
     //   ⇒ 断言照样匹配 ⇒ 变异白做）⭐⭐⭐ ⇒ 用 split/join 做全局替换 ⭐⭐⭐
     ['loginInfo 不并进引擎那一格（★ 解锁按钮永远失败）',
-      (t) => t.replace('m["loginInfo"] = mergedLogin', 'm["loginInfoUnused"] = mergedLogin')],
+      (t) => t.split('m["loginInfo"] = merged').join('m["loginInfoUnused"] = merged')],
     ['回传时不剥 loginInfo（★ 明文密码躺盘）',
       (t) => t.split('Session.stripLoginInfo(from: session.collectStationVariable {')
               .join('session.collectStationVariable {')
