@@ -107,6 +107,45 @@ check(`没有引用不存在的 X.shared（检查了 ${appFiles.length + engineF
       [...missing.entries()].map(([t, fs2]) => `${t}（${[...new Set(fs2)].join(', ')}）`).join('; '));
 
 // ─────────────────────────────────────────────────────────────
+// ③ **App 入口文件**里引用的自定义类型必须存在
+//    （2026-11-19 CI build296 实证：`EngineLogBootstrap.install()` 这个调用点
+//      悬了很久 —— 那个类型在「引擎换血」那轮被删了，可调用点还留着 ⇒ App 编不过 ⭐⭐⭐
+//      ⇒ 而入口文件是 SwiftUI ⇒ **沙盒 Linux 门禁够不到** ⇒ 只有 CI 能发现 ⭐⭐⭐）
+// ─────────────────────────────────────────────────────────────
+console.log('\n=== 3. App 入口文件引用的类型必须存在（沙盒够不到的地方）===');
+const ENTRY_FILES = [
+  path.join(APP_DIR, 'App', 'QiReaderLiteApp.swift'),
+].filter((f) => fs.existsSync(f));
+
+// ⚠️ 入口文件会碰到 SwiftUI / Foundation / UIKit 的类型 ⇒ 列一份白名单
+const ENTRY_SYSTEM = new Set([
+  'View', 'App', 'Scene', 'StateObject', 'ObservedObject', 'State', 'Binding', 'EnvironmentObject',
+  'Environment', 'AppStorage', 'WindowGroup', 'Settings', 'ScenePhase', 'Color', 'Font', 'Image',
+  'Text', 'VStack', 'HStack', 'ZStack', 'LazyVStack', 'ScrollView', 'List', 'ForEach',
+  'NavigationStack', 'NavigationLink', 'Button', 'TextField', 'Toggle', 'Slider', 'Divider', 'Spacer',
+  'Group', 'Section', 'Form', 'Picker', 'Menu', 'Label', 'ProgressView', 'AnyView', 'EmptyView',
+  'Bundle', 'UserDefaults', 'NotificationCenter', 'DispatchQueue', 'Task', 'MainActor', 'URL',
+  'URLSession', 'UIApplication', 'UIScene', 'UIWindowScene', 'UIApplicationDelegate',
+  'NSObject', 'ObservableObject', 'Published',
+  // Swift 内建类型（入口文件里 `String(...)` / `Int(...)` 这类很常见）
+  'String', 'Int', 'Int8', 'Int16', 'Int32', 'Int64', 'UInt', 'UInt8', 'Double', 'Float', 'Bool',
+  'Array', 'Dictionary', 'Set', 'Optional', 'Result', 'Date', 'Data', 'Character', 'Any', 'AnyObject',
+  'Error', 'Never', 'Void', 'Range', 'Substring',
+  // UIKit 里常出现的
+  'UIImage', 'RoundedRectangle', 'Rectangle', 'Circle', 'Capsule', 'UIView', 'UIColor', 'UIFont',
+]);
+for (const f of ENTRY_FILES) {
+  const code = fs.readFileSync(f, 'utf8');
+  // ⭐⭐⭐ **剥注释** ⇒ 否则 "AnalyzeUrl.swift" 这种路径会被当成 `AnalyzeUrl.swift` 的成员访问 ⭐⭐⭐
+  const clean = code.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  const used = new Set();
+  for (const m of clean.matchAll(/\b([A-Z][A-Za-z0-9_]*)\.[a-z_][A-Za-z0-9_]*/g)) used.add(m[1]);
+  for (const m of clean.matchAll(/\b([A-Z][A-Za-z0-9_]*)\s*\(/g)) used.add(m[1]);
+  const unknown = [...used].filter((t) => !allDeclared.has(t) && !ENTRY_SYSTEM.has(t));
+  check(`${path.basename(f)}：引用的类型都有定义（${used.size} 个）`, unknown.length === 0, unknown.join(', '));
+}
+
+// ─────────────────────────────────────────────────────────────
 // ③ 变异对照（--mutate）：把「类型撞名」造出来 ⇒ 门禁必须红
 // ─────────────────────────────────────────────────────────────
 if (process.argv.includes('--mutate')) {

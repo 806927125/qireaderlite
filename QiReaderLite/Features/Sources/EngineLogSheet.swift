@@ -277,7 +277,7 @@ struct EngineLogSheet: View {
 
         if let e = EngineBackend.lastError { lines.append("引擎错误：\(e)") }
         lines.append("")
-        let disk = EngineLog.diskLogText()
+        let disk = EngineLogPanel.diskLogText()
         lines.append("======== 磁盘日志（\(disk.count) 字符 · 含崩溃前）========")
         lines.append(disk.isEmpty ? "（磁盘日志是空的）" : disk)
         lines.append("")

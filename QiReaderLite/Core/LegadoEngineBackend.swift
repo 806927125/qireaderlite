@@ -98,7 +98,30 @@ final class LegadoEngineBackend {
         }
     }
 
-    // MARK: - 真正的实现（异步）
+    // ⭐⭐⭐ **把引擎日志挂到「引擎日志」面板**（App 启动时挂一次 ⇒ 别处直接用 `engineLog`）
+///
+/// ⚠️ **为什么要挂**（2026-10-28）：诊断写在 `NSLog` 里 ⇒ **只进设备控制台，用户看不到**
+///   ⇒ 真机排查只能靠「让用户去 Xcode 看控制台」⇒ 一轮一条信息 ⇒ 极慢 ⭐⭐⭐
+///   ⇒ 挂上面板 ⇒ 用户「复制日志」就有 ⭐⭐⭐
+///
+/// ⚠️⚠️⚠️ **2026-11-19：引擎换血那轮把这个类型连同老引擎壳（RuleSandbox）一起删了，
+///   可 `QiReaderLiteApp.init()` 里的 `EngineLogBootstrap.install()` 调用点还留着**
+///   ⇒ App 直接编不过（「cannot find 'EngineLogBootstrap' in scope」）⭐⭐⭐
+///   ⇒ 现在**恢复**它（位置也放回原处 ⇒ 沙盒 Linux 门禁编得到 ⇒ 以后删了能被抓到）⭐⭐⭐
+///
+/// ⭐⭐⭐⭐⭐ **必须 `Task { @MainActor in … }`**：
+///   · 引擎回调在**后台线程** ⇒ 面板 `EngineLogPanel` 是 `@MainActor`
+///   ⇒ 直接调 `appendLog` ⇒ **后台线程改 @Published 状态** ⇒ UI 更新在后台线程 ⇒ 闪退风险 ⭐⭐⭐
+///   ⇒ 切主线程再写 ⭐⭐⭐
+enum EngineLogBootstrap {
+    static func install() {
+        EngineLog.sink = { message in
+            Task { @MainActor in EngineLogPanel.shared.appendLog(message) }
+        }
+    }
+}
+
+// MARK: - 真正的实现（异步）
 
     private static func run(_ op: String, _ payload: [String: Any],
                             source: BookSource,
