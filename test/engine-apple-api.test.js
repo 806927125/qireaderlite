@@ -77,12 +77,15 @@ for (const [f, code] of codeNoC) {
   // ⭐⭐⭐⭐⭐ **CI 自省（读 SDK compression.h）拿到的事实**：
   //   · rawValue 是 **UInt32**（不是 Int32）⇒ `Int32(...)` 编不过 ⭐⭐⭐
   //   · **COMPRESSION_ZLIB = 0x205**（不是 0！！）⇒ 写 0 会静默用错算法 ⭐⭐⭐
-  const badRaw = [...code.matchAll(/compression_(?:stream_operation|algorithm|status|stream_flags)\(rawValue:\s*Int32/g)];
-  check(`${path.basename(f)}：Compression 的 rawValue 用 UInt32（SDK 事实）`, badRaw.length === 0,
-        `第 ${badRaw[0] ? badRaw[0].index + 1 : 0} 字符处用了 Int32`);
-  if (code.includes('compression_algorithm(rawValue:')) {
+  // ⭐⭐⭐⭐⭐ **CI 实证：Apple 上这些枚举是 uint32_t 基础类型** ⇒ 必须**直接传 UInt32 数值**
+  //   （包 `compression_*` 类型 ⇒ 类型不匹配 ⇒ 编译器挑别的重载 ⇒ 报
+  //    「missing arguments for parameters dst_ptr...」这个**极具误导性**的错）⭐⭐⭐
+  const wrapped = [...code.matchAll(/compression_(?:stream_operation|algorithm|status|stream_flags)\s*\(/g)];
+  check(`${path.basename(f)}：Compression 直接传 UInt32 数值（不包 compression_* 类型）`,
+        wrapped.length === 0, `第 ${wrapped[0] ? wrapped[0].index + 1 : 0} 字符处包了类型`);
+  if (code.includes('compression_stream_init')) {
     check(`${path.basename(f)}：ZLIB 用 0x205（SDK 头文件实测值）`,
-          /compression_algorithm\(rawValue:\s*UInt32\(0x205\)\)/.test(code),
+          /UInt32\(0x205\)/.test(code),
           'COMPRESSION_ZLIB = 0x205 ⇒ 写 0 会静默用错算法');
   }
 }
@@ -96,10 +99,12 @@ const WRONG_PADDING = ['kCCPaddingPKCS7', 'kCCPaddingNoPadding', 'kCCPKCS7Paddin
 for (const [f, code] of codeNoC) {
   const used = WRONG_PADDING.filter((w) => code.includes(w));
   check(`${path.basename(f)}：padding 不用任何常量名（SDK 里都不存在）`, used.length === 0, used.join(', '));
-  if (code.includes('CCPadding(')) {
-    check(`${path.basename(f)}：padding 用 raw 数值（0=无填充 / 1=PKCS7）`,
-          /CCPadding\(1\)/.test(code) && /CCPadding\(0\)/.test(code),
-          '应当是 CCPadding(1) / CCPadding(0)');
+  if (/ccPadding/.test(code)) {
+    // ⭐⭐⭐ `CCPadding` 在 Apple 上被导入成**泛型别名** ⇒ `CCPadding(1)` 报
+    //   「generic parameter 'ContentType' could not be inferred」⇒ **只能给字面量** ⭐⭐⭐
+    check(`${path.basename(f)}：padding 给字面量（1=PKCS7 / 0=无填充），不碰 CCPadding 类型`,
+          !code.includes('CCPadding(') && /ccPadding\s*=\s*[^\n]*\?\s*1\s*:\s*0/.test(code),
+          '应当是 `let ccPadding = usePadding ? 1 : 0`');
   }
 }
 

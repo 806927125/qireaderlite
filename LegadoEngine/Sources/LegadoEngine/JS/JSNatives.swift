@@ -711,39 +711,47 @@ extension JSBridge {
         //   COMPRESSION_STREAM_FINALIZE = 0x0001
         // ⚠️ **rawValue 是 UInt32** ⇒ `Int32(...)` 编不过 ⇒ **ERROR 的 -1 也编不过**（UInt32 没有负数）
         //   ⇒ ⇒ 不构造 ERROR，改用「不是 OK 也不是 END ⇒ 失败」⭐⭐⭐
-        let op = compression_stream_operation(rawValue: UInt32(encode ? 0 : 1))
-        let alg = compression_algorithm(rawValue: UInt32(0x205))       // ⭐ COMPRESSION_ZLIB
-        let statusOK = compression_status(rawValue: 0)
-        let statusEND = compression_status(rawValue: 1)
-        // ⭐ `compression_stream_process` 的 flags 参数是 Int32 ⇒ UInt32 ⇒ Int32 要用 bitPattern
-        let finalizeFlag = Int32(bitPattern: compression_stream_flags(rawValue: 1).rawValue)
-        guard compression_stream_init(&stream, op, alg) == statusOK else { return Data() }
+        // ⭐⭐⭐⭐⭐ **CI 自省（读 SDK compression.h）拿到的权威值**：
+        //   COMPRESSION_STREAM_ENCODE = 0 / COMPRESSION_STREAM_DECODE = 1
+        //   COMPRESSION_ZLIB           = **0x205**（不是 0！！）⭐⭐⭐
+        //   COMPRESSION_STATUS_OK = 0 / END = 1 / ERROR = -1
+        //   COMPRESSION_STREAM_FINALIZE = 0x0001
+        // ⚠️ 这些枚举在 Apple 上是 **uint32_t 基础类型** ⇒ **直接传 UInt32 数值**，
+        //   不包 `compression_*` 类型（包了类型不对 ⇒ 编译器会挑别的重载 ⇒ 报
+        //   「missing arguments for parameters dst_ptr...」这个**极具误导性**的错）⭐⭐⭐
+        let ccOp = UInt32(encode ? 0 : 1)      // COMPRESSION_STREAM_ENCODE / _DECODE
+        let ccAlg = UInt32(0x205)              // COMPRESSION_ZLIB
+        let ccStatusOK = UInt32(0)             // COMPRESSION_STATUS_OK
+        let ccStatusEND = UInt32(1)            // COMPRESSION_STATUS_END
+        // ⭐ `compression_stream_process` 的 flags 参数是 Int32 ⇒ 用 bitPattern 转
+        let finalizeFlag = Int32(bitPattern: UInt32(0x0001))   // COMPRESSION_STREAM_FINALIZE
+        guard compression_stream_init(&stream, ccOp, ccAlg) == ccStatusOK else { return Data() }
         defer { compression_stream_destroy(&stream) }
         let bufSize = 65536
         let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { dst.deallocate() }
         var output = Data()
         var emptyByte: UInt8 = 0
-        let status: compression_status = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> compression_status in
+        let status: UInt32 = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> UInt32 in
             if let base = src.baseAddress {
                 stream.src_ptr = base.assumingMemoryBound(to: UInt8.self)
             } else {
                 withUnsafeMutablePointer(to: &emptyByte) { stream.src_ptr = UnsafePointer($0) }
             }
             stream.src_size = src.count
-            var st = statusOK
+            var st = ccStatusOK
             repeat {
                 stream.dst_ptr = dst
                 stream.dst_size = bufSize
                 st = compression_stream_process(&stream, finalizeFlag)
-                if st == statusOK || st == statusEND {
+                if st == ccStatusOK || st == ccStatusEND {
                     output.append(dst, count: bufSize - stream.dst_size)
                 }
-            } while st == statusOK && (stream.src_size > 0 || stream.dst_size == 0)
+            } while st == ccStatusOK && (stream.src_size > 0 || stream.dst_size == 0)
             return st
         }
-        // ⚠️ 不比较 ERROR（rawValue 是 UInt32 ⇒ -1 编不过）⇒ 「既不是 OK 也不是 END ⇒ 失败」
-        return (status == statusOK || status == statusEND) ? output : Data()
+        // ⚠️ 不比较 ERROR（ERROR = -1 ⇒ UInt32 装不下）⇒ 「既不是 OK 也不是 END ⇒ 失败」
+        return (status == ccStatusOK || status == ccStatusEND) ? output : Data()
     }
 
     static func deflate(_ data: Data, compress: Bool, nowrap: Bool) -> Data {
@@ -887,12 +895,17 @@ extension JSBridge {
         //   `kCCPaddingNoPadding` / `kCCPKCS7Padding` / `ccNoPadding` **全部不在作用域** ⭐⭐⭐
         //   ⇒ **不猜名字了** ⇒ 直接用 `CCPadding` 的 raw 值：
         //     0 = 无填充 / 1 = PKCS7（CommonCrypto 的 CCPadding 枚举值）⭐⭐⭐
-        let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)
+        // ⭐⭐⭐ **不写类型标注** ⇒ 让 Swift 隐式转成参数类型（CCPadding 是 uint32_t 基础类型）
+        //   ⇒ 之前写 `CCPadding(1)` 报「generic parameter 'ContentType' could not be inferred」
+        //      ⇒ 说明 `CCPadding` 被导入成了**泛型别名** ⇒ 压根别碰它，直接给字面量 ⭐⭐⭐
+        let ccPadding = usePadding ? 1 : 0      // 1 = PKCS7 / 0 = 无填充
         let createStatus = iv.withUnsafeBytes { ivPtr in
             keyData.withUnsafeBytes { keyPtr in
                 // ⚠️ ECB 模式**必须传 NULL IV**（传了 ⇒ kCCParamError ⇒ 旧代码 ECB/CBC 拿不到结果）
                 // ⭐⭐⭐ **CI 实证：`withUnsafeBytes` 的 `ivPtr` 是 `UnsafeRawBufferPointer`**
                 //   ⇒ 它**不能**直接当 `UnsafeRawPointer?` 用 ⇒ 要经 `baseAddress` 转一下 ⭐⭐⭐
+                // ⭐⭐⭐ **CI 实证：`ivPtr.baseAddress` 的类型是 `UnsafeRawPointer<Element>?`（泛型）**
+                //   ⇒ 直接赋给 `UnsafeRawPointer?` 编不过 ⇒ **要显式转成非泛型的 UnsafeRawPointer** ⭐⭐⭐
                 let ivArg: UnsafeRawPointer? = (mode == "ECB")
                     ? nil
                     : ivPtr.baseAddress.map { UnsafeRawPointer($0) }

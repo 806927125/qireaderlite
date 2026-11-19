@@ -127,6 +127,10 @@ jobs:
           grep -nE -A3 -B3 "[Pp]adding" "$SDK/usr/include/CommonCrypto/CommonCryptor.h" | head -40 || true
           echo "===== Security 的 SecKeyAlgorithm 成员 ====="
           grep -nE "rsaEncryption[A-Za-z0-9]+" "$SDK/usr/include/Security/SecKey.h" | head -12 || true
+          echo "===== compression_stream_init 的【真实签名】（⭐ 之前一直猜这个 ⇒ 猜错三次）====="
+          grep -n -A10 "compression_stream_init" "$SDK/usr/include/compression.h" | head -30 || true
+          echo "--- compression_stream 的结构体定义 ---"
+          grep -n -A14 "typedef struct compression_stream" "$SDK/usr/include/compression.h" | head -20 || true
           echo "===== Swift 侧探针（typecheck ⇒ 打印真实可用名）====="
           cat > /tmp/probe.swift <<'PROBE'
           import Compression
