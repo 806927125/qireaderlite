@@ -204,3 +204,58 @@ CI：run 467 / 468（解析失败）/ **run 469 绿** ⇒ build297（`CFBundleVe
 | 端到端（真实接线 + 变异） | `test/explore-kinds-live.js` | 8 项 ✅ |
 
 build 号 298（commit `d75b27e`）。
+
+
+---
+
+# 追加（build299）：第三层根因 = **引擎只有一格 map，而站方两格混用**
+
+> build298 真机：仍是「只解析出 0 个分类」⇒ build297 的方向对，但**灌错了形态**。
+
+## 根因
+
+引擎只有**一格** `BookSource.variable`（一个 JSON map），而站方**两格混用**：
+
+| 站方 API | 语义 | 落点 |
+|---|---|---|
+| `source.get("nhAuthed")` / `source.put(k,v)` | **map 的某一项** | `variable` 这一格的某项 |
+| `source.getVariable()` / `source.setVariable(str)` | **整份 map 的 JSON 串**（站方 `JSON.parse` 它拿 NH_D） | `variable` 这一格的**整份** |
+
+⇒ build298 把【站方变量整串】灌进 `variable` ⇒ `source.get("nhAuthed")` 去 map 里找 ⇒ **找不到** ⇒ 恒空
+⇒ `nhAuth()` 恒 false ⇒ 站方 `exploreUrl` **主动交白卷** ⇒ **0 个分类**
+⇒ **症状与「没修」一模一样**（这就是「探针自证」缺失的代价）⭐⭐⭐
+
+## 修法（宿主层，零引擎改动）
+
+- ⭐⭐⭐ **两格合并成一份 map** 再灌进 `engineSource.variable`：
+  - 书籍变量 map 的项（`nhAuthed` / `nhPlatSwitch` / `token` …）**优先** ⇒ 覆盖 `source.get/put` 的项
+  - 站方变量整串解析后的项（`src` / `gender` / …）并进去 ⇒ `source.getVariable()` 解析出来就有 NH_D
+- ⭐⭐⭐ **Session 缓存缺陷**：`Session` 按源缓存 ⇒ 第一次 op 灌的变量会被一直沿用
+  ⇒ 用户后来在登录面板**解锁**（写了 `nhAuthed`）⇒ 缓存里还是旧值 ⇒ **仍然交白卷**
+  ⇒ 正解：**每个 op 都用最新的 payload 重新合并灌**（`refreshStationVariable`）
+
+## ⭐⭐⭐ 用户要做的动作（App 修不了的部分）
+
+**站方聚合源自带「整源密码门禁」**：`exploreUrl` 第一行就是 `if (!nhAuth()) { return ""; }`
+⇒ **未解锁 ⇒ 站方主动交白卷（不报错）** ⇒ 「0 个分类」⭐⭐⭐
+
+⇒ **操作路径**：书源登录 → 「整源解锁密码」输入框填密码 → 点「🔓 解锁整个源」
+（站方 `unlockAll()` 读登录表单值 → `md5` 比对 → `source.put("nhAuthed", hash)`）
+
+⚠️ **出厂密码只有源作者有**（源里只有 `NH_PWD_HASH` = md5，没有明文）
+⚠️ **不自动解锁**是**有意的**：站方注释写明这个门禁的价值是「源不外传」⇒ 自动填 = 绕过它的目的 ⭐⭐⭐
+
+## 诊断已加
+
+「0 个分类」的文案现在**点名【站方的整源密码门禁没解锁】**（旧文案「分类接口没通」是误导）
+⇒ 判据：站方把解锁态存在**书源变量**的 `nhAuthed` 项 ⇒ 宿主查自己那份就知道是不是没解锁 ⭐⭐⭐
+
+## 门禁
+
+| 门禁 | 结果 |
+|---|---|
+| `test/station-var-channel.test.js` | 21 项 ✅ + 5 变异全抓住（新增「不再合并两格」⇒ 精确复现 build298 现场）|
+| `test/explore-kinds-live.js` | 8 项 ✅ + 变异「读错的格」⇒ 精确复现真机症状「0 个分类」|
+| 全量 | 18 条 + swift 原生层 330 项 全绿 ✅ |
+
+build 号 299（commit `c334c74`）。
