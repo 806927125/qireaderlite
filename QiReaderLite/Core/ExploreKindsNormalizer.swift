@@ -203,16 +203,43 @@ enum ExploreKindsNormalizer {
     ///
     /// 站方写法：`show(infoMap['平台'],'find_source')` ⇒ 第二个参数就是变量名。
     /// 抠不出来就返回空串（宿主侧会把这一项标成「不可选」，而不是乱写变量）。
+    ///
+    /// ⭐⭐⭐ **两种形态都要认**（2026-11-19 实证）：
+    ///   ① **旧引擎 / 🍅大灰狼形态**：`show(infoMap['平台'],'find_source')`
+    ///      ⇒ 第二个引号参数就是变量名
+    ///   ② **🍒NovelHub 形态**：整个 action 是个 **IIFE**，里面直接写变量：
+    ///      `(function(){var c={};…var v=infoMap['平台'];…c['src']=v;c['find_source']=String(v);c['find_tab']='小说';…})()`
+    ///      ⇒ 变量名藏在 **`c['xxx']=` 赋值**里 ⇒ 只认 ① 会把 NovelHub 的筛选栏全判成「不可选」⭐⭐⭐
+    ///      ⇒ 而「不可选」⇒ 宿主不写那个变量 ⇒ **切台点了没反应**（静默失效）⭐⭐⭐
     static func filterParamKey(_ action: String) -> String {
-        // ① `infoMap['平台'],'find_source'`
+        // ① 旧引擎 / 大灰狼形态：`show(infoMap['平台'],'find_source')`
         if let v = Self.secondQuotedArg(in: action, pattern: #"infoMap\[['"]([^'"]+)['"]\]\s*,\s*['"]([^'"]+)['"]"#) {
             return v
         }
-        // ② 兜底：`show('平台','find_source')` 这种不带 infoMap 的写法
+        // ①' 兜底：`show('平台','find_source')` 这种不带 infoMap 的写法
         if let v = Self.secondQuotedArg(in: action, pattern: #"\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)"#) {
             return v
         }
+        // ② ⭐⭐⭐ **NovelHub 形态**：`c['find_source']=…` / `c['find_tab']=…`
+        //   ⚠️ 取**第一个** `c['xxx']=`（那是站方要改的主变量；后面的 find_tab 是附属）⭐⭐⭐
+        //   ⚠️ 排除 `c['src']`（那是站方内部的旧字段名，不是宿主要写的源级变量）
+        if let v = Self.firstAssignedKey(in: action) {
+            return v
+        }
         return ""
+    }
+
+    /// 从 `c['xxx']=` 这种赋值里抠出**第一个**键名（排除 `src`）
+    static func firstAssignedKey(in s: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: #"\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\]\s*="#) else { return nil }
+        let ns = s as NSString
+        for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
+            let key = ns.substring(with: m.range(at: 1))
+            // ⚠️ `src` 是站方内部的旧字段（不是宿主要写的源级变量）⇒ 跳过但继续找
+            if key == "src" { continue }
+            return key
+        }
+        return nil
     }
 
     /// 取正则的第 2 个捕获组（没有则 nil）

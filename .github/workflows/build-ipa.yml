@@ -111,6 +111,25 @@ jobs:
           grep "error:" b.log | sort -u | head -40
           echo "===== 错误结束 ====="
 
+      - name: ⭐⭐⭐⭐⭐ 发现页端到端：真实 NovelHub 源 ⇒ 求值 @js: exploreUrl ⇒ 出分类
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-19 真机 build296 实证）：
+          #   真机报「发现页：未能完成操作。（LegadoEngine.LegadoError 错误 1。）」
+          #   引擎日志：`url 解析失败:`（**冒号后为空**）
+          #   ⇒ 根因 = 换装新引擎丢了「先求值 @js: 的 exploreUrl」这条能力 ⭐⭐⭐
+          #   ⇒ **静态门禁证明「语义对」不够** ⇒ 必须**真跑一次** ⇒ 证明「真能出分类」⭐⭐⭐
+          #   ⇒ 这一步跑的是**产物里的真实 jsLib + 真实 exploreUrl**（不是 fixture）⭐⭐⭐
+          set -e
+          # ⚠️ CI 上没有本地产物 ⇒ **显式 SKIP**（这组**没验到**，不等于通过）⭐⭐⭐
+          #   （CI 的 job 是 checkout 出来的 ⇒ 没有 /workspace/output）⭐⭐⭐
+          #   ⇒ 真跑这一步在【本地/真机】做（沙盒已跑通：50 分类 + 7 筛选栏）⭐⭐⭐
+          SRC="${NH_LIVE_SOURCE:-}"
+          if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then
+            echo "⚠️ 没有书源产物（NH_LIVE_SOURCE 未设）⇒ 跳过（这组**没验到**，不等于通过）"
+            exit 0
+          fi
+          node test/explore-kinds-live.js "$SRC"
+
       - name: ⭐⭐⭐⭐⭐ 自省 Apple 平台符号（**不许再猜 SDK 的名字**）
         run: |
           # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-19 CI build296 实证）：

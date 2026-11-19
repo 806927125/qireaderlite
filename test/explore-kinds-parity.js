@@ -127,6 +127,19 @@ const FIXTURE = [
     ],
   },
   {
+    // ⭐⭐⭐ **🍒NovelHub 的真实形态**：action 是整个 **IIFE**，变量名藏在 `c['xxx']=` 里
+    //   ⇒ 只认旧引擎的 `show(infoMap[...],'xxx')` 形态 ⇒ 切台会静默失效 ⭐⭐⭐
+    name: 'NovelHub 形态（IIFE + c[\'find_source\']=）',
+    base: BASE,
+    input: [{
+      title: '平台', type: 'select', chars: ['书旗', '番茄'], default: '书旗',
+      action: "(function(){var c={};try{c=JSON.parse(source.getVariable()||'{}');}catch(e){}"
+            + "var v=infoMap['平台'];if(v!==null&&v!==undefined){c['src']=v;"
+            + "c['find_source']=String(v);c['find_tab']='小说';"
+            + "try{source.setVariable(JSON.stringify(c));}catch(e1){}}}())",
+    }],
+  },
+  {
     name: '空数组',
     base: BASE,
     input: [],
@@ -244,6 +257,21 @@ const canonFilters = (filters) => filters.map((f) => ({
   paramKey: String(f.paramKey ?? ''), action: String(f.action ?? ''),
 }));
 
+/** ⭐ 两份 filters 是否**只差 paramKey**（其余字段全同）⇒ 判「刻意的增强」 */
+function onlyParamKeyDiff(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = canonFilters([a[i]])[0], y = canonFilters([b[i]])[0];
+    for (const k of ['title', 'type', 'default', 'action']) {
+      if (x[k] !== y[k]) return false;
+    }
+    if (JSON.stringify(x.chars) !== JSON.stringify(y.chars)) return false;
+    // ⇒ paramKey 允许不同（且新的必须非空，否则是回退不是增强）
+    if (x.paramKey !== '' && y.paramKey === '') return false;
+  }
+  return true;
+}
+
 let pass = 0, fail = 0;
 const ok = (c, m, extra) => {
   if (c) { pass++; console.log('  ✓', m); }
@@ -280,7 +308,13 @@ for (let i = 0; i < Math.max(oracleResults.length, swiftResults.length); i++) {
   if (!o || !s) { ok(false, `case #${i} 缺失`); continue; }
   const okKinds = JSON.stringify(canonKinds(o.kinds)) === JSON.stringify(canonKinds(s.kinds));
   const okFilters = JSON.stringify(canonFilters(o.filters)) === JSON.stringify(canonFilters(s.filters));
-  ok(okKinds && okFilters, `case「${o.name}」分类+筛选栏与旧引擎逐字段一致`,
+  // ⭐⭐⭐ **NovelHub 形态是【刻意的增强】**：旧引擎抠不出 IIFE 形态的 paramKey
+  //   （它只认 `show(infoMap[...],'xxx')`）⇒ 旧引擎会把 NovelHub 的筛选栏全判成「不可选」
+  //   ⇒ **切台点了没反应**（静默失效）⭐⭐⭐
+  //   ⇒ 新实现必须**比旧引擎更全** ⇒ 这条例外**只放宽 paramKey**，分类必须逐字段一致 ⭐⭐⭐
+  const NH_CASE = /NovelHub 形态/.test(o.name);
+  const okFilters2 = okFilters || (NH_CASE && onlyParamKeyDiff(o.filters, s.filters));
+  ok(okKinds && okFilters2, `case「${o.name}」分类+筛选栏与旧引擎逐字段一致`,
      okKinds ? ('筛选栏不一致：\n  旧=' + JSON.stringify(canonFilters(o.filters)) + '\n  新=' + JSON.stringify(canonFilters(s.filters)))
              : ('分类不一致：\n  旧=' + JSON.stringify(canonKinds(o.kinds)) + '\n  新=' + JSON.stringify(canonKinds(s.kinds))));
 }
@@ -309,6 +343,11 @@ console.log('\n=== 3. 关键语义钉死（防「对拍全绿但语义错」）=
   // 站方自带 group 优先
   const own = (swiftResults[4] && canonKinds(swiftResults[4].kinds).find((k) => k.title === '带组'));
   ok(own && own.group === '站方给的组', `站方自带 group 优先（实得「${own ? own.group : '无'}」）`);
+  // ⭐⭐⭐ **NovelHub 形态的 paramKey**（IIFE + c['find_source']=）⇒ 切台靠它
+  const nhF = swiftResults.find((r) => /NovelHub 形态/.test(r.name || ''));
+  const nhParam = nhF && canonFilters(nhF.filters)[0];
+  ok(nhParam && nhParam.paramKey === 'find_source',
+     `NovelHub 形态也抠出 paramKey=find_source（实得「${nhParam ? nhParam.paramKey : '无'}」）`);
 }
 
 console.log('\n=== 4. 变异对照（改坏 Swift 侧 ⇒ 必须红）===');
@@ -326,6 +365,8 @@ if (MUTATE) {
       (t) => t.replace('if objURL.isEmpty {', 'if false {')],
     ['站方自带 group 不再优先',
       (t) => t.replace('"group": ownGroup.isEmpty ? group : ownGroup]', '"group": group]')],
+    ['NovelHub 形态的 paramKey 抠不出（IIFE 形态不认）',
+      (t) => t.replace('if let v = Self.firstAssignedKey(in: action) {', 'if let v: String? = nil, false {')],
   ];
   try {
     for (const [name, fn] of cases) {
