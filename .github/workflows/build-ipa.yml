@@ -122,7 +122,9 @@ jobs:
           echo "===== compression.h 的枚举 ====="
           grep -nE "COMPRESSION_(ENCODE|DECODE|ZLIB|STATUS|STREAM)" "$SDK/usr/include/compression.h" | head -20 || true
           echo "===== CommonCrypto 的 padding / mode / algorithm / option ====="
-          grep -nE "kCC(Padding|Mode|Algorithm|Encrypt|Decrypt|BlockSize)[A-Za-z0-9_]*" "$SDK/usr/include/CommonCrypto/CommonCryptor.h" | head -30 || true
+          grep -nE "kCC[A-Za-z0-9_]*" "$SDK/usr/include/CommonCrypto/CommonCryptor.h" | sed -n '1,80p' || true
+          echo "--- padding 段落（**看看到底有没有可用的名字**）---"
+          grep -nE -A3 -B3 "[Pp]adding" "$SDK/usr/include/CommonCrypto/CommonCryptor.h" | head -40 || true
           echo "===== Security 的 SecKeyAlgorithm 成员 ====="
           grep -nE "rsaEncryption[A-Za-z0-9]+" "$SDK/usr/include/Security/SecKey.h" | head -12 || true
           echo "===== Swift 侧探针（typecheck ⇒ 打印真实可用名）====="
@@ -136,8 +138,13 @@ jobs:
           let _ = compression_status(rawValue: 0)
           let _ = compression_stream_flags(rawValue: 1)
           // 探针 2：CommonCrypto 的 padding 常量真实名
-          let _ = CCPadding(kCCPaddingPKCS7)
-          let _ = CCPadding(kCCPaddingNoPadding)
+          // ⭐ 把候选名全试一遍 ⇒ 编译器会告诉我们**哪个真的存在**（不存在 ⇒ not in scope）⭐⭐⭐
+          let _ = CCPadding(kCCPaddingPKCS7)     // 大概率不存在
+          let _ = CCPadding(kCCPaddingNoPadding) // 大概率不存在
+          let _ = CCPadding(kCCPKCS7Padding)     // 之前试过 ⇒ 不存在
+          let _ = CCPadding(ccNoPadding)         // Rhino 风格 ⇒ 不存在
+          let _ = CCPadding(1)                   // ✅ 数值 ⇒ 一定能用
+          let _ = CCPadding(0)
           // 探针 3：SecKeyAlgorithm 的 OAEP 成员（SDK 里**没有** .rsaEncryptionOAEP）
           let _: SecKeyAlgorithm? = .rsaEncryptionOAEPSHA1
           PROBE

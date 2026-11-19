@@ -74,23 +74,34 @@ for (const [f, code] of codeNoC) {
     .filter((n) => !['COMPRESSION_STREAM_ENCODE', 'COMPRESSION_STREAM_DECODE'].includes(n));
   check(`${path.basename(f)}：没有裸用 COMPRESSION_* 常量（全部走 rawValue 通道）`,
         bareConst.length === 0, [...new Set(bareConst)].join(', '));
-}
-
-// ②-B CommonCrypto 的 padding 常量名（CI 实证：`kCCPaddingPKCS7` / `kCCPaddingNoPadding`）
-console.log('\n=== 2-B. CommonCrypto 的 padding 常量名 ===');
-const WRONG_PADDING = ['kCCPKCS7Padding', 'kCCNoPadding', 'ccPKCS7Padding', 'ccNoPadding',
-                        'kCCPaddingPKCS5Padding', 'CCPadding(kCCPKCS7)'];
-for (const [f, code] of codeNoC) {
-  for (const w of WRONG_PADDING) {
-    if (code.includes(w)) {
-      check(`${path.basename(f)}：没用 ${w}`, false, 'Apple 的名字是 kCCPaddingPKCS7 / kCCPaddingNoPadding');
-    }
+  // ⭐⭐⭐⭐⭐ **CI 自省（读 SDK compression.h）拿到的事实**：
+  //   · rawValue 是 **UInt32**（不是 Int32）⇒ `Int32(...)` 编不过 ⭐⭐⭐
+  //   · **COMPRESSION_ZLIB = 0x205**（不是 0！！）⇒ 写 0 会静默用错算法 ⭐⭐⭐
+  const badRaw = [...code.matchAll(/compression_(?:stream_operation|algorithm|status|stream_flags)\(rawValue:\s*Int32/g)];
+  check(`${path.basename(f)}：Compression 的 rawValue 用 UInt32（SDK 事实）`, badRaw.length === 0,
+        `第 ${badRaw[0] ? badRaw[0].index + 1 : 0} 字符处用了 Int32`);
+  if (code.includes('compression_algorithm(rawValue:')) {
+    check(`${path.basename(f)}：ZLIB 用 0x205（SDK 头文件实测值）`,
+          /compression_algorithm\(rawValue:\s*UInt32\(0x205\)\)/.test(code),
+          'COMPRESSION_ZLIB = 0x205 ⇒ 写 0 会静默用错算法');
   }
 }
-check('CommonCrypto padding 用了正确的名字（kCCPaddingPKCS7 / kCCPaddingNoPadding）',
-      [...codeNoC.values()].some((c) => c.includes('kCCPaddingPKCS7') && c.includes('kCCPaddingNoPadding'))
-      || ![...codeNoC.values()].some((c) => /ccPadding|CCPadding\(/.test(c)),
-      '两种都用都没有');
+
+// ②-B CommonCrypto 的 padding：**Apple 上没有任何可用的 padding 常量名**
+//   ⇒ CI 自省 + swiftc 探针实测：`kCCPaddingPKCS7` / `kCCPaddingNoPadding` / `kCCPKCS7Padding`
+//      / `ccPKCS7Padding` **全部不在作用域** ⇒ 只能用 `CCPadding` 的 raw 数值（0=无 / 1=PKCS7）⭐⭐⭐
+console.log('\n=== 2-B. CommonCrypto 的 padding（只能用 raw 数值）===');
+const WRONG_PADDING = ['kCCPaddingPKCS7', 'kCCPaddingNoPadding', 'kCCPKCS7Padding', 'kCCNoPadding',
+                        'ccPKCS7Padding', 'ccNoPadding', 'kCCPaddingNone'];
+for (const [f, code] of codeNoC) {
+  const used = WRONG_PADDING.filter((w) => code.includes(w));
+  check(`${path.basename(f)}：padding 不用任何常量名（SDK 里都不存在）`, used.length === 0, used.join(', '));
+  if (code.includes('CCPadding(')) {
+    check(`${path.basename(f)}：padding 用 raw 数值（0=无填充 / 1=PKCS7）`,
+          /CCPadding\(1\)/.test(code) && /CCPadding\(0\)/.test(code),
+          '应当是 CCPadding(1) / CCPadding(0)');
+  }
+}
 
 // ③ SecKeyAlgorithm
 console.log('\n=== 2. Security 框架（SDK 里真实存在的成员）===');

@@ -704,12 +704,19 @@ extension JSBridge {
         //   · `compression_status(rawValue:)`            0=OK 1=END -1=ERROR
         //   · `compression_stream_flags(rawValue:)`      1=FINALIZE
         var stream = compression_stream()
-        let op = compression_stream_operation(rawValue: Int32(encode ? 0 : 1))
-        let alg = compression_algorithm(rawValue: 0)
+        // ⚠️⚠️⚠️ **CI 自省（读 SDK compression.h）拿到的真实值**（2026-11-19）：
+        //   COMPRESSION_STREAM_ENCODE = 0 / COMPRESSION_STREAM_DECODE = 1
+        //   COMPRESSION_ZLIB           = **0x205**（不是 0！！）⭐⭐⭐
+        //   COMPRESSION_STATUS_OK = 0 / END = 1 / ERROR = -1
+        //   COMPRESSION_STREAM_FINALIZE = 0x0001
+        // ⚠️ **rawValue 是 UInt32** ⇒ `Int32(...)` 编不过 ⇒ **ERROR 的 -1 也编不过**（UInt32 没有负数）
+        //   ⇒ ⇒ 不构造 ERROR，改用「不是 OK 也不是 END ⇒ 失败」⭐⭐⭐
+        let op = compression_stream_operation(rawValue: UInt32(encode ? 0 : 1))
+        let alg = compression_algorithm(rawValue: UInt32(0x205))       // ⭐ COMPRESSION_ZLIB
         let statusOK = compression_status(rawValue: 0)
         let statusEND = compression_status(rawValue: 1)
-        let statusERR = compression_status(rawValue: -1)
-        let finalizeFlag = compression_stream_flags(rawValue: 1).rawValue
+        // ⭐ `compression_stream_process` 的 flags 参数是 Int32 ⇒ UInt32 ⇒ Int32 要用 bitPattern
+        let finalizeFlag = Int32(bitPattern: compression_stream_flags(rawValue: 1).rawValue)
         guard compression_stream_init(&stream, op, alg) == statusOK else { return Data() }
         defer { compression_stream_destroy(&stream) }
         let bufSize = 65536
@@ -735,7 +742,8 @@ extension JSBridge {
             } while st == statusOK && (stream.src_size > 0 || stream.dst_size == 0)
             return st
         }
-        return status == statusERR ? Data() : output
+        // ⚠️ 不比较 ERROR（rawValue 是 UInt32 ⇒ -1 编不过）⇒ 「既不是 OK 也不是 END ⇒ 失败」
+        return (status == statusOK || status == statusEND) ? output : Data()
     }
 
     static func deflate(_ data: Data, compress: Bool, nowrap: Bool) -> Data {
@@ -875,16 +883,19 @@ extension JSBridge {
         //   ⇒ 原代码多传了一个 `0` ⇒ 编译不过 ⭐⭐⭐
         // ⚠️ `kCCModeOptionCTR_BE` **只在 CTR 模式**能传（ECB/CBC 传了 ⇒ kCCParamError）⭐⭐⭐
         let ccOptions: CCModeOptions = (mode == "CTR") ? CCModeOptions(kCCModeOptionCTR_BE) : CCModeOptions(0)
-        // ⭐⭐⭐⭐⭐ **CI 实证：Apple 的 padding 常量名是 `kCCPaddingPKCS7` / `kCCPaddingNoPadding`**
-        //   ⇒ 之前写的 `kCCPKCS7Padding` / `kCCNoPadding`（不存在）⇒ **不再猜** ⭐⭐⭐
-        //   ⇒ ⚠️ 注意名字里是 `kCCPadding` 不是 `kCC` + `Padding` ⇒ 词序不同 ⭐⭐⭐
-        let ccPadding: CCPadding = usePadding ? CCPadding(kCCPaddingPKCS7) : CCPadding(kCCPaddingNoPadding)
+        // ⭐⭐⭐⭐⭐⭐ **CI 自省 + swiftc 探针（build296）：Apple 上 `kCCPaddingPKCS7` /
+        //   `kCCPaddingNoPadding` / `kCCPKCS7Padding` / `ccNoPadding` **全部不在作用域** ⭐⭐⭐
+        //   ⇒ **不猜名字了** ⇒ 直接用 `CCPadding` 的 raw 值：
+        //     0 = 无填充 / 1 = PKCS7（CommonCrypto 的 CCPadding 枚举值）⭐⭐⭐
+        let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)
         let createStatus = iv.withUnsafeBytes { ivPtr in
             keyData.withUnsafeBytes { keyPtr in
                 // ⚠️ ECB 模式**必须传 NULL IV**（传了 ⇒ kCCParamError ⇒ 旧代码 ECB/CBC 拿不到结果）
-                // ⭐⭐⭐ **CI 实证：`withUnsafeBytes` 的 `ivPtr` 是 UnsafeRawBufferPointer ⇒ 它自己就是指针**
-                //   ⇒ **没有** `baseAddress`（那是 `Data.withUnsafeBytes` 的形态）⇒ 之前写错了 ⭐⭐⭐
-                let ivArg: UnsafeRawPointer? = (mode == "ECB") ? nil : ivPtr
+                // ⭐⭐⭐ **CI 实证：`withUnsafeBytes` 的 `ivPtr` 是 `UnsafeRawBufferPointer`**
+                //   ⇒ 它**不能**直接当 `UnsafeRawPointer?` 用 ⇒ 要经 `baseAddress` 转一下 ⭐⭐⭐
+                let ivArg: UnsafeRawPointer? = (mode == "ECB")
+                    ? nil
+                    : ivPtr.baseAddress.map { UnsafeRawPointer($0) }
                 CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,
                     ivArg, keyPtr.baseAddress, keyData.count,
                     nil, 0, ccOptions, &cryptor)
