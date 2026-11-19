@@ -46,6 +46,12 @@ declare -a GATES=(
   #   ⇒ step name 里写了裸 `@js:` ⇒ **`@` 是 YAML 保留指示符** ⇒ **整个 workflow 解析失败** ⭐⭐⭐
   #   ⇒ 症状 = **CI 立刻失败、且一个 job 都没有**（`jobs: []`）⇒ 什么都看不见 ⇒ 最难查的一类 ⭐⭐⭐
   #   ⇒ 本地 3 秒 parse 一遍 ⇒ 当场报「哪个文件哪一行」⭐⭐⭐
+  # ⭐⭐⭐⭐⭐ **站方变量通道**（2026-11-19 真机 build297 实证）
+  #   ⇒ 真机：发现页从「LegadoError 1」变成「只解析出 0 个分类」⇒ **求值通了、站方交白卷**⭐⭐⭐
+  #   ⇒ 根因 = 引擎的 `srcGet` 读 `BookSource.variable` 那一格，而 App 灌的是 `__variable`（**另一格**）
+  #     ⇒ 站方 JS 读 `source.get("nhAuthed")` 恒空 ⇒ `nhAuth()` 恒 false ⇒ **主动交白卷**⭐⭐⭐
+  #   ⇒ 本门禁钉死：① 灌进 `variable` ② 读回走 `collectStationVariable` ③ 两格不许混 ⭐⭐⭐
+  "station-var-channel:test/station-var-channel.test.js"
   "workflow-yaml-gate:test/workflow-yaml-gate.test.js"
   "explore-kinds-parity:test/explore-kinds-parity.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"

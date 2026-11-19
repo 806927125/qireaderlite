@@ -24,29 +24,71 @@ final class LegadoEngineBackend {
 
     /// ⭐⭐⭐ **一个源一个会话**（站方变量/登录态要在 op 之间延续）
     fileprivate final class Session {
+        /// ⭐⭐⭐⭐⭐ **站方变量通道（2026-11-19 真机 build297 实证）**
+        ///
+        /// ⚠️⚠️⚠️ **为什么需要它**（真机症状：发现页「只解析出 0 个分类」）：
+        ///   · 引擎的站方 JS 读变量走 `source.get(k)` / `source.getVariable()`
+        ///     ⇒ 落到引擎 `BookSource.variable` **这一格**（`srcGet`/`srcPut` 都指它）⭐⭐⭐
+        ///   · 而 App 灌站方变量的地方是 **`srcDict["__variable"]` → `session.variables`**（另一格）⭐⭐⭐
+        ///   ⇒ **两格不通** ⇒ 站方 JS 读 `source.get("nhAuthed")` **恒空** ⇒ `nhAuth()` 恒 false
+        ///     ⇒ 站方 `exploreUrl` **主动交白卷**（`if (!nhAuth()) { return ""; }`）⇒ **0 个分类** ⭐⭐⭐
+        ///   ⇒ 写方向同样断：站方 `source.put(...)` 写进引擎那格 ⇒ App 回传的是**另一格** ⇒ 写不回来 ⭐⭐⭐
+        ///
+        /// ⭐ **本类 = 那条通道的宿主端**：
+        ///   · `stationVariable` = 站方变量那一格的 JSON 对象串（**引擎读写的正是它**）⭐⭐⭐
+        ///   · 每次 op 前：把它灌进 `engineSource.variable` ⇒ 站方 JS 读得到 ⭐⭐⭐
+        ///   · 每次 op 后：把 `engineSource.variable` 读回来 ⇒ 站方 JS 写得回来 ⭐⭐⭐
+        ///
+        /// ⚠️ **为什么不用 `session.variables`**（RuleVariables map）：
+        ///   它是【书籍变量】那格（`book.getVariable` 走 `varGet`）⇒ 与站方变量**不是同一格** ⇒ 不能混 ⭐⭐⭐
         let engineSource: LegadoEngineHost.Source
-        /// 站方变量（新引擎是**一个 map**；老引擎是两套 ⇒ 这里统一成 map）
+        /// 站方变量（Legado 语义：一整串 JSON）⇒ **引擎读写的正是这一格** ⭐⭐⭐
+        var stationVariable: String
+        /// 站方变量（**书籍变量**那格；新引擎是一个 map）⇒ 走 `varGet`/`varPut`
         let variables: LegadoEngineHost.Vars
         /// 灌进去时的种子（判定「站方到底改没改」—— **证据不许自证**）⭐⭐⭐
         let seeded: String
+        /// ⭐⭐⭐ **站方变量那格的种子**（判定站方有没有改它 ⇒ **证据不许自证**）⭐⭐⭐
+        let stationSeeded: String
 
         init(engineSource: LegadoEngineHost.Source, payload: [String: Any]) {
-            self.engineSource = engineSource
             let raw = (payload["source"] as? [String: Any]) ?? [:]
+            // ① **站方变量那格**（引擎读写的正是它 ⇒ 必须先灌进 engineSource.variable）⭐⭐⭐
+            let sv = (raw["__variable"] as? String) ?? ""
+            var src = engineSource
+            if !sv.isEmpty { src.variable = sv }
+            self.engineSource = src
+            self.stationVariable = sv
+            self.stationSeeded = sv
+            // ② 书籍变量（map）⇒ 走 `varGet`/`varPut`（**与站方变量不是同一格**）⭐⭐⭐
             let vars = LegadoEngineHost.Vars()
-            // ① 书源变量（map）
             if let seed = raw["__variables"] as? String, !seed.isEmpty,
                let d = seed.data(using: .utf8),
                let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
                 for (k, v) in o { vars.put(k, "\(v)") }
             }
-            // ② 站方变量（Legado 语义：一整串 JSON）⇒ 也并进同一格
-            if let sv = raw["__variable"] as? String, !sv.isEmpty {
-                vars.putVariable(sv)
-            }
             self.variables = vars
             self.seeded = vars.getVariable()
         }
+
+        /// ⭐⭐⭐ **站方 JS 跑完之后：把引擎那格读回来**（站方 `source.put(...)` 的写回）⭐⭐⭐
+        ///
+        /// ⚠️⚠️ **为什么必须用 JS 读、不能直接读 `engineSource.variable`**：
+        ///   站方 JS 写的是 **`JSBridge` 内的副本**（`JSBridge.source` 是模块内可见 ⇒ 宿主读不到）⭐⭐⭐
+        ///   ⇒ 正解：`bridge.eval("source.getVariable()")` ⇒ **纯 JS 读副本** ⇒ 零引擎改动 ⭐⭐⭐
+        /// ⚠️⚠️ **参数用闭包、不写 `LegadoEngineHost.Bridge` 类型**：
+        ///   那个别名只在 Apple 平台存在（`#if canImport(JavaScriptCore)`）
+        ///   ⇒ Linux 沙盒编译时**类型不存在** ⇒ 写死会编不过 ⭐⭐⭐
+        ///   ⇒ 闭包在调用点（Apple 分支）里构造 ⇒ 类型由编译器在那儿推断 ⭐⭐⭐
+        func collectStationVariable(read: () -> String?) -> String {
+            var v = stationVariable
+            if let s = read(), !s.isEmpty { v = s }
+            stationVariable = v
+            return v
+        }
+
+        /// ⭐⭐⭐ **给 JS 用的 engineSource**（已灌好站方变量那一格）⭐⭐⭐
+        var engineSourceForJS: LegadoEngineHost.Source { engineSource }
     }
 
     private let lock = NSLock()
@@ -103,10 +145,27 @@ final class LegadoEngineBackend {
     private static func run(_ op: String, _ payload: [String: Any],
                             source: BookSource,
                             sessions: LegadoEngineBackend) async throws -> Any? {
-        let engineSource = try parseSource(payload, fallback: source)
-        let session = LegadoEngineBackend.session(for: engineSource.bookSourceUrl,
-                                                 engineSource: engineSource,
+        let parsedSource = try parseSource(payload, fallback: source)
+        let session = LegadoEngineBackend.session(for: parsedSource.bookSourceUrl,
+                                                 engineSource: parsedSource,
                                                  payload: payload, sessions: sessions)
+        // ⭐⭐⭐⭐⭐ **站方变量通道（2026-11-19 真机 build297 实证）**
+        //
+        //   ⚠️⚠️⚠️ **为什么需要它**（真机症状：发现页「只解析出 0 个分类」）：
+        //     引擎的站方 JS 读变量走 `source.get(k)` / `source.getVariable()`
+        //     ⇒ 落到引擎 `BookSource.variable` **那一格**（`srcGet`/`srcPut` 都指它）⭐⭐⭐
+        //     而 App 灌站方变量的地方是 `srcDict["__variable"]` ⇒ **另一格** ⇒ 两格不通 ⭐⭐⭐
+        //     ⇒ 站方 JS 读 `source.get("nhAuthed")` **恒空** ⇒ `nhAuth()` 恒 false
+        //       ⇒ 站方 `exploreUrl` **主动交白卷**（`if (!nhAuth()) { return ""; }`）⇒ **0 个分类** ⭐⭐⭐
+        //
+        //   ⭐ **修法（零引擎改动）**：
+        //     ① **读**：把 App 的站方变量灌进 `engineSource.variable` ⇒ 站方 JS 读得到 ⭐⭐⭐
+        //     ② **写**：站方 JS 写的是 **JSBridge 内的副本**（`JSBridge.source` 模块内可见 ⇒ 宿主读不到）
+        //        ⇒ 正解：**用 `bridge.eval("source.getVariable()")` 把副本里的值读出来**（纯 JS ⇒ 不碰引擎）⭐⭐⭐
+        //
+        //   ⚠️ **为什么不能用 `session.variables`（RuleVariables map）**：那是【书籍变量】那格
+        //     （`book.getVariable` 走 `varGet`）⇒ 与站方变量**不是同一格** ⇒ 不能混 ⭐⭐⭐
+        let engineSource = session.engineSourceForJS
         var out: [String: Any]
         #if canImport(JavaScriptCore) && !os(Linux)
         // ⭐⭐⭐⭐⭐ **筛选栏 action**（2026-11-19 新引擎接线）
@@ -132,9 +191,13 @@ final class LegadoEngineBackend {
             } catch {
                 out = ["ok": false, "error": String(describing: error), "msgs": host.messages]
             }
+            // ⭐⭐⭐ **站方变量读回**（站方 JS 里的 `source.put(...)` 写进副本了 ⇒ 取出来）⭐⭐⭐
+            let stationVar = session.collectStationVariable {
+                (try? bridge.eval("source.getVariable()")) as? String
+            }
             out["__sourceVars"] = session.variables.getVariable()
-            out["__sourceVariable"] = session.variables.getVariable()
-            out["__sourceVariableChanged"] = (session.variables.getVariable() != session.seeded)
+            out["__sourceVariable"] = stationVar
+            out["__sourceVariableChanged"] = (stationVar != session.stationSeeded)
             return out
         }
         // ⭐⭐⭐ **登录链路**：新引擎不含登录 UI ⇒ 宿主自己跑站方的 `loginUrl` 动作 / `loginCheckJs`
@@ -172,9 +235,13 @@ final class LegadoEngineBackend {
                 }
             }
             // ⭐⭐⭐ **站方 JS 改过的变量 ⇒ 回传**（宿主落盘 ⇒ 下次直接生效）
+            // ⭐⭐⭐ **站方变量读回**（站方 JS 里的 `source.put(...)` 写进副本了 ⇒ 取出来）⭐⭐⭐
+            let stationVar = session.collectStationVariable {
+                (try? bridge.eval("source.getVariable()")) as? String
+            }
             out["__sourceVars"] = session.variables.getVariable()
-            out["__sourceVariable"] = session.variables.getVariable()
-            out["__sourceVariableChanged"] = (session.variables.getVariable() != session.seeded)
+            out["__sourceVariable"] = stationVar
+            out["__sourceVariableChanged"] = (stationVar != session.stationSeeded)
             return out
         }
         #endif
@@ -287,10 +354,17 @@ final class LegadoEngineBackend {
             throw ServiceError.engineFailed("新引擎不支持「\(op)」这个操作")
         }
         // ⭐⭐⭐ **站方 JS 改过的变量 ⇒ 回传**（宿主落盘 ⇒ 下次直接生效）
+        //
+        // ⭐⭐⭐⭐⭐ **站方变量必须回传【站方那一格】**（2026-11-19 真机 build297 实证）：
+        //   ⚠️ 以前这里回传的是 `session.variables`（**书籍变量**那一格）⇒ **回传错格** ⭐⭐⭐
+        //     ⇒ 宿主落盘时把【书籍变量的 map】写进了【站方变量槽】⇒ 两格互相污染 ⭐⭐⭐
+        //     ⇒ 且站方 JS 读 `source.get("nhAuthed")` 读不到 ⇒ **发现页 0 分类** ⭐⭐⭐
+        //   ⇒ 现在：`__sourceVars` = 书籍变量（RuleVariables map）
+        //           `__sourceVariable` = **站方变量那一格**（`session.stationVariable`）⭐⭐⭐
         out["__sourceVars"] = session.variables.getVariable()
-        out["__sourceVariable"] = session.variables.getVariable()
+        out["__sourceVariable"] = session.stationVariable
         // ⭐⭐⭐ **「改没改」只认与种子比较**（证据不许自证）⭐⭐⭐
-        out["__sourceVariableChanged"] = (session.variables.getVariable() != session.seeded)
+        out["__sourceVariableChanged"] = (session.stationVariable != session.stationSeeded)
         return out
     }
 

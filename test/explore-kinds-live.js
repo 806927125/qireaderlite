@@ -82,22 +82,63 @@ var cache = { put: function () {}, get: function () { return ''; } };
 
 // ── ② 宿主 source 对象：按【引擎 bootstrap 的 __mkSource 语义】造 ─────────
 function makeSource(varsJson) {
-  const vars = varsJson ? JSON.parse(varsJson) : {};
+  // ⭐⭐⭐⭐⭐ **两格独立**（模拟真实：站方变量那格 ≠ 书籍变量那格）⭐⭐⭐
+  //   `vars` = **书籍变量**那格（引擎的 RuleVariables map）
+  //   `stationVariable` = **站方变量**那格（引擎的 BookSource.variable）⭐⭐⭐
+  let vars = varsJson ? JSON.parse(varsJson) : {};
   // ⭐⭐⭐ **站方的登录门**：`nhAuth()` 要求 `source.get("nhAuthed")` == `NH_PWD_HASH`
   //   ⇒ 没登录 ⇒ exploreUrl **主动降级返空**（不是 bug ⇒ 是站方的设计）⭐⭐⭐
   //   ⇒ 本脚本要验「求值 + 归一化」这条路 ⇒ 必须给登录态 ⭐⭐⭐
   //   （`NH_PWD_HASH` 从**产物自己的 jsLib** 里读 ⇒ 不写死 ⇒ 换源也准）⭐⭐⭐
   const m = /var NH_PWD_HASH\s*=\s*"([^"]+)"/.exec(source.jsLib || '');
   if (m && vars.nhAuthed === undefined) { vars.nhAuthed = m[1]; }
+  // ⭐⭐⭐⭐⭐ **站方变量那一格**（宿主灌进引擎 `BookSource.variable` 的那份 JSON 对象串）⭐⭐⭐
+  //   ⚠️⚠️⚠️ **早先这个脚本是「手工往 source.get 的 map 里塞 nhAuthed」** ⇒ 那是**假接线** ⭐⭐⭐
+  //     ⇒ 掩盖了真机故障（真机 0 分类的根因正是「宿主灌的那格、引擎压根不读」）⭐⭐⭐
+  //     ⇒ 现在：**整格灌进 `variable`** ⇒ `source.get` 从 `variable` 里读 ⇒ 与真机同构 ⭐⭐⭐
+  // ⭐⭐⭐⭐⭐ **两格必须【独立】**（2026-11-19 实证）：
+  //   早先把 `stationVariable` 和 `vars` 设成同一份 ⇒ 无论从哪读都一样
+  //   ⇒ 变异「读错的格」**照样绿** ⇒ 端到端门禁**抓不到真机故障** ⇒ 门禁是摆设 ⭐⭐⭐
+  //   ⇒ 正解：**站方变量那格独立**（只放站方变量；书籍变量那格空）
+  //     ⇒ 「读错的格」必然读不到 nhAuthed ⇒ 门禁当场红 ⭐⭐⭐
+  // ⭐⭐⭐ **站方变量那格**（宿主灌进引擎 `BookSource.variable` 的那份）⭐⭐⭐
+  //   ⚠️⚠️⚠️ **必须与 `vars`（书籍变量那格）独立**（2026-11-19 实证）：
+  //     早先两者是同一份 ⇒ 无论从哪读都一样 ⇒ 变异「读错的格」照样绿
+  //     ⇒ **端到端门禁抓不到真机故障** ⇒ 门禁是摆设 ⭐⭐⭐
+  //   ⇒ 现在：`vars` 只放**书籍变量**（真实场景里书源变量 map 另有一格）
+  // ⭐⭐⭐⭐⭐ **书籍变量那格【不许含 nhAuthed】**（否则读错格也读得到 ⇒ 变异抓不到）⭐⭐⭐
+  //   ⇒ 真实场景：书籍变量 = 书/用户级变量；站方变量 = 书源级变量 ⇒ **两格内容不同** ⭐⭐⭐
+  const bookVarsOnly = {};
+  const stationOnly = { nhAuthed: vars.nhAuthed };   // 站方变量那格（只有站方的）
+  let stationVariable = JSON.stringify(stationOnly);
+  vars = bookVarsOnly;                                // 书籍变量那格（不含 nhAuthed）
   const src = {
     bookSourceUrl: source.bookSourceUrl || '',
     bookSourceName: source.bookSourceName || '',
     getKey: function () { return this.bookSourceUrl; },
-    getVariable: function () { return JSON.stringify(vars); },
-    setVariable: function (v) { try { vars = JSON.parse(String(v)); } catch (e) {} },
+    // ⭐⭐⭐ **引擎语义**：`srcGet`/`srcPut` 读写的是 **`variable` 那一格**（不是别处）⭐⭐⭐
+    getVariable: function () { return stationVariable; },
+    setVariable: function (v) {
+      stationVariable = String(v == null ? '' : v);
+      try { vars = JSON.parse(stationVariable) || {}; } catch (e) { vars = {}; }
+    },
     putVariable: function (v) { this.setVariable(v); },
-    get: function (k) { return vars[String(k)] === undefined ? '' : String(vars[String(k)]); },
-    put: function (k, v) { vars[String(k)] = String(v); return vars[String(k)]; },
+    get: function (k) {
+      /*__VAR_CHANNEL__*/
+      try {
+        const o = JSON.parse(stationVariable || '{}');
+        return o[String(k)] === undefined ? '' : String(o[String(k)]);
+      } catch (e) { return ''; }
+    },
+    put: function (k, v) {
+      try {
+        const o = JSON.parse(stationVariable || '{}');
+        o[String(k)] = String(v);
+        stationVariable = JSON.stringify(o);
+        vars = o;
+        return String(v);
+      } catch (e) { return ''; }
+    },
     getLoginInfoMap: function () { return {}; },
     getLoginInfo: function () { return ''; },
     putLoginInfo: function () {},
@@ -228,6 +269,45 @@ for (const k of kinds.slice(0, 8)) {
 console.log('--- 筛选栏 ---');
 for (const f of filters) {
   console.log('   ', f.title, '| chars=', (f.chars || []).length, '| default=', f.default, '| paramKey=', f.paramKey);
+}
+
+// ── ⑥ 变异对照：把「读错的格」改回去 ⇒ 必须红（精确复现真机症状）⭐⭐⭐ ──
+console.log('\n=== 4. 变异对照（读错的格 ⇒ 必须复现真机症状）===');
+{
+  const self = __filename;
+  const orig = fs.readFileSync(self, 'utf8');
+  // ⚠️⚠️ **锚点用【唯一标记】而不是长正则**（长正则会被空白/换行差异打脸）⭐⭐⭐
+  //   ⇒ 在 `source.get` 的实现里插一个标记行 ⇒ 变异时整段替换 ⇒ 稳 ⭐⭐⭐
+  const ANCHOR = '/*__VAR_CHANNEL__*/';
+  if (orig.indexOf(ANCHOR) < 0) {
+    ok(false, '变异「读错的格」：锚点命中', '源码里找不到锚点标记 ⇒ 变异无效');
+    // 直接跳过变异段
+    console.log(`\n通过 ${pass} / 失败 ${fail}`);
+    process.exit(1);
+  }
+  const mutated = orig.replace(
+    /get: function \(k\) \{[\s\S]*?\n    \},/,
+    "get: function (k) { return vars[String(k)] === undefined ? '' : String(vars[String(k)]); },");
+  if (mutated === orig) {
+    ok(false, '变异「读错的格」：锚点命中', '锚点没命中 ⇒ 变异无效');
+  } else {
+    const tmpSelf = self + '.mutate-bak';
+    try {
+      fs.writeFileSync(self, mutated, 'utf8');
+      let red = false, detail = '';
+      try {
+        execFileSync('node', [self, SRC], { stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 });
+      } catch (e) {
+        red = true;
+        detail = String(e.stdout || e.stderr || '').slice(0, 300);
+      }
+      ok(red, '变异「读错的格」⇒ 端到端必须红（★ 精确复现真机症状「0 个分类」）',
+         red ? '' : '变异后仍然通过 ⇒ 这道门禁抓不到真机故障 ⇒ 是摆设');
+    } finally {
+      fs.writeFileSync(self, orig, 'utf8');
+      try { fs.unlinkSync(tmpSelf); } catch (e) {}
+    }
+  }
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`);
