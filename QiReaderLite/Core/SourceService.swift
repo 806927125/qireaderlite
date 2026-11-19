@@ -185,6 +185,23 @@ final class SourceService {
     ///   站方变量的**形态证据**必须是「**站方自己改过**」——
     ///   ⇒ 回传时值**一模一样** ⇒ 那是**宿主灌进去的污染被原样弹回来** ⇒ 不是证据 ⭐⭐⭐
     ///   ⇒ 拿它当证据 = **自证** ⇒ 「凭据形态」永远判不出来 ⇒ 污染永远清不掉 ⭐⭐⭐
+    /// ⭐⭐⭐⭐⭐ **这个源的 jsLib 里【真的有】整源密码门禁吗？**（2026-11-19 真机双源对照）
+    ///
+    /// ⚠️⚠️ **必须有依据**：🍅大灰狼 5.9.30（原始上游源）**根本没有** nhAuth 机制
+    ///   ⇒ 无条件提示「多半是门禁没解锁」是**误报** ⇒ 用户被带偏 ⭐⭐⭐
+    /// ⇒ 正解：**扫源自己的 jsLib** ⇒ 有 `nhAuth(` / `NH_PWD_HASH` 才算有门禁 ⭐⭐⭐
+    static func stationHasAuthGate(_ src: BookSource) -> Bool {
+        guard let lib = src.jsLib, !lib.isEmpty else { return false }
+        return lib.contains("function nhAuth(") || lib.contains("NH_PWD_HASH")
+    }
+
+    /// 某个变量槽里有没有 `nhAuthed`（站方的解锁态）
+    static func hasAuthedIn(_ raw: String) -> Bool {
+        guard let d = raw.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return false }
+        return !(o["nhAuthed"] as? String ?? "").isEmpty
+    }
+
     static func stationWroteIt(_ obj: [String: Any]) -> Bool {
         (obj["__sourceVariableChanged"] as? Bool) == true
     }
@@ -234,7 +251,7 @@ final class SourceService {
                 }
                 return r
             }
-            let why = Self.untrustworthyReason(op, r, sourceUrl: source.bookSourceUrl)
+            let why = Self.untrustworthyReason(op, r, source: source)
             EngineLogPanel.shared.appendLog(
                 "[引擎] 新引擎的「\(op)」结果不可信（\(why)）")
             EngineBackend.lastError = "「\(op)」结果不可信：\(why)"
@@ -444,7 +461,7 @@ final class SourceService {
     ///   以前只说「书名/书 URL 是空的」⇒ 用户看到这句话**完全不知道该查哪** ⇒
     ///   ⇒ 白等一轮（真机就是这么卡住的）⭐⭐⭐
     ///   ⇒ 现在：**逐个字段点名** + **带上引擎的实际返回**（截断）⇒ 一次就能定位 ⭐⭐⭐
-    static func untrustworthyReason(_ op: String, _ r: Any?, sourceUrl: String = "") -> String {
+    static func untrustworthyReason(_ op: String, _ r: Any?, source: BookSource? = nil) -> String {
         guard let dict = r as? [String: Any] else { return "返回格式不对" }
         switch op {
         case "exploreKinds":
@@ -460,23 +477,30 @@ final class SourceService {
             // ⚠️ 旧文案说「多半是站方兜底的『未分组』」⇒ **站方根本没有这个名字** ⇒ 误导 ⭐⭐⭐
             let titles = kinds.prefix(6).map { ($0["title"] as? String ?? "?") }.joined(separator: "、")
             let extra = titles.isEmpty ? "" : "（实际拿到：\(titles)）"
-            // ⭐⭐⭐⭐⭐ **点名【最可能的原因】**（2026-11-19 真机 0 分类实证）
+            // ⭐⭐⭐⭐⭐ **点名【最可能的原因】—— 但必须【有依据】**（2026-11-19 真机双源对照实证）
             //
-            // ⚠️⚠️ **站方聚合源自带「整源密码门禁」**：`exploreUrl` 第一行就是
-            //   `if (!nhAuth()) { return ""; }` ⇒ **未解锁 ⇒ 站方主动交白卷（不报错）** ⭐⭐⭐
-            //   ⇒ 「0 个分类」**最常见**就是这个 ⇒ 旧文案「站方的分类接口没通」是**误导** ⭐⭐⭐
+            // ⚠️⚠️⚠️ **第一版我写错了**：无条件地说「多半是整源密码门禁没解锁」⇒
+            //   ⇒ 对 **🍅大灰狼 5.9.30**（**根本没有** nhAuth 门禁的原始上游源）也这么说 ⇒ **误报** ⭐⭐⭐
+            //   ⇒ 对 **🍒NovelHub**（**真有**门禁）反而因为**查错了槽**而**没说** ⇒ 弄反了 ⭐⭐⭐
             //
-            // ⭐ **怎么判「是不是没解锁」**：站方把解锁态存在**书源变量**的 `nhAuthed` 项
-            //   ⇒ 宿主看自己那份书源变量里有没有 `nhAuthed` 就能给准信 ⭐⭐⭐
+            // ⭐⭐⭐ **正确判据（三条都要满足才提示）**：
+            //   ① **这个源的 jsLib 里真的有 `nhAuth` 门禁机制**（扫源码 ⇒ 有依据，不是猜）⭐⭐⭐
+            //   ② **解锁态不在正确的槽里**（站方 `source.put('nhAuthed')` 落的是**站方变量槽**
+            //      ⇒ `sourcevariable.` ⇒ **不是** `sourcevars.`！⇒ 第一版查错槽就是这个）⭐⭐⭐
+            //   ③ 槽里确实**没有** `nhAuthed`
             var hint = ""
-            if !sourceUrl.isEmpty,
-               let raw = UserDefaults.standard.string(forKey: "sourcevars." + sourceUrl),
-               let d = raw.data(using: .utf8),
-               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-               (o["nhAuthed"] as? String ?? "").isEmpty {
-                hint = "｜⭐ 多半是【站方的整源密码门禁没解锁】"
-                    + "（站方 exploreUrl 第一行就是 nhAuth() 检查 ⇒ 未解锁就交白卷）"
-                    + " ⇒ 去【书源登录】面板的「整源解锁密码」填密码 → 点「🔓 解锁整个源」"
+            if let src = source, let srcUrl = src.bookSourceUrl as? String, !srcUrl.isEmpty {
+                let hasGate = Self.stationHasAuthGate(src)
+                if hasGate {
+                    let stationRaw = UserDefaults.standard.string(forKey: "sourcevariable." + srcUrl) ?? ""
+                    let bookRaw = UserDefaults.standard.string(forKey: "sourcevars." + srcUrl) ?? ""
+                    let authed = Self.hasAuthedIn(stationRaw) || Self.hasAuthedIn(bookRaw)
+                    if !authed {
+                        hint = "｜⭐ 这个源【自带整源密码门禁】（站方 exploreUrl 第一行就是 nhAuth() 检查）"
+                            + " ⇒ 未解锁就【主动交白卷】（不报错）"
+                            + " ⇒ 去【书源登录】面板的「整源解锁密码」填密码 → 点「🔓 解锁整个源」"
+                    }
+                }
             }
             return "只解析出 \(n) 个分类\(extra)"
                 + "（站方正常是几十上百个 ⇒ 说明站方的分类没出来）\(hint)"

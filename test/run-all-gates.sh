@@ -57,6 +57,14 @@ declare -a GATES=(
   #   ⇒ 我把方法加在【嵌套的 Session】里、调用点却写 `Self.` ⇒ Apple 平台编译失败 ⭐⭐⭐
   #   ⇒ 静态扫 `Self.<方法>` 的作用域归属 ⇒ **3 秒抓**（不用等 CI 5 分钟）⭐⭐⭐
   "apple-only-typecheck:test/apple-only-typecheck.test.js"
+  # ⭐⭐⭐⭐⭐ **「0 个分类」的诊断提示必须【有依据】**（2026-11-19 真机双源对照，用户直接指出「你弄反了」）
+  #   ⇒ 🍅大灰狼（**没有** nhAuth 门禁）被误报成「多半是门禁没解锁」⭐⭐⭐
+  #   ⇒ 而 🍒NovelHub（**真有**门禁）反而没说（因为查错了槽）⭐⭐⭐
+  #   ⇒ 现在：① 依据【源自己的 jsLib】判有没有门禁 ② 解锁态查【两个】槽 ⭐⭐⭐
+  "explore-diagnose-hint:test/explore-diagnose-hint.test.js"
+  # ⭐⭐⭐⭐⭐ **整源密码门禁的整链复现**（①表单值→loginInfo→②unlockAll→③落槽→④灌引擎→⑤合并→⑥nhAuth 放行）⭐⭐⭐
+  #   ⇒ 每环【真跑】（用产物 jsLib 里抽出的站方真身）⇒ 断在哪一环一目了然 ⭐⭐⭐
+  "auth-gate-chain:test/auth-gate-chain.test.js"
   "workflow-yaml-gate:test/workflow-yaml-gate.test.js"
   "explore-kinds-parity:test/explore-kinds-parity.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"

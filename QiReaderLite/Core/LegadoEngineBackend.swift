@@ -130,6 +130,34 @@ final class LegadoEngineBackend {
             return s
         }
 
+        /// ⭐⭐⭐⭐⭐ **把「变量通道」的事实打进引擎日志**（让真机一次定位断点）⭐⭐⭐
+        ///
+        /// ⚠️⚠️ **为什么必须有**（2026-11-19 真机连错三轮的教训）：
+        ///   「0 个分类」我连猜了三个原因（求值 / 两格不通 / 门禁未解锁）**全错或不全**
+        ///   ⇒ **靠推理不行 ⇒ 必须让真机把事实摆出来** ⭐⭐⭐
+        ///
+        /// ⚠️⚠️ **不打印值**（站方变量里有 token / 密码）⇒ 只打【键名 + 长度】⭐⭐⭐
+        static func logExploreGateState(engineSource: LegadoEngineHost.Source, session: Session) {
+            let merged = engineSource.variable ?? ""
+            let keys: [String] = {
+                guard let d = merged.data(using: .utf8),
+                      let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [] }
+                return o.keys.sorted()
+            }()
+            let hasAuthed = keys.contains("nhAuthed")
+            let hasPwdHash = keys.contains("nhPwdHash")
+            let bookVars = session.variables.getVariable()
+            let bookKeys: [String] = {
+                guard let d = bookVars.data(using: .utf8),
+                      let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [] }
+                return o.keys.sorted()
+            }()
+            engineLog("[变量通道] 合并后引擎那一格 \(merged.count) 字 · 键=\(keys.joined(separator: ","))"
+                      + " · nhAuthed=\(hasAuthed) nhPwdHash=\(hasPwdHash)"
+                      + " · 书源变量 \(bookVars.count) 字 · 键=\(bookKeys.joined(separator: ","))"
+                      + " · 站方变量 \(session.stationVariable.count) 字")
+        }
+
         /// ⭐⭐⭐⭐⭐ **回传站方变量时【剥掉 loginInfo 项】**（2026-11-19 实证）⭐⭐⭐
         ///
         /// ⚠️⚠️⚠️ **为什么必须剥**：
@@ -462,6 +490,11 @@ final class LegadoEngineBackend {
                 let host = LegadoJSHost()
                 let bridge = LegadoEngineHost.Bridge(source: engineSource, book: nil,
                                                      chapter: nil, variables: session.variables, host: host)
+                // ⭐⭐⭐⭐⭐ **决定性诊断**（2026-11-19 真机 build299/300 实证）：
+                //   连续三轮「0 个分类」⇒ 我靠推理连错三次 ⇒ **必须让真机把事实摆出来** ⭐⭐⭐
+                //   ⇒ 打印【真正喂给站方的那一格】的关键项 + 两槽状态 ⇒ 一次定位断点 ⭐⭐⭐
+                //   ⇒ ⚠️ 站方变量是**凭据/敏感信息** ⇒ 只打【键名 + 长度】，不打值 ⭐⭐⭐
+                Session.logExploreGateState(engineSource: engineSource, session: session)
                 do {
                     let raw = try bridge.eval(ExploreKindsNormalizer.stripJSWrapper(spec),
                                               bindings: ["result": NSNull(), "baseUrl": engineSource.bookSourceUrl,
