@@ -70,12 +70,25 @@ public final class JSBridge {
         return Self.unwrap(v)
     }
 
+    /// ⭐⭐⭐⭐⭐ **NSRegularExpression 的替换方法在两个平台参数标签不同**（2026-11-19 CI build296 实证）：
+    ///   · Darwin（iOS/macOS）：`stringByReplacingMatches(in:range:withTemplate:)`
+    ///   · swift-corelibs-foundation（Linux）：`stringByReplacingMatches(in:range:template:)`
+    ///   ⇒ 写死一个 ⇒ **另一个平台编译不过**（CI 报 `extra argument 'template'`）⭐⭐⭐
+    ///   ⇒ ⇒ 收敛到**一个**内部函数 ⇒ 以后改 API 只改一处 ⭐⭐⭐
+    static func replacingMatches(_ re: NSRegularExpression, in s: String, range: NSRange, template: String) -> String {
+        #if canImport(Darwin)
+        return re.stringByReplacingMatches(in: s, range: range, withTemplate: template)
+        #else
+        return re.stringByReplacingMatches(in: s, range: range, template: template)
+        #endif
+    }
+
     static func rhinoPreprocess(_ script: String) -> String {
         var s = script
         let full = NSRange(s.startIndex..., in: s)
-        s = bareLengthCallRegex.stringByReplacingMatches(in: s, range: full, template: "$1.length")
+        s = replacingMatches(bareLengthCallRegex, in: s, range: full, template: "$1.length")
         let full2 = NSRange(s.startIndex..., in: s)
-        s = rhinoArrowRegex.stringByReplacingMatches(in: s, range: full2, template: "$1($2) =>")
+        s = replacingMatches(rhinoArrowRegex, in: s, range: full2, template: "$1($2) =>")
         return s
     }
 

@@ -27,6 +27,7 @@ declare -a GATES=(
   #   ⇒ 钉住：老引擎痕迹为零 · 新引擎在位 · op 接线齐全 · 变量契约不丢 · 新引擎自带测试绿
   "engine-replacement-contract:test/engine-replacement-contract.test.js"
   "engine-package-deps:test/engine-package-deps.test.js"
+  "engine-apple-api:test/engine-apple-api.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"

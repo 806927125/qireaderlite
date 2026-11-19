@@ -695,14 +695,14 @@ extension JSBridge {
 
     static func streamProcess(_ input: Data, encode: Bool) -> Data {
         var stream = compression_stream()
-        guard compression_stream_init(&stream, encode ? COMPRESSION_STREAM_ENCODE : COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { return Data() }
+        guard compression_stream_init(&stream, encode ? COMPRESSION_ENCODE : COMPRESSION_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { return Data() }
         defer { compression_stream_destroy(&stream) }
         let bufSize = 65536
         let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         defer { dst.deallocate() }
         var output = Data()
         var emptyByte: UInt8 = 0
-        let status: COMPRESSION_STATUS = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> COMPRESSION_STATUS in
+        let status: compression_status = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> compression_status in
             if let base = src.baseAddress {
                 stream.src_ptr = base.assumingMemoryBound(to: UInt8.self)
             } else {
@@ -831,36 +831,43 @@ extension JSBridge {
         let alg: CCAlgorithm
         let blockSize: Int
         switch algName {
-        case "AES": alg = kCCAlgorithmAES; blockSize = kCCBlockSizeAES128
-        case "DES": alg = kCCAlgorithmDES; blockSize = kCCBlockSizeDES
-        case "DESEDE", "3DES", "TRIPLEDES": alg = kCCAlgorithm3DES; blockSize = kCCBlockSize3DES
-        case "BLOWFISH": alg = kCCAlgorithmBlowfish; blockSize = kCCBlockSizeBlowfish
+        case "AES": alg = CCAlgorithm(kCCAlgorithmAES); blockSize = kCCBlockSizeAES128
+        case "DES": alg = CCAlgorithm(kCCAlgorithmDES); blockSize = kCCBlockSizeDES
+        case "DESEDE", "3DES", "TRIPLEDES": alg = CCAlgorithm(kCCAlgorithm3DES); blockSize = kCCBlockSize3DES
+        case "BLOWFISH": alg = CCAlgorithm(kCCAlgorithmBlowfish); blockSize = kCCBlockSizeBlowfish
         default: jsThrow("不支持的算法 \(algName)"); return nil
         }
         let ccMode: CCMode
         switch mode {
-        case "ECB": ccMode = kCCModeECB
-        case "CBC": ccMode = kCCModeCBC
-        case "CFB": ccMode = kCCModeCFB
-        case "CTR": ccMode = kCCModeCTR
-        case "OFB": ccMode = kCCModeOFB
+        case "ECB": ccMode = CCMode(kCCModeECB)
+        case "CBC": ccMode = CCMode(kCCModeCBC)
+        case "CFB": ccMode = CCMode(kCCModeCFB)
+        case "CTR": ccMode = CCMode(kCCModeCTR)
+        case "OFB": ccMode = CCMode(kCCModeOFB)
         default: jsThrow("不支持的模式 \(mode)"); return nil
         }
         let usePadding = !noPadding && (mode == "ECB" || mode == "CBC")
         var iv = ivData
         if iv.isEmpty && mode != "ECB" { iv = Data(count: blockSize) }
-        let op: CCOperation = isEnc ? kCCEncrypt : kCCDecrypt
+        let op: CCOperation = isEnc ? CCOperation(kCCEncrypt) : CCOperation(kCCDecrypt)
         let outCap = inputData.count + blockSize * 2 + 16
         var out = Data(count: outCap)
         var moved = 0
         // create → update → final
         var cryptor: CCCryptorRef?
+        // ⭐⭐⭐ **CCCryptorCreateWithMode 的 Darwin 签名是 11 个参数**（2026-11-19 CI build296 实证）：
+        //   (op, mode, alg, padding, iv, key, keyLength, **data, dataLength, options**, cryptorRef)
+        //   ⇒ 原代码多传了一个 `0` ⇒ 编译不过 ⭐⭐⭐
+        // ⚠️ `kCCModeOptionCTR_BE` **只在 CTR 模式**能传（ECB/CBC 传了 ⇒ kCCParamError）⭐⭐⭐
+        let ccOptions: CCModeOptions = (mode == "CTR") ? CCModeOptions(kCCModeOptionCTR_BE) : CCModeOptions(0)
+        let ccPadding: CCPadding = usePadding ? CCPadding(kCCPKCS7Padding) : CCPadding(kCCNoPadding)
         let createStatus = iv.withUnsafeBytes { ivPtr in
             keyData.withUnsafeBytes { keyPtr in
-                CCCryptorCreateWithMode(op, ccMode, alg,
-                    usePadding ? ccPKCS7Padding : ccNoPadding,
-                    ivPtr.baseAddress, keyPtr.baseAddress, keyData.count,
-                    nil, 0, 0, kCCModeOptionCTR_BE, &cryptor)
+                // ⚠️ ECB 模式**必须传 NULL IV**（传了 ⇒ kCCParamError）
+                let ivArg: UnsafeRawPointer? = (mode == "ECB") ? nil : ivPtr.baseAddress
+                CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,
+                    ivArg, keyPtr.baseAddress, keyData.count,
+                    nil, 0, ccOptions, &cryptor)
             }
         }
         guard createStatus == kCCSuccess, let cr = cryptor else {
@@ -913,7 +920,10 @@ extension JSBridge {
         if u.contains("OAEP") {
             if u.contains("SHA256") || u.contains("SHA-256") { return .rsaEncryptionOAEPSHA256 }
             if u.contains("SHA512") || u.contains("SHA-512") { return .rsaEncryptionOAEPSHA512 }
-            return .rsaEncryptionOAEP
+            // ⚠️ SDK 里**没有** `.rsaEncryptionOAEP`（只有 OAEPSHA1/SHA256/SHA384/SHA512）
+            //   ⇒ 2026-11-19 CI build296 实证：报 `cannot be resolved without a contextual type` ⭐⭐⭐
+            //   ⇒ 传统 OAEP = SHA-1 ⇒ 用 `.rsaEncryptionOAEPSHA1` ⭐⭐⭐
+            return .rsaEncryptionOAEPSHA1
         }
         if u.contains("NOPADDING") { return .rsaEncryptionRaw }
         return .rsaEncryptionPKCS1
