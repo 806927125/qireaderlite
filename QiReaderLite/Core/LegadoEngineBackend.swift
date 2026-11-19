@@ -196,6 +196,32 @@ final class LegadoEngineBackend {
         /// ⭐⭐⭐ **给 JS 用的 engineSource**（已灌好站方变量那一格）⭐⭐⭐
         var engineSourceForJS: LegadoEngineHost.Source { engineSource }
 
+        /// ⭐⭐⭐⭐⭐ **准备【带 loginInfo 的】engineSource**（login op 用）
+        ///
+        /// ⚠️⚠️⚠️ **为什么必须放在【非平台相关】的位置**（2026-11-19 CI build300 实证）：
+        ///   这段逻辑原先在 `#if canImport(JavaScriptCore) && !os(Linux)` **里面**
+        ///   ⇒ **Linux 编译门禁编不到** ⇒ 类型错（`String?` 没解包）**只有 CI 能抓** ⭐⭐⭐
+        ///   ⇒ 沙盒全绿、CI 连红 ⇒ **白等 5 分钟** ⭐⭐⭐
+        ///   ⇒ 正解：**纯 Swift 的数据处理逻辑放外面**（只把「跑 JS」留在 #if 里）⇒ Linux 编得到 ⭐⭐⭐
+        ///
+        /// - Parameters:
+        ///   - formValues: 本次登录面板填的表单值
+        /// - Returns: 一份 engineSource，其引擎那一格含 `loginInfo` 项（站方 `getLoginInfoMap()` 读它）
+        func engineSourceWithLoginInfo(formValues: [String: Any]) -> LegadoEngineHost.Source {
+            var src = engineSource
+            let rawVariable = engineSource.variable ?? ""
+            let merged = Self.mergeLoginInfo(existing: Self.loginInfoDict(from: rawVariable),
+                                            formValues: formValues)
+            guard !merged.isEmpty else { return src }
+            var m = Self.variableDict(rawVariable) ?? [:]
+            m["loginInfo"] = merged
+            if let d = try? JSONSerialization.data(withJSONObject: m),
+               let js = String(data: d, encoding: .utf8) {
+                src.variable = js
+            }
+            return src
+        }
+
         /// ⭐⭐⭐⭐⭐ **每个 op 前：用【最新的】站方变量重新灌**（build298 真机实证的关键）⭐⭐⭐
         ///
         /// ⚠️⚠️⚠️ **为什么必须每次重灌**（Session 是按源缓存的）：
@@ -352,7 +378,7 @@ final class LegadoEngineBackend {
                 }
                 // 表单值先并进 `result`（站方 login(true) 第一步就是 putLoginInfo(result)）
                 let formValues = (payload["formValues"] as? [String: Any]) ?? [:]
-                // ⭐⭐⭐⭐⭐ **表单值还要并进【引擎那一格的 loginInfo 项】** ⭐⭐⭐
+                // ⭐⭐⭐⭐⭐ **表单值要并进【引擎那一格的 loginInfo 项】** ⭐⭐⭐
                 //
                 //   ⚠️⚠️⚠️ **为什么必须并**（2026-11-19 真机 build299 实证）：
                 //     站方读密码的方式是 `nhAuthUiMap()` ⇒ `source.getLoginInfoMap()`
@@ -361,18 +387,10 @@ final class LegadoEngineBackend {
                 //     ⇒ 点「🔓 解锁整个源」必然提示「请在下面输入框里填密码」⇒ **永远解锁不了** ⭐⭐⭐
                 //   ⇒ 而「整源解锁密码」正是**这次表单填的** ⇒ 必须并进去 ⭐⭐⭐
                 //   ⇒ 合并规则：**已存的登录信息做底 + 本次表单值覆盖**（与 Legado 语义一致）⭐⭐⭐
-                let mergedLogin = Session.mergeLoginInfo(existing: engineSource.variable.flatMap { Session.loginInfoDict(from: $0) },
-                                                      formValues: formValues)
-                var srcWithLogin = engineSource
-                if !mergedLogin.isEmpty {
-                    // ⭐ 写进引擎那一格（不动 App 自己的存储 ⇒ 由站方自己 putLoginInfo 决定要不要存）
-                    var m = Session.variableDict(engineSource.variable) ?? [:]
-                    m["loginInfo"] = mergedLogin
-                    if let d = try? JSONSerialization.data(withJSONObject: m),
-                       let js = String(data: d, encoding: .utf8) {
-                        srcWithLogin.variable = js
-                    }
-                }
+                //
+                // ⭐⭐⭐ **合并逻辑放在【非平台相关】的 Session 方法里** ⇒ Linux 沙盒门禁能编到
+                //   ⇒ 类型错 3 秒暴露（否则只有 CI 能抓 ⇒ 白等 5 分钟）⭐⭐⭐
+                let srcWithLogin = session.engineSourceWithLoginInfo(formValues: formValues)
                 // ⭐⭐⭐ **换成带 loginInfo 的那一份**（站方 getLoginInfoMap() 读的就是它）⭐⭐⭐
                 bridge = LegadoEngineHost.Bridge(source: srcWithLogin, book: book(from: payload),
                                                  chapter: nil, variables: session.variables, host: host)
