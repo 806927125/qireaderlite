@@ -111,6 +111,39 @@ jobs:
           grep "error:" b.log | sort -u | head -40
           echo "===== 错误结束 ====="
 
+      - name: ⭐⭐⭐⭐⭐ 自省 Apple 平台符号（**不许再猜 SDK 的名字**）
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-19 CI build296 实证）：
+          #   引擎里有几段代码**只在 Apple 平台编译**（`#if canImport(JavaScriptCore) && !os(Linux)`）
+          #   ⇒ ⇒ **沙盒 Linux 门禁永远绿** ⇒ 这些符号名错了**只有 CI 能发现**
+          #   ⇒ 而「报错信息」只说「不在作用域」，**不告诉你真实名字** ⇒ 只能一轮轮猜 ⇒ 每轮 5 分钟 ⭐⭐⭐
+          #   ⇒ **正解：直接读 SDK 头文件 + 用 swiftc 探针，一次问清楚** ⭐⭐⭐
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "===== compression.h 的枚举 ====="
+          grep -nE "COMPRESSION_(ENCODE|DECODE|ZLIB|STATUS|STREAM)" "$SDK/usr/include/compression.h" | head -20 || true
+          echo "===== CommonCrypto 的 padding / mode / algorithm / option ====="
+          grep -nE "kCC(Padding|Mode|Algorithm|Encrypt|Decrypt|BlockSize)[A-Za-z0-9_]*" "$SDK/usr/include/CommonCrypto/CommonCryptor.h" | head -30 || true
+          echo "===== Security 的 SecKeyAlgorithm 成员 ====="
+          grep -nE "rsaEncryption[A-Za-z0-9]+" "$SDK/usr/include/Security/SecKey.h" | head -12 || true
+          echo "===== Swift 侧探针（typecheck ⇒ 打印真实可用名）====="
+          cat > /tmp/probe.swift <<'PROBE'
+          import Compression
+          import CommonCrypto
+          import Security
+          // 探针 1：Compression 的枚举**能不能**用 rawValue 构造
+          let _ = compression_stream_operation(rawValue: 0)
+          let _ = compression_algorithm(rawValue: 0)
+          let _ = compression_status(rawValue: 0)
+          let _ = compression_stream_flags(rawValue: 1)
+          // 探针 2：CommonCrypto 的 padding 常量真实名
+          let _ = CCPadding(kCCPaddingPKCS7)
+          let _ = CCPadding(kCCPaddingNoPadding)
+          // 探针 3：SecKeyAlgorithm 的 OAEP 成员（SDK 里**没有** .rsaEncryptionOAEP）
+          let _: SecKeyAlgorithm? = .rsaEncryptionOAEPSHA1
+          PROBE
+          xcrun swiftc -typecheck /tmp/probe.swift 2>&1 | head -30 || true
+          echo "===== 探针结束 ====="
+
       - name: 归档编译日志（排查用）
         if: always()
         uses: actions/upload-artifact@v4

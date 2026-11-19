@@ -694,8 +694,23 @@ extension JSBridge {
     // MARK: - gzip / deflate（Compression framework，ZLIB = raw deflate）
 
     static func streamProcess(_ input: Data, encode: Bool) -> Data {
+        // ⭐⭐⭐⭐⭐⭐ **2026-11-19 CI build296 实证（Apple 平台）**：
+        //   `COMPRESSION_ENCODE` / `COMPRESSION_DECODE` / `COMPRESSION_STATUS_OK` / `COMPRESSION_STATUS_END`
+        //   / `COMPRESSION_STATUS_ERROR` / `COMPRESSION_STREAM_FINALIZE` / `COMPRESSION_ZLIB`
+        //   ⇒ **全部不在作用域** ⇒ 之前写的 `COMPRESSION_STREAM_ENCODE`（也不存在）⇒ 两次都错 ⭐⭐⭐
+        // ⇒⇒⇒ **不再猜常量名** ⇒ 全部走 **RawRepresentable 通道**（`rawValue:`）⇒ SDK 怎么导都能编过 ⭐⭐⭐
+        //   · `compression_stream_operation(rawValue:)`  0=ENCODE 1=DECODE
+        //   · `compression_algorithm(rawValue:)`         0=ZLIB
+        //   · `compression_status(rawValue:)`            0=OK 1=END -1=ERROR
+        //   · `compression_stream_flags(rawValue:)`      1=FINALIZE
         var stream = compression_stream()
-        guard compression_stream_init(&stream, encode ? COMPRESSION_ENCODE : COMPRESSION_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { return Data() }
+        let op = compression_stream_operation(rawValue: Int32(encode ? 0 : 1))
+        let alg = compression_algorithm(rawValue: 0)
+        let statusOK = compression_status(rawValue: 0)
+        let statusEND = compression_status(rawValue: 1)
+        let statusERR = compression_status(rawValue: -1)
+        let finalizeFlag = compression_stream_flags(rawValue: 1).rawValue
+        guard compression_stream_init(&stream, op, alg) == statusOK else { return Data() }
         defer { compression_stream_destroy(&stream) }
         let bufSize = 65536
         let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
@@ -709,18 +724,18 @@ extension JSBridge {
                 withUnsafeMutablePointer(to: &emptyByte) { stream.src_ptr = UnsafePointer($0) }
             }
             stream.src_size = src.count
-            var st = COMPRESSION_STATUS_OK
+            var st = statusOK
             repeat {
                 stream.dst_ptr = dst
                 stream.dst_size = bufSize
-                st = compression_stream_process(&stream, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
-                if st == COMPRESSION_STATUS_OK || st == COMPRESSION_STATUS_END {
+                st = compression_stream_process(&stream, finalizeFlag)
+                if st == statusOK || st == statusEND {
                     output.append(dst, count: bufSize - stream.dst_size)
                 }
-            } while st == COMPRESSION_STATUS_OK && (stream.src_size > 0 || stream.dst_size == 0)
+            } while st == statusOK && (stream.src_size > 0 || stream.dst_size == 0)
             return st
         }
-        return status == COMPRESSION_STATUS_ERROR ? Data() : output
+        return status == statusERR ? Data() : output
     }
 
     static func deflate(_ data: Data, compress: Bool, nowrap: Bool) -> Data {
@@ -860,11 +875,16 @@ extension JSBridge {
         //   ⇒ 原代码多传了一个 `0` ⇒ 编译不过 ⭐⭐⭐
         // ⚠️ `kCCModeOptionCTR_BE` **只在 CTR 模式**能传（ECB/CBC 传了 ⇒ kCCParamError）⭐⭐⭐
         let ccOptions: CCModeOptions = (mode == "CTR") ? CCModeOptions(kCCModeOptionCTR_BE) : CCModeOptions(0)
-        let ccPadding: CCPadding = usePadding ? CCPadding(kCCPKCS7Padding) : CCPadding(kCCNoPadding)
+        // ⭐⭐⭐⭐⭐ **CI 实证：Apple 的 padding 常量名是 `kCCPaddingPKCS7` / `kCCPaddingNoPadding`**
+        //   ⇒ 之前写的 `kCCPKCS7Padding` / `kCCNoPadding`（不存在）⇒ **不再猜** ⭐⭐⭐
+        //   ⇒ ⚠️ 注意名字里是 `kCCPadding` 不是 `kCC` + `Padding` ⇒ 词序不同 ⭐⭐⭐
+        let ccPadding: CCPadding = usePadding ? CCPadding(kCCPaddingPKCS7) : CCPadding(kCCPaddingNoPadding)
         let createStatus = iv.withUnsafeBytes { ivPtr in
             keyData.withUnsafeBytes { keyPtr in
-                // ⚠️ ECB 模式**必须传 NULL IV**（传了 ⇒ kCCParamError）
-                let ivArg: UnsafeRawPointer? = (mode == "ECB") ? nil : ivPtr.baseAddress
+                // ⚠️ ECB 模式**必须传 NULL IV**（传了 ⇒ kCCParamError ⇒ 旧代码 ECB/CBC 拿不到结果）
+                // ⭐⭐⭐ **CI 实证：`withUnsafeBytes` 的 `ivPtr` 是 UnsafeRawBufferPointer ⇒ 它自己就是指针**
+                //   ⇒ **没有** `baseAddress`（那是 `Data.withUnsafeBytes` 的形态）⇒ 之前写错了 ⭐⭐⭐
+                let ivArg: UnsafeRawPointer? = (mode == "ECB") ? nil : ivPtr
                 CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,
                     ivArg, keyPtr.baseAddress, keyData.count,
                     nil, 0, ccOptions, &cryptor)

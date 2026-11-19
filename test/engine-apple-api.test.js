@@ -67,7 +67,30 @@ for (const [f, code] of codeNoC) {
   // `COMPRESSION_STATUS` 当类型用（排除 COMPRESSION_STATUS_OK/END/ERROR 常量）
   const typeUse = [...code.matchAll(/\bCOMPRESSION_STATUS\b(?!_)/g)].map((m) => m[0]);
   check(`${path.basename(f)}：没有把 COMPRESSION_STATUS 当类型`, typeUse.length === 0, typeUse.join(', '));
+  // ⭐⭐⭐⭐⭐ **CI build296 实证：Apple 平台上 `COMPRESSION_ENCODE` / `COMPRESSION_STATUS_OK` 等
+  //   **全部不在作用域** ⇒ 一律走 `rawValue:` 通道 ⇒ 代码里**不允许出现任何裸的 COMPRESSION_ 常量** ⭐⭐⭐
+  const bareConst = [...code.matchAll(/\bCOMPRESSION_[A-Z_]+\b/g)]
+    .map((m) => m[0])
+    .filter((n) => !['COMPRESSION_STREAM_ENCODE', 'COMPRESSION_STREAM_DECODE'].includes(n));
+  check(`${path.basename(f)}：没有裸用 COMPRESSION_* 常量（全部走 rawValue 通道）`,
+        bareConst.length === 0, [...new Set(bareConst)].join(', '));
 }
+
+// ②-B CommonCrypto 的 padding 常量名（CI 实证：`kCCPaddingPKCS7` / `kCCPaddingNoPadding`）
+console.log('\n=== 2-B. CommonCrypto 的 padding 常量名 ===');
+const WRONG_PADDING = ['kCCPKCS7Padding', 'kCCNoPadding', 'ccPKCS7Padding', 'ccNoPadding',
+                        'kCCPaddingPKCS5Padding', 'CCPadding(kCCPKCS7)'];
+for (const [f, code] of codeNoC) {
+  for (const w of WRONG_PADDING) {
+    if (code.includes(w)) {
+      check(`${path.basename(f)}：没用 ${w}`, false, 'Apple 的名字是 kCCPaddingPKCS7 / kCCPaddingNoPadding');
+    }
+  }
+}
+check('CommonCrypto padding 用了正确的名字（kCCPaddingPKCS7 / kCCPaddingNoPadding）',
+      [...codeNoC.values()].some((c) => c.includes('kCCPaddingPKCS7') && c.includes('kCCPaddingNoPadding'))
+      || ![...codeNoC.values()].some((c) => /ccPadding|CCPadding\(/.test(c)),
+      '两种都用都没有');
 
 // ③ SecKeyAlgorithm
 console.log('\n=== 2. Security 框架（SDK 里真实存在的成员）===');
