@@ -40,18 +40,50 @@ const TYPE_DECL_TOP = /^(?:@[\w:]+\s+)*(?:(?:public|internal|private|fileprivate
 // ⭐ **任意缩进的类型声明**（含嵌套）⇒ 只用来做「引用能不能解析」的判断 ⭐
 const TYPE_DECL_ANY = /(?:^|\n)\s*(?:@[\w:]+\s+)*(?:(?:public|internal|private|fileprivate|open|final)\s+)*(class|struct|enum|actor|protocol)\s+([A-Za-z_][A-Za-z0-9_]*)/g;
 
+/**
+ * ⭐⭐⭐⭐⭐ **花括号深度剖面**（2026-11-19 实证 —— 这条差点写错）
+ *   Swift 的「嵌套」由**花括号**决定，**不由缩进决定**！
+ *   ⇒ 用「行首零缩进」判顶层是**错的**：
+ *      `final class X {` 后面直接写 `enum Y {`（缩进 0）⇒ Y **仍然是 X 的嵌套类型**
+ *      ⇒ 别的文件里 `Y` 根本不可见 ⇒ 「cannot find 'Y' in scope」⭐⭐⭐
+ *   ⇒ 所以必须按**括号深度**判：depth==0 才是模块级（别的文件能看见）⭐⭐⭐
+ */
+function depthProfile(code) {
+  const depths = new Int32Array(code.length + 1);
+  let depth = 0, inStr = false, inLine = false, inBlock = false;
+  for (let i = 0; i < code.length; i++) {
+    depths[i] = depth;
+    const c = code[i], n = code[i + 1];
+    if (inLine) { if (c === '\n') inLine = false; continue; }
+    if (inBlock) { if (c === '*' && n === '/') { inBlock = false; i++; } continue; }
+    if (inStr) { if (c === '\\') { i++; } else if (c === '"') inStr = false; continue; }
+    if (c === '/' && n === '/') { inLine = true; i++; continue; }
+    if (c === '/' && n === '*') { inBlock = true; i++; continue; }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+  }
+  depths[code.length] = depth;
+  return depths;
+}
+
+/** @param topOnly true ⇒ 只收【模块级】类型（花括号深度 0）；false ⇒ 全收（含嵌套） */
 function declaredTypes(files, topOnly) {
   const map = new Map(); // name -> [file:line...]
-  const re = topOnly ? TYPE_DECL_TOP : TYPE_DECL_ANY;
   for (const f of files) {
     const code = fs.readFileSync(f, 'utf8');
-    let m;
+    const depths = depthProfile(code);
+    const re = TYPE_DECL_ANY;
     re.lastIndex = 0;
+    let m;
     while ((m = re.exec(code)) !== null) {
+      const kw = m.index + m[0].lastIndexOf(m[1]);   // 类型关键字的位置
+      const depth = depths[kw];
+      if (topOnly && depth !== 0) continue;           // ⭐ 嵌套类型 ⇒ 别的文件看不见 ⭐⭐⭐
       const name = m[2];
       const line = code.slice(0, m.index).split('\n').length;
       if (!map.has(name)) map.set(name, []);
-      map.get(name).push(path.relative(ROOT, f) + ':' + line);
+      map.get(name).push(path.relative(ROOT, f) + ':' + line + (depth ? '(嵌套)' : ''));
     }
   }
   return map;
@@ -141,7 +173,14 @@ for (const f of ENTRY_FILES) {
   const used = new Set();
   for (const m of clean.matchAll(/\b([A-Z][A-Za-z0-9_]*)\.[a-z_][A-Za-z0-9_]*/g)) used.add(m[1]);
   for (const m of clean.matchAll(/\b([A-Z][A-Za-z0-9_]*)\s*\(/g)) used.add(m[1]);
-  const unknown = [...used].filter((t) => !allDeclared.has(t) && !ENTRY_SYSTEM.has(t));
+  // ⭐⭐⭐⭐⭐ **只认【顶层】类型**（2026-11-19 实证）：
+  //   `EngineLogBootstrap` 一度被插在 `final class LegadoEngineBackend { … }` **里面**
+  //   ⇒ 嵌套类型在别的文件里**根本不可见** ⇒ 入口文件报「cannot find … in scope」
+  //   ⇒ 而按「任意缩进」扫的话，这个门禁会以为它存在 ⇒ **放过去** ⭐⭐⭐
+  //   ⇒ 所以这里必须用**顶层**声明集 ⭐⭐⭐
+  const topDeclared = new Set([...declaredTypes(appFiles, true).keys(),
+                               ...declaredTypes(engineFiles, true).keys()]);
+  const unknown = [...used].filter((t) => !topDeclared.has(t) && !ENTRY_SYSTEM.has(t));
   check(`${path.basename(f)}：引用的类型都有定义（${used.size} 个）`, unknown.length === 0, unknown.join(', '));
 }
 
@@ -149,13 +188,13 @@ for (const f of ENTRY_FILES) {
 // ③ 变异对照（--mutate）：把「类型撞名」造出来 ⇒ 门禁必须红
 // ─────────────────────────────────────────────────────────────
 if (process.argv.includes('--mutate')) {
+  const { execFileSync } = require('child_process');
   console.log('\n=== 3. 变异对照（造一个同名类型 ⇒ 门禁必须红）===');
   const victim = path.join(APP_DIR, 'Core', 'EngineLogPanel.swift');
   const backup = fs.readFileSync(victim, 'utf8');
   try {
     fs.writeFileSync(victim, backup.replace('final class EngineLogPanel:',
                                             'final class EngineLog:'), 'utf8');
-    const { execFileSync } = require('child_process');
     let rc = 0;
     try {
       execFileSync('node', [__filename], { cwd: ROOT, stdio: 'pipe' });
@@ -163,6 +202,28 @@ if (process.argv.includes('--mutate')) {
     check('造出同名类型 ⇒ 门禁红', rc !== 0, `门禁居然是绿的（exit=${rc}）⇒ 这条断言是摆设`);
   } finally {
     fs.writeFileSync(victim, backup, 'utf8');
+  }
+
+  // ── 变异 2：把类型藏进别的类型的花括号里（Swift 里仍是嵌套类型 ⇒ 别的文件看不见）──
+  console.log('\n=== 4. 变异对照（把类型藏进 class 的花括号里 ⇒ 门禁必须红）===');
+  const backend = path.join(APP_DIR, 'Core', 'LegadoEngineBackend.swift');
+  const bk = fs.readFileSync(backend, 'utf8');
+  try {
+    const i = bk.indexOf('enum EngineLogBootstrap {');
+    const j = bk.indexOf('\n}\n', i) + 3;
+    const block = bk.slice(i, j);
+    let mutated = bk.slice(0, i) + bk.slice(j);
+    const k = mutated.indexOf('final class LegadoEngineBackend {');
+    const at = mutated.indexOf('\n', k) + 1;
+    mutated = mutated.slice(0, at) + block + mutated.slice(at);
+    fs.writeFileSync(backend, mutated, 'utf8');
+    let rc = 0;
+    try {
+      execFileSync('node', [__filename], { cwd: ROOT, stdio: 'pipe' });
+    } catch (e) { rc = e.status === undefined ? -1 : e.status; }
+    check('把类型藏进 class 的花括号里 ⇒ 门禁红', rc !== 0, `门禁居然是绿的（exit=${rc}）⇒ 这条断言是摆设`);
+  } finally {
+    fs.writeFileSync(backend, bk, 'utf8');
   }
 }
 
