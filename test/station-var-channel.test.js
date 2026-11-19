@@ -58,6 +58,19 @@ ok(/self\.stationSeeded\s*=\s*sv/.test(src),
 ok(/let stationVar = session\.collectStationVariable \{/.test(src),
    '读回走 collectStationVariable（不拿书籍变量那一格冒充）');
 
+console.log('\n=== 2b. 静态断言：登录信息必须进引擎那一格的 loginInfo 项 ===');
+// ⚠️⚠️⚠️ **为什么这条最关键**（2026-11-19 真机 build299 实证）：
+//   站方读密码 = `nhAuthUiMap()` ⇒ `source.getLoginInfoMap()`
+//   ⇒ 引擎的 `loginInfoGet` ⇒ **`BookSource.variable["loginInfo"]`** ⭐⭐⭐
+//   ⇒ 不并进去 ⇒ 站方读到空 map ⇒ 点「🔓 解锁整个源」必然失败 ⇒ 永远交白卷 ⭐⭐⭐
+ok(/mergeLoginInfo/.test(src), '有 mergeLoginInfo（合并「已存登录信息 + 本次表单值」）');
+ok(/m\["loginInfo"\]\s*=\s*mergedLogin/.test(src),
+   'login op 把合并后的登录信息写进引擎那一格的 loginInfo 项');
+ok(/mergeStationMap\(bookVars:[^)]*loginInfo:/.test(src),
+   'mergeStationMap 把 loginInfo 也并进引擎那一格');
+ok(/loginInfoGet/.test(src) === false || /loginInfo/.test(src),
+   '源码里出现了 loginInfo 相关处理（可读即可）');
+
 console.log('\n=== 3. 静态断言：书籍变量与站方变量【不许混】 ===');
 ok(/__sourceVars"\]\s*=\s*session\.variables\.getVariable\(\)/.test(src),
    '__sourceVars 仍是书籍变量那一格（RuleVariables map）');
@@ -119,6 +132,8 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     if (!/mergeStationMap\(bookVars:\s*(vars|variables),\s*stationRaw:\s*sv\)/.test(text)) {
       fails.push('合并没把书籍变量并进去（nhAuthed 读不到）');
     }
+    if (!/m\["loginInfo"\]\s*=\s*mergedLogin/.test(text)) fails.push('loginInfo 没写进引擎那一格（解锁按钮永远失败）');
+    if (!/mergeLoginInfo/.test(text)) fails.push('没有 mergeLoginInfo');
     return fails;
   };
   const cases = [
@@ -137,6 +152,8 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     //   （前面加一句 ⇒ 原串仍在 ⇒ 断言照样匹配 ⇒ 变异白做）⭐⭐⭐
     // ⚠️⚠️⚠️ **变异必须【全部替换】**（`String.replace` 只换第一处 ⇒ 第二处原封不动
     //   ⇒ 断言照样匹配 ⇒ 变异白做）⭐⭐⭐ ⇒ 用 split/join 做全局替换 ⭐⭐⭐
+    ['loginInfo 不并进引擎那一格（★ 解锁按钮永远失败）',
+      (t) => t.replace('m["loginInfo"] = mergedLogin', 'm["loginInfoUnused"] = mergedLogin')],
     ['读回改用书籍变量那一格（写方向断 ⇒ 站方 put 写不回来）',
       (t) => t.split('let stationVar = session.collectStationVariable {')
               .join('let stationVar = session.variables.getVariable(); if false { session.collectStationVariable {')],

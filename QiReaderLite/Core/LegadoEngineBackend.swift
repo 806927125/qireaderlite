@@ -84,7 +84,8 @@ final class LegadoEngineBackend {
             //       · 书籍变量 map 的项 ⇒ 覆盖 `source.get/put` 的项（含 `nhAuthed`）⭐⭐⭐
             //       · 站方变量整串解析后的项 ⇒ 覆盖 `source.getVariable()` 的内容（NH_D 等）⭐⭐⭐
             var src = engineSource
-            let merged = Self.mergeStationMap(bookVars: vars, stationRaw: sv)
+            let li = (raw["__loginInfo"] as? String) ?? ""
+            let merged = Self.mergeStationMap(bookVars: vars, stationRaw: sv, loginInfo: li)
             if !merged.isEmpty { src.variable = merged }
             self.engineSource = src
         }
@@ -96,7 +97,8 @@ final class LegadoEngineBackend {
         ///     ⇒ 它们是 `source.get/put` 的项 ⇒ 站方按 map 项读 ⭐⭐⭐
         ///   · 站方变量的项（`src` / `gender` / `status` …）填进去 ⇒ `source.getVariable()`
         ///     解析出来就有它们（站方 `JSON.parse` 整串拿 NH_D）⭐⭐⭐
-        static func mergeStationMap(bookVars: LegadoEngineHost.Vars, stationRaw: String) -> String {
+        static func mergeStationMap(bookVars: LegadoEngineHost.Vars, stationRaw: String,
+                                    loginInfo: String = "") -> String {
             var out: [String: Any] = [:]
             // ① 站方变量整串（可能是一份 map ⇒ 直接并入；也可能是一串凭据 ⇒ 跳过）
             if let d = stationRaw.data(using: .utf8),
@@ -108,6 +110,19 @@ final class LegadoEngineBackend {
             if let d = bv.data(using: .utf8),
                let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
                 for (k, v) in o { out[k] = v }
+            }
+            // ③ ⭐⭐⭐⭐⭐ **登录信息**（站方 `source.getLoginInfoMap()` 读的就是这一项）⭐⭐⭐
+            //
+            //   ⚠️⚠️⚠️ **为什么必须并进去**（2026-11-19 真机 build299 实证）：
+            //     引擎的 `loginInfoGet` ⇒ `BookSource.variable["loginInfo"]` ⭐⭐⭐
+            //     而站方 `nhAuthUiMap()` ⇒ `source.getLoginInfoMap()` ⇒ **同一项** ⭐⭐⭐
+            //     ⇒ 「整源解锁密码」就是从这儿读的 ⭐⭐⭐
+            //     ⇒ **不并进去 ⇒ 站方读到空 map ⇒ 点「🔓 解锁整个源」必然提示
+            //       「请在下面输入框里填密码」⇒ 永远解锁不了 ⇒ 永远交白卷** ⭐⭐⭐
+            if !loginInfo.isEmpty,
+               let d = loginInfo.data(using: .utf8),
+               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                out["loginInfo"] = o
             }
             guard !out.isEmpty else { return "" }
             guard let d = try? JSONSerialization.data(withJSONObject: out),
@@ -129,6 +144,36 @@ final class LegadoEngineBackend {
             if let s = read(), !s.isEmpty { v = s }
             stationVariable = v
             return v
+        }
+
+        /// ⭐⭐⭐⭐⭐ **合并登录信息**（已存的做底 + 本次表单值覆盖）⭐⭐⭐
+        ///
+        /// ⚠️⚠️ **为什么必须合并而不是只用表单值**：
+        ///   登录面板上**同时**有「上次填过的账号」和「这次填的密码」
+        ///   ⇒ 只用表单值 ⇒ 站方 `getLoginInfoMap()` 读不到别的字段 ⇒ 登录失败 ⭐⭐⭐
+        static func mergeLoginInfo(existing: [String: Any]?, formValues: [String: Any]) -> [String: Any] {
+            var out: [String: Any] = existing ?? [:]
+            for (k, v) in formValues {
+                // ⚠️ 空值**不覆盖**已有的（用户可能只想改一项）
+                if v is String, (v as! String).isEmpty, out[k] != nil { continue }
+                out[k] = v
+            }
+            return out
+        }
+
+        /// 从引擎那一格（JSON map 串）里取出 `loginInfo` 项
+        static func loginInfoDict(from variable: String) -> [String: Any]? {
+            guard let d = variable.data(using: .utf8),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                  let li = o["loginInfo"] as? [String: Any] else { return nil }
+            return li
+        }
+
+        /// 把引擎那一格（JSON map 串）解析成字典
+        static func variableDict(_ variable: String) -> [String: Any]? {
+            guard let d = variable.data(using: .utf8),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+            return o
         }
 
         /// ⭐⭐⭐ **给 JS 用的 engineSource**（已灌好站方变量那一格）⭐⭐⭐
@@ -276,7 +321,10 @@ final class LegadoEngineBackend {
         //   ⇒ 用引擎的 `JSBridge`（它会自动加载站方 jsLib ⇒ 站方函数都在）⭐⭐⭐
         if op == "login" || op == "loginProbe" {
             let host = LegadoJSHost()
-            let bridge = LegadoEngineHost.Bridge(source: engineSource, book: book(from: payload),
+            // ⚠️⚠️ **必须是 var**：login 分支要把它换成【带 loginInfo 的那一份】⇒
+            //   执行与【回传】必须用**同一个** bridge ⇒ 否则回传读的是另一份副本
+            //   ⇒ 站方 `source.put(...)`（含解锁态 nhAuthed）**读不回来** ⭐⭐⭐
+            var bridge = LegadoEngineHost.Bridge(source: engineSource, book: book(from: payload),
                                                  chapter: nil, variables: session.variables, host: host)
             if op == "login" {
                 let action = (payload["action"] as? String) ?? ""
@@ -286,6 +334,30 @@ final class LegadoEngineBackend {
                 }
                 // 表单值先并进 `result`（站方 login(true) 第一步就是 putLoginInfo(result)）
                 let formValues = (payload["formValues"] as? [String: Any]) ?? [:]
+                // ⭐⭐⭐⭐⭐ **表单值还要并进【引擎那一格的 loginInfo 项】** ⭐⭐⭐
+                //
+                //   ⚠️⚠️⚠️ **为什么必须并**（2026-11-19 真机 build299 实证）：
+                //     站方读密码的方式是 `nhAuthUiMap()` ⇒ `source.getLoginInfoMap()`
+                //     ⇒ 引擎的 `loginInfoGet` ⇒ **`BookSource.variable["loginInfo"]`** ⭐⭐⭐
+                //     ⇒ 只把表单值放进 `result` ⇒ **站方读到空 map**
+                //     ⇒ 点「🔓 解锁整个源」必然提示「请在下面输入框里填密码」⇒ **永远解锁不了** ⭐⭐⭐
+                //   ⇒ 而「整源解锁密码」正是**这次表单填的** ⇒ 必须并进去 ⭐⭐⭐
+                //   ⇒ 合并规则：**已存的登录信息做底 + 本次表单值覆盖**（与 Legado 语义一致）⭐⭐⭐
+                let mergedLogin = Self.mergeLoginInfo(existing: engineSource.variable.flatMap { Self.loginInfoDict(from: $0) },
+                                                      formValues: formValues)
+                var srcWithLogin = engineSource
+                if !mergedLogin.isEmpty {
+                    // ⭐ 写进引擎那一格（不动 App 自己的存储 ⇒ 由站方自己 putLoginInfo 决定要不要存）
+                    var m = Self.variableDict(engineSource.variable) ?? [:]
+                    m["loginInfo"] = mergedLogin
+                    if let d = try? JSONSerialization.data(withJSONObject: m),
+                       let js = String(data: d, encoding: .utf8) {
+                        srcWithLogin.variable = js
+                    }
+                }
+                // ⭐⭐⭐ **换成带 loginInfo 的那一份**（站方 getLoginInfoMap() 读的就是它）⭐⭐⭐
+                bridge = LegadoEngineHost.Bridge(source: srcWithLogin, book: book(from: payload),
+                                                 chapter: nil, variables: session.variables, host: host)
                 do {
                     _ = try bridge.eval(action, bindings: ["result": formValues])
                     out = ["ok": true, "msgs": host.messages]

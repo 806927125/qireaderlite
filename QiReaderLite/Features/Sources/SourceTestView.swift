@@ -95,6 +95,22 @@ struct SourceTestView: View {
                 }
                 Spacer()
             }
+            // ⭐⭐⭐⭐⭐ **App build 号**（2026-11-19 真机反复踩的坑）
+            //
+            // ⚠️⚠️ **为什么必须放在【这个面板】**（不是只放引擎日志面板）：
+            //   用户反馈故障时**只看这个面板**（测书源的截图）⇒ 看不到 build 号 ⇒
+            //   ⇒ 我按 build298 分析、真机却是 build297 ⇒ **整轮排查白做** ⭐⭐⭐
+            //   ⇒ 这个面板就是「用户报障的第一现场」⇒ build 号必须在这里 ⭐⭐⭐
+            HStack(alignment: .top, spacing: 6) {
+                Text("版本")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.sub)
+                    .frame(width: 56, alignment: .leading)
+                Text(AppPaths.appVersionLine)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+            }
             // ⭐⭐⭐ **当前引擎后端**（一眼看出跑的是老的还是新的）
             //
             // ⚠️⚠️ **三件事必须分开说**（2026-10-23 用户实测踩出来的）：

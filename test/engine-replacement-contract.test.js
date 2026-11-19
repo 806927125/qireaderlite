@@ -99,10 +99,19 @@ console.log('\n=== ④ 变量回传契约不许丢（站方变量/解锁态要�
   // ⭐⭐⭐ **计数**（不能只判「在不在」⇒ 注释里同名也能骗过 ⇒ 变异打掉一处就红）⭐⭐⭐
   const countOf = (needle) => (be.split(needle).length - 1);
   // ⭐⭐⭐ **每个分支各自都要回传**（不能只数总数 ⇒ 变异打掉一处就红）⭐⭐⭐
+  // ⭐⭐⭐⭐⭐ **切片必须按【结构】、不能按【固定长度】**（2026-11-19 实证）：
+  //   固定长度窗口（+2600）⇒ 分支里代码一多 ⇒ 回传被挤出窗口 ⇒ **门禁误判**（假红）⭐⭐⭐
+  //   ⇒ 正解：**切到下一个分支起点 / 块结束** ⇒ 分支多长都算全 ⭐⭐⭐
+  const sliceTo = (from, to) => {
+    const a = be.indexOf(from);
+    if (a < 0) return '';
+    const b = to ? be.indexOf(to, a + from.length) : -1;
+    return be.slice(a, b > 0 ? b : be.length);
+  };
   const branches = [
-    ['login', be.slice(be.indexOf('if op == "login"'), be.indexOf('if op == "login"') + 2600)],
-    ['filterAction', be.slice(be.indexOf('if op == "filterAction"'), be.indexOf('if op == "filterAction"') + 1600)],
-    ['主链路', be.slice(be.indexOf('switch op {'), be.indexOf('switch op {') + 4200)],
+    ['login', sliceTo('if op == "login"', 'if op == "login" || op == "loginProbe"')],
+    ['filterAction', sliceTo('if op == "filterAction"', 'if op == "login" || op == "loginProbe"')],
+    ['主链路', sliceTo('switch op {', '// MARK: - 形状对齐')],
   ];
   for (const [name, seg] of branches) {
     if (!seg) { ok(false, `分支「${name}」没找到（⇒ 接线结构变了？）`); continue; }

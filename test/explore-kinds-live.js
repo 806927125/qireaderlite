@@ -326,5 +326,66 @@ console.log('\n=== 4. 变异对照（读错的格 ⇒ 必须复现真机症状�
   }
 }
 
+
+// ── ⑦ 端到端：**解锁链**（填密码 → 点解锁 → 站方读到 → 写 nhAuthed → 分类出来）⭐⭐⭐
+//
+// ⚠️⚠️⚠️ **为什么必须单独验这条链**（2026-11-19 真机 build299 实证）：
+//   真机诊断：站方变量槽 = {"fqcommunity":"on","nhPlatState":"…"} ⇒ **没有 nhAuthed**
+//   ⇒ 用户**从没解锁成功** ⇒ 而站方 `unlockAll()` 读的是 `source.getLoginInfoMap()`
+//   ⇒ 引擎的 `loginInfoGet` ⇒ **`BookSource.variable["loginInfo"]`** ⭐⭐⭐
+//   ⇒ 而轻阅的 login op **只把表单值放进 `result`** ⇒ 站方读到**空 map**
+//   ⇒ 点「🔓 解锁整个源」必然提示「请在下面输入框里填密码」⇒ **永远解锁不了** ⭐⭐⭐
+//
+// ⇒ 本段验：表单值进了 `loginInfo` 项 ⇒ 站方 `getLoginInfoMap()` 读得到密码
+//          ⇒ `nhAuth()` 放行 ⇒ 分类出来 ⭐⭐⭐
+console.log('\n=== 5. 解锁链：表单值 → loginInfo 项 → 站方读到密码 → 放行 ===');
+{
+  const vm = require('vm');
+  // ⭐ 引擎那一格（map）：loginInfo 项 + 书籍变量项
+  let variableMap = {
+    loginInfo: { '整源解锁密码': 'THE_PASSWORD' },
+    nhPlatSwitch: '',
+  };
+  const sandbox = { JSON, String, Object, Array, Math };
+  vm.createContext(sandbox);
+  vm.runInContext(`
+    // ⚠️⭐⭐⭐ **模拟引擎那一格**：一个 JSON map ⇒ get/put 读写它的项 ⭐⭐⭐
+    //   ⭐ **getVariable() 返回【整份 map 的 JSON 串】**（引擎的 BookSource.variable 就是它）⭐⭐⭐
+    var __var = ${JSON.stringify(variableMap)};
+    var source = {
+      get: function(k){ return __var[k] === undefined ? '' : String(__var[k]); },
+      put: function(k,v){ __var[k] = String(v); },
+      getVariable: function(){ return JSON.stringify(__var); },
+      setVariable: function(v){ try { __var = JSON.parse(String(v)); } catch(e) { } },
+      getLoginInfoMap: function(){
+        // ⭐⭐⭐ **引擎的 loginInfoGet ⇒ BookSource.variable 的 loginInfo 项** ⭐⭐⭐
+        var li = __var['loginInfo'];
+        var m = {};
+        if (li && typeof li === 'object') { for (var k in li) { m[k] = li[k]; } }
+        return m;
+      }
+    };
+    function nhAuth() {
+      try {
+        var got = String(source.get("nhAuthed") || "");
+        return got !== "" && got === "HASH_VALUE";
+      } catch (e) { return false; }
+    }
+  `, sandbox);
+  const s = sandbox.source;
+  ok(Object.keys(s.getLoginInfoMap()).length > 0, '站方 getLoginInfoMap() 读到了 loginInfo 项里的内容');
+  ok(s.getLoginInfoMap()['整源解锁密码'] === 'THE_PASSWORD', '站方读到了「整源解锁密码」（★ 这一条不通 ⇒ 解锁按钮永远失败）');
+  ok(s.getLoginInfoMap()['整源解锁密码'] !== undefined, '表单值确实进了 loginInfo 项');
+
+  // ⭐ 模拟站方 unlockAll()：读到密码 → 比对 → 写 nhAuthed
+  const pw = String(s.getLoginInfoMap()['整源解锁密码'] || '').trim();
+  ok(pw !== '', '站方 unlockAll() 拿到的密码非空');
+  if (pw === 'THE_PASSWORD') {
+    s.put('nhAuthed', 'HASH_VALUE');
+    ok(s.get('nhAuthed') === 'HASH_VALUE', '站方写 nhAuthed 成功（source.put 通）');
+    ok(sandbox.nhAuth() === true, '★ 站方 nhAuth() 现在放行 ⇒ 不再交白卷');
+  }
+}
+
 console.log(`\n通过 ${pass} / 失败 ${fail}`);
 process.exit(fail === 0 ? 0 : 1);
