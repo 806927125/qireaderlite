@@ -130,6 +130,23 @@ final class LegadoEngineBackend {
             return s
         }
 
+        /// ⭐⭐⭐⭐⭐ **回传站方变量时【剥掉 loginInfo 项】**（2026-11-19 实证）⭐⭐⭐
+        ///
+        /// ⚠️⚠️⚠️ **为什么必须剥**：
+        ///   引擎那一格里含 `loginInfo` 项（**用户填的明文密码**在里头）
+        ///   ⇒ 回传 `__sourceVariable` ⇒ App 落盘到**站方变量槽** ⇒ **明文密码躺盘** ⭐⭐⭐
+        ///   ⇒ 站方自己的 `nhAuthWipe()` 也是为了这个（「密码就明文躺在源文件里了」）⭐⭐⭐
+        ///   ⇒ 而 `loginInfo` **有独立的落盘通道**（`__loginInfo` ⇒ `sourceform.` / `sourcelogin.`）
+        ///     ⇒ 剥掉不丢东西 ⭐⭐⭐
+        static func stripLoginInfo(from stationVar: String) -> String {
+            guard var d = stationVar.data(using: .utf8),
+                  var o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                  o.removeValue(forKey: "loginInfo") != nil else { return stationVar }
+            guard let dd = try? JSONSerialization.data(withJSONObject: o),
+                  let s = String(data: dd, encoding: .utf8) else { return stationVar }
+            return s
+        }
+
         /// ⭐⭐⭐ **站方 JS 跑完之后：把引擎那格读回来**（站方 `source.put(...)` 的写回）⭐⭐⭐
         ///
         /// ⚠️⚠️ **为什么必须用 JS 读、不能直接读 `engineSource.variable`**：
@@ -309,9 +326,10 @@ final class LegadoEngineBackend {
                 out = ["ok": false, "error": String(describing: error), "msgs": host.messages]
             }
             // ⭐⭐⭐ **站方变量读回**（站方 JS 里的 `source.put(...)` 写进副本了 ⇒ 取出来）⭐⭐⭐
-            let stationVar = session.collectStationVariable {
+            // ⭐⭐⭐ **剥掉 loginInfo 项**（明文密码不许混进站方变量槽）⭐⭐⭐
+            let stationVar = Self.stripLoginInfo(from: session.collectStationVariable {
                 (try? bridge.eval("source.getVariable()")) as? String
-            }
+            })
             out["__sourceVars"] = session.variables.getVariable()
             out["__sourceVariable"] = stationVar
             out["__sourceVariableChanged"] = (stationVar != session.stationSeeded)
@@ -380,9 +398,10 @@ final class LegadoEngineBackend {
             }
             // ⭐⭐⭐ **站方 JS 改过的变量 ⇒ 回传**（宿主落盘 ⇒ 下次直接生效）
             // ⭐⭐⭐ **站方变量读回**（站方 JS 里的 `source.put(...)` 写进副本了 ⇒ 取出来）⭐⭐⭐
-            let stationVar = session.collectStationVariable {
+            // ⭐⭐⭐ **剥掉 loginInfo 项**（明文密码不许混进站方变量槽）⭐⭐⭐
+            let stationVar = Self.stripLoginInfo(from: session.collectStationVariable {
                 (try? bridge.eval("source.getVariable()")) as? String
-            }
+            })
             out["__sourceVars"] = session.variables.getVariable()
             out["__sourceVariable"] = stationVar
             out["__sourceVariableChanged"] = (stationVar != session.stationSeeded)

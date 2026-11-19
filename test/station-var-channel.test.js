@@ -35,7 +35,17 @@ const ok = (c, m, extra) => {
   else { fail++; console.log('  ✗', m, extra === undefined ? '' : '→ ' + extra); }
 };
 
-const src = fs.readFileSync(APP, 'utf8');
+const rawSrc = fs.readFileSync(APP, 'utf8');
+// ⭐⭐⭐⭐⭐ **必须剥注释**（2026-11-19 实证）：
+//   注释里写 `bridge.eval("source.getVariable()")` ⇒ **计数会被撑起来**
+//   ⇒ 变异打掉真代码、注释还在 ⇒ 计数仍 ≥2 ⇒ **断言照样绿 ⇒ 门禁没牙齿** ⭐⭐⭐
+//   ⇒ 记忆里的老规矩：「存在性检查用代码特征，不能用注释字样」⭐⭐⭐
+function stripComments(t) {
+  return t
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')          // 块注释
+    .replace(/\/\/[^\n]*/g, ' ');                    // 行注释
+}
+const src = stripComments(rawSrc);
 
 console.log('=== 1. 静态断言：站方变量必须【灌进 engineSource.variable】 ===');
 ok(/src\.variable\s*=\s*merged/.test(src),
@@ -55,7 +65,7 @@ ok(/stationSeeded/.test(src),
    '站方变量有自己的种子（判定站方改没改 ⇒ 证据不许自证）');
 ok(/self\.stationSeeded\s*=\s*sv/.test(src),
    '站方变量的种子【等于灌进去的值】（否则「改没改」永远 false ⇒ 证据自证）');
-ok(/let stationVar = session\.collectStationVariable \{/.test(src),
+ok(/session\.collectStationVariable \{/.test(src),
    '读回走 collectStationVariable（不拿书籍变量那一格冒充）');
 
 console.log('\n=== 2b. 静态断言：登录信息必须进引擎那一格的 loginInfo 项 ===');
@@ -70,6 +80,16 @@ ok(/mergeStationMap\(bookVars:[^)]*loginInfo:/.test(src),
    'mergeStationMap 把 loginInfo 也并进引擎那一格');
 ok(/loginInfoGet/.test(src) === false || /loginInfo/.test(src),
    '源码里出现了 loginInfo 相关处理（可读即可）');
+
+console.log('\n=== 2c. 静态断言：回传时必须【剥掉 loginInfo】（明文密码不许躺盘）===');
+// ⚠️⚠️⚠️ **为什么这是安全项**（2026-11-19 实证）：
+//   引擎那一格含 `loginInfo` 项（**用户填的明文密码**在里头）
+//   ⇒ 回传 `__sourceVariable` ⇒ App 落盘到**站方变量槽** ⇒ **明文密码躺盘** ⭐⭐⭐
+//   ⇒ 站方自己的 nhAuthWipe() 也是为了这个（「密码就明文躺在源文件里了」）⭐⭐⭐
+ok(/stripLoginInfo/.test(src), '有 stripLoginInfo（回传前剥掉 loginInfo 项）');
+ok(/stripLoginInfo\(from:/.test(src), '回传时真的调用了 stripLoginInfo');
+ok(/let stationVar = Self\.stripLoginInfo\(from:/.test(src),
+   '★ 回传的 stationVar 走过 stripLoginInfo（明文密码不进站方变量槽）');
 
 console.log('\n=== 3. 静态断言：书籍变量与站方变量【不许混】 ===');
 ok(/__sourceVars"\]\s*=\s*session\.variables\.getVariable\(\)/.test(src),
@@ -126,13 +146,24 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     // ⭐⭐⭐ **种子必须【等于灌进去的值】**（否则「改没改」永远 false ⇒ 证据自证）⭐⭐⭐
     if (!/self\.stationSeeded\s*=\s*sv/.test(text)) fails.push('站方变量的种子不等于灌进去的值');
     // ⭐⭐⭐ **读回必须【走 collectStationVariable】**（不能拿书籍变量那一格冒充）⭐⭐⭐
-    if (!/let stationVar = session\.collectStationVariable \{/.test(text)) fails.push('读回没走 collectStationVariable');
+    // ⭐⭐⭐ **要查【调用点】、不能查「函数存在」**（2026-11-19 实证）：
+    //   变异把**调用**换掉、**定义**仍在 ⇒ 只查存在 ⇒ 判定通过 ⇒ 变异抓不到 ⇒ 门禁没牙齿 ⭐⭐⭐
+    // ⭐⭐⭐⭐⭐ **判据 = 【计数】**（2026-11-19 实证）：
+    //   「读回」的实现特征 = `bridge.eval("source.getVariable()")` 这个**具体动作** ⭐⭐⭐
+    //   ⇒ 读回必须【两处都有】（filterAction + login）⇒ 变异打掉一处 ⇒ 计数变 1 ⇒ 红 ⭐⭐⭐
+    //   （用「函数名存在」当判据是**错的**：变异换掉调用、定义仍在 ⇒ 照样绿 ⇒ 没牙齿）⭐⭐⭐
+    //   ⚠️ **必须先剥注释**（注释里同名串会把计数撑起来 ⇒ 变异打掉真代码也抓不到）⭐⭐⭐
+    const readCalls = (text.match(/bridge\.eval\("source\.getVariable\(\)"\)/g) || []).length;
+    if (readCalls < 2) {
+      fails.push('读回少了（bridge.eval("source.getVariable()") 只剩 ' + readCalls + ' 处 ⇒ 读回被换掉了）');
+    }
     // ⭐⭐⭐ **合并必须【把书籍变量的项也并进去】**（`nhAuthed` 就在那一格）⭐⭐⭐
     //   ⇒ 只判「调用了 mergeStationMap」不够（变异把调用换掉、函数名仍在别处 ⇒ 抓不到）⭐⭐⭐
     if (!/mergeStationMap\(bookVars:\s*(vars|variables),\s*stationRaw:\s*sv\)/.test(text)) {
       fails.push('合并没把书籍变量并进去（nhAuthed 读不到）');
     }
     if (!/m\["loginInfo"\]\s*=\s*mergedLogin/.test(text)) fails.push('loginInfo 没写进引擎那一格（解锁按钮永远失败）');
+    if (!/let stationVar = Self\.stripLoginInfo\(from:/.test(text)) fails.push('回传没剥 loginInfo（明文密码躺盘）');
     if (!/mergeLoginInfo/.test(text)) fails.push('没有 mergeLoginInfo');
     return fails;
   };
@@ -154,15 +185,23 @@ console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
     //   ⇒ 断言照样匹配 ⇒ 变异白做）⭐⭐⭐ ⇒ 用 split/join 做全局替换 ⭐⭐⭐
     ['loginInfo 不并进引擎那一格（★ 解锁按钮永远失败）',
       (t) => t.replace('m["loginInfo"] = mergedLogin', 'm["loginInfoUnused"] = mergedLogin')],
+    ['回传时不剥 loginInfo（★ 明文密码躺盘）',
+      (t) => t.split('Self.stripLoginInfo(from: session.collectStationVariable {')
+              .join('session.collectStationVariable {')],
+    // ⚠️⚠️ **变异必须【换掉读回的实现】、不是「包一层」**（2026-11-19 实证）：
+    //   「包一层 if false」在**文本上**仍留着 `collectStationVariable { … bridge.eval(` ⇒
+    //   ⇒ 靠文本形态判断的断言**照样绿** ⇒ 变异抓不到 ⇒ 门禁没牙齿 ⭐⭐⭐
+    //   ⇒ 正解：**整段换掉**（换成读书籍变量那一格）⇒ 文本形态真的变了 ⇒ 断言能红 ⭐⭐⭐
     ['读回改用书籍变量那一格（写方向断 ⇒ 站方 put 写不回来）',
-      (t) => t.split('let stationVar = session.collectStationVariable {')
-              .join('let stationVar = session.variables.getVariable(); if false { session.collectStationVariable {')],
+      (t) => t.replace(
+        /session\.collectStationVariable \{\s*\n?\s*\(try\? bridge\.eval\("source\.getVariable\(\)"\)\) as\? String\s*\n?\s*\}/,
+        'session.variables.getVariable()')],
     ['站方变量的种子被抹掉（证据自证）',
       (t) => t.replace(/self\.stationSeeded = sv/, 'self.stationSeeded = ""')],
     ['__sourceVariable 回传书籍变量那一格（★ build297 的 bug 现场）',
       (t) => t.replace(/out\["__sourceVariable"\] = stationVar/g, 'out["__sourceVariable"] = session.variables.getVariable()')],
   ];
-  const orig = src;
+  const orig = src;   // ⚠️ 已是【剥注释后】的文本 ⇒ 变异不会命中注释里的同名串 ⭐⭐⭐
   const tmp = APP + '.gate-bak';
   try {
     for (const [name, fn] of cases) {
