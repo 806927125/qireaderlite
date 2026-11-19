@@ -151,3 +151,56 @@ step name 里写 `@js:` ⇒ **整个 workflow 解析失败** ⇒ 症状 = **CI �
 | `dbefc2b` | 修 CI run 468（YAML 裸 `@` 保留指示符）+ 加本地 YAML 门禁 |
 
 CI：run 467 / 468（解析失败）/ **run 469 绿** ⇒ build297（`CFBundleVersion = 297`）。
+
+
+---
+
+# 追加（build298）：第二层根因 = **站方变量两格不通**
+
+> 用户装 build297 后反馈：发现页从「LegadoError 错误 1」变成「**只解析出 0 个分类**」
+> ⇒ 上一步的修复**生效了**（`@js:` 的 exploreUrl 真跑了）⇒ 但站方 JS **主动交白卷** ⇒ 又一层根因 ⭐⭐⭐
+
+## 根因
+
+| 方向 | 引擎读/写哪 | App 灌/收哪 | 结果 |
+|---|---|---|---|
+| **读** | `srcGet` → **`BookSource.variable`** 那一格 | `srcDict["__variable"]` → `session.variables`（**另一格**） | ❌ 站方 JS 读 `source.get("nhAuthed")` **恒空** |
+| **写** | `srcPut` → `BookSource.variable`（**JSBridge 内的副本**） | 回传 `session.variables`（**另一格**） | ❌ 站方 `source.put(...)` **写不回来** |
+
+⇒ 站方 `exploreUrl` 第一行 `if (!nhAuth()) { return ""; }` ⇒ `nhAuth()` 恒 false
+⇒ **主动交白卷**（不是崩溃 ⇒ 最难查的一类）⇒ 0 个分类 ⭐⭐⭐
+
+⚠️ **隐蔽点**：App 的 `BookSource` 模型**根本没有 `variable` 字段**、`srcDict` 也**从不塞 `"variable"`**
+⇒ 引擎那一格**永远是空的** ⇒ 从来没人发现（大部分源不读变量）⭐⭐⭐
+
+⚠️ **另一半**：通用 op 的收尾回传 `__sourceVariable` 原来回传的是**书籍变量**那一格
+⇒ 宿主落盘时把书籍变量的 map 写进了**站方变量槽** ⇒ **两格互相污染** ⭐⭐⭐
+
+## 修法（宿主层，**零引擎改动**）
+
+1. **读**：把 App 的站方变量灌进 `engineSource.variable` ⇒ 站方 JS 读得到
+2. **写**：站方 JS 写的是 JSBridge 内的副本（`JSBridge.source` 模块内可见 ⇒ 宿主读不到）
+   ⇒ **`bridge.eval("source.getVariable()")`** 把副本里的值读出来（纯 JS ⇒ 不碰引擎）
+3. **回传**：`__sourceVars` = 书籍变量；`__sourceVariable` = **站方那一格**；两格不许混
+4. **种子**：站方变量要有自己的种子（= 灌进去的值）⇒ 判「改没改」不是自证
+5. ⚠️ **闭包传参**：`LegadoEngineHost.Bridge` 别名只在 Apple 平台存在 ⇒ Linux 沙盒编不过 ⇒ 用闭包传
+
+## ⭐⭐⭐ 本轮最有价值的门禁教训
+
+**端到端脚本若是「假接线」，它会掩盖真机故障** ⭐⭐⭐
+
+- 早先的端到端脚本「手工往 `source.get` 的 map 里塞 `nhAuthed`」⇒ **源与真机不同构**
+  ⇒ 真机 0 分类它照样绿 ⇒ **门禁抓不到故障** ⭐⭐⭐
+- ⇒ 正解：**端到端必须模拟【宿主的真实接线】**（整格灌进 `variable` ⇒ `source.get` 从 `variable` 读）
+- ⚠️⚠️ **且两格内容必须独立**（书籍变量那格**不许含** `nhAuthed`）
+  ⇒ 否则「读错的格」照样读得到 ⇒ **变异照样绿** ⇒ 门禁没牙齿 ⭐⭐⭐
+- ⇒ 固化变异：「读错的格」⇒ **精确复现真机症状「0 个分类」** ⇒ 端到端 8/8 ✅
+
+## 新增门禁
+
+| 门禁 | 文件 | 结果 |
+|---|---|---|
+| **站方变量通道** | `test/station-var-channel.test.js` | 20 项 ✅ + 4 变异全抓住 ✅ |
+| 端到端（真实接线 + 变异） | `test/explore-kinds-live.js` | 8 项 ✅ |
+
+build 号 298（commit `d75b27e`）。
