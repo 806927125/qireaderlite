@@ -318,3 +318,60 @@ build 号 300（commit `9d595ec`）。
 2. **解锁**：书源登录 → 「整源解锁密码」填密码 → 点「🔓 解锁整个源」→ 回发现页
    - ⚠️ 出厂密码只有源作者有（源里只有 `NH_PWD_HASH` = md5，没有明文）
    - ⚠️ **不自动解锁**是有意的：站方注释写明这个门禁的价值是「源不外传」⇒ 自动填 = 绕过它 ⭐⭐⭐
+
+
+---
+
+# 追加（build300 终版）：第四层修完 + **沙盒盲区根治**
+
+## 第四层（build300 已修）
+
+**根因**：站方读密码 = `nhAuthUiMap()` ⇒ `source.getLoginInfoMap()`
+⇒ 引擎的 `loginInfoGet` ⇒ **`BookSource.variable["loginInfo"]`**
+⇒ 而轻阅的 login op **只把表单值放进 `result`** ⇒ 站方读到**空 map**
+⇒ 点「🔓 解锁整个源」必然提示「请在下面输入框里填密码」⇒ **永远解锁不了** ⭐⭐⭐
+
+**修法**：
+- ⭐⭐⭐ login op 执行前，把「已存登录信息 + 本次表单值」**合并写进引擎那一格的 `loginInfo` 项**
+- ⭐⭐⭐ **执行与回传必须用【同一个 bridge】**（我第一版换了 `bridge2` ⇒ 回传读的是另一份副本
+  ⇒ 站方 `source.put`（含 nhAuthed）**读不回来** ⇒ 被 `engine-replacement-contract` 门禁当场抓住）⭐⭐⭐
+- ⭐⭐⭐ **回传时剥掉 `loginInfo` 项**（它含**明文密码** ⇒ 混进站方变量槽 ⇒ 明文躺盘
+  ⇒ 站方自己的 `nhAuthWipe()` 也是为了这个）⭐⭐⭐
+
+## ⭐⭐⭐ 沙盒盲区的根治（这次最大的认识）
+
+**CI build300 连红两轮，两轮都是 Apple-only 块里的类型错**：
+- ① `type 'Self' has no member 'stripLoginInfo'`（方法在嵌套 `Session`，调用点却写 `Self.`）
+- ② `value of optional type 'String?' must be unwrapped`（`engineSource.variable` 是 optional）
+
+⚠️⚠️⚠️ **根因 = 那段代码在 `#if canImport(JavaScriptCore) && !os(Linux)` 里面**
+⇒ **Linux 编译门禁根本编不到** ⇒ 沙盒全绿、CI 连红 ⇒ **每轮白等 5 分钟** ⭐⭐⭐
+
+⇒ ⭐⭐⭐ **根治不是加断言，是【改结构】**：
+把**纯 Swift 的数据处理逻辑**挪到 `#if` **外面**
+（`Session.engineSourceWithLoginInfo(formValues:)` ⇒ 只把「跑 JS」留在 `#if` 里）
+⇒ **Linux 门禁编得到** ⇒ 类型错 3 秒暴露 ⭐⭐⭐
+⇒ 变异自证：去掉 `?? ""` ⇒ **沙盒当场报出与 CI 一模一样的错误** ✅
+
+⇒ **教训（升级版）**：**「沙盒编不到」的那部分代码，等于没有门禁**
+⇒ 要么把逻辑挪到编得到的地方，要么补静态门禁（`test/apple-only-typecheck.test.js`）⭐⭐⭐
+
+## 门禁（最终）
+
+| 门禁 | 结果 |
+|---|---|
+| `test/station-var-channel.test.js` | 31 项 + 7 变异全抓住 |
+| `test/apple-only-typecheck.test.js` | 10 项（**新增**：Apple-only 块的 `Self.<方法>` 作用域归属）+ 变异自证 |
+| `test/explore-kinds-live.js` | 14 项（含**解锁链**整段）|
+| `test/engine-replacement-contract.test.js` | 切片从【固定长度】改成【按结构】（假红修复）|
+| `test/mutation-engine-replacement.sh` | 锚点跟着实现走（否则变异无效 ⇒ 没牙齿）|
+| 全量 | 19 条 + 变异 11 项 + swift 原生层 330 项 全绿 ✅ |
+
+## ⚠️ 给用户的动作（两件，顺序不能反）
+
+1. **装 build300**（测书源面板现在会显示 `版本 (build 300)` ⇒ 一眼确认装的是哪版）⭐⭐⭐
+2. **解锁**：书源登录 → 「整源解锁密码」填密码 → 点「🔓 解锁整个源」→ 回发现页
+   - ⚠️ 出厂密码只有源作者有（源里只有 `NH_PWD_HASH` = md5，**没有明文**）
+   - ⚠️ **不自动解锁**是有意的：站方注释写明这个门禁的价值是「源不外传」⇒ 自动填 = 绕过它 ⭐⭐⭐
+
+build 号 300（commit `14e2b52`）。
