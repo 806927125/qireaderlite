@@ -111,7 +111,7 @@ jobs:
           grep "error:" b.log | sort -u | head -40
           echo "===== 错误结束 ====="
 
-      - name: ⭐⭐⭐⭐⭐ 发现页端到端：真实 NovelHub 源 ⇒ 求值 @js: exploreUrl ⇒ 出分类
+      - name: ⭐⭐⭐⭐⭐ 发现页端到端：真实 NovelHub 源 ⇒ 求值 JS 形式的 exploreUrl ⇒ 出分类
         run: |
           # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-19 真机 build296 实证）：
           #   真机报「发现页：未能完成操作。（LegadoEngine.LegadoError 错误 1。）」

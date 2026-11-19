@@ -42,6 +42,11 @@ declare -a GATES=(
   #     ⇒ `url 解析失败: ` ⇒ LegadoError 错误 1 ⇒ **发现页整个用不了**⭐⭐⭐）
   #   ⇒ oracle = git 里**已删的旧引擎**（0b5c481^）的 normalizeKinds/filterParamKey/absolutize
   #   ⇒ 新 Swift 实现（App 真文件）必须**逐字段一致** ⇒ 抄歪了立刻红 ⭐⭐⭐
+  # ⭐⭐⭐⭐⭐ **workflow YAML 合法性**（2026-11-19 CI run 468 实证）
+  #   ⇒ step name 里写了裸 `@js:` ⇒ **`@` 是 YAML 保留指示符** ⇒ **整个 workflow 解析失败** ⭐⭐⭐
+  #   ⇒ 症状 = **CI 立刻失败、且一个 job 都没有**（`jobs: []`）⇒ 什么都看不见 ⇒ 最难查的一类 ⭐⭐⭐
+  #   ⇒ 本地 3 秒 parse 一遍 ⇒ 当场报「哪个文件哪一行」⭐⭐⭐
+  "workflow-yaml-gate:test/workflow-yaml-gate.test.js"
   "explore-kinds-parity:test/explore-kinds-parity.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
