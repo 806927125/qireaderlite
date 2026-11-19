@@ -59,9 +59,14 @@ function parseFunctions(src) {
         const t = lines[k].trim();
         if (/^(?:@\w+\s*)*(?:public\s+|private\s+|internal\s+|fileprivate\s+|final\s+)*(?:class|struct|enum|extension)\b/.test(t)) {
           // 找到类型声明 ⇒ 往上看它上面的注解
+          // ⭐⭐⭐⭐⭐ **必须跳过注释行/空行**（2026-11-19 实证）：
+          //   之前只认「紧邻的上一行」⇒ 只要在 `@MainActor` 和类型声明之间插一段注释
+          //   ⇒ 就找不到注解 ⇒ **误报一片**（当时是把面板类改名 + 加了说明注释踩到的）⭐⭐⭐
+          //   ⇒ 注解和声明之间**隔几行注释都不该影响判定** ⭐⭐⭐
           for (let j = k - 1; j >= 0; j--) {
             const a = lines[j].trim();
-            if (!a) continue;
+            if (!a) continue;                       // 空行：跳过
+            if (a.startsWith('//')) continue;       // ⭐ 注释行：跳过（新增）⭐⭐⭐
             if (a.startsWith('@MainActor')) { isMainActor = true; }
             break;
           }

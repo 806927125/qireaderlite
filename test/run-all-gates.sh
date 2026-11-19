@@ -32,6 +32,11 @@ declare -a GATES=(
   #   ⇒ 上一版门禁**断言了错误结论** ⇒ 门禁一直绿 + CI 一直红 ⇒ 两个都对不了 ⭐⭐⭐
   #   ⇒ 变异＝把实现改坏 ⇒ 门禁**必须红** ⇒ 否则那条断言就是摆设 ⭐⭐⭐
   "engine-apple-api-mutation:test/engine-apple-api.mutation.test.js"
+  # ⭐⭐⭐⭐⭐ **App 侧类型撞名 / 引用不存在的类型**（2026-11-19 CI build296 实证）
+  #   ⇒ `EngineLogPanel.swift` 里的类被错命名成 `EngineLog` ⇒ 和 `EngineLog.swift` 的 enum 撞名
+  #      ⇒ 满屏「cannot find 'EngineLogPanel'」⇒ **沙盒完全看不见**（那个文件 import UIKit ⇒ 只留了 stub）⭐⭐⭐
+  #   ⇒ 现在静态扫全工程源码 ⇒ 撞名 / 引用不存在的 `X.shared` **3 秒就抓** ⭐⭐⭐
+  "app-type-sanity:test/app-type-sanity.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"

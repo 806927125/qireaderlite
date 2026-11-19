@@ -12,13 +12,14 @@ import UIKit
 /// ⚠️ `LegadoEngineBackend`（新引擎接线）在沙盒的 swift 门禁里**在 Linux 上编译**
 ///   ⇒ **不许 import UIKit** ⇒ 凡是要 UIKit 的东西**留在本文件**，别的层通过
 ///   `UserDefaults` / 本文件的静态方法拿 ⇒ 纯 Foundation ⇒ 两边都能编 ⭐⭐⭐
-@MainActor
 // ⭐⭐⭐⭐⭐ **类型名必须是 `EngineLogPanel`**（2026-11-19 CI build296 实证）：
 //   之前这个文件里的类**也叫 `EngineLog`** ⇒ 和 `Core/EngineLog.swift` 里的 `enum EngineLog`
 //   **撞名** ⇒ 「invalid redeclaration of 'EngineLog'」⭐⭐⭐
 //   ⇒ 而全工程 30+ 处引用的是 `EngineLogPanel.shared` ⇒ 这个类型**压根不存在**
 //      ⇒ 「cannot find 'EngineLogPanel' in scope」满屏 ⭐⭐⭐
 //   ⇒ 正解：类名 = 文件名 = `EngineLogPanel`（沙盒门禁的 stub 里也是这个名）⭐⭐⭐
+// ⭐⭐⭐ **`@MainActor` 紧挨着类型声明**（注解和声明之间插注释 ⇒ 某些静态门禁找不到注解）⭐⭐⭐
+@MainActor
 final class EngineLogPanel: NSObject, ObservableObject {
     static let shared = EngineLogPanel()
 
