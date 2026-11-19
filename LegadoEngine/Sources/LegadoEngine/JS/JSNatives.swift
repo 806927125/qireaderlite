@@ -712,7 +712,16 @@ extension JSBridge {
         //   ⇒ C struct 被 Swift 导入成**成员构造器要 5 个参数** ⇒ **没有零参 init** ⭐⭐⭐
         //   ⇒ 之前写 `compression_stream()` ⇒ 编译器转而挑 `compression_decode_buffer` 重载
         //      ⇒ 报「missing arguments for parameters 'dst_ptr'...」**极具误导性** ⭐⭐⭐
-        var stream = compression_stream(dst_ptr: nil, dst_size: 0, src_ptr: nil, src_size: 0, state: nil)
+        let bufSize = 65536
+        let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        defer { dst.deallocate() }
+        // ⭐⭐⭐⭐⭐ **`compression_stream` 的 dst_ptr / src_ptr 在 Swift 里是【非可选指针】**
+        //   ⇒ **不能传 nil**（CI build296 实测：
+        //      'nil' is not compatible with expected argument type 'UnsafeMutablePointer<UInt8>'）⭐⭐⭐
+        //   ⇒ 正解：**先分配缓冲区**（init 时长度给 0 ⇒ 不会读也不会写）
+        //      ⇒ 下面循环里再填真实指针和长度 ⭐⭐⭐
+        var stream = compression_stream(dst_ptr: dst, dst_size: 0,
+                                        src_ptr: UnsafePointer(mutating: dst), src_size: 0, state: nil)
         // ⭐⭐⭐⭐⭐ **CI 自省（读 SDK compression.h）拿到的权威值**（2026-11-19）：
         //   COMPRESSION_STREAM_ENCODE = 0 / COMPRESSION_STREAM_DECODE = 1
         //   COMPRESSION_ZLIB           = **0x205**（不是 0！！写 0 会静默用错算法）⭐⭐⭐
@@ -732,9 +741,6 @@ extension JSBridge {
         let finalizeFlag = Int32(bitPattern: compression_stream_flags(rawValue: 1).rawValue)
         guard compression_stream_init(&stream, op, alg) == statusOK else { return Data() }
         defer { compression_stream_destroy(&stream) }
-        let bufSize = 65536
-        let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        defer { dst.deallocate() }
         var output = Data()
         var emptyByte: UInt8 = 0
         let status: compression_status = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> compression_status in
@@ -908,7 +914,11 @@ extension JSBridge {
         //   **探针第 14 行 `CCPadding(ccNoPadding)` 根本没报错** ⇒ 名字一直都在
         //   ⇒ 是**读探针输出读错了**（只看了前 3 行报错就下结论）⇒ 害得连 padding 语义一起改错 ⭐⭐⭐
         //   ⇒ **教训**：探针有多行报错时，要看【全部】输出再下结论 ⭐⭐⭐
-        let ccPadding: CCPadding = usePadding ? ccPKCS7Padding : ccNoPadding
+        // ⚠️⚠️⚠️ **`ccPKCS7Padding` / `ccNoPadding` 在 Swift 里是 `Int`**（C 枚举常量被导入成 Int）
+        //   ⇒ 直接赋给 `CCPadding`（= UInt32）⇒ 报「cannot convert value of type 'Int' to specified
+        //      type 'CCPadding' (aka 'UInt32')」⭐⭐⭐
+        //   ⇒ 正解：用 Apple 头文件里的**枚举数值**（0=ccNoPadding / 1=ccPKCS7Padding）⭐⭐⭐
+        let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)
         // ⭐⭐⭐⭐⭐ **`Data.withUnsafeBytes` 有两个重载**（`UnsafeRawBufferPointer` 那个 + 泛型 `UnsafePointer<T>` 那个）
         //   ⇒ 不写类型 ⇒ 编译器推不出 T ⇒ 报「generic parameter 'ContentType' could not be inferred」
         //   ⇒ **显式标注闭包参数类型** ⇒ 只可能选中 `UnsafeRawBufferPointer` 那个重载 ⭐⭐⭐
@@ -918,7 +928,10 @@ extension JSBridge {
                 // ⚠️ ECB 模式**必须传 NULL IV**（传了 ⇒ kCCParamError ⇒ 旧代码 ECB/CBC 拿不到结果）
                 // ⭐ **不写 `UnsafeRawPointer?` 标注** ⇒ 让编译器自己推 ⇒ 免得 SDK 改了泛型签名就编不过 ⭐⭐⭐
                 let ivArg = (mode == "ECB") ? nil : ivPtr.baseAddress
-                CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,
+                // ⚠️⚠️ **闭包体是【多语句】⇒ 没有隐式 return** ⇒ 返回值会退化成 `()`
+                //   ⇒ 外层 `createStatus` 变成 `()` ⇒ `createStatus == kCCSuccess` 报
+                //      「binary operator '==' cannot be applied to operands of type '()' and 'Int'」⭐⭐⭐
+                return CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,
                     ivArg, keyPtr.baseAddress, keyData.count,
                     nil, 0, 0, ccOptions, &cryptor)
             }

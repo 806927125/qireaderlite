@@ -193,7 +193,7 @@ jobs:
               let _: Int = b.baseAddress
           }
           PROBE
-          xcrun swiftc -typecheck /tmp/probe.swift 2>&1 | head -80 || true
+          xcrun swiftc -typecheck /tmp/probe.swift 2>&1 | head -140 || true
           echo "===== 探针结束 ====="
 
       - name: 归档编译日志（排查用）

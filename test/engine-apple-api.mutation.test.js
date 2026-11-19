@@ -46,7 +46,7 @@ check('基准：未变异时门禁绿', runGate() === 0, '基准就不是绿的 
 const MUTATIONS = [
   {
     name: 'compression_stream 用零参 init（C struct 没有零参 init）',
-    from: 'var stream = compression_stream(dst_ptr: nil, dst_size: 0, src_ptr: nil, src_size: 0, state: nil)',
+    from: 'var stream = compression_stream(dst_ptr: dst, dst_size: 0,',
     to: 'var stream = compression_stream()',
   },
   {
@@ -67,13 +67,13 @@ const MUTATIONS = [
   {
     // ⭐ 锚点必须打在【代码行】上 ⇒ 直接打三元表达式 ⇒ 不会误命中注释里的名字 ⭐⭐⭐
     name: 'padding 用不存在的常量名 kCCPaddingPKCS7',
-    from: 'usePadding ? ccPKCS7Padding : ccNoPadding',
-    to: 'usePadding ? kCCPaddingPKCS7 : ccNoPadding',
+    from: 'usePadding ? CCPadding(1) : CCPadding(0)',
+    to: 'usePadding ? kCCPaddingPKCS7 : CCPadding(0)',
   },
   {
-    name: 'padding 丢掉 ccNoPadding（半个三元）',
-    from: 'usePadding ? ccPKCS7Padding : ccNoPadding',
-    to: 'usePadding ? ccPKCS7Padding : CCPadding(0)',
+    name: 'padding 丢掉「无填充」那一支（只剩 PKCS7）',
+    from: 'let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)',
+    to: 'let ccPadding: CCPadding = CCPadding(0)',
   },
   {
     name: 'CCCryptorCreateWithMode 少传一个参数（11 个）',
@@ -84,6 +84,21 @@ const MUTATIONS = [
     name: 'withUnsafeBytes 闭包去掉显式标注（重载歧义）',
     from: 'iv.withUnsafeBytes { (ivPtr: UnsafeRawBufferPointer) in',
     to: 'iv.withUnsafeBytes { ivPtr in',
+  },
+  {
+    name: 'compression_stream 给 dst_ptr 传 nil（非可选指针）',
+    from: 'var stream = compression_stream(dst_ptr: dst, dst_size: 0,',
+    to: 'var stream = compression_stream(dst_ptr: nil, dst_size: 0,',
+  },
+  {
+    name: 'padding 直接用 ccPKCS7Padding（Swift 里是 Int ⇒ 不能赋给 CCPadding）',
+    from: 'usePadding ? CCPadding(1) : CCPadding(0)',
+    to: 'usePadding ? ccPKCS7Padding : ccNoPadding',
+  },
+  {
+    name: 'crypto 闭包去掉 return（多语句闭包无隐式返回 ⇒ createStatus 退化成 ()）',
+    from: '                return CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,',
+    to: '                CCCryptorCreateWithMode(op, ccMode, alg, ccPadding,',
   },
 ];
 

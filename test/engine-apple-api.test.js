@@ -136,6 +136,10 @@ for (const [f, code] of codeNoC) {
     check(`${path.basename(f)}：没有零参 compression_stream()`,
           !/compression_stream\(\s*\)/.test(code),
           '零参 ⇒ 编译器转挑 compression_decode_buffer 重载 ⇒ 报误导性的错');
+    // ⭐⭐⭐⭐⭐ **dst_ptr / src_ptr 是【非可选指针】⇒ 不能传 nil**（CI build296 实测）
+    check(`${path.basename(f)}：compression_stream 的 dst_ptr/src_ptr 不许传 nil`,
+          !/dst_ptr:\s*nil/.test(code) && !/src_ptr:\s*nil/.test(code),
+          "'nil' is not compatible with expected argument type 'UnsafeMutablePointer<UInt8>'");
   }
 }
 
@@ -149,12 +153,16 @@ for (const [f, code] of codeNoC) {
   const used = WRONG_PADDING.filter((w) => code.includes(w));
   check(`${path.basename(f)}：padding 不用不存在的常量名`, used.length === 0, used.join(', '));
   if (/ccPadding/.test(code)) {
-    check(`${path.basename(f)}：padding 用 ccPKCS7Padding / ccNoPadding（Apple 头文件的 enum）`,
-          code.includes('ccPKCS7Padding') && code.includes('ccNoPadding'),
-          'Apple CommonCryptor.h: enum { ccNoPadding = 0, ccPKCS7Padding = 1 };');
+    // ⭐⭐⭐⭐⭐ **CI build296 实测：`ccPKCS7Padding` / `ccNoPadding` 在 Swift 里是 `Int`**
+    //   ⇒ 直接赋给 `CCPadding`（= UInt32）⇒ 报「cannot convert value of type 'Int' to
+    //      specified type 'CCPadding' (aka 'UInt32')」⭐⭐⭐
+    //   ⇒ 正解：用 Apple 头文件里的枚举**数值**（0=ccNoPadding / 1=ccPKCS7Padding）⭐⭐⭐
+    check(`${path.basename(f)}：padding 用 CCPadding(1) / CCPadding(0)（cc* 常量在 Swift 是 Int）`,
+          /CCPadding\(1\)/.test(code) && /CCPadding\(0\)/.test(code),
+          'ccPKCS7Padding / ccNoPadding 是 Int ⇒ 不能直接赋给 CCPadding(=UInt32)');
     check(`${path.basename(f)}：padding 显式标注 CCPadding 类型`,
           /ccPadding\s*:\s*CCPadding\s*=/.test(code),
-          '应当是 `let ccPadding: CCPadding = usePadding ? ccPKCS7Padding : ccNoPadding`');
+          '应当是 `let ccPadding: CCPadding = usePadding ? CCPadding(1) : CCPadding(0)`');
   }
 }
 
@@ -227,6 +235,13 @@ for (const [f, code] of codeNoC) {
   if (args < 0) continue;
   check(`${path.basename(f)}：CCCryptorCreateWithMode 传 12 个参数（Apple 官方签名）`, args === 12,
         `实际 ${args} 个（官方签名含 tweak/tweakLength/numRounds 三个）`);
+  // ⭐⭐⭐⭐⭐ **闭包体是多语句 ⇒ 没有隐式 return** ⇒ 返回值退化成 `()`
+  //   ⇒ 外层 createStatus 变成 () ⇒ `createStatus == kCCSuccess` 编不过 ⭐⭐⭐
+  const cIdx = code.indexOf('CCCryptorCreateWithMode(');
+  const beforeCall = code.slice(Math.max(0, cIdx - 200), cIdx);
+  check(`${path.basename(f)}：CCCryptorCreateWithMode 前有显式 return（多语句闭包无隐式返回）`,
+        /return\s+$/.test(beforeCall) || /return\s+CCCryptorCreateWithMode\s*\(/.test(beforeCall),
+        '闭包体多语句 ⇒ 必须写 return，否则 createStatus 退化成 ()');
 }
 
 console.log(`\n通过 ${passed} / 失败 ${failed}`);
