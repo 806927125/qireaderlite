@@ -422,3 +422,57 @@ build 号 300（commit `14e2b52`）。
 | `test/apple-only-typecheck.test.js` | 又抓到一次真错（`Self.logExploreGateState` 写成了外层调用）|
 
 build 号 301（commit `c0dc96f`）。
+
+---
+
+# build302：移植 柴阅/Chaiyue 的【站方变量两套语义】⇒ 真正的根因
+
+> commit `db4795b`（2026-11-21）。用户指示：「直接参考并移植 Chaiyue 的实现」。
+
+## ⭐⭐⭐⭐⭐ 真正的根因：**语义错位**（不是「两格不通」）
+
+⚠️⚠️⚠️ **我在 build297–301 连修四版，每次都只修表层** ⇒ 真因在**更下一层** ⭐⭐⭐
+
+**权威规格 = 柴阅/Chaiyue 的 `SourceState`**（`Packages/ReaderCore/Sources/RuleEngine/Engine/RuleSession.swift`）：
+
+| JS API | 柴阅的存法 | 存储键 |
+|---|---|---|
+| `source.getVariable()` / `setVariable(str)` | **一整串** | `sourceVariable_<key>` |
+| `source.get(k)` / `put(k,v)` | **每 k 一个独立项** | `v_<key>_<k>` |
+| `source.getLoginInfoMap()` | 独立格（表单数据） | `userInfo_<key>`（AES）|
+
+**我们原先的实现**：`getVariable(key:)` = 「从 `variable` 整串里取项」⇒ **两套混成一格** ⭐⭐⭐
+
+⇒ 站方 `source.put('nhAuthed', h)` 与站方变量的项**互相污染**
+⇒ 宿主灌进 `variable` 的是**站方变量的整串** ⇒ `source.get("nhAuthed")` **读不到**
+⇒ 站方 `nhAuth()` 恒 false ⇒ **exploreUrl 主动交白卷**（不是崩溃 ⇒ 最难查的一类）
+⇒ ⇒ **发现页 0 个分类** ⭐⭐⭐
+
+## 改动清单
+
+| 层 | 改动 |
+|---|---|
+| 引擎 `BookSource` | 新增 `sourceVars: [String: String]`；`getVariable(key:)`/`putVariable(key:)` 改读写它 |
+| 引擎 `JSNatives` | 新增 `srcGetAll`（一次导出整张 map）；`loginInfo*`/`loginHeader*` 落在书源变量格 |
+| 引擎 `03_response.js` | `source.getAllVars()` |
+| 宿主 `Session` | 灌入**拆两格**：`variable` 原样 / `sourceVars` 每 k 一项 |
+| 宿主 回传 | `__sourceVars` 改读回**引擎那一格**（`source.getAllVars()`）⇒ **解锁态能落盘** |
+| 宿主 `loginInfo` | 写进 `sourceVars`（与引擎 `loginInfoGet` 同格）|
+| 宿主 迁移 | `legacySourceVars`：老版本把书源变量塞在站方整串里 ⇒ **白名单**迁出（`nhAuthed`/`nhPlatSwitch`/…；**不迁** `src`/`gender` 等站方变量项）|
+
+## 门禁
+
+| 门禁 | 结果 |
+|---|---|
+| `test/source-vars-two-slots.test.js`（**新**）| 34 项 + 5 变异（对拍 Chaiyue 的 `SourceState` 模型）|
+| `test/station-var-channel.test.js`（**重写**）| 34 项 + 8 变异（旧「合并语义」⇒ 新「两格语义」）|
+| 引擎单测 `testSourceVariable` | 更新为两格语义 + **两格独立性**断言 |
+
+全量 `test/run-all-gates.sh`：23 条 + swift 原生层 330 项 **全绿**（含两条变异门禁）。
+
+## ⭐ 本轮可复用的两条纪律
+
+1. ⭐⭐⭐ **「修了一版又好了」不是证据 ⇒ 要找到【与权威实现对拍】的那一层**：
+   连续四版都「修了表层」⇒ 唯一有效的动作是**去读权威实现（Chaiyue 的 SourceState）**，而不是继续推理 ⭐⭐⭐
+2. ⭐⭐⭐ **断言要查【调用点】不能查【函数名存在】**：
+   变异把**调用**换掉、**定义**仍在 ⇒ 只查名字 ⇒ 照样绿 ⇒ **门禁没牙齿**（本轮又踩了一次）⭐⭐⭐
