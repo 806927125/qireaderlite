@@ -65,6 +65,10 @@ enum ChaiyueRuntime {
     ///   ⇒ 聚合源的「🍅番茄登录 / 🔐注册书源 / 🏝用户后台」**全是浏览器流程** ⭐⭐⭐
     ///     ⇒ 浏览器不工作 ⇒ 拿不到 token/cookie ⇒ **登录永远失败** ⭐⭐⭐
     /// ⇒ 现在：柴阅的默认实现（后台 WKWebView 渲染 + Cookie 同步）+ 轻阅的 UI presenter ⭐⭐⭐
+    // ⚠️⚠️⚠️ **必须 `@MainActor`**（2026-11-21 CI 实证）⭐⭐⭐
+    //   柴阅的 `presenter` 是 `@MainActor` 属性 ⇒ 在非隔离上下文赋值 ⇒ **编译错误** ⭐⭐⭐
+    //   ⇒ 整个 `platformUI` 的初始化也必须在主线程 ⇒ 标 `@MainActor`（static let 惰性 ⇒ 安全）⭐⭐⭐
+    @MainActor
     static let platformUI: LegadoEngineHost.PlatformUI = {
         let ui = LegadoEngineHost.PlatformUI(environment: environment)
         ui.presenter = ChaiyueInteractionPresenter.shared

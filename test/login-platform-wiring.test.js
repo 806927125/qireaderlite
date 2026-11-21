@@ -103,6 +103,22 @@ console.log('\n=== 6. ★ 宿主不得直接引用柴阅的模块名（import �
   }
   ok(bad.length === 0, '宿主源码没有直接引用 ChaiyueEngine./ChaiyueModels.（必须走 LegadoEngineHost. 别名）',
      bad.join(' | '));
+
+  // ⭐⭐⭐⭐⭐ **也要扫「裸用柴阅的平台类型名」**（2026-11-21 CI 实证：漏改一处就编不过）⭐⭐⭐
+  //   ⇒ `BrowserResult` / `BrowserRequest` / `SourceInteractionPresenter` 等 **必须带 `LegadoEngineHost.`** ⭐⭐⭐
+  const TYPES = ['BrowserResult', 'BrowserRequest', 'SourceInteractionPresenter', 'WebViewRequest', 'PlatformSourceUI'];
+  const bare = [];
+  for (const f of files) {
+    const t = strip(fs.readFileSync(f, 'utf8'));
+    for (const ty of TYPES) {
+      // 形如 `: BrowserResult` / `-> BrowserResult` / `(BrowserResult` 等类型位置
+      const re = new RegExp(`(?<![.\\w])${ty}\\b`, 'g');
+      const hits = [...t.matchAll(re)];
+      if (hits.length) bare.push(`${path.relative(ROOT, f)}: ${ty}`);
+    }
+  }
+  ok(bare.length === 0, '宿主源码没有裸用柴阅的平台类型名（必须带 LegadoEngineHost. 前缀）',
+     [...new Set(bare)].join(' | '));
 }
 
 console.log('\n=== 7. 变异对照（改坏 ⇒ 必须红） ===');

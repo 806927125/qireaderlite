@@ -64,7 +64,7 @@ final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost.InteractionP
             Task { @MainActor in
                 let rendered = ChaiyueRuntime.renderWebView(
                     html: html, url: request.url, js: request.js, sourceKey: request.sourceKey)
-                completion(rendered.map { BrowserResult(url: request.url, body: $0) })
+                completion(rendered.map { LegadoEngineHost.BrowserResult(url: request.url, body: $0) })
             }
             return
         }
