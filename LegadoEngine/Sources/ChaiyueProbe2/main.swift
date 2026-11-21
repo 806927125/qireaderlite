@@ -126,6 +126,12 @@ for (i, e) in exprs.enumerated() {
 }
 print("字面量条目：\(finalNames.filter { !$0.isEmpty }.count) ／ 需引擎求值：\(evalExprs.count)")
 
+// ⭐⭐⭐ **诊断：函数到底在不在全局**（2026-11-21 CI 实证）⭐⭐⭐
+for fn in ["jmModeLabel", "jmStr", "jmSetMode", "jmLineLabel"] {
+    let t = (try? await web.evalJS("typeof \(fn)")) ?? "?"
+    print("typeof \(fn) = \(t)")
+}
+
 let quote = String(UnicodeScalar(34))
 // ⭐⭐⭐ 与宿主同一套：自己 JSON.stringify + 每条 try/catch（柴阅的 evalJS 对数组不返回 JSON 文本）⭐⭐⭐
 let list = evalExprs.map { $0.isEmpty ? quote : $0 }.joined(separator: ",")
@@ -145,6 +151,11 @@ if !evalExprs.isEmpty {
             exit(1)
         }
         for (k, idx) in evalIdx.enumerated() where k < names.count { finalNames[idx] = names[k] }
+        // ⭐⭐⭐ **逐条打印**（哪条空了 ⇒ 一眼看出）⭐⭐⭐
+        for (k, idx) in evalIdx.enumerated() where k < names.count && names[k].isEmpty {
+            let one = (try? await web.evalJS("String(eval('\(evalExprs[k].replacingOccurrences(of: "'", with: "\\'"))'))")) ?? "?"
+            print("  #\(idx) 空 ⇒ 单独求值：\(evalExprs[k]) → \(one)")
+        }
     } catch {
         let msg = String(describing: error)
         if msg.contains("JavaScriptCore") || msg.contains("沙盒桩") {
@@ -179,7 +190,9 @@ if !hasModeLabels {
 }
 
 // ④ 断言：action 能真跑（jmSetMode 写书源变量）⭐⭐⭐
-let modeAction = rows.first { ($0["action"] as? String)?.contains("jmSetMode") == true }
+// ⭐⭐⭐ **取「小说」那条**（三条里第一条是「漫画」）⭐⭐⭐
+let modeAction = rows.first { ($0["action"] as? String)?.contains("jmSetMode(java,'小说')") == true }
+    ?? rows.first { ($0["action"] as? String)?.contains("jmSetMode") == true }
 if let action = modeAction?["action"] as? String {
     if !jsAvailable {
         print("· 本平台没有 JavaScriptCore ⇒ action 这组**没验到**（CI 上会验）")
