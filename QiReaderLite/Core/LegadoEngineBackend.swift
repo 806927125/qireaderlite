@@ -293,6 +293,47 @@ final class LegadoEngineBackend {
     /// ⚠️ 求值失败（表达式依赖不存在的东西）⇒ **回落 `name`** ⇒ 不影响其它项 ⭐⭐⭐
     private static func resolveViewNames(_ exprs: [String],
                                          web: LegadoEngineHost.WebBook) async -> [String] {
+        // ⭐⭐⭐⭐⭐ **字面量直接剥壳用，【只有表达式】才求值**（2026-11-21 真机实证）⭐⭐⭐
+        //   ⇒ 站方的 viewName 有两种形态：⭐⭐⭐
+        //     · **字面量**：`'🌐 发布页地址（可改）'` ⇒ 剥掉引号就是显示名（**不需要引擎**）⭐⭐⭐
+        //     · **表达式**：`jmModeLabel('漫画')` ⇒ 需要引擎求值（要 jsLib 在作用域里）⭐⭐⭐
+        //   ⇒ ⚠️ **字面量的那几条不该被求值拖累** ⇒ 否则「发布页 / 取线路 / 测速」三个按钮
+        //     也会因为求值失败而没名字 ⇒ 用户看到技术名 ⭐⭐⭐
+        var out = [String](repeating: "", count: exprs.count)
+        var evalIdx: [Int] = []
+        var evalExprs: [String] = []
+        for (i, e) in exprs.enumerated() {
+            guard !e.isEmpty else { continue }
+            if let lit = Self.literalValue(e) { out[i] = lit; continue }
+            evalIdx.append(i)
+            evalExprs.append(e)
+        }
+        guard !evalExprs.isEmpty else { return out }
+        let resolved = await resolveViewNameExprs(evalExprs, web: web)
+        for (k, idx) in evalIdx.enumerated() where k < resolved.count { out[idx] = resolved[k] }
+        return out
+    }
+
+    /// ⭐⭐⭐ **剥掉 JS 字符串字面量的外层引号**（`'...'` / `"..."` ⇒ 内容）⭐⭐⭐
+    ///
+    /// ⚠️ 站方常写成 `"'🌐 发布页地址（可改）'"`（外层双引号 + 内层单引号）⇒ ⇒ **递归剥一层** ⭐⭐⭐
+    static func literalValue(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var depth = 0
+        while depth < 2, s.count >= 2 {
+            let first = s.first!, last = s.last!
+            guard (first == "\'" && last == "\'") || (first == "\"" && last == "\"") else { break }
+            s = String(s.dropFirst().dropLast())
+            depth += 1
+        }
+        // ⚠️ 剥完仍含引号/括号 ⇒ 说明是表达式 ⇒ 不是字面量 ⭐⭐⭐
+        if s.contains("(") || s.contains(")") { return nil }
+        return s
+    }
+
+    /// ⭐⭐⭐ **真正去引擎里求值一批表达式** ⭐⭐⭐
+    private static func resolveViewNameExprs(_ exprs: [String],
+                                              web: LegadoEngineHost.WebBook) async -> [String] {
         guard exprs.contains(where: { !$0.isEmpty }) else { return [] }
         let empty = String(UnicodeScalar(34))            // 一个双引号字符（避免转义地狱）
         let js = "[" + exprs.map { $0.isEmpty ? empty : $0 }.joined(separator: ",") + "]"
