@@ -1,27 +1,28 @@
 #!/usr/bin/env node
 /**
- * ⭐⭐⭐⭐⭐ **门禁：站方变量通道（`source.get` / `source.put`）双向真跑**
+ * ⭐⭐⭐⭐⭐ **门禁：站方变量的【两套语义】双向真跑（移植 柴阅/Chaiyue 后的新语义）**
  *
- * ⚠️⚠️⚠️ **为什么必须有它**（2026-11-19 真机 build297 实证）：
- *   用户装 build297 后，发现页从「LegadoError 1」变成了
- *   「exploreKinds 结果不可信：只解析出 0 个分类」⇒ **求值通了、但站方交白卷** ⭐⭐⭐
- *   ⇒ 根因 = 站方 `exploreUrl` 第一行 `if (!nhAuth()) { return ""; }`
- *     ⇒ `nhAuth()` 读 `source.get("nhAuthed")`
- *     ⇒ **引擎的 `srcGet` 读的是 `BookSource.variable` 那一格**
- *     ⇒ 而 App 灌站方变量的地方是 `srcDict["__variable"]` ⇒ **另一格** ⇒ **两格不通** ⭐⭐⭐
- *     ⇒ 站方 JS 读变量**恒空** ⇒ 恒 false ⇒ **主动交白卷**（不是崩溃 ⇒ 最难查的一类）⭐⭐⭐
+ * ⚠️⚠️⚠️ **为什么必须重写这条**（2026-11-19 真机 build297–301 实证）：
+ *   build297 起我们一路在修「站方变量读不到」⇒ 连续四个版本（297/298/299/300/301）
+ *   每次都只修**表层** ⇒ 真正根因是**语义错位** ⭐⭐⭐
  *
- * ⭐ **本门禁验的是【双向】**：
- *   ① **读**：`source.get(k)` / `source.getVariable()` 读得到宿主灌的那一格 ⭐⭐⭐
- *   ② **写**：站方 `source.put(k,v)` 写进 JSBridge 副本后 ⇒ 宿主能**读回来** ⭐⭐⭐
- *      （JSBridge.source 是模块内可见 ⇒ 宿主读不到 ⇒ 正解是 `bridge.eval("source.getVariable()")`）⭐⭐⭐
+ *   ⭐⭐⭐⭐⭐ **权威规格 = 柴阅/Chaiyue 的 `SourceState`**（`RuleSession.swift`）：
  *
- * ⚠️ **为什么不能用 Node 跑这一条**：
- *   这条验的是**宿主与引擎的接线**，而 `JSBridge` 只在 Apple 平台存在
- *   ⇒ Linux 沙盒只能验**逻辑**（哪一格该灌、哪一格该读），**真跑**要在 CI/真机 ⭐⭐⭐
- *   ⇒ 本门禁做两件事：
- *     ① **静态断言**：接线必须「灌 `variable`」+「用 `source.getVariable()` 读回」（不许只灌不读）⭐⭐⭐
- *     ② **真跑**（Apple 平台）：Node 里用 JSBridge 等价语义跑一遍读写 ⇒ 证明语义对 ⭐⭐⭐
+ *     | JS API                       | 柴阅存法               | 存储键                  |
+ *     |------------------------------|------------------------|-------------------------|
+ *     | `source.getVariable()`       | **一整串**             | `sourceVariable_<key>`  |
+ *     | `source.setVariable(str)`    | **一整串**             | 同上                    |
+ *     | `source.get(k)`/`put(k,v)`   | **每 k 一个独立项** ⭐  | `v_<key>_<k>`           |
+ *     | `source.getLoginInfoMap()`   | 独立格（表单数据）     | `userInfo_<key>`（加密）|
+ *
+ *   ⇒ 旧实现把 `getVariable(key:)` 做成「从 `variable` 整串里取项」⇒ **两套混成一格** ⭐⭐⭐
+ *     ⇒ 站方 `source.put('nhAuthed', h)` 与站方变量的项**互相污染**
+ *     ⇒ 站方 `nhAuth()` 恒 false ⇒ **exploreUrl 主动交白卷** ⇒ **0 个分类** ⭐⭐⭐
+ *
+ * ⭐ **本门禁验三件事**：
+ *   ① **读**：`source.get(k)` 读得到【书源变量格】；`source.getVariable()` 返回【站方整串】⭐⭐⭐
+ *   ② **写**：站方 `source.put(k,v)` 写进【书源变量格】⇒ 宿主能**读回来**（`source.getAllVars()`）⭐⭐⭐
+ *   ③ **两格不串味**：站方整串的项**读不到**；书源变量的项**不污染**整串 ⭐⭐⭐
  */
 const fs = require('fs');
 const path = require('path');
@@ -39,186 +40,156 @@ const rawSrc = fs.readFileSync(APP, 'utf8');
 // ⭐⭐⭐⭐⭐ **必须剥注释**（2026-11-19 实证）：
 //   注释里写 `bridge.eval("source.getVariable()")` ⇒ **计数会被撑起来**
 //   ⇒ 变异打掉真代码、注释还在 ⇒ 计数仍 ≥2 ⇒ **断言照样绿 ⇒ 门禁没牙齿** ⭐⭐⭐
-//   ⇒ 记忆里的老规矩：「存在性检查用代码特征，不能用注释字样」⭐⭐⭐
 function stripComments(t) {
   return t
     .replace(/\/\*[\s\S]*?\*\//g, ' ')          // 块注释
-    .replace(/\/\/[^\n]*/g, ' ');                    // 行注释
+    .replace(/\/\/[^\n]*/g, ' ');               // 行注释
 }
 const src = stripComments(rawSrc);
 
-console.log('=== 1. 静态断言：站方变量必须【灌进 engineSource.variable】 ===');
-ok(/src\.variable\s*=\s*merged/.test(src),
-   '宿主把【合并后的 map】灌进了 engineSource.variable（引擎的 srcGet 读的就是这一格）');
+console.log('=== 1. 静态断言：灌入必须【两格分开】 ===');
+ok(/src\.variable\s*=\s*sv/.test(src),
+   '站方变量整串 ⇒ 灌进 engineSource.variable（★ 原样、不解析不合并）');
+ok(/src\.sourceVars\s*=\s*svMap/.test(src),
+   '★ 书源变量 ⇒ 灌进 engineSource.sourceVars（★ 独立格 ⇒ source.get/put 的家）');
+ok(!/src\.variable\s*=\s*merged/.test(src),
+   '★ 不再把两格【合并】进 variable（★ 合并就是语义错位的源头）');
 ok(/engineSourceForJS/.test(src),
-   'op 跑 JS 时用的 engineSource 是【灌好站方变量】的那份');
+   'op 跑 JS 时用的 engineSource 是【灌好两格】的那份');
 ok(/__variable/.test(src),
    '站方变量仍从 payload 的 __variable 取（不另造数据源）');
 
-console.log('\n=== 2. 静态断言：站方变量必须【能读回来】（写方向） ===');
-ok(/collectStationVariable/.test(src), '有 collectStationVariable（读回站方 JS 改过的值）');
-ok(/source\.getVariable\(\)/.test(src),
-   '读回用 `bridge.eval("source.getVariable()")`（JSBridge.source 模块内可见 ⇒ 宿主读不到 ⇒ 只能走 JS）');
+console.log('\n=== 2. 静态断言：写方向必须【读回来】（且读的是【书源变量格】） ===');
+ok(/source\.getAllVars\(\)/.test(src),
+   '★ 读回用 source.getAllVars()（★ 一次导出整张书源变量 map）');
+ok(/__sourceVars"\]\s*=\s*(?:Self|Session)\.sourceVarsJSON\(/.test(src),
+   '★ __sourceVars 回传的是【书源变量格】的 JSON（★ 不再回传书籍变量那一格）');
+ok(!/__sourceVars"\]\s*=\s*session\.variables\.getVariable\(\)/.test(src),
+   '★ __sourceVars 不再是书籍变量那一格（★ build297 的 bug 现场）');
 ok(/__sourceVariable"\]\s*=\s*stationVar/.test(src),
-   '回传的 __sourceVariable 是【读回来的站方变量】，不是书籍变量那一格');
-ok(/stationSeeded/.test(src),
-   '站方变量有自己的种子（判定站方改没改 ⇒ 证据不许自证）');
-ok(/self\.stationSeeded\s*=\s*sv/.test(src),
-   '站方变量的种子【等于灌进去的值】（否则「改没改」永远 false ⇒ 证据自证）');
-ok(/session\.collectStationVariable \{/.test(src),
-   '读回走 collectStationVariable（不拿书籍变量那一格冒充）');
+   '__sourceVariable 回传站方那一格');
+ok(!/__sourceVariable"\]\s*=\s*session\.variables\.getVariable\(\)/.test(src),
+   '__sourceVariable 不再是书籍变量那一格');
 
-console.log('\n=== 2b. 静态断言：登录信息必须进引擎那一格的 loginInfo 项 ===');
-// ⚠️⚠️⚠️ **为什么这条最关键**（2026-11-19 真机 build299 实证）：
+console.log('\n=== 3. 静态断言：登录信息必须【进书源变量格】（解锁按钮的命脉） ===');
+// ⚠️⚠️⚠️ **为什么最关键**（2026-11-19 真机 build300 实证）：
 //   站方读密码 = `nhAuthUiMap()` ⇒ `source.getLoginInfoMap()`
-//   ⇒ 引擎的 `loginInfoGet` ⇒ **`BookSource.variable["loginInfo"]`** ⭐⭐⭐
+//   ⇒ 引擎的 `loginInfoGet` ⇒ `getVariable(key: "loginInfo")` ⇒ **落在书源变量格** ⭐⭐⭐
 //   ⇒ 不并进去 ⇒ 站方读到空 map ⇒ 点「🔓 解锁整个源」必然失败 ⇒ 永远交白卷 ⭐⭐⭐
 ok(/mergeLoginInfo/.test(src), '有 mergeLoginInfo（合并「已存登录信息 + 本次表单值」）');
-ok(/m\["loginInfo"\]\s*=\s*merged/.test(src),
-   'login op 把合并后的登录信息写进引擎那一格的 loginInfo 项');
+ok(/m\["loginInfo"\]\s*=\s*(?:Self\.)?jsonString\(merged\)/.test(src),
+   '★ loginInfo 写进【书源变量格】的 loginInfo 项（★ 与引擎 loginInfoGet 同格）');
 ok(/engineSourceWithLoginInfo/.test(src),
    '★ 合并逻辑放在【非平台相关】的 Session 方法里（Linux 沙盒门禁编得到 ⇒ 类型错 3 秒暴露）');
-ok(/mergeStationMap\(bookVars:[^)]*loginInfo:/.test(src),
-   'mergeStationMap 把 loginInfo 也并进引擎那一格');
-ok(/loginInfoGet/.test(src) === false || /loginInfo/.test(src),
-   '源码里出现了 loginInfo 相关处理（可读即可）');
-
-console.log('\n=== 2c. 静态断言：回传时必须【剥掉 loginInfo】（明文密码不许躺盘）===');
-// ⚠️⚠️⚠️ **为什么这是安全项**（2026-11-19 实证）：
-//   引擎那一格含 `loginInfo` 项（**用户填的明文密码**在里头）
-//   ⇒ 回传 `__sourceVariable` ⇒ App 落盘到**站方变量槽** ⇒ **明文密码躺盘** ⭐⭐⭐
-//   ⇒ 站方自己的 nhAuthWipe() 也是为了这个（「密码就明文躺在源文件里了」）⭐⭐⭐
-ok(/stripLoginInfo/.test(src), '有 stripLoginInfo（回传前剥掉 loginInfo 项）');
 ok(/stripLoginInfo\(from:/.test(src), '回传时真的调用了 stripLoginInfo');
 ok(/let stationVar = (?:Self|Session)\.stripLoginInfo\(from:/.test(src),
    '★ 回传的 stationVar 走过 stripLoginInfo（明文密码不进站方变量槽）');
 
-console.log('\n=== 3. 静态断言：书籍变量与站方变量【不许混】 ===');
-ok(/__sourceVars"\]\s*=\s*session\.variables\.getVariable\(\)/.test(src),
-   '__sourceVars 仍是书籍变量那一格（RuleVariables map）');
-ok(!/__sourceVariable"\]\s*=\s*session\.variables\.getVariable\(\)/.test(src),
-   '__sourceVariable 不再是书籍变量那一格（★ 这一条正是 build297 的 bug 现场）');
+console.log('\n=== 4. 静态断言：存量迁移（老版本把书源变量塞在站方整串里） ===');
+ok(/legacySourceVars/.test(src), '有 legacySourceVars 迁移函数');
+ok(/nhAuthed/.test(src) && /nhPlatSwitch/.test(src),
+   '★ 迁移白名单含 nhAuthed / nhPlatSwitch（★ 解锁态与切台标记）');
+ok(!/legacySourceVars[\s\S]{0,600}?\"src\"/.test(src),
+   '★ 迁移白名单**不含**站方变量的项（src/gender 不迁 ⇒ 语义不串味）');
 
-console.log('\n=== 4. 真跑：站方变量的读写语义（Node 等价） ===');
+console.log('\n=== 5. 真跑：两套语义（Node 等价 ⇒ 证明接线语义对） ===');
 {
-  // ⚠️ 用 Node 模拟【引擎的 srcGet/srcPut 语义】+【宿主的两格】
-  //   ⇒ 证明「灌 variable + 用 getVariable 读回」这套接线是通的 ⭐⭐⭐
   const vm = require('vm');
-  const station = { nhAuthed: 'HASH', nhPlatSwitch: '' };   // 宿主灌的那一格
-  const bookVars = { token: 'T' };                           // 书籍变量那一格（另一格）
+  const stationRaw = '{"src":"书旗","gender":"全部"}';      // 站方变量（整串）
+  const sourceVars = { token: 'T' };                          // 书源变量（每 k 一项）
   const sandbox = { JSON, String, Object, Array };
   vm.createContext(sandbox);
   vm.runInContext(`
-    var __station = ${JSON.stringify(station)};
-    var __book = ${JSON.stringify(bookVars)};
-    // 引擎语义：srcGet/srcPut 读写的都是 __station 这一格
+    var __var = ${JSON.stringify(stationRaw)};
+    var __sVars = ${JSON.stringify(sourceVars)};
     var source = {
-      get: function(k){ return __station[k] === undefined ? '' : String(__station[k]); },
-      put: function(k,v){ __station[k] = String(v); return __station[k]; },
-      getVariable: function(){ return JSON.stringify(__station); },
-      setVariable: function(v){ try { __station = JSON.parse(String(v)); } catch(e){} }
+      get: function(k){ return __sVars[k] === undefined ? '' : String(__sVars[k]); },
+      put: function(k,v){ __sVars[k] = String(v); return String(v); },
+      getVariable: function(){ return typeof __var === 'string' ? __var : JSON.stringify(__var); },
+      setVariable: function(v){ __var = String(v); },
+      getAllVars: function(){ return __sVars; },
+      // ⭐ 真实引擎：loginInfoGet 返回 **JSON 串** ⇒ JS 侧 JSON.parse（见 03_response.js:125）⭐
+      getLoginInfo: function(){ return __sVars['loginInfo'] || ''; },
+      getLoginInfoMap: function(){ var m = {}; try { m = JSON.parse(__sVars['loginInfo'] || '{}'); } catch(e) { m = {}; } return m; }
     };
   `, sandbox);
   const s = sandbox.source;
-  ok(s.get('nhAuthed') === 'HASH', 'source.get("nhAuthed") 读到宿主灌的值');
-  ok(JSON.parse(s.getVariable()).nhAuthed === 'HASH', 'source.getVariable() 读到整格');
-  s.put('nhPlatSwitch', '书旗');
-  ok(s.get('nhPlatSwitch') === '书旗', 'source.put(...) 写进去了');
-  const back = JSON.parse(s.getVariable());
-  ok(back.nhPlatSwitch === '书旗', '宿主能用 source.getVariable() 把改动读回来（写回通道）');
-  // 站方登录门的真实判据
+
+  // ① 站方变量：整串语义
+  ok(s.getVariable() === stationRaw, 'source.getVariable() 返回【整串】（站方变量语义）');
+  ok(s.get('src') === '', '★ source.get("src") 读不到站方变量的项（★ 两套不串味）');
+  // ② 书源变量：独立项语义
+  ok(s.get('token') === 'T', 'source.get("token") 读到【书源变量格】');
+  s.put('nhAuthed', 'HASH');
+  ok(s.get('nhAuthed') === 'HASH', 'source.put("nhAuthed") 落在【书源变量格】');
+  ok(s.getVariable() === stationRaw, '★ put 不污染站方变量的整串（★ 语义分离成立）');
+  // ③ 写回通道：宿主读回整张书源变量 map
+  const back = s.getAllVars();
+  ok(back && back.nhAuthed === 'HASH' && back.token === 'T',
+     '★ 宿主能用 source.getAllVars() 把改动读回来（★ 写回通道）');
+  // ④ 登录信息
+  s.put('loginInfo', JSON.stringify({ '整源解锁密码': 'PW' }));
+  ok(s.getLoginInfoMap()['整源解锁密码'] === 'PW',
+     '★ 站方 getLoginInfoMap() 读到了密码（★ 解锁按钮的命脉）');
+  // ⑤ 站方 nhAuth() 的真实判据
   const authed = String(s.get('nhAuthed') || '');
   ok(authed !== '' && authed === 'HASH', '站方 nhAuth() 的判据成立（不再交白卷）');
 }
 
-console.log('\n=== 5. 变异对照（改坏接线 ⇒ 必须红） ===');
+console.log('\n=== 6. 变异对照（改坏接线 ⇒ 必须红） ===');
 {
   // ⭐⭐⭐ **变异后必须【重新跑一遍断言】**（不是自己判断变异后字符串长什么样）
   //   ⇒ 否则「断言写了但检测逻辑写错」⇒ 变异抓不到 ⇒ 门禁是摆设 ⭐⭐⭐
   const assertOn = (text) => {
     const fails = [];
-    if (!/src\.variable\s*=\s*merged/.test(text)) fails.push('没灌 variable');
+    if (!/src\.variable\s*=\s*sv/.test(text)) fails.push('没灌站方变量整串');
+    if (!/src\.sourceVars\s*=\s*svMap/.test(text)) fails.push('没灌书源变量独立格');
+    if (/src\.variable\s*=\s*merged/.test(text)) fails.push('又把两格合并进 variable（语义错位回归）');
     if (!/engineSourceForJS/.test(text)) fails.push('没用 engineSourceForJS');
-    if (!/collectStationVariable/.test(text)) fails.push('没有 collectStationVariable');
-    if (!/source\.getVariable\(\)/.test(text)) fails.push('没用 source.getVariable() 读回');
+    if (!/source\.getAllVars\(\)/.test(text)) fails.push('没用 getAllVars 读回');
+    if (!/__sourceVars"\]\s*=\s*(?:Self|Session)\.sourceVarsJSON\(/.test(text)) fails.push('__sourceVars 不是书源变量格');
+    if (/__sourceVars"\]\s*=\s*session\.variables\.getVariable\(\)/.test(text)) fails.push('__sourceVars 混成书籍变量');
     if (!/__sourceVariable"\]\s*=\s*stationVar/.test(text)) fails.push('__sourceVariable 不是 stationVar');
-    if (/__sourceVariable"\]\s*=\s*session\.variables\.getVariable\(\)/.test(text)) fails.push('__sourceVariable 混成书籍变量');
-    if (!/__sourceVars"\]\s*=\s*session\.variables\.getVariable\(\)/.test(text)) fails.push('__sourceVars 不是书籍变量');
-    if (!/stationSeeded/.test(text)) fails.push('站方变量没有自己的种子');
-    // ⭐⭐⭐ **种子必须【等于灌进去的值】**（否则「改没改」永远 false ⇒ 证据自证）⭐⭐⭐
-    if (!/self\.stationSeeded\s*=\s*sv/.test(text)) fails.push('站方变量的种子不等于灌进去的值');
-    // ⭐⭐⭐ **读回必须【走 collectStationVariable】**（不能拿书籍变量那一格冒充）⭐⭐⭐
-    // ⭐⭐⭐ **要查【调用点】、不能查「函数存在」**（2026-11-19 实证）：
-    //   变异把**调用**换掉、**定义**仍在 ⇒ 只查存在 ⇒ 判定通过 ⇒ 变异抓不到 ⇒ 门禁没牙齿 ⭐⭐⭐
-    // ⭐⭐⭐⭐⭐ **判据 = 【计数】**（2026-11-19 实证）：
-    //   「读回」的实现特征 = `bridge.eval("source.getVariable()")` 这个**具体动作** ⭐⭐⭐
-    //   ⇒ 读回必须【两处都有】（filterAction + login）⇒ 变异打掉一处 ⇒ 计数变 1 ⇒ 红 ⭐⭐⭐
-    //   （用「函数名存在」当判据是**错的**：变异换掉调用、定义仍在 ⇒ 照样绿 ⇒ 没牙齿）⭐⭐⭐
-    //   ⚠️ **必须先剥注释**（注释里同名串会把计数撑起来 ⇒ 变异打掉真代码也抓不到）⭐⭐⭐
-    const readCalls = (text.match(/bridge\.eval\("source\.getVariable\(\)"\)/g) || []).length;
-    if (readCalls < 2) {
-      fails.push('读回少了（bridge.eval("source.getVariable()") 只剩 ' + readCalls + ' 处 ⇒ 读回被换掉了）');
-    }
-    // ⭐⭐⭐ **合并必须【把书籍变量的项也并进去】**（`nhAuthed` 就在那一格）⭐⭐⭐
-    //   ⇒ 只判「调用了 mergeStationMap」不够（变异把调用换掉、函数名仍在别处 ⇒ 抓不到）⭐⭐⭐
-    if (!/mergeStationMap\(bookVars:\s*(vars|variables),\s*stationRaw:\s*sv\)/.test(text)) {
-      fails.push('合并没把书籍变量并进去（nhAuthed 读不到）');
-    }
-    if (!/m\["loginInfo"\]\s*=\s*merged/.test(text)) fails.push('loginInfo 没写进引擎那一格（解锁按钮永远失败）');
-    if (!/let stationVar = (?:Self|Session)\.stripLoginInfo\(from:/.test(text)) fails.push('回传没剥 loginInfo（明文密码躺盘）');
+    if (!/m\["loginInfo"\]\s*=\s*(?:Self\.)?jsonString\(merged\)/.test(text)) fails.push('loginInfo 没写进书源变量格');
+    if (!/let stationVar = (?:Self|Session)\.stripLoginInfo\(from:/.test(text)) fails.push('回传没剥 loginInfo');
     if (!/mergeLoginInfo/.test(text)) fails.push('没有 mergeLoginInfo');
+    // ⭐⭐⭐ **查【调用点】、不能查「函数名存在」**（2026-11-19 实证的老坑）：
+    //   变异把**调用**换掉、**定义**仍在 ⇒ 只查名字 ⇒ 照样绿 ⇒ 门禁没牙齿 ⭐⭐⭐
+    if (!/Self\.legacySourceVars\(from: sv\)/.test(text)) fails.push('没有存量迁移调用');
     return fails;
   };
   const cases = [
-    // ⚠️⚠️⚠️ **变异必须【破坏语义】、不能只是注释掉**（2026-11-19 实证）：
-    //   注释掉的那行**仍然会被正则匹配到** ⇒ 断言照样绿 ⇒ 变异白做 ⭐⭐⭐
-    //   ⇒ 正解：**改掉赋值目标**（灌到别的地方 / 换回错的格）⇒ 断言才红 ⭐⭐⭐
-    ['不再灌 engineSource.variable（读方向断 ⇒ 站方读不到 nhAuthed）',
-      // ⚠️⚠️ **两处都要断**（`src.variable = merged` 与 `engineSource.variable = merged`）
-      //   ⇒ 只断一处 ⇒ 另一处仍灌 ⇒ 变异无效 ⇒ 门禁没牙齿 ⭐⭐⭐ ⇒ 用 split/join 全局替换 ⭐⭐⭐
-      (t) => t.split('src.variable = merged').join('src.variable = ""')
-              .split('engineSource.variable = merged').join('engineSource.variable = ""')],
-    ['不再合并两格（只灌站方整串 ⇒ nhAuthed 读不到）',
-      (t) => t.split('Self.mergeStationMap(bookVars: vars, stationRaw: sv)').join('sv')
-              .split('Self.mergeStationMap(bookVars: variables, stationRaw: sv)').join('sv')],
-    // ⚠️⚠️⚠️ **变异必须【整段换掉】，不能只是「前面加一句」**
-    //   （前面加一句 ⇒ 原串仍在 ⇒ 断言照样匹配 ⇒ 变异白做）⭐⭐⭐
-    // ⚠️⚠️⚠️ **变异必须【全部替换】**（`String.replace` 只换第一处 ⇒ 第二处原封不动
-    //   ⇒ 断言照样匹配 ⇒ 变异白做）⭐⭐⭐ ⇒ 用 split/join 做全局替换 ⭐⭐⭐
-    ['loginInfo 不并进引擎那一格（★ 解锁按钮永远失败）',
-      (t) => t.split('m["loginInfo"] = merged').join('m["loginInfoUnused"] = merged')],
+    // ⚠️⚠️⚠️ **变异必须【破坏语义】、不能只是注释掉**
+    //   （注释掉的那行**仍然会被正则匹配到**⇒ 断言照样绿⇒ 变异白做）⭐⭐⭐
+    ['不再灌站方变量整串（读方向断）',
+      (t) => t.split('src.variable = sv').join('src.variable = ""')],
+    ['不再灌书源变量独立格（★ nhAuthed 读不到 ⇒ 0 分类）',
+      (t) => t.split('src.sourceVars = svMap').join('src.sourceVars = [:]')],
+    ['又把两格合并进 variable（★ 语义错位回归）',
+      (t) => t.split('src.variable = sv').join('src.variable = merged')],
+    ['不用 getAllVars 读回（★ 解锁态存不下来 ⇒ 下次又交白卷）',
+      (t) => t.split('source.getAllVars()').join('source.get("__none")')],
+    ['loginInfo 不写进书源变量格（★ 解锁按钮永远失败）',
+      (t) => t.split('m["loginInfo"] = Self.jsonString(merged)').join('m["loginInfoUnused"] = Self.jsonString(merged)')
+              .split('m["loginInfo"] = jsonString(merged)').join('m["loginInfoUnused"] = jsonString(merged)')],
     ['回传时不剥 loginInfo（★ 明文密码躺盘）',
       (t) => t.split('Session.stripLoginInfo(from: session.collectStationVariable {')
               .join('session.collectStationVariable {')
               .split('Self.stripLoginInfo(from: session.collectStationVariable {')
               .join('session.collectStationVariable {')],
-    // ⚠️⚠️ **变异必须【换掉读回的实现】、不是「包一层」**（2026-11-19 实证）：
-    //   「包一层 if false」在**文本上**仍留着 `collectStationVariable { … bridge.eval(` ⇒
-    //   ⇒ 靠文本形态判断的断言**照样绿** ⇒ 变异抓不到 ⇒ 门禁没牙齿 ⭐⭐⭐
-    //   ⇒ 正解：**整段换掉**（换成读书籍变量那一格）⇒ 文本形态真的变了 ⇒ 断言能红 ⭐⭐⭐
-    ['读回改用书籍变量那一格（写方向断 ⇒ 站方 put 写不回来）',
-      (t) => t.replace(
-        /session\.collectStationVariable \{\s*\n?\s*\(try\? bridge\.eval\("source\.getVariable\(\)"\)\) as\? String\s*\n?\s*\}/,
-        'session.variables.getVariable()')],
-    ['站方变量的种子被抹掉（证据自证）',
-      (t) => t.replace(/self\.stationSeeded = sv/, 'self.stationSeeded = ""')],
-    ['__sourceVariable 回传书籍变量那一格（★ build297 的 bug 现场）',
-      (t) => t.replace(/out\["__sourceVariable"\] = stationVar/g, 'out["__sourceVariable"] = session.variables.getVariable()')],
+    ['__sourceVars 回传书籍变量那一格（★ build297 的 bug 现场）',
+      (t) => t.replace(/out\["__sourceVars"\]\s*=\s*(?:Self|Session)\.sourceVarsJSON\(/g,
+                       'out["__sourceVars"] = session.variables.getVariable()')],
+    ['存量迁移被抹掉（★ 老用户的解锁态丢失）',
+      (t) => t.replace(/legacySourceVars\(from: sv\)/, '[:]')],
   ];
   const orig = src;   // ⚠️ 已是【剥注释后】的文本 ⇒ 变异不会命中注释里的同名串 ⭐⭐⭐
-  const tmp = APP + '.gate-bak';
-  try {
-    for (const [name, fn] of cases) {
-      const mutated = fn(orig);
-      if (mutated === orig) { ok(false, `变异「${name}」：锚点命中`, '锚点没命中 ⇒ 变异无效'); continue; }
-      // ⭐⭐⭐ **变异后重新跑断言** ⇒ 有断言没抓住 = 门禁没牙齿 ⭐⭐⭐
-      const fails = assertOn(mutated);
-      ok(fails.length > 0, `变异「${name}」⇒ 门禁红`,
-         fails.length ? ('被抓住：' + fails.join('、')) : '变异后仍然通过 ⇒ 这条断言是摆设');
-    }
-  } finally {
-    fs.writeFileSync(tmp, orig, 'utf8');
-    try { fs.unlinkSync(tmp); } catch (e) {}
+  for (const [name, fn] of cases) {
+    const mutated = fn(orig);
+    if (mutated === orig) { ok(false, `变异「${name}」：锚点命中`, '锚点没命中 ⇒ 变异无效'); continue; }
+    const fails = assertOn(mutated);
+    ok(fails.length > 0, `变异「${name}」⇒ 门禁红`,
+       fails.length ? ('被抓住：' + fails.join('、')) : '变异后仍然通过 ⇒ 这条断言是摆设');
   }
 }
 

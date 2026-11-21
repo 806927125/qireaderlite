@@ -33,7 +33,21 @@ public struct BookSource: Codable, Hashable, Identifiable {
     public var coverDecodeJs: String?
     public var variableComment: String?
     /// persisted source-level custom variables (JSON object string)
+    ///
+    /// ⚠️⚠️⚠️ **这是 Legado 的「站方变量」**（`source.getVariable()` / `source.setVariable(str)`）⭐⭐⭐
+    ///   ⇒ 它是**一整串**（站方自己 `JSON.parse` 它拿 NH_D 之类）⇒ **不是 map** ⭐⭐⭐
     public var variable: String?
+    /// ⭐⭐⭐⭐⭐ **书源变量**（`source.get(k)` / `source.put(k, v)`）—— **每个 k 一个独立项** ⭐⭐⭐
+    ///
+    /// ⚠️⚠️⚠️ **为什么必须与 `variable` 分开**（2026-11-19 移植 Chaiyue/柴阅 的 `SourceState` 实证）：
+    ///   · Legado / 栖阅 / 柴阅：**站方变量**（一整串）与**书源变量**（每个 k 一格）是**两套** ⭐⭐⭐
+    ///     · 柴阅：`sourceVariable_<key>`（整串） vs `v_<key>_<k>`（每 k 一格）⭐⭐⭐
+    ///   · 之前把 `source.get(k)` 实现成「从 `variable` 这一格 JSON 里取某一项」⇒ **语义错位** ⭐⭐⭐
+    ///     ⇒ 站方 `source.put('nhAuthed', h)` 写进去的项，会和站方变量的项**混在一起** ⭐⭐⭐
+    ///     ⇒ 而宿主灌进 `variable` 的是**站方变量的整串** ⇒ `source.get("nhAuthed")` **读不到** ⭐⭐⭐
+    ///     ⇒ 站方 `nhAuth()` 恒 false ⇒ **exploreUrl 主动交白卷** ⇒ **0 个分类** ⭐⭐⭐
+    ///   ⇒ 现在：**书源变量独立一格** ⇒ 与 Legado/柴阅语义一致 ⇒ `get`/`put` 自洽且能持久 ⭐⭐⭐
+    public var sourceVars: [String: String] = [:]
     public var eventListener: String?
 
     public var id: String { bookSourceUrl }
@@ -83,6 +97,10 @@ public struct BookSource: Codable, Hashable, Identifiable {
         variableComment = s("variableComment")
         variable = s("variable")
         eventListener = s("eventListener")
+        // ⭐⭐⭐ **书源变量**（每 k 一项）—— 键名带前缀，避免和书源 JSON 字段撞名 ⭐⭐⭐
+        if let m = try? c.decodeIfPresent([String: String].self, forKey: AnyCodingKey("__sourceVars")) {
+            sourceVars = m
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -119,6 +137,9 @@ public struct BookSource: Codable, Hashable, Identifiable {
         try e(variableComment, "variableComment")
         try e(variable, "variable")
         try e(eventListener, "eventListener")
+        if !sourceVars.isEmpty {
+            try c.encode(sourceVars, forKey: AnyCodingKey("__sourceVars"))
+        }
     }
 
     /// Parse a single source or an array of sources from JSON data.
@@ -133,16 +154,10 @@ public struct BookSource: Codable, Hashable, Identifiable {
 
     public func getVariable() -> String { variable ?? "" }
     public mutating func setVariable(_ v: String) { variable = v }
-    public func getVariable(key: String) -> String {
-        guard let data = (variable ?? "").data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
-        return obj[key].map { "\($0)" } ?? ""
-    }
+    /// ⭐⭐⭐ **书源变量的某一项**（`source.get(k)`）—— **独立一格**，不与站方变量混 ⭐⭐⭐
+    public func getVariable(key: String) -> String { sourceVars[key] ?? "" }
     public mutating func putVariable(key: String, value: String) {
-        var obj: [String: Any] = [:]
-        if let data = (variable ?? "").data(using: .utf8),
-           let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { obj = o }
-        obj[key] = value
-        if let d = try? JSONSerialization.data(withJSONObject: obj) { variable = String(data: d, encoding: .utf8) }
+        if value.isEmpty { sourceVars.removeValue(forKey: key) }
+        else { sourceVars[key] = value }
     }
 }

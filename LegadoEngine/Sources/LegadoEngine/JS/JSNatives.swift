@@ -104,6 +104,11 @@ extension JSBridge {
             if k == "__variable" { source?.setVariable(str(a, 1) ?? "") }
             else { source?.putVariable(key: k, value: str(a, 1) ?? "") }
             return nil
+        // ⭐⭐⭐⭐⭐ **一次导出整张书源变量 map**（2026-11-19 移植柴阅/Chaiyue 实证）
+        //   ⇒ 站方 `source.put(k,v)` 写的是**引擎那一格的 sourceVars**（每 k 一项）⭐⭐⭐
+        //   ⇒ 宿主要把它读回来落盘（否则解锁态存不下来 ⇒ 下次又是未解锁）⭐⭐⭐
+        //   ⇒ 逐项 `source.get(k)` 要在 JS 侧循环 N 次 ⇒ 慢 ⇒ 给一个原生通道一次导出 ⭐⭐⭐
+        case "srcGetAll": return source?.sourceVars ?? [:]
         case "loginInfoGet": return source?.getVariable(key: "loginInfo") ?? ""
         case "loginInfoPut": source?.putVariable(key: "loginInfo", value: str(a, 0) ?? ""); return nil
         case "loginInfoRemove": source?.putVariable(key: "loginInfo", value: ""); return nil

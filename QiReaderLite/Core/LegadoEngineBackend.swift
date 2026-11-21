@@ -55,6 +55,8 @@ final class LegadoEngineBackend {
         let seeded: String
         /// ⭐⭐⭐ **站方变量那格的种子**（判定站方有没有改它 ⇒ **证据不许自证**）⭐⭐⭐
         let stationSeeded: String
+        /// ⭐⭐⭐⭐⭐ **书源变量（引擎那一格 sourceVars）的快照**（回传用 ⇒ 解锁态要能落盘）⭐⭐⭐
+        var sourceVarsSnapshot: [String: String] = [:]
 
         init(engineSource: LegadoEngineHost.Source, payload: [String: Any]) {
             let raw = (payload["source"] as? [String: Any]) ?? [:]
@@ -71,23 +73,66 @@ final class LegadoEngineBackend {
             let sv = (raw["__variable"] as? String) ?? ""
             self.stationVariable = sv
             self.stationSeeded = sv
-            // ③ ⭐⭐⭐⭐⭐ **把两格【合并】灌进 `engineSource.variable`** ⭐⭐⭐
+            // ③ ⭐⭐⭐⭐⭐ **【两格分开】灌**（2026-11-19 移植柴阅/Chaiyue 的 `SourceState` 实证）⭐⭐⭐
             //
-            //   ⚠️⚠️⚠️ **为什么必须合并**（2026-11-19 真机 build297/298 实证）：
-            //     引擎**只有一格** `BookSource.variable`（是个 JSON map）⇒ 而站方**两格混用** ⭐⭐⭐
-            //       · `source.get("nhAuthed")` / `source.put(k,v)` ⇒ **map 的某一项** ⭐⭐⭐
-            //       · `source.getVariable()` / `source.setVariable(str)` ⇒ **整份 map 的 JSON 串**
-            //         （站方 `JSON.parse` 它拿 NH_D ⇒ 所以它也期望那是一份 map！）⭐⭐⭐
-            //     ⇒ **灌「整串站方变量」是不够的**：`source.get("nhAuthed")` 会去 map 里找
-            //       `nhAuthed` ⇒ 找不到 ⇒ 恒空 ⇒ `nhAuth()` 恒 false ⇒ **交白卷** ⭐⭐⭐
-            //     ⇒ **正解：把【书籍变量 map 的项】和【站方变量整串解析后的项】合并成一份 map** ⭐⭐⭐
-            //       · 书籍变量 map 的项 ⇒ 覆盖 `source.get/put` 的项（含 `nhAuthed`）⭐⭐⭐
-            //       · 站方变量整串解析后的项 ⇒ 覆盖 `source.getVariable()` 的内容（NH_D 等）⭐⭐⭐
+            //   ⚠️⚠️⚠️ **Legado / 栖阅 / 柴阅都是【两套】** ⭐⭐⭐
+            //     · **站方变量**（`source.getVariable()` / `setVariable(str)`）⇒ **一整串**
+            //       （柴阅的存储键：`sourceVariable_<key>`）⭐⭐⭐
+            //     · **书源变量**（`source.get(k)` / `put(k,v)`）⇒ **每个 k 一个独立项**
+            //       （柴阅的存储键：`v_<key>_<k>`）⭐⭐⭐
+            //   ⇒ 之前把两者**混在一格** ⇒ 站方 `put('nhAuthed', h)` 与站方变量的项**互相污染** ⭐⭐⭐
+            //     ⇒ 而宿主灌进 `variable` 的是**站方变量整串** ⇒ `source.get("nhAuthed")` **读不到** ⭐⭐⭐
+            //     ⇒ 站方 `nhAuth()` 恒 false ⇒ **exploreUrl 主动交白卷** ⇒ **0 个分类** ⭐⭐⭐
+            //
+            //   ⇒ 现在：**站方变量 ⇒ `variable`（整串）／书源变量 ⇒ `sourceVars`（每 k 一项）** ⭐⭐⭐
             var src = engineSource
-            let li = (raw["__loginInfo"] as? String) ?? ""
-            let merged = Self.mergeStationMap(bookVars: vars, stationRaw: sv, loginInfo: li)
-            if !merged.isEmpty { src.variable = merged }
+            // ① 站方变量：原样进 `variable`（整串，**不解析、不合并**）
+            if !sv.isEmpty { src.variable = sv }
+            // ② 书源变量（`source.get/put` 的项）⇒ 进 `sourceVars`（独立格）
+            var svMap = Self.sourceVarsMap(bookVars: vars)
+            // ②' ⭐⭐⭐ **存量迁移**（2026-11-19 移植柴阅实证）：
+            //     旧版本把书源变量（`nhAuthed` / `nhPlatSwitch` / `token` …）塞在
+            //     **站方变量整串 `variable` 的项里** ⇒ 新引擎读 `sourceVars` ⇒ **存量看不见** ⭐⭐⭐
+            //     ⇒ 而「解锁态存于旧格」正是之前 0 分类的根因之一 ⇒ 必须迁 ⭐⭐⭐
+            let legacy = Self.legacySourceVars(from: sv)
+            for (k, v) in legacy where svMap[k] == nil { svMap[k] = v }
+            if !svMap.isEmpty { src.sourceVars = svMap }
             self.engineSource = src
+        }
+
+        /// ⭐⭐⭐⭐⭐ **存量迁移**：从【站方变量整串】里挑出【书源变量语义】的项 ⭐⭐⭐
+        ///
+        /// ⚠️⚠️⚠️ **为什么必须迁**（2026-11-19 移植柴阅实证）：
+        ///   旧版本（我们自己的实现）把 `source.get/put` 的项写进**站方变量整串**的项里 ⭐⭐⭐
+        ///   ⇒ 新引擎按 Legado 语义读【独立的 sourceVars 格】⇒ **存量数据看不见** ⭐⭐⭐
+        ///   ⇒ 而「解锁态（nhAuthed）存于旧格」正是之前「0 个分类」的根因之一 ⭐⭐⭐
+        ///   ⇒ 迁移判据：**键名是站方【书源变量】语义**（不是 NH_D 那种站方变量的项）⭐⭐⭐
+        ///   ⇒ ⚠️ 宁可不迁（站方读不到就报错）也别**迁错**（把 NH_D 塞进书源变量 ⇒ 语义乱）⭐⭐⭐
+        static func legacySourceVars(from stationRaw: String) -> [String: String] {
+            guard let o = Self.jsonObject(stationRaw) else { return [:] }
+            var out: [String: String] = [:]
+            for (k, v) in o {
+                // ⭐⭐⭐ **只迁【明确的站方书源变量键】**（白名单 ⇒ 不猜）⭐⭐⭐
+                //   ⚠️ 这几个键都是站方脚本里 `source.put(...)` 写的 ⇒ 语义确定 ⭐⭐⭐
+                guard ["nhAuthed", "nhPwdHash", "nhPlatSwitch", "nhPlatLog", "nhPlatSync",
+                       "nhLoginState", "nhSafeMode", "nhHostCaps", "nhImgRef", "token"].contains(k) else { continue }
+                out[k] = v is String ? (v as! String) : "\(v)"
+            }
+            return out
+        }
+
+        /// ⭐⭐⭐ **书源变量 map（`source.get/put` 的项）⇒ 独立格的字典**⭐⭐⭐
+        ///
+        /// ⚠️ ⚠️ **只取【站方语义上属于书源变量】的项**：`source.get(k)` / `source.put(k,v)` 这一族
+        ///   （含 `nhAuthed` / `nhPlatSwitch` / `nhPlatLog` / `token` …）⭐⭐⭐
+        ///   ⇒ 站方变量的项（`src` / `gender` / `status` …）**归 `variable`**，不在这儿 ⭐⭐⭐
+        static func sourceVarsMap(bookVars: LegadoEngineHost.Vars) -> [String: String] {
+            var out: [String: String] = [:]
+            let raw = bookVars.getVariable()
+            guard let d = raw.data(using: .utf8),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return out }
+            for (k, v) in o { out[k] = v is String ? (v as! String) : "\(v)" }
+            return out
         }
 
         /// ⭐⭐⭐ **合并两格变量**（书籍变量 map + 站方变量整串）⇒ 引擎那一格的 JSON map ⭐⭐⭐
@@ -191,6 +236,26 @@ final class LegadoEngineBackend {
             return v
         }
 
+        /// ⭐⭐⭐⭐⭐ **读回引擎那一格的书源变量 ⇒ JSON 串**（回传给宿主落盘）⭐⭐⭐
+        ///
+        /// ⚠️⚠️⚠️ **为什么必须读回**（2026-11-19 移植柴阅/Chaiyue 实证）：
+        ///   站方 `source.put('nhAuthed', h)`（解锁）写的是**引擎那一格的 sourceVars** ⭐⭐⭐
+        ///   ⇒ 不读回 ⇒ **解锁态存不下来** ⇒ 下次又是未解锁 ⇒ **永远交白卷** ⭐⭐⭐
+        ///   ⇒ 读回用引擎的 `source.getAllVars()`（一次导出整张 map ⇒ 比逐项 get 快）⭐⭐⭐
+        /// ⚠️⚠️ **参数用闭包、不写 `LegadoEngineHost.Bridge` 类型**：
+        ///   那个别名只在 Apple 平台存在 ⇒ Linux 沙盒编译时类型不存在 ⇒ 写死会编不过 ⭐⭐⭐
+        static func sourceVarsJSON(from session: Session, read: (() -> [String: String]?)?) -> String {
+            if let read,
+               let got = read() {
+                session.sourceVarsSnapshot = got
+            }
+            let map = session.sourceVarsSnapshot
+            guard !map.isEmpty,
+                  let d = try? JSONSerialization.data(withJSONObject: map),
+                  let js = String(data: d, encoding: .utf8) else { return "" }
+            return js
+        }
+
         /// ⭐⭐⭐⭐⭐ **合并登录信息**（已存的做底 + 本次表单值覆盖）⭐⭐⭐
         ///
         /// ⚠️⚠️ **为什么必须合并而不是只用表单值**：
@@ -237,17 +302,30 @@ final class LegadoEngineBackend {
         /// - Returns: 一份 engineSource，其引擎那一格含 `loginInfo` 项（站方 `getLoginInfoMap()` 读它）
         func engineSourceWithLoginInfo(formValues: [String: Any]) -> LegadoEngineHost.Source {
             var src = engineSource
-            let rawVariable = engineSource.variable ?? ""
-            let merged = Self.mergeLoginInfo(existing: Self.loginInfoDict(from: rawVariable),
+            // ⭐⭐⭐ **登录信息也在【书源变量那一格】**（引擎的 `loginInfoGet` ⇒ `getVariable(key:)`）
+            //   ⇒ 键名固定是 `loginInfo` ⭐⭐⭐
+            let merged = Self.mergeLoginInfo(existing: src.sourceVars["loginInfo"]
+                                                .flatMap { Self.jsonObject($0) },
                                             formValues: formValues)
             guard !merged.isEmpty else { return src }
-            var m = Self.variableDict(rawVariable) ?? [:]
-            m["loginInfo"] = merged
-            if let d = try? JSONSerialization.data(withJSONObject: m),
-               let js = String(data: d, encoding: .utf8) {
-                src.variable = js
-            }
+            var m = src.sourceVars
+            m["loginInfo"] = Self.jsonString(merged)
+            src.sourceVars = m
             return src
+        }
+
+        /// ⭐⭐⭐ **JSON 对象串 ⇒ 字典**
+        static func jsonObject(_ raw: String) -> [String: Any]? {
+            guard let d = raw.data(using: .utf8),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+            return o
+        }
+
+        /// ⭐⭐⭐ **字典 ⇒ JSON 对象串**
+        static func jsonString(_ o: [String: Any]) -> String {
+            guard let d = try? JSONSerialization.data(withJSONObject: o),
+                  let s = String(data: d, encoding: .utf8) else { return "" }
+            return s
         }
 
         /// ⭐⭐⭐⭐⭐ **每个 op 前：用【最新的】站方变量重新灌**（build298 真机实证的关键）⭐⭐⭐
@@ -384,7 +462,9 @@ final class LegadoEngineBackend {
             let stationVar = Session.stripLoginInfo(from: session.collectStationVariable {
                 (try? bridge.eval("source.getVariable()")) as? String
             })
-            out["__sourceVars"] = session.variables.getVariable()
+            out["__sourceVars"] = Session.sourceVarsJSON(from: session, read: {
+                (try? bridge.eval("source.getAllVars()")) as? [String: String]
+            })
             out["__sourceVariable"] = stationVar
             out["__sourceVariableChanged"] = (stationVar != session.stationSeeded)
             return out
@@ -448,7 +528,9 @@ final class LegadoEngineBackend {
             let stationVar = Session.stripLoginInfo(from: session.collectStationVariable {
                 (try? bridge.eval("source.getVariable()")) as? String
             })
-            out["__sourceVars"] = session.variables.getVariable()
+            out["__sourceVars"] = Session.sourceVarsJSON(from: session, read: {
+                (try? bridge.eval("source.getAllVars()")) as? [String: String]
+            })
             out["__sourceVariable"] = stationVar
             out["__sourceVariableChanged"] = (stationVar != session.stationSeeded)
             return out
@@ -575,7 +657,7 @@ final class LegadoEngineBackend {
         //     ⇒ 且站方 JS 读 `source.get("nhAuthed")` 读不到 ⇒ **发现页 0 分类** ⭐⭐⭐
         //   ⇒ 现在：`__sourceVars` = 书籍变量（RuleVariables map）
         //           `__sourceVariable` = **站方变量那一格**（`session.stationVariable`）⭐⭐⭐
-        out["__sourceVars"] = session.variables.getVariable()
+        out["__sourceVars"] = Session.sourceVarsJSON(from: session, read: nil)
         out["__sourceVariable"] = session.stationVariable
         // ⭐⭐⭐ **「改没改」只认与种子比较**（证据不许自证）⭐⭐⭐
         out["__sourceVariableChanged"] = (session.stationVariable != session.stationSeeded)

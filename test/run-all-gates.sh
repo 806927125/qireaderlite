@@ -65,6 +65,11 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **整源密码门禁的整链复现**（①表单值→loginInfo→②unlockAll→③落槽→④灌引擎→⑤合并→⑥nhAuth 放行）⭐⭐⭐
   #   ⇒ 每环【真跑】（用产物 jsLib 里抽出的站方真身）⇒ 断在哪一环一目了然 ⭐⭐⭐
   "auth-gate-chain:test/auth-gate-chain.test.js"
+  # ⭐⭐⭐⭐⭐ **站方变量的【两套语义】必须与 柴阅/Chaiyue 一致**（2026-11-19 移植对拍）⭐⭐⭐
+  #   ⇒ 权威规格 = Chaiyue 的 `SourceState`（RuleSession.swift）：
+  #     站方变量 `sourceVariable_<key>`（一整串） vs 书源变量 `v_<key>_<k>`（每 k 一项）⭐⭐⭐
+  #   ⇒ 之前我们把两者混在一格 ⇒ 站方 put('nhAuthed') 与站方变量互相污染 ⇒ 0 分类 ⭐⭐⭐
+  "source-vars-two-slots:test/source-vars-two-slots.test.js"
   "workflow-yaml-gate:test/workflow-yaml-gate.test.js"
   "explore-kinds-parity:test/explore-kinds-parity.test.js"
   "explore-paging-glass:test/explore-paging-glass.test.js"

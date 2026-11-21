@@ -120,6 +120,8 @@ var __mkSource = function(o){ o.getKey = function(){ return o.bookSourceUrl; };
     if (hasLoginHeader) { var lh = o.getLoginHeaderMap(); if (lh) { for (var q in lh) m[q] = lh[q]; } }
     return m; };
   o.get = function(k){ return __native.srcGet(String(k)); }; o.put = function(k, v){ return __native.srcPut(String(k), v); };
+  // ⭐⭐⭐ 一次导出整张书源变量 map（宿主回传用 ⇒ 解锁态要能落盘）⭐⭐⭐
+  o.getAllVars = function(){ return __native.srcGetAll(); };
   o.getLoginInfo = function(){ return __native.loginInfoGet(); }; o.getLoginInfoMap = function(){ var m; try { m = JSON.parse(o.getLoginInfo()); } catch(e) { m = null; } return __mapLike(m); };
   o.putLoginInfo = function(v){ return __native.loginInfoPut(typeof v == 'string' ? v : JSON.stringify(v)); };
   o.removeLoginInfo = function(){ __native.loginInfoRemove(); };

@@ -25,11 +25,32 @@ final class RuleTests: XCTestCase {
     }
 
     func testSourceVariable() {
+        // ⭐⭐⭐⭐⭐ **站方变量的【两套语义】**（2026-11-19 移植 柴阅/Chaiyue 实证）⭐⭐⭐
+        //
+        //   权威规格 = Chaiyue `SourceState`（RuleSession.swift）：
+        //     · 站方变量 `source.getVariable()/setVariable()` ⇒ **一整串**（键 `sourceVariable_<key>`）⭐⭐⭐
+        //     · 书源变量 `source.get(k)/put(k,v)`      ⇒ **每 k 一个独立项**（键 `v_<key>_<k>`）⭐⭐⭐
+        //
+        //   ⇒ 之前我们把 `getVariable(key:)` 实现成「从 variable 整串里取项」⇒ **语义错位** ⭐⭐⭐
+        //     ⇒ 站方 `source.put('nhAuthed', h)` 与站方变量混在一格 ⇒ 真机「发现页 0 分类」⭐⭐⭐
         var s = BookSource(bookSourceUrl: "https://x.com", bookSourceName: "X")
+
+        // ① 书源变量 ⇒ 落在**独立的 sourceVars 格**
         s.putVariable(key: "token", value: "abc")
         XCTAssertEqual(s.getVariable(key: "token"), "abc")
+        XCTAssertEqual(s.sourceVars["token"], "abc")
+        // ⭐ **不污染站方变量的整串**
+        XCTAssertEqual(s.getVariable(), "")
+
+        // ② 站方变量 ⇒ 整串
         s.setVariable(#"{"a":"1"}"#)
-        XCTAssertEqual(s.getVariable(key: "a"), "1")
+        XCTAssertEqual(s.getVariable(), #"{"a":"1"}"#)
+        // ⭐⭐⭐ **两格互不干扰**（★ 这条是本移植的核心断言）⭐⭐⭐
+        XCTAssertEqual(s.getVariable(key: "token"), "abc", "站方变量整串不得吞掉书源变量")
+        XCTAssertEqual(s.sourceVars["token"], "abc", "书源变量不得被站方变量整串覆盖")
+
+        // ③ 站方整串里的项 **读不到**（语义已分离 ⇒ 不再"两套互通"）
+        XCTAssertEqual(s.getVariable(key: "a"), "", "★ 站方整串的项不得被当成书源变量（★ 语义错位已消除）")
     }
 
     // MARK: - RuleSplitter
