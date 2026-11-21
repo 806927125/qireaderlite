@@ -72,10 +72,11 @@ function runSwift() {
     fs.copyFileSync(SWIFT_TEST, main);
     // ⚠️⚠️ **要带上依赖文件**（`SourceVariables.swift` 引用 `StationVarForm` / `engineLog`）⭐⭐⭐
     const FORM = path.join(ROOT, 'QiReaderLite/Core/StationVarForm.swift');
+    const NORM = path.join(ROOT, 'QiReaderLite/Core/ExploreKindsNormalizer.swift');   // filterAssignedKeys ⭐
     const LOG = path.join(ROOT, 'QiReaderLite/Core/EngineLog.swift');   // 纯 Foundation 的日志出口 ⭐
     const bin = path.join(TMP, 'fvrt');
     // ⚠️⚠️⚠️ **必须【编译 + 真跑】**（2026-11-21 实证：只编译不跑 ⇒ 输出为空 ⇒ 门禁假红）⭐⭐⭐
-    execFileSync(SWIFTC, ['-O', main, SV, FORM, LOG, '-o', bin],
+    execFileSync(SWIFTC, ['-O', main, SV, FORM, LOG, NORM, '-o', bin],
                  { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     return execFileSync(bin, [], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } finally {
@@ -93,11 +94,15 @@ try {
   out = (e.stdout || '') + (e.stderr || '');
 }
 if (!failed && out.includes('OK')) {
-  ok(true, '★ 站方读到的平台 = 新平台（find_source ⇒ src 同步生效）');
-  ok(/RAW=.*"gender":"男频"/.test(out), '★ 站方的 gender 没被冲掉（增量合并生效）');
-  ok(/RAW=.*"status":"连载中"/.test(out), '★ 站方的 status 没被冲掉');
-  ok(/RAW=.*"sort":"最热"/.test(out), '★ 站方的 sort 没被冲掉');
-  ok(/RAW=.*"src":"QQ阅读"/.test(out), '★ 站方变量里的 src = 新平台');
+  ok(out.includes('SCENARIO1 OK'), '★ 场景1（🍒NovelHub：键名从 action 解析出 src）真跑通过');
+  ok(out.includes('SCENARIO2 OK'), '★ 场景2（🍅大灰狼：键名退回 paramKey find_source）真跑通过');
+  ok(/RAW1=.*"gender":"男频"/.test(out), '★ 站方的 gender 没被冲掉（增量合并生效）');
+  ok(/RAW1=.*"status":"连载中"/.test(out), '★ 站方的 status 没被冲掉');
+  ok(/RAW1=.*"src":"QQ阅读"/.test(out), '★ 站方变量里的 src = 新平台');
+  ok(/RAW2=.*"find_source":"QQ阅读"/.test(out), '★ 大灰狼形态：站方读到的 find_source = 新值');
+  ok(/RAW2=.*"gender":"男频"/.test(out), '★ 大灰狼形态：站方的 gender 也没被冲掉');
+  ok(/SCENARIO1 keys=\["src",\s*"find_source"\]/.test(out),
+     '★ 键名解析：含 src 与 find_source、**不含**固定值的 find_tab（★ 通用）');
 } else {
   ok(false, 'Swift 真跑未通过', out.slice(0, 500));
 }
@@ -110,6 +115,8 @@ console.log('\n=== 2. 变异对照：改坏 ⇒ 真跑必须红 ===');
     const m1 = orig.replace(
       'var cur = stationVarObject(for: sourceUrl)\n        for (k, v) in obj { cur[k] = v }',
       'var cur = [String: Any]()\n        for (k, v) in obj { cur[k] = v }');
+    const m2b = orig.replace('if !stationKeys.isEmpty, let sv = stationValue, !sv.isEmpty {',
+                             'if false, let sv = stationValue, !sv.isEmpty {');
     ok(m1 !== orig, '变异锚点命中（增量合并 → 整份覆盖）');
     if (m1 !== orig) {
       fs.writeFileSync(SV, m1, 'utf8');
@@ -118,9 +125,20 @@ console.log('\n=== 2. 变异对照：改坏 ⇒ 真跑必须红 ===');
       ok(f2 || !o2.includes('OK'), '★ 变异后真跑失败（门禁有牙齿）');
     }
 
-    // 变异 2：去掉 find_source ⇒ src 的同步（站方读不到新平台）
-    const m2 = orig.replace(/obj\["src"\] = fs/, '// 变异：不同步 src');
-    ok(m2 !== orig, '变异锚点命中（去掉 find_source ⇒ src 同步）');
+    // 变异 1b：不用 stationKeys（通用键名失效 ⇒ 大灰狼/NovelHub 都不对）
+    ok(m2b !== orig, '变异锚点命中（不用 stationKeys ⇒ 通用键名失效）');
+    if (m2b !== orig) {
+      fs.writeFileSync(SV, m2b, 'utf8');
+      let o2b = '', f2b = false;
+      try { o2b = runSwift(); } catch (e) { f2b = true; o2b = (e.stdout || '') + (e.stderr || ''); }
+      ok(f2b || !o2b.includes('OK'), '★ 变异后真跑失败（门禁有牙齿）');
+    }
+
+    // 变异 2：把「增量合并」改成「整份覆盖」的第二种写法（站方其它状态被冲掉）⭐⭐⭐
+    const m2 = orig.replace(
+      'var cur = stationVarObject(for: sourceUrl)\n        for (k, v) in obj { cur[k] = v }',
+      'var cur = [String: Any]()\n        for (k, v) in obj { cur[k] = v }');
+    ok(m2 !== orig, '变异锚点命中（增量合并 → 整份覆盖 · 第二处）');
     if (m2 !== orig) {
       fs.writeFileSync(SV, m2, 'utf8');
       let o3 = '', f3 = false;

@@ -79,7 +79,25 @@ console.log('\n=== 4. 站方 action 的真实形态（从真源 jsLib 取证据�
   }
 }
 
-console.log('\n=== 5. 变异对照（改坏 ⇒ 必须红） ===');
+console.log('\n=== 5. ★ 通用性：筛选键名必须【从 action 解析】（不硬编码） ===');
+{
+  const sheet = strip(read('QiReaderLite/Features/Explore/ExploreView.swift'));
+  const norm = strip(read('QiReaderLite/Core/ExploreKindsNormalizer.swift'));
+  const vars = strip(read('QiReaderLite/Core/SourceVariables.swift'));
+
+  ok(/static func filterAssignedKeys\(in action: String\)/.test(norm), '有 filterAssignedKeys（从 action 解析键名）');
+  ok(/stationKeys: \[String\] = \[\]/.test(vars), 'setHostMap 支持 stationKeys（通用键名）');
+  ok(!/obj\["src"\] = fs/.test(vars),
+     '★ 不再硬编码「find_source ⇒ src」（★ 那只对 NovelHub 有效 ⇒ 大灰狼就坏了）');
+  ok(/ExploreKindsNormalizer\.filterAssignedKeys\(in: f\.action\)/.test(sheet),
+     '★ UI 用解析出的键名（★ 通用）');
+  ok(/if !f\.action\.isEmpty, let s = current/.test(sheet),
+     '★ 优先执行站方 action（★ 站方自己知道该写哪个键 ⇒ 通用）');
+  ok(/if !applied \{/.test(sheet) && /writeHostVars\(f, value\)/.test(sheet),
+     '★ action 失败 ⇒ 兜底「轻阅自己写」（★ 两条路都在）');
+}
+
+console.log('\n=== 6. 变异对照（改坏 ⇒ 必须红） ===');
 {
   // ① 不传 infoMap
   const m1 = svc.replace(/p\["infoMap"\]\s*=\s*\[title:\s*value\]/, '// 变异：不传 infoMap');
@@ -98,6 +116,15 @@ console.log('\n=== 5. 变异对照（改坏 ⇒ 必须红） ===');
   const m4 = svc.replace(/SourceVariables\.variable\(for: source\.bookSourceUrl\)/, '""');
   ok(!/SourceVariables\.variable\(for: source\.bookSourceUrl\)/.test(m4)
      && /SourceVariables\.effectiveVars/.test(m4), '★ 变异④（缓存键不读站方变量槽）⇒ 被抓住');
+
+  // ⑤ 通用性：不优先执行站方 action
+  const sheet = strip(read('QiReaderLite/Features/Explore/ExploreView.swift'));
+  const m5 = sheet.replace('if !f.action.isEmpty, let s = current', 'if f.paramKey.isEmpty, let s = current');
+  ok(!/if !f\.action\.isEmpty, let s = current/.test(m5), '★ 变异⑤（不优先执行站方 action）⇒ 被抓住');
+  // ⑥ 通用性：硬编码 find_source ⇒ src
+  const vars = strip(read('QiReaderLite/Core/SourceVariables.swift'));
+  const m6 = vars.replace('obj["src"] = fs', '// 变异：硬编码回退');
+  ok(!/obj\["src"\] = fs/.test(m6), '★ 变异⑥（硬编码 find_source⇒src）⇒ 被抓住');
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`);

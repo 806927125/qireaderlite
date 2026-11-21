@@ -199,12 +199,25 @@ struct ExploreView: View {
         // ⚠️ 先记下「用户选了什么」—— paramKey 为空的筛选项（站方自己管变量）
         //   读不到源级变量 ⇒ 胶囊会一直显示站方的 default ⇒ 用户以为没生效
         SourceVariables.setFilterChoice(value, for: currentSourceUrl, title: f.title)
-        if f.paramKey.isEmpty {
-            // ── ② 站方自己管变量 ⇒ 执行它的 action ──
-            guard !f.action.isEmpty, let s = current else { return }
+        // ⭐⭐⭐⭐⭐ **通用做法：优先【执行站方 action】**（2026-11-21 用户反馈「大灰狼不行」）⭐⭐⭐
+        //
+        //   ⚠️⚠️⚠️ **为什么必须优先执行站方 action** ⭐⭐⭐
+        //     站方 action 的形态**每个源都不一样** ⇒ 宿主**猜不出**该写哪个变量键 ⭐⭐⭐
+        //       · 🍒NovelHub：`c['src']=v; c['find_source']=String(v);` ⇒ 键名是 **src** ⭐⭐⭐
+        //       · 🍅大灰狼：`show(infoMap['平台'],'find_source')` ⇒ 键名在**第二个引号参数**里 ⭐⭐⭐
+        //     ⇒ **硬编码任何一个键名 ⇒ 另一个源必然失效**（用户原话：「筛选键我要通用啊」）⭐⭐⭐
+        //     ⇒ 而**执行站方 action** ⇒ 站方自己写它要的键 ⇒ **天然通用**（栖阅/柴阅都这么做）⭐⭐⭐
+        //
+        //   ⚠️ **失败时兜底**：站方 action 若引用了 jsLib 里没有的函数（如大灰狼的 `show`）
+        //     ⇒ 会抛错 ⇒ 此时才走「① 轻阅自己写」（按 action 里**解析出的键名**写）⭐⭐⭐
+        if !f.action.isEmpty, let s = current {
             Task {
-                _ = try? await SourceService.shared.applySourceFilter(
-                    source: s, action: f.action, title: f.title, value: value)
+                let applied = (try? await SourceService.shared.applySourceFilter(
+                    source: s, action: f.action, title: f.title, value: value)) ?? false
+                // ⚠️ 站方 action 没成功 ⇒ 兜底：轻阅自己写（键名从 action 解析 ⇒ 通用）⭐⭐⭐
+                if !applied {
+                    writeHostVars(f, value)
+                }
                 // 站方写完变量 ⇒ 分类/筛选栏都要重跑
                 //（胶囊上的当前值来自站方重跑后给的 default）
                 kindsLoaded = false
@@ -214,8 +227,23 @@ struct ExploreView: View {
             }
             return
         }
-        // ── ① 轻阅自己写源级变量 ──
+        // ── ① 轻阅自己写源级变量（站方没有 action 时的兜底）─────────────────
+        writeHostVars(f, value)
+        // 站方的 exploreUrl 要重跑才看得到新平台（discoverySource 是在里面读的）
+        kindsLoaded = false
+        selected = nil
+        books = []
+        Task { await loadKinds(force: true) }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **兜底：轻阅自己写站方变量**（键名从站方 action 里**解析** ⇒ 通用）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **键名必须从 action 解析**（不能硬编码）：
+    ///   · action 里有 `c['k']=…infoMap[…]…` ⇒ 用那些 k（**含 `src`**）⭐⭐⭐
+    ///   · action 里没有 ⇒ 用 `paramKey`（如大灰狼的 `find_source`）⭐⭐⭐
+    private func writeHostVars(_ f: SourceService.FilterDTO, _ value: String) {
         let key = f.paramKey
+        guard !key.isEmpty else { return }
         let merged = SourceVariables.mergeVars(
             userJSON: SourceVariables.vars(for: currentSourceUrl),
             defaults: SourceVariables.defaultVars(for: currentSourceUrl))
@@ -225,17 +253,18 @@ struct ExploreView: View {
             obj = o
         }
         obj[key] = value
+        // ⭐⭐⭐⭐⭐ **站方变量要写的键名 = 从 action 里解析**（通用！2026-11-21）⭐⭐⭐
+        //   ⇒ NovelHub：解析出 `src`（`c['src']=v`）⇒ 站方 exploreUrl 读 `NH_D.src` ⇒ **立即生效** ⭐⭐⭐
+        //   ⇒ 大灰狼：action 里没有 `c['k']=` ⇒ 用 `paramKey`（`find_source`）⭐⭐⭐
+        let stationKeys = ExploreKindsNormalizer.filterAssignedKeys(in: f.action)
+        let keys = stationKeys.isEmpty ? [key] : stationKeys
         if let data = try? JSONSerialization.data(withJSONObject: obj),
            let str = String(data: data, encoding: .utf8) {
             // ⭐⭐ 发现页筛选在 Legado 里是**站方变量**（`source.setVariable(JSON…)`）⇒ 两处都写 ⭐
             //   ⭐⭐⭐ 走 `setHostMap` ⇒ **凭据形态的源不许被塞 map**（✿UAA：那一格放的是 token）⭐⭐⭐
-            SourceVariables.setHostMap(str, for: currentSourceUrl, jsLib: current?.jsLib)
+            SourceVariables.setHostMap(str, for: currentSourceUrl, jsLib: current?.jsLib,
+                                       stationKeys: keys, stationValue: value)
         }
-        // 站方的 exploreUrl 要重跑才看得到新平台（discoverySource 是在里面读的）
-        kindsLoaded = false
-        selected = nil
-        books = []
-        Task { await loadKinds(force: true) }
     }
 
     /// 榜单页内容区**没有任何头部**：书源名在导航栏标题上，

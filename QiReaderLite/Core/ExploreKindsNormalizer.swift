@@ -242,6 +242,60 @@ enum ExploreKindsNormalizer {
         return nil
     }
 
+    /// ⭐⭐⭐⭐⭐ **从站方 action 里解析出「它要写哪些变量键」**（通用！2026-11-21 实证）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么要有这个**（用户原话：「筛选键我要通用啊，大灰狼不行」）：
+    ///   站方 action 的形态**每个源都不一样** ⭐⭐⭐
+    ///   · 🍒NovelHub：`c['src']=v; c['find_source']=String(v); c['find_tab']='小说';` ⇒ 要写 **src** ⭐⭐⭐
+    ///   · 🍅大灰狼：`show(infoMap['平台'],'find_source')` ⇒ 键名在**第二个引号参数**里 ⭐⭐⭐
+    ///   ⇒ **硬编码任何一个键名都会对另一个源失效** ⇒ 必须**从 action 里解析** ⭐⭐⭐
+    ///
+    /// ⭐⭐⭐ **只取「右侧含 `infoMap[...]`」的键**：
+    ///   ⇒ `c['find_tab']='小说'` 是**固定值**（不是用户选的）⇒ 不能用它覆盖 ⭐⭐⭐
+    ///   ⇒ `c['src']=v`（v 来自 infoMap）⇒ 才是用户选的那个 ⭐⭐⭐
+    ///
+    /// ⚠️ **与 `firstAssignedKey` 的分工**：
+    ///   · `firstAssignedKey` ⇒ 给 **paramKey**（缓存键/胶囊用）⇒ **跳过 `src`**（那是站方内部旧字段）⭐⭐⭐
+    ///   · **本函数** ⇒ 给「**写站方变量**」用 ⇒ **不跳 `src`**（NovelHub 恰恰要写它）⭐⭐⭐
+    static func filterAssignedKeys(in action: String) -> [String] {
+        guard !action.isEmpty else { return [] }
+        let ns = action as NSString
+
+        // ── 第 ① 步：找出【由 infoMap 派生】的变量名 ──────────────────────
+        //   站方 action 的典型写法（真源 jsLib 原文）：
+        //     var v=infoMap['平台']; ... c['src']=v; c['find_source']=String(v); ...
+        //   ⇒ 赋值的右侧**不含 infoMap**，而是**引用了 infoMap 派生出来的变量** ⭐⭐⭐
+        //   ⇒ 所以不能只找「右侧含 infoMap」的键（那样一个都找不到）⭐⭐⭐
+        var derived: Set<String> = []
+        if let re = try? NSRegularExpression(pattern: #"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[^;,]{0,200}infoMap\["#) {
+            for m in re.matches(in: action, range: NSRange(location: 0, length: ns.length)) {
+                derived.insert(ns.substring(with: m.range(at: 1)))
+            }
+        }
+        // 兼容另一种写法：直接把 infoMap 的值赋给某个键（`c['src']=infoMap['平台']`）
+        let directPattern = #"\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\]\s*=\s*([^;,]{0,200}infoMap\[[^\]]*\][^;,]{0,200})"#
+
+        // ── 第 ② 步：找出【赋值给谁】⇒ 只取「右侧引用了 infoMap 派生变量」的键 ──
+        let assignPattern = #"\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\]\s*=\s*([^;,]{0,160})"#
+        guard let re = try? NSRegularExpression(pattern: assignPattern) else { return [] }
+        var out: [String] = []
+        for m in re.matches(in: action, range: NSRange(location: 0, length: ns.length)) {
+            let key = ns.substring(with: m.range(at: 1))
+            let rhs = ns.substring(with: m.range(at: 2))
+            if key.isEmpty { continue }
+            // ① 右侧直接含 infoMap ⇒ 用户改的
+            var hit = rhs.contains("infoMap")
+            // ② 右侧引用了 infoMap 派生的变量（如 `v` / `String(v)`）⇒ 用户改的
+            if !hit {
+                for d in derived where rhs.contains(d) { hit = true; break }
+            }
+            // ⚠️ ③ **固定值**（如 `c['find_tab']='小说'`）⇒ **不是**用户改的 ⇒ 排除 ⭐⭐⭐
+            if hit && !out.contains(key) { out.append(key) }
+        }
+        _ = directPattern
+        return out
+    }
+
     /// 取正则的第 2 个捕获组（没有则 nil）
     static func secondQuotedArg(in s: String, pattern: String) -> String? {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }

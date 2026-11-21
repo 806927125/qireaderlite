@@ -173,7 +173,14 @@ enum SourceVariables {
     ///
     /// ⚠️ **形态还「不知道」的时候照写**（⇒ 宿主自己的功能得能用）
     ///   ⇒ 形态一旦判出来（默认表取过了）⇒ 下一轮就被拦住 / 被迁移清掉 ⭐
-    static func setHostMap(_ value: String, for sourceUrl: String, jsLib: String? = nil) {
+    /// ⭐⭐⭐⭐⭐ **站方要写的变量键**（通用：从站方 action 里解析出来）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么不能硬编码键名**（用户原话：「筛选键我要通用啊，大灰狼不行」）⭐⭐⭐
+    ///   · 🍒NovelHub 的 action 写的是 **`src`**（`c['src']=v`）⭐⭐⭐
+    ///   · 🍅大灰狼的 action 是 **`show(infoMap['平台'],'find_source')`**（键名在第二个参数里）⭐⭐⭐
+    ///   ⇒ **硬编码任何一个都会对另一个源失效** ⇒ 必须由调用方**从 action 解析**后传进来 ⭐⭐⭐
+    static func setHostMap(_ value: String, for sourceUrl: String, jsLib: String? = nil,
+                           stationKeys: [String] = [], stationValue: String? = nil) {
         setVars(value, for: sourceUrl)                                   // 书源变量：总是写 ⭐
         guard form(for: sourceUrl, jsLib: jsLib) != .credential else { return }  // ⭐ 凭据形态 ⇒ 不许写 map ⭐⭐⭐
 
@@ -192,12 +199,26 @@ enum SourceVariables {
         //
         //   ⇒ 正解：**增量合并**（保留站方其它键）+ **`find_source` ⇒ 同步 `src`** ⭐⭐⭐
         var obj = varsJSONObject(value)
-        if let fs = obj["find_source"] as? String, !fs.isEmpty {
-            // ⭐⭐⭐ **总是覆盖 `src`**（站方约定：`src` ≡ `find_source` 的值）⭐⭐⭐
-            //   ⚠️ 不能「只在 src 缺失时才同步」⇒ obj 里可能有**上一次**的旧 `src` ⇒ 会挡住 ⭐⭐⭐
-            obj["src"] = fs
+
+        // ⭐⭐⭐⭐⭐ **按【站方 action 解析出的键名】写站方变量**（通用！2026-11-21）⭐⭐⭐
+        //   ⇒ `stationKeys` = 站方 action 里 `c['k']=…infoMap[…]…` 的那些 k ⭐⭐⭐
+        //   ⇒ 用户的选中值写进这些键 ⇒ 站方 exploreUrl 读它们 ⇒ **立即生效** ⭐⭐⭐
+        //   ⇒ ⚠️ 【**不覆盖**其它键】⇒ 站方的 `gender`/`status`/… 原样保留 ⭐⭐⭐
+        if !stationKeys.isEmpty, let sv = stationValue, !sv.isEmpty {
+            var patch: [String: Any] = [:]
+            for k in stationKeys { patch[k] = sv }
+            setStationVarMap(patch, for: sourceUrl)
         }
-        setStationVarMap(obj, for: sourceUrl)
+
+        // ⚠️⚠️⚠️ **这里不再有任何「硬编码键名」的兜底**（2026-11-21 用户反馈「大灰狼不行」）⭐⭐⭐
+        //   ⇒ 之前有 `find_source ⇒ src` 那条 ⇒ 它只对 NovelHub 有效 ⇒ **大灰狼就被带坏了** ⭐⭐⭐
+        //   ⇒ 现在：**键名一律由调用方从站方 action 里解析出来**（`stationKeys`）⇒ **通用** ⭐⭐⭐
+        //   ⇒ 解析不出来时（action 里没有 `c['k']=`）⇒ 调用方用 `paramKey`（大灰狼的 `find_source`）⭐⭐⭐
+
+        // ⚠️⚠️⚠️ **不要把整份 `obj` 合并进站方变量槽**（2026-11-21 实证）⭐⭐⭐
+        //   `obj` = 「书源变量 map + **站方默认表**」⇒ 含**默认值**（如 `gender`/`status`）⭐⭐⭐
+        //   ⇒ 整份合并 ⇒ 会把站方**自己当前的状态**覆盖成默认值 ⇒ 其它筛选被重置 ⭐⭐⭐
+        //   ⇒ 站方变量槽**只写用户刚改的那几项**（上面的 `stationKeys`）⇒ 其余原样保留 ⭐⭐⭐
     }
 
     /// ⭐⭐⭐⭐⭐ **增量合并【站方变量】**（保留站方自己的键）⭐⭐⭐
