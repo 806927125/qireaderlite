@@ -49,6 +49,11 @@ FILES=(
   # ⭐⭐⭐ **柴阅移植的新文件**（2026-11-21）⇒ 必须进编译清单 ⇒ 否则类型错抓不到 ⭐⭐⭐
   "QiReaderLite/Core/ChaiyueRuntime.swift"
   "QiReaderLite/Core/ChaiyueKindsAdapter.swift"
+  # ⭐⭐⭐⭐⭐ **`LegadoEngineProbe.swift` 也要编**（2026-11-21 移植柴阅实证）⭐⭐⭐
+  #   ⇒ 它是**第二个** import 引擎的宿主文件 ⇒ 之前**没进清单** ⇒ 它的类型错漏到 CI 才报 ⭐⭐⭐
+  #   ⇒ （旧引擎的 `AnalyzeRule` 在柴阅里是 internal ⇒ 探针编不过 ⇒ Apple 编译失败）⭐⭐⭐
+  #   ⇒ **教训**：宿主里凡 import 引擎的文件，**全部**要进编译清单 ⭐⭐⭐
+  "QiReaderLite/Core/LegadoEngineProbe.swift"
   # ⭐⭐⭐⭐⭐ **`ExploreKindsNormalizer.swift`**（2026-11-19 build296 真机实证）
   #   ⇒ 站方 exploreUrl 的分类归一化（**只依赖 Foundation** ⇒ 沙盒能编能跑）
   #   ⇒ 独立成文件 ⇒ 对拍门禁能【直接编它】⇒ App 与门禁同源 ⇒ 永不漂 ⭐⭐⭐
@@ -81,6 +86,11 @@ FILES_ENGINE=(
   # ⭐⭐⭐ **柴阅移植的新文件**（2026-11-21）⇒ 必须进编译清单 ⇒ 否则类型错抓不到 ⭐⭐⭐
   "QiReaderLite/Core/ChaiyueRuntime.swift"
   "QiReaderLite/Core/ChaiyueKindsAdapter.swift"
+  # ⭐⭐⭐⭐⭐ **`LegadoEngineProbe.swift` 也要编**（2026-11-21 移植柴阅实证）⭐⭐⭐
+  #   ⇒ 它是**第二个** import 引擎的宿主文件 ⇒ 之前**没进清单** ⇒ 它的类型错漏到 CI 才报 ⭐⭐⭐
+  #   ⇒ （旧引擎的 `AnalyzeRule` 在柴阅里是 internal ⇒ 探针编不过 ⇒ Apple 编译失败）⭐⭐⭐
+  #   ⇒ **教训**：宿主里凡 import 引擎的文件，**全部**要进编译清单 ⭐⭐⭐
+  "QiReaderLite/Core/LegadoEngineProbe.swift"
 )
 
 echo "=== 编译 App 侧 Core/（swiftc 真编 ⇒ 抓语法/类型错）==="
