@@ -1097,10 +1097,14 @@ final class SourceService {
         //   ⭐⭐⭐ 走 `stationVariableToSeed` ⇒ **顺带做污染迁移**（凭据形态却躺着一个 map ⇒ 清掉）⭐
         srcDict["__variable"] = SourceVariables.stationVariableToSeed(for: source.bookSourceUrl, jsLib: source.jsLib)
         srcDict["__loginInfo"] = SourceVariables.loginInfo(for: source.bookSourceUrl)
-        // ⭐⭐⭐⭐⭐ **走新引擎**（2026-10-29 ⇒ 与登录/目录同一套站方变量语义）
-        guard let raw = try? await Self.invokeEngine("sourceVars", ["source": srcDict], source: source),
-              let dict = raw as? [String: Any],
-              let vars = dict["vars"] as? [String: Any] else { return [:] }
+        // ⭐⭐⭐⭐⭐ **柴阅没有「sourceVars」这个 op**（2026-11-22 真机实测报「新引擎不支持」）⭐⭐⭐
+        //   ⇒ 旧引擎的 op 是【跑站方 jsLib 取默认表】⇒ 那是**站方各自的约定** ⇒ 通用拿不到 ⭐⭐⭐
+        //   ⇒ 正解：**读站方变量槽**（站方已经写过 map 的源 ⇒ 直接就是默认表/站方变量）⭐⭐⭐
+        //     ⇒ 顺带修掉「凭据形态」误判（大灰狼是 map 形态 ⇒ 不该被当凭据清掉）⭐⭐⭐
+        let vars = SourceVariables.stationVarObject(for: source.bookSourceUrl)
+        if vars.isEmpty {
+            engineLog("[变量] 站方变量槽里没有 map ⇒ 取不到默认表（★ 柴阅无 sourceVars op）")
+        }
         // ⭐⭐⭐ **哪怕是空的也要落盘** ⇒ 记下「取过了」⭐
         //   （「默认表是空的」有两种意思：① 取过了、站方确实没有 ② **还没取过**）
         //   ⇒ 不记这个 ⇒ 分不清 ⇒ 判不出「凭据形态」⇒ 真机上的污染清不掉 ⭐⭐⭐

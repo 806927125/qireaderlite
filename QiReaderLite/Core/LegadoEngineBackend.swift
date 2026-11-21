@@ -206,6 +206,12 @@ final class LegadoEngineBackend {
             //     ⇒ 静态行由宿主自己解析 ⇒ 但 `viewName` 仍需引擎求值 ⭐⭐⭐
             let exprs = (payload["expressions"] as? [String]) ?? []
             let names = await resolveViewNames(exprs, web: web)
+            // ⭐⭐⭐ **诊断**（2026-11-22 真机：表达式类按钮名没生效 ⇒ 查不出来）⭐⭐⭐
+            let nonEmpty = names.filter { !$0.isEmpty }.count
+            engineLog("[登录] viewName 求值：入参 \(exprs.count) 条 → 回 \(names.count) 条（非空 \(nonEmpty)）")
+            if nonEmpty == 0 && !exprs.isEmpty {
+                engineLog("[登录] viewName 全部求空 ⇒ 宿主没走到求值，或引擎求值失败（看引擎日志）")
+            }
             return ["names": names]
 
         case "loginRows":

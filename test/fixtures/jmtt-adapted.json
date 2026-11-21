@@ -48,6 +48,13 @@
     },
     "searchUrl": "@js:(function(){\nvar H='https://abandon.yyc2mhau.cc';\nvar UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36';\nvar m='';\ntry{m=String(source.get('jmMode'));}catch(e1){}\nif(m==='null'||m==='undefined'){m='';}\nif(m===''){try{m=String(source.getVariable());}catch(e2){}if(m==='null'||m==='undefined'){m='';}}\nvar seg='comic';\nif(m==='小说'){seg='novel';}else if(m==='视频'){seg='mv';}\nreturn H+'/'+seg+'/all?key_word={{key}}&page={{page}}' + ',{\"headers\":{\"User-Agent\":\"' + UA + '\"},\"timeout\":20000}';\n})()",
     "storageKind": 0,
-    "weight": 0
+    "weight": 0,
+    "ruleExplore": {
+      "bookList": "li.jm-card,li.jm-vcard",
+      "bookUrl": "a.jm-card__cover@href||a.jm-vcard__cover@href",
+      "coverUrl": "@js:(function(){var h=\"\";try{h=result.html();}catch(e){h=String(result);}var m=h.match(/data-src=\"https?:\\/\\/[^\\/?]+(\\/upload[^\"]+)\"/);if(m){var p=m[1].split(\"?\")[0];var b=java.base64Encode(p);var ext=p.split(\".\").pop();var H=String(baseUrl).match(/^https?:\\/\\/[^\\/]+/);H=H?H[0]:\"https://abandon.yyc2mhau.cc\";return H+\"/social-cover/\"+b+\".\"+ext;}var s=h.match(/src=\"(https?:[^\"]+upload[^\"]+)\"/);return s?s[1]:\"\";})()",
+      "kind": "span.jm-card__badge--status@text||span.jm-vcard__dur@text",
+      "name": "h3 a@text"
+    }
   }
 ]

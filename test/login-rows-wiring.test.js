@@ -102,6 +102,13 @@ console.log('\n=== 7. ★ 禁漫天堂：源侧函数库必须进 jsLib（否则
   }
   ok((lib.match(/function jmStr\(/g) || []).length === 1,
      '★ jmStr 没有重复定义（jsLib 与 loginUrl 各一份会互相覆盖）');
+  // ⭐⭐⭐ **ruleExplore 必须补上**（2026-11-22 真机「书单 0 本」的根因：源里 ruleExplore = null）⭐⭐⭐
+  const re = s0.ruleExplore || {};
+  ok(!!re.bookList, '★ 适配后的源有 ruleExplore.bookList（★ 原来 null ⇒ 必然 0 本）');
+  ok(re.bookUrl === (s0.ruleSearch || {}).bookUrl, '★ ruleExplore.bookUrl 取自 ruleSearch（同站同结构）');
+  ok(re.name === (s0.ruleSearch || {}).name, '★ ruleExplore.name 取自 ruleSearch');
+  ok(!('checkKeyWord' in re), '★ ruleExplore 不带 checkKeyWord（那是搜索页专用）');
+
   const ui = JSON.parse(s0.loginUi);
   const modes = ui.filter((x) => String(x.action || '').includes('jmSetMode'));
   ok(modes.length === 3, `有 3 个模式按钮（漫画/小说/视频）⇒ 实得 ${modes.length}`);
