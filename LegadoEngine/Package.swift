@@ -55,6 +55,13 @@ let package = Package(
             ],
             path: "Sources/ChaiyueEngine"
         ),
+        // ⭐⭐⭐⭐⭐ **柴阅的【登录配套设施】（ReaderPlatform）已并入 `ChaiyueEngine`**（2026-11-21）⭐⭐⭐
+        //   目录：`Sources/ChaiyueEngine/Platform/`（原样 vendor，文件整体 `#if canImport(WebKit)`）⭐⭐⭐
+        //   · `PlatformSourceUI` = `SourceUIDelegate` 的完整实现（浏览器 / 验证码 / 后台渲染 / toast / 复制 / 外链）⭐⭐⭐
+        //   · `WebViewRenderer` = 后台 WKWebView 渲染（正文 `useWebView`）⭐⭐⭐
+        //   · `CookieSync` = WK cookie ⇒ URLSession cookie 的同步 ⭐⭐⭐
+        //   ⇒ 站方登录要开浏览器/要验证码时，**柴阅原生支持**（此前静默失败）⭐⭐⭐
+        //   ⚠️ **并入而非独立 target** ⇒ xcodeproj 不用改（宿主仍只 import LegadoEngine）⭐⭐⭐
         // ③ 我们的适配层（宿主契约 + 状态搬运；**纯逻辑 ⇒ Linux 沙盒可编 ⇒ 门禁活着**）
         .target(
             name: "LegadoEngine",

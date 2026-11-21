@@ -41,4 +41,19 @@ public enum LegadoEngineHost {
     public typealias Diagnostics = ChaiyueEngine.ChaiyueDiagnostics
     /// ⭐⭐⭐ **登录信息加解密**（柴阅存密文、UI 要明文 ⇒ 必须能互转）⭐⭐⭐
     public typealias LoginCrypto = ChaiyueEngine.ChaiyueLoginCrypto
+
+    #if canImport(WebKit) && !os(Linux)
+    // ⭐⭐⭐⭐⭐ **柴阅的【登录配套设施】（ReaderPlatform）的类型**（2026-11-21 移植）⭐⭐⭐
+    //   ⇒ Swift 的 `import` **不 re-export** ⇒ 宿主只 `import LegadoEngine` ⇒ 必须在这里开别名 ⭐⭐⭐
+    /// ⭐⭐⭐ 柴阅的界面委托实现（浏览器 / 验证码 / 后台渲染 / toast / 复制 / 外链 / 视频）⭐⭐⭐
+    public typealias PlatformUI = ChaiyueEngine.PlatformSourceUI
+    /// ⭐⭐⭐ 后台 WebView 渲染请求（正文 `useWebView` / `java.webView`）⭐⭐⭐
+    public typealias WebViewRequest = ChaiyueEngine.WebViewRequest
+    /// ⭐⭐⭐ 浏览器请求（`java.startBrowser` / `showBrowser`）⭐⭐⭐
+    public typealias BrowserRequest = ChaiyueEngine.BrowserRequest
+    /// ⭐⭐⭐ 浏览器结果（页面 URL + HTML）⭐⭐⭐
+    public typealias BrowserResult = ChaiyueEngine.BrowserResult
+    /// ⭐⭐⭐ 宿主要实现的交互协议（轻阅的实现见 `ChaiyueSourceUI.swift`）⭐⭐⭐
+    public typealias InteractionPresenter = ChaiyueEngine.SourceInteractionPresenter
+    #endif
 }

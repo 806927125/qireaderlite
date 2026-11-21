@@ -3,6 +3,8 @@ import SwiftUI
 @main
 struct QiReaderLiteApp: App {
     @StateObject private var sources = SourceStore()
+    /// ⭐⭐⭐ 浏览器入口（引擎 → 主线程 → SwiftUI 的桥梁）⭐⭐⭐
+    @StateObject private var browserPresenter = BrowserPresenter.shared
     @StateObject private var library = LibraryStore()
     /// 液态玻璃浓度（用户可调）—— 0 最透，1 最实
     @AppStorage(GlassTintStore.key) private var glassTintPercent: Double = 45
@@ -13,6 +15,12 @@ struct QiReaderLiteApp: App {
         //   · 旧的一次性迁移键（曾把主链路强制切回老引擎）⇒ **彻底清掉**（否则会一直把开关写回 false）⭐⭐⭐
         // ⭐⭐⭐ 引擎日志出口挂上面板（诊断要用户「复制日志」就能看到 ⇒ 不用去 Xcode 看控制台）
         EngineLogBootstrap.install()
+        // ⭐⭐⭐⭐⭐ **装上柴阅的界面委托**（2026-11-21 移植柴阅的登录配套设施）⭐⭐⭐
+        //   ⇒ 柴阅的引擎把「浏览器 / 验证码 / 后台渲染 / toast」交给宿主 ⭐⭐⭐
+        //   ⇒ 不装 ⇒ 站方登录要开浏览器/要验证码 ⇒ **静默失败**（此前就是这样）⭐⭐⭐
+        //   ⇒ 聚合源的「🍅番茄登录 / 🔐注册书源 / 🏝用户后台」全是浏览器流程 ⭐⭐⭐
+        // ⚠️⚠️ **`init()` 不是 MainActor 隔离的** ⇒ 用 Task 切主线程 ⭐⭐⭐
+        Task { @MainActor in ChaiyueRuntime.installUI() }
         // ⭐⭐⭐⭐⭐ **每次启动都报一次 build 号**（2026-10-28 教训）
         //   ⇒ 用户反馈「还是一样」时，**第一件事就是确认他装的到底是哪一版**
         //   ⇒ 之前就是因为跑的是 build271（没有探针的版本）⇒ 白猜了好几轮 ⇒
@@ -52,6 +60,13 @@ struct QiReaderLiteApp: App {
                 // 玻璃浓度注入 environment → 全站 25 处玻璃调用点自动跟随
                 // （0 = 纯玻璃，0.85 = 乳白玻璃 ≈ 栖阅的 rgba(255,255,255,.82)）
                 .environment(\.glassTint, glassTintPercent / 100 * GlassTintStore.maxVeil)
+                // ⭐⭐⭐⭐⭐ **浏览器入口**（2026-11-21 移植柴阅的登录配套设施）⭐⭐⭐
+                //   ⇒ 柴阅的引擎（站方 `java.startBrowser` / `startBrowserAwait`）要开浏览器 ⭐⭐⭐
+                //   ⇒ 它把请求交给 `ChaiyueInteractionPresenter` ⇒ 那里弹这个 sheet ⭐⭐⭐
+                //   ⇒ **轻阅的 `BrowserSheet` 早就写好了**（注释里就写着给这个用）⇒ 现在接上 ⭐⭐⭐
+                .sheet(item: $browserPresenter.item) { item in
+                    BrowserSheet(url: item.url, title: item.title, onFinish: item.onFinish)
+                }
         }
     }
 }

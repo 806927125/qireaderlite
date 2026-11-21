@@ -31,6 +31,18 @@ enum ChaiyueRuntime {
         LegadoEngineHost.Environment(store: store)
     }()
 
+    /// ⭐⭐⭐⭐⭐ **装上柴阅的界面委托**（浏览器 / 验证码 / 后台渲染 / toast …）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么是独立的方法（不是 environment 的 init 里）** ⭐⭐⭐
+    ///   `platformUI` 需要 `environment`，而 `environment` 若在这里就装 delegate ⇒ **初始化循环** 💥⭐⭐
+    ///   ⇒ 所以拆开：App 启动时调一次 `installUI()` ⇒ 站方第一次要浏览器之前一定装好了 ⭐⭐⭐
+    @MainActor
+    static func installUI() {
+        #if canImport(WebKit) && !os(Linux)
+        environment.setUIDelegate(platformUI)
+        #endif
+    }
+
     /// ⭐⭐⭐ **androidID**（柴阅用它派生登录信息的加密密钥）⭐⭐⭐
     ///
     /// ⚠️⚠️ **必须与柴阅自己算的完全一致**（否则登录信息解不开）⭐⭐⭐
@@ -38,6 +50,43 @@ enum ChaiyueRuntime {
     ///   ⚠️ **这里从 `environment.androidID` 直接取**（不自己算 ⇒ 不会漂移）⭐⭐⭐
     ///   ⚠️ 必须是 **computed**（`static let` 会与 `environment` 形成初始化循环）⭐⭐⭐
     static var androidID: String { environment.androidID }
+
+    // MARK: - ⭐⭐⭐ 登录配套设施（柴阅的 ReaderPlatform）
+
+    #if canImport(WebKit) && !os(Linux)
+    /// ⭐⭐⭐⭐⭐ **柴阅的 `PlatformSourceUI`**（= `SourceUIDelegate` 的完整实现）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么必须有它**（2026-11-21 移植柴阅的登录配套设施）⭐⭐⭐
+    ///   柴阅的引擎把「浏览器 / 验证码 / 后台渲染 / toast / 复制 / 外链 / 视频」交给宿主 ⭐⭐⭐
+    ///   ⇒ 轻阅之前**没有实现这个委托** ⇒ 站方登录要开浏览器/要验证码时 ⇒ **静默失败** ⭐⭐⭐
+    ///   ⇒ 聚合源的「🍅番茄登录 / 🔐注册书源 / 🏝用户后台」**全是浏览器流程** ⭐⭐⭐
+    ///     ⇒ 浏览器不工作 ⇒ 拿不到 token/cookie ⇒ **登录永远失败** ⭐⭐⭐
+    /// ⇒ 现在：柴阅的默认实现（后台 WKWebView 渲染 + Cookie 同步）+ 轻阅的 UI presenter ⭐⭐⭐
+    static let platformUI: ChaiyueEngine.PlatformSourceUI = {
+        let ui = LegadoEngineHost.PlatformUI(environment: environment)
+        ui.presenter = ChaiyueInteractionPresenter.shared
+        // ⚠️ toast ⇒ 走轻阅的 Toast（站方登录结果就是用 toast 报的）⭐⭐⭐
+        ui.onToast = { message, _ in
+            Task { @MainActor in Toast.show(message) }
+        }
+        return ui
+    }()
+
+    /// ⭐⭐⭐ **当前能弹窗的顶层控制器**（验证码弹窗用）⭐⭐⭐
+    static var topPresenter: UIViewController? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .rootViewController
+    }
+
+    /// ⭐⭐⭐ **后台渲染一段 HTML**（站方 `java.startBrowser(html)` 场景）⭐⭐⭐
+    static func renderWebView(html: String, url: String?, js: String?, sourceKey: String) -> String? {
+        let req = LegadoEngineHost.WebViewRequest(html: html, url: url, js: js, sourceKey: sourceKey)
+        return try? platformUI.renderWebView(req)
+    }
+    #endif
 
     // MARK: - 存储适配
 

@@ -77,6 +77,10 @@ declare -a GATES=(
   #   ⇒ 站方 loginUi 常是 `@js:` 薄壳 ⇒ 静态解析失败 ⇒ 面板空白 ⇒ **一个按钮都没有** ⭐⭐⭐
   #   ⇒ 柴阅的 `resolveLoginRows` 会求值它 ⇒ 行拿得到（★ 真跑探针在 CI 上验）⭐⭐⭐
   "login-rows-wiring:test/login-rows-wiring.test.js"
+  # ⭐⭐⭐⭐⭐ **登录配套设施（柴阅 ReaderPlatform）必须真的接上**（2026-11-21 移植）⭐⭐⭐
+  #   ⇒ 柴阅把「浏览器/验证码/后台渲染/toast」交给宿主 ⇒ 轻阅之前**没实现** ⇒ **静默失败** ⭐⭐⭐
+  #   ⇒ 聚合源的「🍅番茄登录 / 🔐注册书源 / 🏝用户后台」全是浏览器流程 ⇒ 浏览器不工作 ⇒ **登录永远失败** ⭐⭐⭐
+  "login-platform-wiring:test/login-platform-wiring.test.js"
   # ⭐⭐⭐⭐⭐ **条件编译块的 import 完整性**（2026-11-21 移植柴阅的真实事故）⭐⭐⭐
   #   ⇒ 柴阅的 `Digests` 拆文件时漏了 `import CommonCrypto` ⇒ **Linux 沙盒编不到** ⭐⭐⭐
   #   ⇒ 沙盒门禁全绿 ⇒ 直到 CI 才报「cannot find 'CC_SHA224' in scope」⭐⭐⭐
