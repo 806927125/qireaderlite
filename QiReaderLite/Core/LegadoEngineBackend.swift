@@ -95,7 +95,13 @@ final class LegadoEngineBackend {
             // ⭐⭐⭐⭐⭐ **分类 + 筛选栏**：柴阅原生求值 `@js:` 的 `exploreUrl` ⭐⭐⭐
             //   ⇒ **不再需要**旧的 `ExploreKindsNormalizer`（那是宿主自己 eval + 解析）⭐⭐⭐
             //   ⇒ 柴阅的 `exploreKinds` 是权威实现 ⇒ **行为与柴阅逐字一致** ⭐⭐⭐
-            let kinds = try await web.exploreKinds()
+            // ⭐⭐⭐⭐⭐ **必须 `refresh: true`**（2026-11-21 真机「筛选键没用」实证）⭐⭐⭐
+            //   柴阅的 `exploreKinds` 默认 **refresh: false** ⇒ 命中缓存 ⭐⭐⭐
+            //   ⇒ 缓存键 = md5(源URL + exploreUrl **文本**) ⇒ **站方变量变了键也不变** ⭐⭐⭐
+            //   ⇒ ⇒ 筛选后重跑分类 ⇒ 拿回**旧平台的 URL** ⇒ 列表还是旧平台的 ⇒ **筛选无效** ⭐⭐⭐
+            //   ⇒ 而 NovelHub 的分类 URL 是**求值出来的**（含平台参数）⇒ 必须重算 ⭐⭐⭐
+            //   ⇒ ⚠️ UI 侧已有 `kindsLoaded` 短路 ⇒ 真正需要重算的时刻才调到这里 ⇒ 代价可接受 ⭐⭐⭐
+            let kinds = try await web.exploreKinds(refresh: true)
             let norm = ChaiyueKindsAdapter.normalize(kinds)
             return ["kinds": norm.kinds, "filters": norm.filters]
 

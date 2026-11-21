@@ -65,6 +65,9 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **柴阅移植契约**（2026-11-21）⭐⭐⭐
   #   ⇒ 钉死：包结构 / 柴阅两套语义 / 宿主走 WebBook / 不再回传变量 / store 映射 / kinds 适配 ⭐⭐⭐
   "chaiyue-port-contract:test/chaiyue-port-contract.test.js"
+  # ⭐⭐⭐⭐⭐ **发现页筛选栏的「选中 ⇒ 生效」整条链**（2026-11-21 真机「筛选键没用」实证）⭐⭐⭐
+  #   ⇒ 三个静默断点：① infoMap 没传 ② 柴阅 exploreKinds 命中缓存 ③ App 侧 kindsCache 不失效 ⭐⭐⭐
+  "filter-action-wiring:test/filter-action-wiring.test.js"
   # ⭐⭐⭐⭐⭐ **条件编译块的 import 完整性**（2026-11-21 移植柴阅的真实事故）⭐⭐⭐
   #   ⇒ 柴阅的 `Digests` 拆文件时漏了 `import CommonCrypto` ⇒ **Linux 沙盒编不到** ⭐⭐⭐
   #   ⇒ 沙盒门禁全绿 ⇒ 直到 CI 才报「cannot find 'CC_SHA224' in scope」⭐⭐⭐

@@ -1105,13 +1105,31 @@ final class SourceService {
     /// 缓存有效期（30 分钟）—— 站方的分类很少变，但线路故障时可能变
     private static let kindsCacheTTL: TimeInterval = 30 * 60
 
+    /// ⭐⭐⭐ **清掉某个源的分类缓存**（筛选后调用 ⇒ 让站方变量变化立刻生效）⭐⭐⭐
+    ///
+    /// ⚠️ **为什么按「源 URL 前缀」删**：缓存键是 `<源URL>|<平台>|<标签>` ⇒ 前缀匹配即可 ⭐⭐⭐
+    static func invalidateKindsCache(source: BookSource) {
+        let prefix = "\(source.bookSourceUrl)|"
+        for key in kindsCache.keys where key.hasPrefix(prefix) {
+            kindsCache.removeValue(forKey: key)
+            kindsCacheAt.removeValue(forKey: key)
+        }
+    }
+
     private static func kindsCacheKey(source: BookSource) -> String {
         var platform = ""
         var tab = ""
-        if let d = SourceVariables.effectiveVars(for: source.bookSourceUrl).data(using: .utf8),
-           let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
-            platform = (obj["find_source"] as? String) ?? ""
-            tab = (obj["find_tab"] as? String) ?? ""
+        // ⭐⭐⭐⭐⭐ **两个槽都要读**（2026-11-21 真机「筛选键没用」实证）⭐⭐⭐
+        //   · **书源变量槽**（`sourcevars.`）：宿主自己写变量的那条路（`setHostMap`）⭐⭐⭐
+        //   · **站方变量槽**（`sourcevariable.`）：**站方 action 写的就是这一格**（`source.setVariable`）⭐⭐⭐
+        //     ⚠️ 之前只读书源变量槽 ⇒ 站方 action 改的变量**看不到** ⇒ **缓存不失效** ⭐⭐⭐
+        //   ⇒ 两槽都读 ⇒ 任一变化都会让缓存键变 ⇒ 自动失效 ⭐⭐⭐
+        for raw in [SourceVariables.effectiveVars(for: source.bookSourceUrl),
+                    SourceVariables.variable(for: source.bookSourceUrl)] {
+            guard let d = raw.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+            if platform.isEmpty { platform = (obj["find_source"] as? String) ?? "" }
+            if tab.isEmpty { tab = (obj["find_tab"] as? String) ?? "" }
         }
         return "\(source.bookSourceUrl)|\(platform)|\(tab)"
     }
@@ -1165,6 +1183,15 @@ final class SourceService {
     func applySourceFilter(source: BookSource, action: String,
                            title: String, value: String) async throws -> Bool {
         var p: [String: Any] = ["action": action, "title": title, "value": value]
+        // ⭐⭐⭐⭐⭐ **必须传 `infoMap`**（2026-11-21 真机「筛选键没用」实证）⭐⭐⭐
+        //   站方 action 的真实形态（NovelHub jsLib 原文）：
+        //     `c['<key>'] = (function(){ var v = infoMap['<标题>']; …
+        //        if(v===null||v===undefined||m[v]===undefined){ return '<默认值>'; }
+        //        return m[v]; })();` ⭐⭐⭐
+        //   ⇒ **`infoMap` 拿不到值 ⇒ 站方回落到默认值** ⇒ 筛选看起来「完全没反应」⭐⭐⭐
+        //   ⇒ 而柴阅的 `runExploreAction(action, infoMap:)` 正是为此设计的（extra 注入）⭐⭐⭐
+        //   ⇒ 宿主没传 ⇒ 柴阅收到空 map ⇒ **必然失效** ⭐⭐⭐
+        p["infoMap"] = [title: value]
         // ⭐⭐⭐ 走缓存（同上）
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
@@ -1197,6 +1224,14 @@ final class SourceService {
                                        origin: Self.stationWroteIt(obj) ? .station : .app)
         }
         let dict = raw as? [String: Any] ?? [:]
+        // ⭐⭐⭐⭐⭐ **筛选成功后必须清掉分类缓存**（2026-11-21 真机「筛选键没用」实证）⭐⭐⭐
+        //   ⇒ 站方 action 写的是【**站方变量整串**】（`source.setVariable`）⭐⭐⭐
+        //   ⇒ 而 `kindsCacheKey` 只读【**书源变量槽**】（`effectiveVars`）⇒ **缓存键不变** ⭐⭐⭐
+        //   ⇒ ⇒ 缓存不失效 ⇒ 下次进发现页仍拿到**旧平台的分类 URL** ⇒ 筛选「又白点了」⭐⭐⭐
+        //   ⇒ 正解：筛选成功 ⇒ **按源 URL 清掉缓存**（确定性的失效，不依赖缓存键猜对）⭐⭐⭐
+        if dict["ok"] as? Bool == true {
+            Self.invalidateKindsCache(source: source)
+        }
         return dict["ok"] as? Bool ?? false
     }
 
