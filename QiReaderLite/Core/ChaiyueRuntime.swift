@@ -1,0 +1,144 @@
+import Foundation
+import LegadoEngine
+
+// ⭐⭐⭐⭐⭐ **柴阅引擎的运行环境**（2026-11-21 移植柴阅/Chaiyue）
+//
+// ⚠️⚠️⚠️ **为什么必须有这一层**：
+//   柴阅把书源状态写进 `KeyValueStore`，键名是 `cache_sourceVariable_<源URL>` /
+//   `cache_v_<源URL>_<变量名>` / `cache_userInfo_<源URL>` ⭐⭐⭐
+//   而轻阅的状态在 **UserDefaults 的几个槽**（`sourcevars.` / `sourcevariable.` / `sourcelogin.`）⭐⭐⭐
+//   ⇒ 两边**键结构与值的形态都不同** ⇒ 必须有一层明确映射 ⭐⭐⭐
+//   ⇒ ⚠️ **漏映射的后果极隐蔽**：解锁态存不下来 ⇒ 下次又是未解锁 ⇒ **发现页 0 分类**
+//     （这正是 build297–302 反复踩的坑）⇒ 这一层**必须有门禁**⭐⭐⭐
+//
+// ⭐⭐⭐ **放在 Core/ 而不是 UI/** ⇒ UI 一行都不用改（用户明确要求）⭐⭐⭐
+enum ChaiyueRuntime {
+
+    // MARK: - 单例（引擎环境整个 App 共享一个 ⇒ 状态与缓存都共享）
+
+    /// ⭐⭐⭐ **持久化后端**（⇒ 柴阅的书源变量/登录信息都落在这儿 ⇒ 跨会话保持）⭐⭐⭐
+    ///
+    /// ⚠️ **必须是同一个实例**（环境用它、宿主也用它 ⇒ 否则两套状态）⭐⭐⭐
+    static let store: ChaiyueKeyValueStore = makeStore()
+
+    /// ⭐⭐⭐ **引擎环境**（HTTP / Cookie / 缓存 / 变量存储 的持有者）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **初始化顺序**（`static let` 是惰性的 ⇒ 首次访问才构造）⭐⭐⭐
+    ///   `store` 不依赖 `environment` ⇒ 先就绪；`environment` 依赖 `store` ⇒ 没问题 ⭐⭐⭐
+    ///   ⚠️ **但 `androidID` 依赖 `environment`** ⇒ 它必须是 **computed**（不能是 `static let`）
+    ///     ⇒ 否则会形成 **初始化循环** ⇒ 编译期死锁/崩溃 ⭐⭐⭐
+    static let environment: LegadoEngineHost.Environment = {
+        LegadoEngineHost.Environment(store: store)
+    }()
+
+    /// ⭐⭐⭐ **androidID**（柴阅用它派生登录信息的加密密钥）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **必须与柴阅自己算的完全一致**（否则登录信息解不开）⭐⭐⭐
+    ///   柴阅的算法：`String(Hex.encode(SHA256(deviceID))).prefix(16)` ⇒ 16 个 hex 字符 ⭐⭐⭐
+    ///   ⚠️ **这里从 `environment.androidID` 直接取**（不自己算 ⇒ 不会漂移）⭐⭐⭐
+    ///   ⚠️ 必须是 **computed**（`static let` 会与 `environment` 形成初始化循环）⭐⭐⭐
+    static var androidID: String { environment.androidID }
+
+    // MARK: - 存储适配
+
+    /// ⭐⭐⭐ **构造 store**（把轻阅的槽接给柴阅）⭐⭐⭐
+    private static func makeStore() -> ChaiyueKeyValueStore {
+        ChaiyueKeyValueStore(
+            readSlot: { readSlot($0) },
+            writeSlot: { writeSlot($0, $1) },
+            listAllSourceVars: { allSourceVars() },
+            listPlainCacheKeys: { prefix in
+                UserDefaults.standard.dictionaryRepresentation().keys
+                    .filter { $0.hasPrefix(cachePrefix) && $0.hasPrefix(prefix) }
+                    .map { String($0.dropFirst(cachePrefix.count)) }
+            },
+            loginInfoToChaiyue: { plain in loginInfoToChaiyue(plain) },
+            loginInfoFromChaiyue: { stored in loginInfoFromChaiyue(stored) }
+        )
+    }
+
+    /// ⭐⭐⭐ **读槽**（柴阅键 ⇒ 轻阅槽）⭐⭐⭐
+    static func readSlot(_ slot: ChaiyueKeyValueStore.SlotRef) -> String? {
+        switch slot {
+        case .stationVariable(let sourceKey):
+            // ⭐⭐⭐ 站方变量 = **一整串**（Legado 语义）⭐⭐⭐
+            let v = SourceVariables.variable(for: sourceKey)
+            return v.isEmpty ? nil : v
+        case .sourceVar(let sourceKey, let name):
+            // ⭐⭐⭐ 书源变量 = 轻阅那边存的是**一个 JSON map** ⇒ 取其中一项 ⭐⭐⭐
+            let v = SourceVariables.varsMap(for: sourceKey)[name] ?? ""
+            return v.isEmpty ? nil : v
+        case .loginInfo(let sourceKey):
+            let v = SourceVariables.loginInfoJSON(for: sourceKey)
+            return v.isEmpty ? nil : v
+        case .loginHeader(let sourceKey):
+            let v = SourceVariables.loginHeader(for: sourceKey)
+            return v.isEmpty ? nil : v
+        case .deviceID:
+            return UserDefaults.standard.string(forKey: deviceIDKey)
+        case .plainCache(let key), .opaque(let key):
+            return UserDefaults.standard.string(forKey: cachePrefix + key)
+        }
+    }
+
+    /// ⭐⭐⭐ **写槽**（轻阅槽 ← 柴阅值）⭐⭐⭐
+    static func writeSlot(_ slot: ChaiyueKeyValueStore.SlotRef, _ value: String?) {
+        switch slot {
+        case .stationVariable(let sourceKey):
+            SourceVariables.setVariable(value ?? "", for: sourceKey)
+        case .sourceVar(let sourceKey, let name):
+            // ⚠️⚠️ **单写一项**（保留其它项 ⇒ 走 SourceVariables 的专用方法）⭐⭐⭐
+            SourceVariables.setSourceVarItem(name, value ?? "", for: sourceKey)
+        case .loginInfo(let sourceKey):
+            SourceVariables.setLoginInfoJSON(value ?? "", for: sourceKey)
+        case .loginHeader(let sourceKey):
+            SourceVariables.setLoginHeader(value ?? "", for: sourceKey)
+        case .deviceID:
+            UserDefaults.standard.set(value, forKey: deviceIDKey)
+        case .plainCache(let key), .opaque(let key):
+            UserDefaults.standard.set(value, forKey: cachePrefix + key)
+        }
+    }
+
+    /// ⭐⭐⭐ **枚举全部书源变量**（源 URL + 变量名）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么要全量枚举**（而不是按源查）：
+    ///   柴阅用 `keys(withPrefix: "cache_v_<源URL>_")` 枚举 ⇒ 要**从前缀反推源 URL** ⭐⭐⭐
+    ///   ⚠️ 但**源 URL 里可能含下划线** ⇒ 反推**有歧义** ⇒ 全量枚举 + 前缀过滤才无歧义 ⭐⭐⭐
+    static func allSourceVars() -> [(sourceKey: String, name: String)] {
+        var out: [(sourceKey: String, name: String)] = []
+        for sourceUrl in SourceVariables.allSourceUrls() {
+            for name in SourceVariables.varsMap(for: sourceUrl).keys {
+                out.append((sourceKey: sourceUrl, name: name))
+            }
+        }
+        return out
+    }
+
+    // MARK: - loginInfo 的形态转换（柴阅存**密文**、轻阅存**明文 JSON**）
+
+    /// ⭐⭐⭐ **明文 ⇒ 柴阅形态**（Base64 密文）⭐⭐⭐
+    static func loginInfoToChaiyue(_ plain: String) -> String {
+        #if canImport(JavaScriptCore) && !os(Linux)
+        return (try? LegadoEngineHost.LoginCrypto.encrypt(plain, androidID: androidID)) ?? plain
+        #else
+        return plain
+        #endif
+    }
+
+    /// ⭐⭐⭐ **柴阅形态 ⇒ 明文**⭐⭐⭐
+    static func loginInfoFromChaiyue(_ stored: String) -> String {
+        #if canImport(JavaScriptCore) && !os(Linux)
+        return (try? LegadoEngineHost.LoginCrypto.decrypt(stored, androidID: androidID)) ?? stored
+        #else
+        return stored
+        #endif
+    }
+
+    // MARK: - 常量
+
+    /// 柴阅的设备 ID 键（轻阅侧持久化位置）
+    static let deviceIDKey = "qr.chaiyue.deviceID"
+    /// 柴阅「其它缓存」在轻阅侧的命名空间
+    static let cachePrefix = "qr.chaiyue.cache."
+}

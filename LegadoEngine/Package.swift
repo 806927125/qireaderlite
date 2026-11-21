@@ -1,6 +1,25 @@
 // swift-tools-version:5.9
 import PackageDescription
 
+// ⭐⭐⭐⭐⭐ **轻阅 Lite 的引擎包（2026-11-21 起 = 柴阅/Chaiyue 的引擎实现）**
+//
+// ⚠️⚠️⚠️ **许可**：柴阅（github.com/Lincb522/Chaiyue）是 **GPL-3.0** ⭐⭐⭐
+//   ⇒ 本包内的 `ChaiyueModels` / `ChaiyueEngine` 源码是柴阅的，**受 GPL-3.0 约束** ⭐⭐⭐
+//   ⇒ 用户的选择：**自用、不分发** ⇒ GPL 的分发义务不触发 ⭐⭐⭐
+//   ⚠️⚠️ **一旦把本 App 的二进制分发给他人 ⇒ 必须以 GPL-3.0 发布并提供完整源码** ⭐⭐⭐
+//   ⇒ 详见 `docs/移植-柴阅引擎.md` 与仓库根的 `LICENSE-注意.md`
+//
+// ⭐ **本包分三个 target**：
+//   · `ChaiyueModels` = 柴阅的 `ReaderModels`（13 文件）⇒ **Linux 可编** ✔
+//   · `ChaiyueEngine` = 柴阅的 `RuleEngine`（34 文件）⇒ JS 部分 Apple only ⭐⭐⭐
+//   · `LegadoEngine`  = **我们写的适配层**（宿主契约 + 状态搬运）⇒ **Linux 可编** ✔
+//
+// ⭐⭐⭐ **为什么 JS 部分要条件编译**（记忆老坑：「沙盒编不到 = 没有门禁」）：
+//   柴阅用 **JavaScriptCore**（与轻阅一致）⇒ Linux 沙盒编不到 ⇒ 若整包编不过
+//   ⇒ **沙盒门禁全部失效**（当天没被验过都不知道）⭐⭐⭐
+//   ⇒ 解法：`#if canImport(JavaScriptCore) && !os(Linux)` 包裹 JS 层 ⭐⭐⭐
+//     ⇒ Apple 上功能**完全不变**；Linux 上少了 JS 求值能力，但**规则解析/URL/编码/状态**都在 ⭐⭐⭐
+//   ⇒ ⚠️ 这是**我们加的补丁**（与上游有 diff）⇒ 同步柴阅上游时需重新套用 ⇒ 已记录 ⭐⭐⭐
 let package = Package(
     name: "LegadoEngine",
     platforms: [.iOS(.v16), .macOS(.v13)],
@@ -8,27 +27,39 @@ let package = Package(
         .library(name: "LegadoEngine", targets: ["LegadoEngine"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
-        .package(url: "https://github.com/tid-kijyun/Kanna.git", from: "5.2.7"),
-        // ⭐⭐⭐⭐⭐ **swift-crypto**（2026-11-19 CI build296 实证）
-        //   `JS/JSNatives.swift` 里 `import Crypto` ⇒ Apple 平台上 `Crypto` **不是系统模块**
-        //   （Apple 只有 `CryptoKit`）⇒ **不声明这个依赖 ⇒ iOS 编译必挂**：
-        //   `error: Unable to find module dependency: 'Crypto'` ⭐⭐⭐
-        //   ⇒ swift-crypto 在 Apple 平台上就是 CryptoKit 的再导出（模块名仍是 `Crypto`）⭐⭐⭐
-        //   ⚠️ Linux 侧**编不到**这个文件（`#if canImport(JavaScriptCore) && !os(Linux)`）
-        //   ⇒ **沙盒 Linux 门禁抓不到这个错** ⇒ 只能靠 CI ⇒ ⇒ 必须有静态门禁兜底 ⭐⭐⭐
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.14.3"),
+        .package(url: "https://github.com/tid-kijyun/Kanna.git", from: "6.1.0"),
+        // ⭐⭐⭐ **Sextant**（柴阅用它做过滤表达式 ⇒ 比纯正则强 ⇒ 这是柴阅比轻阅强的地方）⭐⭐⭐
+        .package(url: "https://github.com/KittyMac/Sextant.git", from: "0.4.41"),
+        // ⭐⭐⭐⭐⭐ **swift-crypto**（2026-11-21 移植柴阅实证）
+        //   `Crypto/Digests.swift` 用 `import Crypto` 取 MD5/SHA ⭐⭐⭐
+        //   ⇒ **Apple 平台 = CryptoKit 的再导出**（符号一致）／**Linux = 纯 Swift 实现** ⇒ 一个模块名两边通用 ⭐⭐⭐
+        //   ⚠️ **必须在 Package.swift 声明** ⇒ 否则 Apple 上报「Unable to find module dependency: 'Crypto'」⭐⭐⭐
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
     ],
     targets: [
+        // ① 柴阅的模型层（原样，target 名改成 ChaiyueModels）
         .target(
-            name: "LegadoEngine",
+            name: "ChaiyueModels",
+            path: "Sources/ChaiyueModels"
+        ),
+        // ② 柴阅的引擎层（原样 + 条件编译补丁）
+        .target(
+            name: "ChaiyueEngine",
             dependencies: [
-                "SwiftSoup",
-                "Kanna",
-                // ⭐ `Crypto`（swift-crypto 的 product 名就是 `Crypto`）
+                "ChaiyueModels",
+                .product(name: "SwiftSoup", package: "SwiftSoup"),
+                .product(name: "Kanna", package: "Kanna"),
+                .product(name: "Sextant", package: "Sextant"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ],
-            resources: [.copy("JS/Resources")]
+            path: "Sources/ChaiyueEngine"
+        ),
+        // ③ 我们的适配层（宿主契约 + 状态搬运；**纯逻辑 ⇒ Linux 沙盒可编 ⇒ 门禁活着**）
+        .target(
+            name: "LegadoEngine",
+            dependencies: ["ChaiyueEngine", "ChaiyueModels"],
+            path: "Sources/LegadoEngine"
         ),
         .testTarget(name: "LegadoEngineTests", dependencies: ["LegadoEngine"]),
     ]

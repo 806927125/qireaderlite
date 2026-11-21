@@ -336,6 +336,47 @@ enum SourceVariables {
         return out
     }
 
+    /// ⭐⭐⭐⭐⭐ **柴阅引擎要用的补充接口**（2026-11-21 移植柴阅）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么要加这几个**：柴阅的 `KeyValueStore` 需要
+    ///   ① 读/写**书源变量 map 的单项**（轻阅存的是一个 JSON map ⇒ 要能按项读写）⭐⭐⭐
+    ///   ② 读/写 **loginInfo 的 JSON 串**（UI 要明文 ⇒ 不能只给字典）⭐⭐⭐
+    ///   ③ **枚举所有源 URL**（柴阅要枚举「全部书源变量」⇒ 需要源清单）⭐⭐⭐
+    ///   ⇒ 这些都是**存储层的原语** ⇒ 放这里 ⇒ 槽名单一真相 ⇒ 不会有两份前缀常量 ⭐⭐⭐
+    /// ⭐⭐⭐ **写书源变量 map 的单项**（保留其它项 ⇒ 不许整体覆盖）⭐⭐⭐
+    static func setSourceVarItem(_ name: String, _ value: String, for sourceUrl: String) {
+        guard !sourceUrl.isEmpty else { return }
+        var m = varsMap(for: sourceUrl)
+        if value.isEmpty { m.removeValue(forKey: name) } else { m[name] = value }
+        let json = varsJSON(m)
+        setVars(json.isEmpty ? "{}" : json, for: sourceUrl)
+    }
+
+    /// ⭐⭐⭐ **读 loginInfo 的 JSON 串**（UI/宿主要原文 ⇒ 不能只给字典）⭐⭐⭐
+    static func loginInfoJSON(for sourceUrl: String) -> String {
+        guard !sourceUrl.isEmpty else { return "" }
+        return UserDefaults.standard.string(forKey: loginPrefix + sourceUrl) ?? ""
+    }
+
+    /// ⭐⭐⭐ **所有已知源 URL**（从书源变量 / 站方变量 / 登录信息三个槽反查）⭐⭐⭐
+    ///
+    /// ⚠️ **只反查这三个槽**（UserDefaults 里没有「键清单」API ⇒ 只能反查）⭐⭐⭐
+    ///   ⇒ 覆盖「有状态的源」⇒ 正是柴阅需要枚举的那些 ⇒ 够用 ⭐⭐⭐
+    static func allSourceUrls() -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for (prefix, suffix) in [(varsPrefix, ""), (variablePrefix, ""), (loginPrefix, "")] {
+            for key in UserDefaults.standard.dictionaryRepresentation().keys {
+                guard key.hasPrefix(prefix), key.hasSuffix(suffix) else { continue }
+                let url = String(key.dropFirst(prefix.count).dropLast(suffix.count))
+                guard !url.isEmpty, !seen.contains(url) else { continue }
+                seen.insert(url)
+                out.append(url)
+            }
+        }
+        return out
+    }
+
     /// ⭐⭐⭐ **把 map 序列化回书源变量串**
     static func varsJSON(_ m: [String: String]) -> String {
         guard !m.isEmpty,

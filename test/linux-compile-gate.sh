@@ -46,6 +46,9 @@ FILES=(
   #   （`ServiceError` 作用域那个错就是这么漏到 CI 的）⭐⭐⭐
   #   ⇒ 现在链**真引擎**编 ⇒ 它的类型错 3 秒就能抓 ⭐⭐⭐
   "QiReaderLite/Core/LegadoEngineBackend.swift"
+  # ⭐⭐⭐ **柴阅移植的新文件**（2026-11-21）⇒ 必须进编译清单 ⇒ 否则类型错抓不到 ⭐⭐⭐
+  "QiReaderLite/Core/ChaiyueRuntime.swift"
+  "QiReaderLite/Core/ChaiyueKindsAdapter.swift"
   # ⭐⭐⭐⭐⭐ **`ExploreKindsNormalizer.swift`**（2026-11-19 build296 真机实证）
   #   ⇒ 站方 exploreUrl 的分类归一化（**只依赖 Foundation** ⇒ 沙盒能编能跑）
   #   ⇒ 独立成文件 ⇒ 对拍门禁能【直接编它】⇒ App 与门禁同源 ⇒ 永不漂 ⭐⭐⭐
@@ -75,6 +78,9 @@ FILES=(
 #   ⇒ 之前它被 stub 掉 ⇒ `ServiceError` 作用域那个错**沙盒完全看不见** ⭐⭐⭐
 FILES_ENGINE=(
   "QiReaderLite/Core/LegadoEngineBackend.swift"
+  # ⭐⭐⭐ **柴阅移植的新文件**（2026-11-21）⇒ 必须进编译清单 ⇒ 否则类型错抓不到 ⭐⭐⭐
+  "QiReaderLite/Core/ChaiyueRuntime.swift"
+  "QiReaderLite/Core/ChaiyueKindsAdapter.swift"
 )
 
 echo "=== 编译 App 侧 Core/（swiftc 真编 ⇒ 抓语法/类型错）==="
@@ -103,7 +109,13 @@ ENGINE_MODULES="$(find_modules || true)"
 if [ -z "$ENGINE_MODULES" ] && [ -d "$ENGINE_DIR" ]; then
   echo "  （先编一次本地引擎包 LegadoEngine/ ……）"
   (cd "$ENGINE_DIR" && "$SWIFTC" --version >/dev/null 2>&1) && \
-    (cd "$ENGINE_DIR" && timeout 900 swift build >/dev/null 2>&1)
+    # ⭐⭐⭐⭐⭐ **必须先删 build plan**（2026-11-21 移植柴阅实证）⭐⭐⭐
+    #   SwiftPM 的 **build plan（.build/*.yaml）不会自动纳入新加的 .swift 文件** ⭐⭐⭐
+    #   ⇒ 新文件（例：柴阅的 `Compat/LegadoPublicAPI.swift`）**根本没被编译** ⭐⭐⭐
+    #   ⇒ 症状：宿主引用新符号 ⇒ 报「cannot find X in scope」⇒ **看起来像代码写错了** ⭐⭐⭐
+    #   ⇒ 其实只是 plan 过期 ⇒ **假红** ⇒ 会把人带偏（去改本来正确的代码）⭐⭐⭐
+    # ⇒ 只删 yaml（保留 .build/debug 产物 ⇒ 仍是增量 ⇒ 约 12s）⭐⭐⭐
+    (cd "$ENGINE_DIR" && rm -f .build/*.yaml && timeout 900 swift build >/dev/null 2>&1)
   ENGINE_MODULES="$(find_modules || true)"
 fi
 if [ -z "$ENGINE_MODULES" ]; then
