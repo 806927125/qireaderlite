@@ -696,8 +696,11 @@ struct SourceLoginSheet: View {
                 guard !r.name.isEmpty else { return nil }
                 return Field(name: r.name, type: r.type, action: r.action)
             }
-            // ⚠️ **柴阅的行更权威**（它求值过站方脚本）⇒ 有行就用它 ⭐⭐⭐
-            if !mapped.isEmpty { fields = mapped }
+            // ⭐⭐⭐⭐⭐ **只在【静态解析不出来】时才用柴阅的行**（2026-11-21 实证）⭐⭐⭐
+            //   ⇒ 柴阅的 `resolveLoginRows` **只处理 `@js:`/`<js>`**；静态 JSON 走它的**预设行** ⭐⭐⭐
+            //   ⇒ 若无条件用柴阅的行覆盖 ⇒ **静态源会被预设行顶掉**（可能不是站方真正的行）⭐⭐⭐
+            //   ⇒ 规则：**静态优先**（秒开且最准）⇒ 静态为空才用柴阅求值出来的 ⭐⭐⭐
+            if fields.isEmpty, !mapped.isEmpty { fields = mapped }
         } catch {
             // ⚠️ **如实说清**（不静默 ⇒ 用户知道「没按钮」是引擎没给还是源没有）⭐⭐⭐
             if fields.isEmpty {

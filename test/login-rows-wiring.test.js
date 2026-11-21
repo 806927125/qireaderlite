@@ -50,6 +50,8 @@ console.log('\n=== 3. 登录面板：用它取行（静态只是兜底） ===');
 ok(/await load\(\)/.test(sheet), '.task 里 await load()（load 是 async）');
 ok(/SourceService\.shared\.loginRows\(source: source\)/.test(sheet),
    '★ 面板调 loginRows（★ @js: 的 loginUi 才有行）');
+ok(/if fields\.isEmpty, !mapped\.isEmpty \{ fields = mapped \}/.test(sheet),
+   '★ 静态优先（★ 柴阅只求值 @js: ⇒ 静态源不能被预设行顶掉）');
 ok(/JSONSerialization\.jsonObject\(with: data\) as\? \[\[String: Any\]\]/.test(sheet),
    '静态 JSON 解析仍在（兜底 ⇒ 静态源秒开）');
 ok(!/guard let raw = src\.loginUi, !raw\.isEmpty,[\s\S]{0,200}else \{ return \}/.test(sheet),

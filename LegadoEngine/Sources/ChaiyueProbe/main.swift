@@ -31,18 +31,17 @@ function _probeRows() {
 
 let loginUi = "@js:_probeRows()"
 
-let sourceJSON = """
-{"bookSourceUrl":"https://probe.invalid/login","bookSourceName":"登录探针",
- "loginUi": \(jsonString(loginUi)),
- "jsLib": \(jsonString(jsLib))}
-"""
-
-func jsonString(_ s: String) -> String {
-    let d = try! JSONSerialization.data(withJSONObject: [s], options: [])
-    // 取数组的第一个元素（带引号的字符串）
-    let arr = try! JSONSerialization.jsonObject(with: d) as! [String]
-    return arr[0]
-}
+// ⭐⭐⭐ **用 JSONEncoder 构造源 JSON**（别手拼 ⇒ 里面的换行/引号会炸）⭐⭐⭐
+let sourceJSON: String = {
+    let obj: [String: Any] = [
+        "bookSourceUrl": "https://probe.invalid/login",
+        "bookSourceName": "登录探针",
+        "loginUi": loginUi,
+        "jsLib": jsLib,
+    ]
+    let d = try! JSONSerialization.data(withJSONObject: obj, options: [])
+    return String(data: d, encoding: .utf8)!
+}()
 
 // ── 跑柴阅的 resolveLoginRows ─────────────────────────────────────────────
 let source = try! JSONDecoder().decode(BookSource.self, from: Data(sourceJSON.utf8))
@@ -51,7 +50,14 @@ let web = WebBook(source: source, environment: env)
 
 print("=== 登录表单探针（loginUi 是 @js: 薄壳）===")
 
-let rows = try await web.resolveLoginRows()
+let rows: [LoginRow]
+do {
+    rows = try await web.resolveLoginRows()
+} catch {
+    // ⚠️⚠️ **如实失败**（不伪装成功）⇒ CI（macOS）上这条会红 ⇒ 拦住「换装没解决」⭐⭐⭐
+    print("FAIL: resolveLoginRows 抛错 ⇒ \(error)")
+    exit(1)
+}
 print("ROWS=\(rows.count)")
 for r in rows {
     print("  - name=\(r.name) type=\(r.type.rawValue) action=\(r.action ?? "")")
