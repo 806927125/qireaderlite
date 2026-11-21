@@ -22,18 +22,27 @@ import ChaiyueEngine
 //   ② action `jmSetMode(java,'小说')` **能真跑**（⇒ `jmMode` 写进书源变量）⭐⭐⭐
 //   ③ 适配**幂等**（构建器连跑两次字节恒定）⭐⭐⭐
 
-let fixture = "test/fixtures/禁漫天堂-适配.json"
-
+// ⭐⭐⭐ **两个路径都试**（CI 里 cwd=LegadoEngine/；本地跑 cwd=repo 根）⭐⭐⭐
+let fixtureCandidates = ["test/fixtures/禁漫天堂-适配.json",
+                         "../test/fixtures/禁漫天堂-适配.json"]
 print("=== 禁漫天堂 · 登录面板探针（真引擎求值）===")
 
-guard let data = FileManager.default.contents(atPath: fixture),
-      let raw = try? JSONDecoder().decode(BookSource.self, from: data) else {
-    print("FAIL: 读不到 fixture（\(fixture)）⇒ 探针没验到")
+var decodedSource: BookSource?
+for path in fixtureCandidates {
+    if let d = FileManager.default.contents(atPath: path),
+       let src = try? JSONDecoder().decode(BookSource.self, from: d) {
+        decodedSource = src
+        print("fixture: \(path)")
+        break
+    }
+}
+guard let source = decodedSource else {
+    print("FAIL: 读不到 fixture（试过 \(fixtureCandidates.joined(separator: ", "))）⇒ 探针没验到")
     exit(1)
 }
 
 // ① 静态 loginUi 的行（**宿主也是自己解析静态的** ⇒ 探针同路径）
-guard let uiRaw = raw.loginUi, let uiData = uiRaw.data(using: .utf8),
+guard let uiRaw = source.loginUi, let uiData = uiRaw.data(using: .utf8),
       let rows = try? JSONSerialization.jsonObject(with: uiData) as? [[String: Any]] else {
     print("FAIL: loginUi 不是静态 JSON ⇒ 探针前提不成立")
     exit(1)
@@ -49,7 +58,7 @@ if nonEmpty == 0 {
 }
 
 let env = SourceEnvironment(store: MemoryKeyValueStore())
-let web = WebBook(source: raw, environment: env)
+let web = WebBook(source: source, environment: env)
 
 // ② 批量求值 viewName（**宿主用的是同一段逻辑** ⇒ 一次求值一批）⭐⭐⭐
 let quote = String(UnicodeScalar(34))
@@ -83,7 +92,7 @@ if let action = modeAction?["action"] as? String {
     // ⚠️ action 里带 `java` 参数 ⇒ 宿主执行时作用域里有 java ⇒ 这里照抄站方的写法 ⭐⭐⭐
     let expr = action.replacingOccurrences(of: "jmSetMode(java,", with: "jmSetMode(source,")
     _ = try? await web.evalJS(expr)
-    let mode = env.cache.get("v_\(raw.bookSourceUrl)_jmMode")
+    let mode = env.cache.get("v_\(source.bookSourceUrl)_jmMode")
     print("jmMode = \(mode ?? "(空)")")
     if mode != "小说" {
         print("FAIL: 点了「小说」但 jmMode 没写进去（= \(mode ?? "空"))⇒ 按钮点了没反应")
