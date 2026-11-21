@@ -54,6 +54,37 @@ enum ChaiyueRuntime {
     ///   ⚠️ 必须是 **computed**（`static let` 会与 `environment` 形成初始化循环）⭐⭐⭐
     static var androidID: String { environment.androidID }
 
+    // MARK: - ⭐⭐⭐⭐⭐ 线路变量的【备份 / 复位 / 恢复】（explore 失败自愈用）
+
+    /// ⭐⭐⭐ **线路变量名**（站方把「当前线路」写在哪）
+    /// ⚠️ 不同源叫法不同：`server`（大灰狼）、`jmHost`（禁漫天堂）… ⇒ ⇒ 都试 ⭐⭐⭐
+    static let lineVarNames = ["server", "jmHost", "host", "nhDlhHost"]
+
+    /// ⭐⭐⭐ **备份当前线路变量**（自愈失败时要恢复）⭐⭐⭐
+    static func takeLineBackup(for sourceUrl: String) -> [String: String] {
+        let vars = SourceVariables.varsMap(for: sourceUrl)
+        var out: [String: String] = [:]
+        for k in lineVarNames { if let v = vars[k], !v.isEmpty { out[k] = v } }
+        return out
+    }
+
+    /// ⭐⭐⭐ **清掉线路变量**（⇒ 站方回落**默认主站**）⭐⭐⭐
+    @discardableResult
+    static func resetLineVars(for sourceUrl: String) -> Bool {
+        let vars = SourceVariables.varsMap(for: sourceUrl)
+        var changed = false
+        for k in lineVarNames where vars[k] != nil {
+            SourceVariables.setSourceVarItem(k, "", for: sourceUrl)
+            changed = true
+        }
+        return changed
+    }
+
+    /// ⭐⭐⭐ **恢复线路变量**（自愈失败时用）⭐⭐⭐
+    static func restoreLineBackup(_ backup: [String: String], for sourceUrl: String) {
+        for (k, v) in backup { SourceVariables.setSourceVarItem(k, v, for: sourceUrl) }
+    }
+
     // MARK: - ⭐⭐⭐ 登录配套设施（柴阅的 ReaderPlatform）
 
     #if canImport(WebKit) && !os(Linux)

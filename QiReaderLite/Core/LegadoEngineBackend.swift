@@ -143,7 +143,39 @@ final class LegadoEngineBackend {
             //   ⇒ 一次请求 ⇒ 同时拿到「书单」与「站方状态/字节/规则是否命中」⭐⭐⭐
             //   ⇒ **分得清是站方没数据、还是规则没匹配上、还是 URL 错了** ⭐⭐⭐
             //   ⇒ 没有它就只能说「0 本」⇒ **定不了责**（书源问题 vs 引擎问题）⭐⭐⭐
-            let (books, diag) = try await web.exploreBookWithDiagnostics(url: kindUrl, page: page)
+            var (books, diag) = try await web.exploreBookWithDiagnostics(url: kindUrl, page: page)
+            // ⭐⭐⭐⭐⭐ **失败自愈：复位线路并重试一次**（2026-11-22 真机「还是一样」实证）⭐⭐⭐
+            //
+            //   真机证据：分类能出来（站方 exploreUrl 是 @js: 薄壳 ⇒ 求值成功）⇒ 但书单 0 本 ⭐⭐⭐
+            //   ⇒ 诊断里 **最终URL 变成了中转服**（`https://223.92.13.148/?parameter=…`）⭐⭐⭐
+            //     而站方主站（`abandon.yyc2mhau.cc`）**是好的**（实测 200 / 187KB / 200 张卡）⭐⭐⭐
+            //   ⇒ **根因：书源变量里的「线路」指向了一条已挂/返回加密载荷的线路**⭐⭐⭐
+            //     （用户点过「一键从发布页获取线路」⇒ 站方测速写进去的）⭐⭐⭐
+            //
+            //   ⇒ **通用修法**：explore 0 本 ⇒ **清掉线路变量** ⇒ 站方回落**默认主站** ⇒ **重试一次** ⭐⭐⭐
+            //     ⇒ 对**任何**「站方有线路数组」的源都成立（大灰狼的 8 条线路同理）⭐⭐⭐
+            //   ⇒ ⚠️ **重试仍失败 ⇒ 把线路恢复原值**（不把 App 留在更差的状态）⭐⭐⭐
+            // ⚠️⚠️ **不限定「响应字节≠0」**（2026-11-22 实证）⭐⭐⭐
+            //   ⇒ 坏线路是**连不上**（HTTP 000 ⇒ 0 字节）⇒ 若限定「有内容」则**自愈永不触发** ⭐⭐⭐
+            //   ⇒ 「站方真没数据」也是 0 字节 ⇒ 区分不了 ⇒ ⇒ **一律自愈一次**
+            //     （重试仍失败就恢复原线路 ⇒ 不把 App 留在更差的状态）⭐⭐⭐
+            if books.isEmpty {
+                let saved = ChaiyueRuntime.takeLineBackup(for: parsed.bookSourceUrl)
+                if ChaiyueRuntime.resetLineVars(for: parsed.bookSourceUrl) {
+                    engineLog("[explore] 0 本 ⇒ 复位线路变量后重试（站方回落默认主站）")
+                    let retry = try await web.exploreBookWithDiagnostics(url: kindUrl, page: page)
+                    if retry.0.isEmpty {
+                        // ⚠️ 重试也不行 ⇒ 恢复原线路（别把 App 留在更差的状态）⭐⭐⭐
+                        ChaiyueRuntime.restoreLineBackup(saved, for: parsed.bookSourceUrl)
+                        engineLog("[explore] 复位后仍 0 本 ⇒ 恢复原线路")
+                    } else {
+                        books = retry.0
+                        diag = retry.1
+                        diag["自愈"] = "复位线路后成功"
+                        engineLog("[explore] 复位线路后拿到 \(books.count) 本 ✅")
+                    }
+                }
+            }
             let items: [[String: Any]] = books.map { bookListItem($0) }
             var out: [String: Any] = ["books": items, "total": books.count, "nextUrl": ""]
             out["__diag"] = diag

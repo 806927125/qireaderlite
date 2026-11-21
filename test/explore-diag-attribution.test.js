@@ -75,7 +75,10 @@ console.log('\n=== 5. ★ 筛选栏为 0 时必须能【分辨：站方没给 vs
 console.log('\n=== 6. 变异对照（改坏 ⇒ 必须红） ===');
 
 {
-  const m1 = host.replace('web.exploreBookWithDiagnostics(url: kindUrl, page: page)', 'web.exploreBook(url: kindUrl, page: page)');
+  // ⚠️⚠️⚠️ **必须全局替换**（2026-11-22 实证）：自愈代码里**还有第二处调用** ⇒
+  //   `String.replace` 只换第一处 ⇒ 变异无效 ⇒ 门禁没牙齿 ⭐⭐⭐
+  const m1 = host.split('web.exploreBookWithDiagnostics(url: kindUrl, page: page)')
+                  .join('web.exploreBook(url: kindUrl, page: page)');
   ok(!/exploreBookWithDiagnostics/.test(m1), '★ 变异①（不用诊断版）⇒ 被抓住');
 
   // ⚠️⚠️⚠️ **必须用 split/join 全局替换**（现在有**两处** `__diag` ⇒ `replace` 只换第一处 ⇒ 变异无效）⭐⭐⭐
