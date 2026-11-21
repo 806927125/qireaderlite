@@ -192,10 +192,15 @@ print("人话名：\(joined)")
 // ④ 断言 2：**表达式**的显示名（漫画/小说/视频）⇒ 需要引擎 ⇒ Linux 上不要求，CI 上必须有 ⭐⭐⭐
 //    ⇒ 判据：字面量已拿到 ⇒ 说明「字面量不依赖引擎」这条契约成立 ⭐⭐⭐
 let hasModeLabels = ["漫画", "小说", "视频"].allSatisfy { joined.contains($0) }
-if !hasModeLabels {
-    print("· 表达式类按钮名（漫画/小说/视频）本次没求出（★ Linux 无 JSC ⇒ 预期）")
+if jsAvailable {
+    // ⭐⭐⭐ **CI（macOS，有 JSC）上必须全过** ⇒ 否则回归会被拦住 ⭐⭐⭐
+    if !hasModeLabels {
+        print("FAIL: 表达式类按钮名没求出来（漫画/小说/视频）⇒ 用户看不到这些按钮")
+        exit(1)
+    }
+    print("★ 表达式类按钮名也求出来了（📖 漫画 / 📝 小说 / 🎬 视频）")
 } else {
-    print("★ 表达式类按钮名也求出来了（CI 上应走这条）")
+    print("· 表达式类按钮名（漫画/小说/视频）本次没求出（★ Linux 无 JSC ⇒ 预期；CI 上会验）")
 }
 
 // ④ 断言：action 能真跑（jmSetMode 写书源变量）⭐⭐⭐
