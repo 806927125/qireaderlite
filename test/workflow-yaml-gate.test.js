@@ -83,5 +83,29 @@ for (const f of files) {
   }
 }
 
+
+// ⭐⭐⭐⭐⭐ **YAML 的 plain scalar 里不能有裸的「ASCII 冒号 + 空格」**（2026-11-21 实证）⭐⭐⭐
+//   ⇒ 症状：workflow **解析失败** ⇒ run 有 0 个 job ⇒ 「CI 红了但一个步骤都没跑」⭐⭐⭐
+//   ⇒ 极易误判成「代码有问题」⇒ 实际是 **YAML 语法**问题 ⭐⭐⭐
+//   ⇒ 判据：`- name: xxx: yyy` ⇒ 冒号后跟空格 ⇒ 被当成「键: 值」⇒ 解析失败 ⭐⭐⭐
+{
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const wf = path2.join(__dirname, '..', '.github/workflows/build-ipa.yml');
+  const lines = fs2.readFileSync(wf, 'utf8').split('\n');
+  const bad = [];
+  lines.forEach((ln, i) => {
+    const m = ln.match(/^\s*-?\s*name:\s+(.*)$/);
+    if (!m) return;
+    const val = m[1].trim();
+    if (val.startsWith('"') || val.startsWith("'")) return;      // 已加引号 ⇒ 安全
+    // 去掉行尾注释后再找「ASCII 冒号 + 空白」
+    const bare = val.replace(/\s+#.*$/, '');
+    if (/[^\s]:\s/.test(bare)) bad.push(`${i + 1}: ${ln.trim()}`);
+  });
+  ok(bad.length === 0, `所有 - name: 的值都安全（裸的「ASCII 冒号+空格」会让整个 workflow 解析失败）`,
+     bad.join(' | '));
+}
+
 console.log(`\n通过 ${pass} / 失败 ${fail}`);
 process.exit(fail === 0 ? 0 : 1);
