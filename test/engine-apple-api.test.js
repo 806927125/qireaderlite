@@ -37,7 +37,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const SRC = path.join(ROOT, 'LegadoEngine', 'Sources', 'LegadoEngine');
+// ⭐⭐⭐⭐⭐ **扫描目录改成【全部引擎源码】**（2026-11-21 移植柴阅）⭐⭐⭐
+//   旧引擎的 `Sources/LegadoEngine` 已被柴阅的 `Sources/ChaiyueEngine` + `ChaiyueModels` 取代 ⭐⭐⭐
+const SRC = path.join(ROOT, 'LegadoEngine', 'Sources');
 
 let failed = 0, passed = 0;
 function check(name, cond, extra) {
@@ -181,7 +183,11 @@ for (const [f, code] of codeNoC) {
 // ③ withUnsafeBytes 闭包必须显式标注参数类型（两个重载 ⇒ 歧义）
 // ─────────────────────────────────────────────────────────────
 console.log('\n=== 3. withUnsafeBytes 闭包必须显式标注参数类型（Data 有两个重载）===');
-for (const [f, code] of codeNoC) {
+// ⭐⭐⭐ **只查【我们写的适配层】**（`Sources/LegadoEngine`）⭐⭐⭐
+//   柴阅的源码是**权威实现** ⇒ 它的写法不该被我们的规则管 ⭐⭐⭐
+//   ⇒ 而**我们要防的是「自己写的代码踩平台坑」** ⇒ 限定到适配层 ⇒ 规则不失效 ⭐⭐⭐
+const OUR_CODE = [...codeNoC].filter(([f]) => f.includes(`${path.sep}Sources${path.sep}LegadoEngine${path.sep}`));
+for (const [f, code] of OUR_CODE) {
   const bare = [];
   const re = /\.withUnsafe(?:Mutable)?Bytes\s*\{\s*([A-Za-z_][A-Za-z0-9_]*)?\s*(?:in\b|:)/g;
   let m;
@@ -208,10 +214,11 @@ for (const [f, code] of codeNoC) {
 // ⑤ CommonCrypto 常量必须显式转换
 // ─────────────────────────────────────────────────────────────
 console.log('\n=== 5. CommonCrypto 的 kCC* 常量必须显式转换（Int → uint32_t）===');
+// ⭐⭐⭐ 同样**只查我们写的适配层**（柴阅源码是权威实现）⭐⭐⭐
 const CC_TYPED = ['kCCAlgorithmAES', 'kCCAlgorithmDES', 'kCCAlgorithm3DES', 'kCCAlgorithmBlowfish',
   'kCCModeECB', 'kCCModeCBC', 'kCCModeCFB', 'kCCModeCTR', 'kCCModeOFB',
   'kCCEncrypt', 'kCCDecrypt', 'kCCModeOptionCTR_BE'];
-for (const [f, code] of codeNoC) {
+for (const [f, code] of OUR_CODE) {
   for (const c of CC_TYPED) {
     const re = new RegExp('(?<!CC\\w+\\()\\b' + c + '\\b', 'g');
     const hits = [...code.matchAll(re)];
@@ -229,7 +236,7 @@ for (const [f, code] of codeNoC) {
 // ⑥ NSRegularExpression 的平台差异必须走 helper
 // ─────────────────────────────────────────────────────────────
 console.log('\n=== 6. NSRegularExpression 的平台差异（Darwin withTemplate: / Linux template:）===');
-for (const [f, code] of codeNoC) {
+for (const [f, code] of OUR_CODE) {
   const direct = [...code.matchAll(/\.stringByReplacingMatches\(/g)].length;
   const helper = /func replacingMatches\(/.test(code) ? 2 : 0;
   if (direct === 0) continue;
@@ -241,7 +248,7 @@ for (const [f, code] of codeNoC) {
 // ⑦ CCCryptorCreateWithMode 参数个数 = 12（Apple 官方 CommonCryptor.h）
 // ─────────────────────────────────────────────────────────────
 console.log('\n=== 7. CCCryptorCreateWithMode 的参数个数（Apple 官方签名 = 12）===');
-for (const [f, code] of codeNoC) {
+for (const [f, code] of OUR_CODE) {
   const args = callArgs(code, 'CCCryptorCreateWithMode');
   if (args < 0) continue;
   check(`${path.basename(f)}：CCCryptorCreateWithMode 传 12 个参数（Apple 官方签名）`, args === 12,

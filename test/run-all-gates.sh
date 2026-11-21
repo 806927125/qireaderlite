@@ -28,7 +28,8 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **变异对照**（2026-11-19 实证）：证明上面那条门禁**可证伪**
   #   ⇒ 上一版门禁**断言了错误结论** ⇒ 门禁一直绿 + CI 一直红 ⇒ 两个都对不了 ⭐⭐⭐
   #   ⇒ 变异＝把实现改坏 ⇒ 门禁**必须红** ⇒ 否则那条断言就是摆设 ⭐⭐⭐
-  "engine-apple-api-mutation:test/engine-apple-api.mutation.test.js"
+  # ⚠️ **engine-apple-api-mutation 已删**（2026-11-21）：变异全针对**旧引擎**的 `Crypto.swift`
+  #   （compression_stream / CCPadding…）⇒ 旧引擎已换成柴阅 ⇒ **前提消失** ⭐⭐⭐
   # ⭐⭐⭐⭐⭐ **App 侧类型撞名 / 引用不存在的类型**（2026-11-19 CI build296 实证）
   #   ⇒ `EngineLogPanel.swift` 里的类被错命名成 `EngineLog` ⇒ 和 `EngineLog.swift` 的 enum 撞名
   #      ⇒ 满屏「cannot find 'EngineLogPanel'」⇒ **沙盒完全看不见**（那个文件 import UIKit ⇒ 只留了 stub）⭐⭐⭐
