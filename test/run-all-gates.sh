@@ -68,6 +68,11 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **发现页筛选栏的「选中 ⇒ 生效」整条链**（2026-11-21 真机「筛选键没用」实证）⭐⭐⭐
   #   ⇒ 三个静默断点：① infoMap 没传 ② 柴阅 exploreKinds 命中缓存 ③ App 侧 kindsCache 不失效 ⭐⭐⭐
   "filter-action-wiring:test/filter-action-wiring.test.js"
+  # ⭐⭐⭐⭐⭐ **筛选变量的【写入 ⇒ 站方读回】必须【真跑】**（2026-11-21 真机「筛选键没用」二次实证）⭐⭐⭐
+  #   ⇒ 上一轮只补了 `infoMap` ⇒ 没生效 ⇒ 因为 UI 走的是「轻阅自己写 paramKey」那条路 ⭐⭐⭐
+  #   ⇒ 而站方 exploreUrl 读的是站方变量整串里的 **`src`** ⇒ 轻阅写的 `find_source` **它不读** ⭐⭐⭐
+  #   ⇒ 本门禁用 **swiftc 编 App 的真文件** 真跑一遍「写入 → 站方读回」⇒ 门禁变红 ⇒ App 一定有问题 ⭐⭐⭐
+  "filter-var-roundtrip:test/filter-var-roundtrip.test.js"
   # ⭐⭐⭐⭐⭐ **条件编译块的 import 完整性**（2026-11-21 移植柴阅的真实事故）⭐⭐⭐
   #   ⇒ 柴阅的 `Digests` 拆文件时漏了 `import CommonCrypto` ⇒ **Linux 沙盒编不到** ⭐⭐⭐
   #   ⇒ 沙盒门禁全绿 ⇒ 直到 CI 才报「cannot find 'CC_SHA224' in scope」⭐⭐⭐

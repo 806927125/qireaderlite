@@ -176,7 +176,70 @@ enum SourceVariables {
     static func setHostMap(_ value: String, for sourceUrl: String, jsLib: String? = nil) {
         setVars(value, for: sourceUrl)                                   // 书源变量：总是写 ⭐
         guard form(for: sourceUrl, jsLib: jsLib) != .credential else { return }  // ⭐ 凭据形态 ⇒ 不许写 map ⭐⭐⭐
-        setVariable(value, for: sourceUrl, origin: .app)                  // 宿主写的 ⇒ **不算证据** ⭐
+
+        // ⭐⭐⭐⭐⭐ **站方变量改成【增量合并】（2026-11-21 真机「筛选键没用」实证）⭐⭐⭐
+        //
+        //   ⚠️⚠️⚠️ **以前是「整份覆盖」** ⇒ 每次筛选都把站方自己的变量**全冲掉** ⭐⭐⭐
+        //     站方 exploreUrl 读的是 `source.getVariable()` 里的 `NH_D`：⭐⭐⭐
+        //       `{"src":"全部","gender":"全部","status":"不限","sort":"最热","line":"自动",…}` ⭐⭐⭐
+        //     ⇒ 整份覆盖成轻阅的 map ⇒ **`src`/`gender`/`status` 都没了** ⭐⭐⭐
+        //     ⇒ 站方回落默认值 ⇒ **筛选看着「完全没反应」** ⭐⭐⭐
+        //
+        //   ⭐⭐⭐ **而且键名对不上**：轻阅抠出来的 paramKey 是 **`find_source`** ⭐⭐⭐
+        //     ⇒ 但站方 exploreUrl 读的是 **`src`** ⇒ 光写 `find_source` **它根本不读** ⭐⭐⭐
+        //     ⇒ 站方约定（真源 jsLib 原文）：`c['src']=v; c['find_source']=String(v); c['find_tab']='小说';` ⭐⭐⭐
+        //     ⇒ **`find_source` 与 `src` 是同一个平台值的两个键名** ⇒ 写 `find_source` 时要**同步 `src`** ⭐⭐⭐
+        //
+        //   ⇒ 正解：**增量合并**（保留站方其它键）+ **`find_source` ⇒ 同步 `src`** ⭐⭐⭐
+        var obj = varsJSONObject(value)
+        if let fs = obj["find_source"] as? String, !fs.isEmpty {
+            // ⭐⭐⭐ **总是覆盖 `src`**（站方约定：`src` ≡ `find_source` 的值）⭐⭐⭐
+            //   ⚠️ 不能「只在 src 缺失时才同步」⇒ obj 里可能有**上一次**的旧 `src` ⇒ 会挡住 ⭐⭐⭐
+            obj["src"] = fs
+        }
+        setStationVarMap(obj, for: sourceUrl)
+    }
+
+    /// ⭐⭐⭐⭐⭐ **增量合并【站方变量】**（保留站方自己的键）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么必须增量**（2026-11-21 真机实证）：
+    ///   站方变量的结构是站方自己的 `NH_D`（`src`/`gender`/`status`/`sort`/`line`/…）⭐⭐⭐
+    ///   ⇒ 宿主只要**改一项**（比如平台）⇒ **其余必须原样保留** ⭐⭐⭐
+    ///   ⇒ 整份覆盖 ⇒ 站方每次都回落默认值 ⇒ **筛选全乱** ⭐⭐⭐
+    static func setStationVarMap(_ obj: [String: Any], for sourceUrl: String) {
+        guard !sourceUrl.isEmpty else { return }
+        var cur = stationVarObject(for: sourceUrl)
+        for (k, v) in obj { cur[k] = v }
+        let merged = jsonString(cur)
+        // ⚠️ 长度上限保护（与 setVariable 一致 ⇒ 超长拒收）
+        guard merged.count <= maxVarsLength else {
+            NSLog("[变量] 站方变量合并后超长（\(merged.count) 字符）⇒ 拒收（\(sourceUrl)）")
+            return
+        }
+        setVariable(merged, for: sourceUrl, origin: .app)   // 宿主写的 ⇒ **不算证据** ⭐
+    }
+
+    /// ⭐⭐⭐ **读【站方变量】的 JSON 对象**（不是字符串 ⇒ 便于增量合并）⭐⭐⭐
+    static func stationVarObject(for sourceUrl: String) -> [String: Any] {
+        guard !sourceUrl.isEmpty else { return [:] }
+        guard let raw = UserDefaults.standard.string(forKey: variablePrefix + sourceUrl),
+              let d = raw.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        return o
+    }
+
+    /// ⭐⭐⭐ **把 JSON 串解析成字典**（容错 ⇒ 解析不了就当空）⭐⭐⭐
+    static func varsJSONObject(_ raw: String) -> [String: Any] {
+        guard let d = raw.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        return o
+    }
+
+    /// ⭐⭐⭐ **字典 ⇒ JSON 串**⭐⭐⭐
+    static func jsonString(_ obj: [String: Any]) -> String {
+        guard let d = try? JSONSerialization.data(withJSONObject: obj),
+              let s = String(data: d, encoding: .utf8) else { return "{}" }
+        return s
     }
 
     /// ⭐⭐⭐ **站方变量该往引擎里灌什么**（顺带做**存量污染的迁移**）⭐⭐⭐
