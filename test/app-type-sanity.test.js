@@ -17,7 +17,8 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const APP_DIR = path.join(ROOT, 'QiReaderLite');
-const ENGINE_DIR = path.join(ROOT, 'LegadoEngine', 'Sources', 'LegadoEngine');
+// ⭐⭐⭐ 引擎源码现在分三处（柴阅模型 / 柴阅引擎 / 我们的适配层）⭐⭐⭐
+const ENGINE_DIR = path.join(ROOT, 'LegadoEngine/Sources');
 
 let failed = 0, passed = 0;
 function check(name, cond, extra) {
@@ -104,9 +105,44 @@ for (const [label, files] of [['App(QiReaderLite)', appFiles], ['引擎(LegadoEn
   const map = declaredTypes(files, true);
   // ⭐⭐⭐ **只查【跨文件】的同名** ⇒ 同一文件里的重复声明多半是 `#if` 平台分支
   //   （如 `JSBridge` 的 Apple 版 / Linux stub ⇒ 互斥 ⇒ 不是撞名）⭐⭐⭐
+  // ⭐⭐⭐⭐⭐ **条件互斥豁免**（2026-11-21 移植柴阅实证）⭐⭐⭐
+  //   柴阅的 JS 层与我们的 **Linux 桩**故意同名（`JSResponse` / `JSRuntime` /
+  //   `JavaBridge` / `JSSymmetricCrypto` / `URLSessionWebSocketTransport`）⭐⭐⭐
+  //   ⇒ 但它们分处 `#if canImport(JavaScriptCore)` 与 `#if !canImport(JavaScriptCore)`
+  //     **互斥的两侧 ⇒ 永不同时编译 ⇒ 不是撞名** ⭐⭐⭐
+  //   ⇒ 正解：**豁免「顶层条件互斥」的同名** ⇒ 真正的撞名仍被抓 ⭐⭐⭐
+  // ⚠️⚠️ **要收集【全部】`#if` 条件**，不能只看第一个 ⭐⭐⭐
+  //   （`WebSocket.swift` 第一个 `#if` 是 `canImport(CoreFoundation)`，
+  //     而真正决定同名类型互斥的是后面的 `canImport(Darwin)`）⭐⭐⭐
+  const conditionsOf = (rel) => {
+    const code = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    const out = [];
+    const re = /^\s*#if\s+(canImport\([^)]*\)(?:\s*&&\s*!os\(Linux\))?|!canImport\([^)]*\))/gm;
+    let m;
+    while ((m = re.exec(code)) !== null) out.push(m[1].replace(/\s+/g, ''));
+    return out;
+  };
+  const pairExclusive = (ca, cb) => {
+    // `canImport(X)` 与 `!canImport(X)` ⇒ 互斥
+    const norm = (c) => c.replace(/^!/, '').replace('&&!os(Linux)', '');
+    if (norm(ca) !== norm(cb)) return false;
+    return ca.startsWith('!') !== cb.startsWith('!');
+  };
+  const mutuallyExclusive = (a, b) => {
+    const ca = conditionsOf(a), cb = conditionsOf(b);
+    for (const x of ca) for (const y of cb) if (pairExclusive(x, y)) return true;
+    return false;
+  };
   const dups = [...map.entries()].filter(([, where]) => {
-    const files2 = new Set(where.map((w) => w.split(':')[0]));
-    return files2.size > 1;
+    const files2 = [...new Set(where.map((w) => w.split(':')[0]))];
+    if (files2.length <= 1) return false;
+    // ⚠️ **两两互斥**才算豁免（三个文件里有两两互斥、一对不互斥 ⇒ 仍要报）⭐⭐⭐
+    for (let i = 0; i < files2.length; i++) {
+      for (let j = i + 1; j < files2.length; j++) {
+        if (!mutuallyExclusive(files2[i], files2[j])) return true;
+      }
+    }
+    return false;
   });
   check(`${label}：没有跨文件同名的顶层类型（${map.size} 个类型）`, dups.length === 0,
         dups.map(([n, w]) => `${n} ⇒ ${w.join(' / ')}`).join('; '));

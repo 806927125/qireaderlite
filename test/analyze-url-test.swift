@@ -124,13 +124,14 @@ print("\n=== ⑤ 原生请求层必须走 AnalyzeUrl（2026-10-21 真机「目�
 // ⭐⭐⭐ 2026-11-19：**原生请求层现在在引擎里**（老 `RuleSandbox.swift` 已删）
 //   ⇒ 断言改指**新引擎的 AnalyzeUrl** ⇒ 它必须认 options JSON（method/body/charset…）⭐⭐⭐
 if let path = ProcessInfo.processInfo.environment["QR_REPO_DIR"],
-   let text = try? String(contentsOfFile: path + "/LegadoEngine/Sources/LegadoEngine/Core/AnalyzeUrl.swift", encoding: .utf8) {
+   let text = try? String(contentsOfFile: path + "/LegadoEngine/Sources/ChaiyueEngine/Network/AnalyzeUrl.swift", encoding: .utf8) {
     let code = text.replacingOccurrences(of: "//.*\n", with: "\n", options: .regularExpression)
-    ok(code.contains("options["), "⭐⭐⭐ 引擎的 AnalyzeUrl 认 URL 选项（options JSON）")
+    // ⚠️ 柴阅的 `AnalyzeUrl` 用 `option["xxx"]` 取选项（不是旧引擎的 `options[`）⭐⭐⭐
+    ok(code.contains("option["), "⭐⭐⭐ 引擎的 AnalyzeUrl 认 URL 选项（options JSON）")
     ok(code.contains("charset"), "⭐⭐⭐ 引擎的 AnalyzeUrl 认站方指定的 charset（老站乱码的根因）")
     ok(code.contains("retry"), "⭐⭐⭐ 引擎的 AnalyzeUrl 认站方指定的 retry")
 } else {
-    ok(false, "拿不到新引擎的 AnalyzeUrl.swift（QR_REPO_DIR 没设）")
+    ok(false, "拿不到柴阅引擎的 AnalyzeUrl.swift（QR_REPO_DIR 没设）")
 }
 // data: 伪 URL 必须原样（载荷是 base64，百分号编码会改掉里面的 + /）
 let dataParsed = AnalyzeUrl.parse("data:;base64,eyJib29rX2lkIjoiTnpBNE5qYzQ+,{\"type\":\"qingtian3\"}", baseUrl: "")

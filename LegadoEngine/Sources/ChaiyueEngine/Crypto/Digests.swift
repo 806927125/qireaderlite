@@ -16,6 +16,12 @@ import Crypto
 import CryptoKit
 #endif
 import Foundation
+#if canImport(CommonCrypto)
+// ⭐⭐⭐ **CommonCrypto 只给 SHA224 用**（CryptoKit/swift-crypto 都没有 SHA224）⭐⭐⭐
+//   ⚠️ **从 `Crypto/Crypto.swift` 拆出来时必须一起带 import** ⭐⭐⭐
+//     ⇒ 否则 **Apple 平台**报「cannot find 'CC_SHA224' in scope」（Linux 编不到 ⇒ 看不出来）⭐⭐⭐
+import CommonCrypto
+#endif
 
 public enum CryptoError: Error, CustomStringConvertible {
     case invalidKey(String)

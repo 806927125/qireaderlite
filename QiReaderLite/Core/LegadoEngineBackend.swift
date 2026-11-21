@@ -291,3 +291,21 @@ final class LegadoEngineBackend {
         throw ServiceError.engineFailed("书源 JSON 解析失败")
     }
 }
+
+// ⭐⭐⭐⭐⭐ **引擎日志挂到「引擎日志」面板**（App 启动时挂一次 ⇒ 别处直接用 `engineLog`）⭐⭐⭐
+///
+/// ⚠️ **为什么要挂**（2026-10-28）：诊断写在 `NSLog` 里 ⇒ **只进设备控制台，用户看不到**
+///   ⇒ 真机排查只能靠「让用户去 Xcode 看控制台」⇒ 一轮一条信息 ⇒ 极慢 ⭐⭐⭐
+///   ⇒ 挂上面板 ⇒ 用户「复制日志」就有 ⭐⭐⭐
+///
+/// ⚠️⚠️ **必须 `Task { @MainActor in … }`**：
+///   · 引擎回调在**后台线程** ⇒ 面板 `EngineLogPanel` 是 `@MainActor`
+///   ⇒ 直接调 `appendLog` ⇒ **后台线程改 @Published 状态** ⇒ UI 更新在后台线程 ⇒ 闪退风险 ⭐⭐⭐
+///   ⇒ 切主线程再写 ⭐⭐⭐
+enum EngineLogBootstrap {
+    static func install() {
+        EngineLog.sink = { message in
+            Task { @MainActor in EngineLogPanel.shared.appendLog(message) }
+        }
+    }
+}

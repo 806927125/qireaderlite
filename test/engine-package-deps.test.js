@@ -3,7 +3,7 @@
 // 跑法：node test/engine-package-deps.test.js
 //
 // ⚠️ **为什么必须有这条门禁**（CI build296 真机实证）：
-//   `LegadoEngine/Sources/LegadoEngine/JS/JSNatives.swift` 里 `import Crypto`
+//   `LegadoEngine/Sources/ChaiyueEngine/JS/JSNatives.swift` 里 `import Crypto`
 //   ⇒ Apple 平台上 **`Crypto` 不是系统模块**（Apple 只有 `CryptoKit`）
 //   ⇒ 不在 Package.swift 里声明 swift-crypto ⇒ **iOS 编译必挂**：
 //      `error: Unable to find module dependency: 'Crypto'`
@@ -23,7 +23,8 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const PKG = path.join(ROOT, 'LegadoEngine', 'Package.swift');
-const SRC = path.join(ROOT, 'LegadoEngine', 'Sources', 'LegadoEngine');
+// ⭐⭐⭐ 扫【全部】引擎源码（柴阅模型 / 柴阅引擎 / 我们的适配层）⭐⭐⭐
+const SRC = path.join(ROOT, 'LegadoEngine/Sources');
 
 let failed = 0, passed = 0;
 function check(name, cond, extra) {
@@ -70,6 +71,8 @@ for (const m of pkgText.matchAll(/\.package\(\s*url:\s*"[^"]*\/([^"/]+?)(?:\.git
   pkgNames.add(m[1]);
 }
 // ②-B `.library(name: "X")` ⇒ 本包自己产的 product
+// ⭐⭐⭐ **本包内部的 target 名**（柴阅的模型层/引擎层 ⇒ 是同包引用，不是外部依赖）⭐⭐⭐
+const INTERNAL_TARGETS = new Set(['ChaiyueEngine', 'ChaiyueModels', 'LegadoEngine']);
 const localProducts = new Set();
 for (const m of pkgText.matchAll(/\.library\(\s*name:\s*"([^"]+)"/g)) localProducts.add(m[1]);
 // ②-C 每个 target 的 dependencies 块
@@ -93,6 +96,8 @@ console.log('target 依赖 =', targetDeps.map((d) => (d.kind === 'product' ? `${
 function isModuleDeclared(mod) {
   if (SYSTEM_MODULES.has(mod)) return true;
   if (localProducts.has(mod)) return true;
+  // ⭐⭐⭐ **本包内部的 target**（柴阅的模型层/引擎层）⇒ 同包引用 ⇒ 不算外部依赖 ⭐⭐⭐
+  if (INTERNAL_TARGETS.has(mod)) return true;
   const asProduct = targetDeps.find((d) => d.kind === 'product' && d.name === mod);
   if (asProduct) return pkgNames.has(asProduct.package);   // ⭐ product 的 package 必须真的声明
   const asString = targetDeps.find((d) => d.kind === 'string' && d.name === mod);
@@ -115,6 +120,7 @@ const missing = [];
 for (const [mod, where] of [...imports.entries()].sort()) {
   if (SYSTEM_MODULES.has(mod)) { check(`import ${mod}（系统模块）`, true); continue; }
   if (localProducts.has(mod)) { check(`import ${mod}（本包 product）`, true); continue; }
+  if (INTERNAL_TARGETS.has(mod)) { check(`import ${mod}（本包内部 target）`, true); continue; }
 
   if (!isModuleDeclared(mod)) {
     check(`import ${mod} 有来处`, false, `${where[0]} 里 import 了，但 Package.swift 没声明`);

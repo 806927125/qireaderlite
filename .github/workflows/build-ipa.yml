@@ -38,6 +38,19 @@ jobs:
                  -o /tmp/scroll-core-parity
           /tmp/scroll-core-parity .
 
+      - name: ⭐⭐⭐⭐⭐ 柴阅引擎的【权威测试】（macOS ⇒ 有 JSC ⇒ 全量可跑）
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-21 移植柴阅实证）：
+          #   柴阅的 `RuleEngineTests` / `ReaderModelsTests` = **行为规格** ⭐⭐⭐
+          #   ⇒ 移植后引擎**就是柴阅** ⇒ 跑它的测试 = 验证引擎行为没跑偏 ⭐⭐⭐
+          #   ⇒ ⚠️ **Linux 沙盒跑不了**（没有 JSC ⇒ JS 用例必然失败 ⇒ 是平台差异不是移植错）⭐⭐⭐
+          #   ⇒ 所以这一步放在 **CI（macOS/Xcode 26）** ⇒ 那里有 JSC ⇒ 全绿才说明引擎真的对 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          rm -f .build/*.yaml
+          swift test 2>&1 | tail -25
+          cd ..
+
       - name: 编译
         run: |
           # || true 只为让脚本能往下走到打印错误那步
@@ -128,7 +141,11 @@ jobs:
             echo "⚠️ 没有书源产物（NH_LIVE_SOURCE 未设）⇒ 跳过（这组**没验到**，不等于通过）"
             exit 0
           fi
-          node test/explore-kinds-live.js "$SRC"
+          # ⚠️⚠️ **2026-11-21**：引擎换成柴阅后，旧的 `explore-kinds-live.js`（宿主自建 bridge 的真跑）
+          #   **前提已消失**（宿主不再自建 bridge ⇒ 走柴阅的 `WebBook.exploreKinds()`）⇒ 已删 ⭐⭐⭐
+          #   ⇒ 现在的覆盖：① 本 workflow 上面的「柴阅引擎的权威测试」（含 exploreKinds 用例）⭐⭐⭐
+          #      ② `test/chaiyue-port-contract.test.js`（钉宿主接线契约）⭐⭐⭐
+          node test/chaiyue-port-contract.test.js
 
       - name: ⭐⭐⭐⭐⭐ 自省 Apple 平台符号（**不许再猜 SDK 的名字**）
         run: |

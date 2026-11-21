@@ -61,6 +61,18 @@ let package = Package(
             dependencies: ["ChaiyueEngine", "ChaiyueModels"],
             path: "Sources/LegadoEngine"
         ),
-        .testTarget(name: "LegadoEngineTests", dependencies: ["LegadoEngine"]),
+        // ⚠️⚠️ **旧的 `LegadoEngineTests` 已删**（2026-11-21 移植柴阅）⭐⭐⭐
+        //   它测的是**我们自己那套已被替换掉的引擎** ⇒ 符号全没了 ⇒ 测不了 ⭐⭐⭐
+        //   ⇒ 能力覆盖改由**柴阅自带的权威测试**承担（下面两个 target）⭐⭐⭐
+        // ⭐⭐⭐⭐⭐ **柴阅自带的权威测试**（2026-11-21 移植时 vendor 进来）⭐⭐⭐
+        //   ⇒ 柴阅的 `RuleEngineTests` / `ReaderModelsTests` = **行为规格** ⭐⭐⭐
+        //   ⇒ 移植后**在沙盒里直接跑权威测试** ⇒ 比我们自己的门禁更硬 ⭐⭐⭐
+        //   ⚠️ 部分用例需要 JSC ⇒ Linux 上会失败（桩如实抛错）⇒ **平台差异，不是移植错** ⭐⭐⭐
+        .testTarget(name: "ChaiyueRuleEngineTests",
+                    dependencies: ["ChaiyueEngine", "ChaiyueModels"],
+                    path: "Tests/ChaiyueRuleEngineTests"),
+        .testTarget(name: "ChaiyueModelsTests",
+                    dependencies: ["ChaiyueModels"],
+                    path: "Tests/ChaiyueModelsTests"),
     ]
 )

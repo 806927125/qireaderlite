@@ -23,9 +23,6 @@ cd "$(dirname "$0")/.."
 
 # 有些门禁依赖本机文件（书源 JSON），没有就自己跳过 —— 那是「跳过」不是「通过」
 declare -a GATES=(
-  # ⭐⭐⭐⭐⭐ **引擎替换契约**（2026-11-19：老的两条引擎全删 ⇒ 换成 `LegadoEngine`）
-  #   ⇒ 钉住：老引擎痕迹为零 · 新引擎在位 · op 接线齐全 · 变量契约不丢 · 新引擎自带测试绿
-  "engine-replacement-contract:test/engine-replacement-contract.test.js"
   "engine-package-deps:test/engine-package-deps.test.js"
   "engine-apple-api:test/engine-apple-api.test.js"
   # ⭐⭐⭐⭐⭐ **变异对照**（2026-11-19 实证）：证明上面那条门禁**可证伪**
@@ -50,8 +47,7 @@ declare -a GATES=(
   #   ⇒ 真机：发现页从「LegadoError 1」变成「只解析出 0 个分类」⇒ **求值通了、站方交白卷**⭐⭐⭐
   #   ⇒ 根因 = 引擎的 `srcGet` 读 `BookSource.variable` 那一格，而 App 灌的是 `__variable`（**另一格**）
   #     ⇒ 站方 JS 读 `source.get("nhAuthed")` 恒空 ⇒ `nhAuth()` 恒 false ⇒ **主动交白卷**⭐⭐⭐
-  #   ⇒ 本门禁钉死：① 灌进 `variable` ② 读回走 `collectStationVariable` ③ 两格不许混 ⭐⭐⭐
-  "station-var-channel:test/station-var-channel.test.js"
+  #   ⇒ ⚠️ **本条已换**：宿主不再灌/回传变量（柴阅自己持久化）⇒ 改由 `chaiyue-port-contract` 钉 ⭐⭐⭐
   # ⭐⭐⭐⭐⭐ **Apple-only 块的类型错**（2026-11-19 CI build300 实证）
   #   ⇒ 那段代码在 `#if canImport(JavaScriptCore) && !os(Linux)` 里 ⇒ **Linux 沙盒门禁编不到** ⭐⭐⭐
   #   ⇒ 我把方法加在【嵌套的 Session】里、调用点却写 `Self.` ⇒ Apple 平台编译失败 ⭐⭐⭐
@@ -65,13 +61,18 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **整源密码门禁的整链复现**（①表单值→loginInfo→②unlockAll→③落槽→④灌引擎→⑤合并→⑥nhAuth 放行）⭐⭐⭐
   #   ⇒ 每环【真跑】（用产物 jsLib 里抽出的站方真身）⇒ 断在哪一环一目了然 ⭐⭐⭐
   "auth-gate-chain:test/auth-gate-chain.test.js"
-  # ⭐⭐⭐⭐⭐ **站方变量的【两套语义】必须与 柴阅/Chaiyue 一致**（2026-11-19 移植对拍）⭐⭐⭐
-  #   ⇒ 权威规格 = Chaiyue 的 `SourceState`（RuleSession.swift）：
-  #     站方变量 `sourceVariable_<key>`（一整串） vs 书源变量 `v_<key>_<k>`（每 k 一项）⭐⭐⭐
-  #   ⇒ 之前我们把两者混在一格 ⇒ 站方 put('nhAuthed') 与站方变量互相污染 ⇒ 0 分类 ⭐⭐⭐
-  "source-vars-two-slots:test/source-vars-two-slots.test.js"
+  # ⭐⭐⭐⭐⭐ **柴阅移植契约**（2026-11-21）⭐⭐⭐
+  #   ⇒ 钉死：包结构 / 柴阅两套语义 / 宿主走 WebBook / 不再回传变量 / store 映射 / kinds 适配 ⭐⭐⭐
+  "chaiyue-port-contract:test/chaiyue-port-contract.test.js"
+  # ⭐⭐⭐⭐⭐ **条件编译块的 import 完整性**（2026-11-21 移植柴阅的真实事故）⭐⭐⭐
+  #   ⇒ 柴阅的 `Digests` 拆文件时漏了 `import CommonCrypto` ⇒ **Linux 沙盒编不到** ⭐⭐⭐
+  #   ⇒ 沙盒门禁全绿 ⇒ 直到 CI 才报「cannot find 'CC_SHA224' in scope」⭐⭐⭐
+  #   ⇒ 正解：**静态扫**（用了某框架的符号 ⇒ 该文件必须 import 它）⇒ Apple-only 错误也能在沙盒抓 ⭐⭐⭐
+  "conditional-import-gate:test/conditional-import-gate.test.js"
   "workflow-yaml-gate:test/workflow-yaml-gate.test.js"
-  "explore-kinds-parity:test/explore-kinds-parity.test.js"
+  # ⚠️ **explore-kinds-parity 已删**（2026-11-21）：它是【旧引擎 normalizeKinds 的 oracle 对拍】⭐⭐⭐
+  #   ⇒ 旧引擎已换成柴阅 ⇒ **对拍对象不存在了** ⇒ 前提消失 ⇒ 删 ⭐⭐⭐
+  #   ⇒ 覆盖改由：① 柴阅自带的权威测试（CI 上跑）② `chaiyue-port-contract` 钉契约 ⭐⭐⭐
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"
