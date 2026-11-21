@@ -56,7 +56,8 @@ ok(!/getVariable\(key: String\)[^{]*\{\s*sourceVars\[key\]/.test(state),
 console.log('\n=== 3. 宿主接线：走柴阅的 WebBook，不再自建 bridge ===');
 ok(/LegadoEngineHost\.WebBook\(source: parsed, environment: env\)/.test(host), '主链用 `LegadoEngineHost.WebBook`');
 ok(/web\.searchBook\(/.test(host), 'search → web.searchBook');
-ok(/web\.exploreKinds\(\)/.test(host), '★ exploreKinds → web.exploreKinds（柴阅原生求值 `@js:`）');
+ok(/web\.exploreKinds\(refresh:\s*true\)/.test(host), '★ exploreKinds → web.exploreKinds(refresh: true)（柴阅原生求值 `@js:`）');
+ok(!/web\.exploreKinds\(\)/.test(host), '★ 没有「不 refresh」的调用（★ 默认 false ⇒ 命中旧缓存 ⇒ 筛选无效）');
 ok(/web\.exploreBook\(/.test(host), 'explore → web.exploreBook');
 ok(/web\.getBookInfo\(/.test(host), 'bookInfo → web.getBookInfo');
 ok(/web\.getChapterList\(/.test(host), 'toc → web.getChapterList');
@@ -103,7 +104,9 @@ console.log('\n=== 7. 变异对照（改坏 ⇒ 必须红） ===');
     ['宿主不再用 WebBook（改回自建 bridge）',
       () => host.replace('LegadoEngineHost.WebBook(source: parsed, environment: env)', 'LegadoEngineHost.Bridge(source: parsed, environment: env)')],
     ['exploreKinds 不走柴阅（改回静态解析）',
-      () => host.replace('web.exploreKinds()', 'LegadoEngineHost.Source.parse("{}")')],
+      () => host.replace('web.exploreKinds(refresh: true)', 'LegadoEngineHost.Source.parse("{}")')],
+    ['exploreKinds 不 refresh（★ 命中柴阅旧缓存 ⇒ 筛选无效）',
+      () => host.replace('web.exploreKinds(refresh: true)', 'web.exploreKinds()')],
     ['宿主又开始回传站方变量（旧坑回归）',
       () => host.replace('return ["books": items, "total": books.count, "nextUrl": ""]',
                          'out["__sourceVars"] = "{}"\n            return ["books": items, "total": books.count, "nextUrl": ""]')],
@@ -123,14 +126,17 @@ console.log('\n=== 7. 变异对照（改坏 ⇒ 必须红） ===');
   // 真·判定：把关键断言拿出来，逐条验证变异会破坏其中一条
   const asserts = [
     (t) => /LegadoEngineHost\.WebBook\(source: parsed, environment: env\)/.test(t),
-    (t) => /web\.exploreKinds\(\)/.test(t),
+    (t) => /web\.exploreKinds\(refresh:\s*true\)/.test(t),
     (t) => !/__sourceVars/.test(t),
   ];
   const m1 = host.replace('LegadoEngineHost.WebBook(source: parsed, environment: env)', 'X');
-  const m2 = host.replace('web.exploreKinds()', 'Y');
+  const m2 = host.replace('web.exploreKinds(refresh: true)', 'Y');
   const m3 = host + '\nout["__sourceVars"] = "{}"';
   ok(asserts[0](m1) === false, '★ 变异「不用 WebBook」⇒ 被抓住');
   ok(asserts[1](m2) === false, '★ 变异「exploreKinds 不走柴阅」⇒ 被抓住');
+  const m4 = host.replace('web.exploreKinds(refresh: true)', 'web.exploreKinds()');
+  ok(!/web\.exploreKinds\(refresh:\s*true\)/.test(m4) && /web\.exploreKinds\(\)/.test(m4),
+     '★ 变异「不 refresh」⇒ 被抓住');
   ok(asserts[2](m3) === false, '★ 变异「又开始回传变量」⇒ 被抓住');
 }
 

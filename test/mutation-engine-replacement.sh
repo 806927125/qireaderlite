@@ -57,7 +57,7 @@ echo "=== ② 变异：exploreKinds 不走柴阅（改回静态解析）⇒ 门�
 python3 - <<'PYMUT'
 p = "QiReaderLite/Core/LegadoEngineBackend.swift"
 s = open(p, encoding="utf-8").read()
-old = 'let kinds = try await web.exploreKinds()'
+old = 'let kinds = try await web.exploreKinds(refresh: true)'
 assert old in s, "锚点没找到（代码形状变了？）"
 s = s.replace(old, 'let kinds: [LegadoEngineHost.Kind] = []')
 open(p, "w", encoding="utf-8").write(s)
