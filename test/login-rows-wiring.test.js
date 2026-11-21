@@ -94,7 +94,7 @@ console.log('\n=== 6. ★ 禁漫天堂：显示名在 `viewName` ⇒ 必须能�
 
 console.log('\n=== 7. ★ 禁漫天堂：源侧函数库必须进 jsLib（否则 action 点不动） ===');
 {
-  const fx = JSON.parse(read('test/fixtures/禁漫天堂-适配.json'));
+  const fx = JSON.parse(read('test/fixtures/jmtt-adapted.json'));
   const s0 = Array.isArray(fx) ? fx[0] : fx;
   const lib = s0.jsLib || '';
   for (const fn of ['jmSetMode', 'jmModeLabel', 'jmPickLine', 'jmFetchLines', 'jmTestCurrent', 'jmLineLabel', 'jmHostLabel']) {
@@ -128,7 +128,7 @@ console.log('\n=== 8. 变异对照（改坏 ⇒ 必须红） ===');
      '★ 变异⑤（CI 不跑禁漫天堂探针）⇒ 被抓住');
 
   // ⑥ 源侧：函数库没进 jsLib ⇒ action 点不动（★ 真机症状的根因）⭐⭐⭐
-  const fx = JSON.parse(read('test/fixtures/禁漫天堂-适配.json'));
+  const fx = JSON.parse(read('test/fixtures/jmtt-adapted.json'));
   const s0 = Array.isArray(fx) ? fx[0] : fx;
   const lib2 = s0.jsLib || '';
   ok(lib2.includes('function jmSetMode('), '★ 基准：jsLib 里有 jmSetMode');

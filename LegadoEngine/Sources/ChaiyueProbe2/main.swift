@@ -23,8 +23,11 @@ import ChaiyueEngine
 //   ③ 适配**幂等**（构建器连跑两次字节恒定）⭐⭐⭐
 
 // ⭐⭐⭐ **两个路径都试**（CI 里 cwd=LegadoEngine/；本地跑 cwd=repo 根）⭐⭐⭐
-let fixtureCandidates = ["test/fixtures/禁漫天堂-适配.json",
-                         "../test/fixtures/禁漫天堂-适配.json"]
+// ⭐⭐⭐ **文件名用 ASCII**（2026-11-21 实证）⭐⭐⭐
+//   ⚠️⚠️ 中文文件名在 **macOS(NFD) vs Linux(NFC)** 下**字节不同** ⇒ CI（macOS）上读不到 ⭐⭐⭐
+//   ⇒ ⇒ fixture 一律用 ASCII 名 ⇒ 谁都读得到 ⭐⭐⭐
+let fixtureCandidates = ["test/fixtures/jmtt-adapted.json",
+                         "../test/fixtures/jmtt-adapted.json"]
 print("=== 禁漫天堂 · 登录面板探针（真引擎求值）===")
 
 var decodedSource: BookSource?
