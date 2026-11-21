@@ -103,7 +103,38 @@ final class LegadoEngineBackend {
             //   ⇒ ⚠️ UI 侧已有 `kindsLoaded` 短路 ⇒ 真正需要重算的时刻才调到这里 ⇒ 代价可接受 ⭐⭐⭐
             let kinds = try await web.exploreKinds(refresh: true)
             let norm = ChaiyueKindsAdapter.normalize(kinds)
-            return ["kinds": norm.kinds, "filters": norm.filters]
+            var out: [String: Any] = ["kinds": norm.kinds, "filters": norm.filters]
+            // ⭐⭐⭐⭐⭐ **诊断：筛选栏到底是「站方没给」还是「适配层丢了」**（2026-11-21 真机「光遇源没有筛选」实证）⭐⭐⭐
+            //   ⇒ 柴阅返回的原始 kinds 里【有没有 type != "url" 的项】⇒ 这是**决定性事实**⭐⭐⭐
+            //     · **有** ⇒ 站方给了 ⇒ 若 filters 为空 ⇒ **适配层/解码**的问题（宿主或引擎侧）⭐⭐⭐
+            //     · **没有** ⇒ 站方**压根没返回筛选栏** ⇒ **书源侧**（站方的 exploreUrl 就没输出筛选）⭐⭐⭐
+            var byType: [String: Int] = [:]
+            for k in kinds {
+                let t = k.type ?? "url"
+                byType[t] = (byType[t] ?? 0) + 1
+            }
+            // ⚠️ **逐项取，别把 `?? 0` 连写**（Swift 会把整个表达式当成一个 `Int?` ⇒ 编译错）⭐⭐⭐
+            let nSelect = byType["select"] ?? 0
+            let nToggle = byType["toggle"] ?? 0
+            let nButton = byType["button"] ?? 0
+            let rawFilterCount = nSelect + nToggle + nButton
+            var diag: [String: String] = [:]
+            diag["分类总数"] = "\(kinds.count)"
+            diag["筛选项总数(柴阅原始)"] = "\(rawFilterCount)"
+            diag["类型分布"] = byType.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
+            diag["适配后分类数"] = "\(norm.kinds.count)"
+            diag["适配后筛选数"] = "\(norm.filters.count)"
+            if norm.filters.count > 0 {
+                diag["判定"] = "正常（有筛选栏）"
+            } else if rawFilterCount > 0 {
+                diag["判定"] = "★ 柴阅返回了筛选项，但适配层丢了 ⇒ 宿主/引擎侧"
+            } else {
+                diag["判定"] = "★ 柴阅没返回任何筛选项 ⇒ 站方（书源侧）没输出筛选栏"
+            }
+            out["__diag"] = diag
+            let summary = diag.map { "\($0.key)=\($0.value)" }.joined(separator: " · ")
+            engineLog("[exploreKinds] \(summary)")
+            return out
 
         case "explore":
             let kindUrl = (payload["kindUrl"] as? String) ?? ""

@@ -528,6 +528,14 @@ final class SourceService {
                     }
                 }
             }
+            // ⭐⭐⭐⭐⭐ **筛选栏为 0 时把诊断摆出来**（2026-11-21 真机「光遇源没有筛选」实证）⭐⭐⭐
+            if (dict["filters"] as? [[String: Any]] ?? []).isEmpty,
+               let d = dict["__diag"] as? [String: String] {
+                let v = d["判定"] ?? ""
+                if !v.hasPrefix("正常") {
+                    return "没有筛选栏（\(v)）｜原始类型分布：\(d["类型分布"] ?? "?")｜原始分类数：\(d["分类总数"] ?? "?")"
+                }
+            }
             return "只解析出 \(n) 个分类\(extra)"
                 + "（站方正常是几十上百个 ⇒ 说明站方的分类没出来）\(hint)"
         case "explore":

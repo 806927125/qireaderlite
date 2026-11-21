@@ -50,12 +50,36 @@ ok(/站方返回 HTTP/.test(svc), '★ 非 2xx ⇒ 明说「站方接口问题�
 ok(/源站\/站方问题/.test(svc), '★ 空内容 ⇒ 明说「源站/站方问题」');
 ok(/书源规则过时/.test(svc), '★ 有内容但没匹配 ⇒ 明说「书源规则过时」');
 
-console.log('\n=== 4. 变异对照（改坏 ⇒ 必须红） ===');
+console.log('\n=== 5. ★ 筛选栏为 0 时必须能【分辨：站方没给 vs 适配层丢了】 ===');
+{
+  const adapter = strip(read('QiReaderLite/Core/ChaiyueKindsAdapter.swift'));
+  ok(/byType\["select"\]/.test(host) && /byType\["toggle"\]/.test(host) && /byType\["button"\]/.test(host),
+     '★ 统计柴阅原始 kinds 的 type 分布（select/toggle/button）');
+  ok(/筛选项总数\(柴阅原始\)/.test(host), '诊断含「柴阅原始筛选项数」');
+  ok(/柴阅没返回任何筛选项 ⇒ 站方（书源侧）没输出筛选栏/.test(host),
+     '★ 判定文案：柴阅没给 ⇒ 书源侧');
+  ok(/柴阅返回了筛选项，但适配层丢了 ⇒ 宿主\/引擎侧/.test(host),
+     '★ 判定文案：柴阅给了但丢了 ⇒ 宿主/引擎侧');
+  ok(/类型分布/.test(host), '诊断含类型分布（便于核对站方返回的形态）');
+
+  // ⭐⭐⭐ **适配层的判定顺序**：必须【先看 type】再判组标题 ⭐⭐⭐
+  //   ⇒ 否则「url 为空但 type=select」的筛选项会被当组标题扔掉 ⇒ 源就没有筛选栏了 ⭐⭐⭐
+  const iGroup = adapter.indexOf('if url.isEmpty && (type == "url" || type.isEmpty)');
+  const iFilter = adapter.indexOf('if type != "url"');
+  ok(iGroup > 0 && iFilter > 0, '适配层有「组标题」与「筛选项」两处判定');
+  ok(iGroup < iFilter, '★ 组标题判定在【筛选项判定之前】且带 type 条件（★ url 为空的 select 不会被扔）');
+  ok(/url\.isEmpty && \(type == "url" \|\| type\.isEmpty\)/.test(adapter),
+     '★ 组标题的判定**同时要求 type 是 url/空**（★ 否则会误吃筛选项）');
+}
+
+console.log('\n=== 6. 变异对照（改坏 ⇒ 必须红） ===');
+
 {
   const m1 = host.replace('web.exploreBookWithDiagnostics(url: kindUrl, page: page)', 'web.exploreBook(url: kindUrl, page: page)');
   ok(!/exploreBookWithDiagnostics/.test(m1), '★ 变异①（不用诊断版）⇒ 被抓住');
 
-  const m2 = host.replace('out["__diag"] = diag', '// 变异：不回传诊断');
+  // ⚠️⚠️⚠️ **必须用 split/join 全局替换**（现在有**两处** `__diag` ⇒ `replace` 只换第一处 ⇒ 变异无效）⭐⭐⭐
+  const m2 = host.split('out["__diag"] = diag').join('// 变异：不回传诊断');
   ok(!/out\["__diag"\] = diag/.test(m2), '★ 变异②（不回传诊断）⇒ 被抓住');
 
   const m3 = svc.replace(/站方返回 HTTP/, '某处');
@@ -63,6 +87,11 @@ console.log('\n=== 4. 变异对照（改坏 ⇒ 必须红） ===');
 
   const m4 = api.replace('diag["判定"] = books.isEmpty', 'diag["判定"] = ""; let _ = books.isEmpty');
   ok(!/diag\["判定"\] = books\.isEmpty/.test(m4), '★ 变异④（诊断没有判定）⇒ 被抓住');
+
+  // ⑤ 适配层：组标题判定去掉 type 条件 ⇒ 会把「url 为空的 select」误当组标题 ⇒ 源没有筛选栏 ⭐⭐⭐
+  const adapter = strip(read('QiReaderLite/Core/ChaiyueKindsAdapter.swift'));
+  const m5 = adapter.replace('if url.isEmpty && (type == "url" || type.isEmpty) {', 'if url.isEmpty {');
+  ok(!/url\.isEmpty && \(type == "url"/.test(m5), '★ 变异⑤（组标题判定漏了 type 条件）⇒ 被抓住');
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`);
