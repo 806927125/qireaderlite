@@ -71,6 +71,12 @@ let package = Package(
         .testTarget(name: "ChaiyueRuleEngineTests",
                     dependencies: ["ChaiyueEngine", "ChaiyueModels"],
                     path: "Tests/ChaiyueRuleEngineTests"),
+        // ⭐⭐⭐⭐⭐ **登录表单探针**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
+        //   ⇒ 真跑柴阅的 `resolveLoginRows` ⇒ 证明「`@js:` 的 loginUi 能解析出按钮」⭐⭐⭐
+        //   ⇒ Linux 没 JSC ⇒ **只能靠 CI（macOS）跑它** ⭐⭐⭐
+        .executableTarget(name: "ChaiyueProbe",
+                          dependencies: ["ChaiyueEngine", "ChaiyueModels"],
+                          path: "Sources/ChaiyueProbe"),
         .testTarget(name: "ChaiyueModelsTests",
                     dependencies: ["ChaiyueModels"],
                     path: "Tests/ChaiyueModelsTests"),

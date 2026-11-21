@@ -588,6 +588,25 @@ enum SourceVariables {
         guard let d = try? JSONSerialization.data(withJSONObject: keep),
               let s = String(data: d, encoding: .utf8) else { return }
         UserDefaults.standard.set(s, forKey: loginFormPrefix + sourceUrl)
+        // ⭐⭐⭐⭐⭐ **同时合并进【登录信息】槽**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
+        //
+        //   ⚠️⚠️ **为什么必须双写**：柴阅的 `resolveLoginRows` 把 **已保存的登录信息**绑成 JS 的 `result` ⭐⭐⭐
+        //     ⇒ 站方的 `loginUi` 里读 `result['邮箱']` 拿的就是它 ⭐⭐⭐
+        //     ⇒ 而柴阅读的是它的 **`userInfo_` 槽** ⇒ 经我们的 store 转换 ⇒ 落到**轻阅的 `sourcelogin.` 槽** ⭐⭐⭐
+        //     ⇒ 只写 `sourceform.` 槽 ⇒ **柴阅看不到 ⇒ `result` 是空 ⇒ 站方表单/按钮逻辑跑不对** ⭐⭐⭐
+        //   ⇒ 合并（不是覆盖）⇒ 站方自己写的其它登录信息**不丢** ⭐⭐⭐
+        mergeLoginInfoValues(keep, for: sourceUrl)
+    }
+
+    /// ⭐⭐⭐⭐⭐ **把表单值【合并】进登录信息槽**（不覆盖站方的其它键）⭐⭐⭐
+    ///
+    /// ⚠️ **为什么是合并而不是覆盖**：站方的 `loginInfo` 里可能有它自己写的键（token/uid…）⭐⭐⭐
+    ///   ⇒ 覆盖 ⇒ 那些键没了 ⇒ 登录态坏掉 ⭐⭐⭐
+    static func mergeLoginInfoValues(_ values: [String: String], for sourceUrl: String) {
+        guard !sourceUrl.isEmpty, !values.isEmpty else { return }
+        var cur = loginInfo(for: sourceUrl)          // 现有（站方写的 + 用户填的）
+        for (k, v) in values where !k.isEmpty && !v.isEmpty { cur[k] = v }
+        setLoginInfoJSON(jsonString(cur), for: sourceUrl)
     }
 
     // MARK: 发现页筛选项的「当前值」

@@ -154,6 +154,21 @@ final class LegadoEngineBackend {
                 return ["ok": false, "error": String(describing: error), "msgs": []]
             }
 
+        case "loginRows":
+            // ⭐⭐⭐⭐⭐ **登录表单行 = 柴阅的 `resolveLoginRows`**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
+            //   ⇒ 站方的 `loginUi` 常常是 **`@js:` / `<js>` 薄壳**（正文在 jsLib 里）⭐⭐⭐
+            //   ⇒ 轻阅自己解析只能吃**静态 JSON** ⇒ 解析失败 ⇒ **面板空白、一个按钮都没有** ⭐⭐⭐
+            //   ⇒ 柴阅的 `resolveLoginRows` 会**先跑 `loginJs`、再求值 `loginUi`** ⇒ 行拿得到 ⭐⭐⭐
+            //   ⇒ `result` 绑的是**已保存的登录信息**（柴阅的 `userInfo_` 槽 ⇒ 经我们的 store 转换）⭐⭐⭐
+            let rows = try await web.resolveLoginRows()
+            return ["rows": rows.map { row in
+                ["name": row.name,
+                 "type": row.type.rawValue,
+                 "action": row.action ?? "",
+                 "chars": row.chars ?? [],
+                 "default": row.defaultValue ?? ""]
+            }]
+
         case "login":
             // ⭐⭐⭐ **登录动作**（柴阅的 `runLoginAction` 会自己把表单值写进 `loginInfo`）⭐⭐⭐
             //   ⇒ **不再需要**宿主手工灌 `sourceVars["loginInfo"]`（build300 那套）⭐⭐⭐

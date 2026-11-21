@@ -73,6 +73,10 @@ declare -a GATES=(
   #   ⇒ 而站方 exploreUrl 读的是站方变量整串里的 **`src`** ⇒ 轻阅写的 `find_source` **它不读** ⭐⭐⭐
   #   ⇒ 本门禁用 **swiftc 编 App 的真文件** 真跑一遍「写入 → 站方读回」⇒ 门禁变红 ⇒ App 一定有问题 ⭐⭐⭐
   "filter-var-roundtrip:test/filter-var-roundtrip.test.js"
+  # ⭐⭐⭐⭐⭐ **登录面板的「行」必须能求值出来**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
+  #   ⇒ 站方 loginUi 常是 `@js:` 薄壳 ⇒ 静态解析失败 ⇒ 面板空白 ⇒ **一个按钮都没有** ⭐⭐⭐
+  #   ⇒ 柴阅的 `resolveLoginRows` 会求值它 ⇒ 行拿得到（★ 真跑探针在 CI 上验）⭐⭐⭐
+  "login-rows-wiring:test/login-rows-wiring.test.js"
   # ⭐⭐⭐⭐⭐ **条件编译块的 import 完整性**（2026-11-21 移植柴阅的真实事故）⭐⭐⭐
   #   ⇒ 柴阅的 `Digests` 拆文件时漏了 `import CommonCrypto` ⇒ **Linux 沙盒编不到** ⭐⭐⭐
   #   ⇒ 沙盒门禁全绿 ⇒ 直到 CI 才报「cannot find 'CC_SHA224' in scope」⭐⭐⭐

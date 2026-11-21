@@ -24,6 +24,32 @@ final class SourceService {
     /// ⚠️ `messages` 才是**真话**：`ok == true` 只说明「JS 跑完了没抛异常」，
     ///    站方报的是「✅️登录成功」还是「💔登录失败」全在 messages 里。
     ///    以前这些只弹 toast 就没了 → 用户永远不知道登录成没成。
+    /// ⭐⭐⭐⭐⭐ **登录表单的行**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么必须有这个方法**：
+    ///   站方的 `loginUi` 常常是 **`@js:` / `<js>` 薄壳**（正文在 jsLib 里）⭐⭐⭐
+    ///   ⇒ 自己解析只能吃**静态 JSON** ⇒ 解析失败 ⇒ **面板空白、一个按钮都没有** ⭐⭐⭐
+    ///   ⇒ 柴阅的 `resolveLoginRows` 会**求值**它 ⇒ 行拿得到 ⇒ **按钮就有了** ⭐⭐⭐
+    func loginRows(source: BookSource) async throws -> [LoginRowDTO] {
+        let dto: LoginRowsDTO = try await call("loginRows", json([:]), as: LoginRowsDTO.self, source: source)
+        return dto.rows
+    }
+
+    /// ⭐⭐⭐ **登录表单的一行**（站方 `loginUi` 的契约）
+    struct LoginRowDTO: Codable {
+        var name: String = ""
+        /// text / password / button / toggle / select（柴阅 `LoginRow.Kind` 的 rawValue）
+        var type: String = "text"
+        var action: String = ""
+        var chars: [String] = []
+        var `default`: String = ""
+    }
+
+    /// ⭐⭐⭐ **登录表单行的集合**
+    struct LoginRowsDTO: Codable {
+        var rows: [LoginRowDTO] = []
+    }
+
     func login(source: BookSource, action: String,
                formValues: [String: String]) async throws -> (ok: Bool, message: String, messages: [String]) {
         var p: [String: Any] = ["action": action, "formValues": formValues]

@@ -51,6 +51,19 @@ jobs:
           swift test 2>&1 | tail -25
           cd ..
 
+      - name: ⭐⭐⭐⭐⭐ 登录表单探针：@js: 的 loginUi ⇒ 柴阅能解析出按钮
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-21 真机「登录界面没按钮」实证）：
+          #   站方的 `loginUi` 常常是 `@js:` / `<js>` 薄壳（正文在 jsLib 里）⭐⭐⭐
+          #   ⇒ 轻阅自己解析只能吃**静态 JSON** ⇒ 解析失败 ⇒ **面板空白、一个按钮都没有** ⭐⭐⭐
+          #   ⇒ 柴阅的 `resolveLoginRows` 会**求值** loginUi ⇒ 行拿得到 ⭐⭐⭐
+          #   ⇒ **Linux 沙盒没有 JSC ⇒ 只能在这里（macOS）真跑** ⭐⭐⭐
+          #   ⇒ 这个探针失败 ⇒ 换装就没解决「没按钮」⇒ 必须拦住 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe
+          cd ..
+
       - name: 编译
         run: |
           # || true 只为让脚本能往下走到打印错误那步

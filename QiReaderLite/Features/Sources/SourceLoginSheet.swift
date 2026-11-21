@@ -206,7 +206,7 @@ struct SourceLoginSheet: View {
                 }
             }
             .task {
-                load()
+                await load()
                 // ⭐⭐⭐ **先挑一条最快的线路**（2026-10-24 真机「唯独大灰狼卡死」）
                 //   大灰狼的站方 jsLib 里有 **8 条线路** ⇒ 站方 catch 循环会挨个试
                 //   ⇒ 死线路每条等超时 ⇒ **每个 op 十几秒** ⇒ 面板一开就卡 ⭐⭐⭐
@@ -638,7 +638,13 @@ struct SourceLoginSheet: View {
     }
 
     /// 解析 loginUi（字段名 / 类型 / 按钮动作）
-    private func load() {
+    ///
+    /// ⭐⭐⭐⭐⭐ **两条路，先静态后柴阅**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
+    ///   · **静态 JSON** ⇒ 轻阅自己解析（快、秒开）⭐⭐⭐
+    ///   · **`@js:` / `<js>` 薄壳** ⇒ 静态解析**必然失败** ⇒ 面板空白、**一个按钮都没有** ⭐⭐⭐
+    ///     ⇒ 必须让**柴阅求值**（`resolveLoginRows`：先跑 `loginJs`、再求值 `loginUi`）⭐⭐⭐
+    ///   ⇒ 顺序：**先出静态的（秒开）** ⇒ 再用柴阅的行**替换/补齐**（覆盖 @js: 的情况）⭐⭐⭐
+    private func load() async {
         // ⭐⭐⭐ **先把模型缺的字段从「原始 JSON 存档」补上**（2026-10-24 真机）
         //   老版本存下来的源缺 `loginUi` ⇒ 登录界面整没了 ⇒ 这里补回来（不用重导）
         let src = SourceRawArchive.patch(source)
@@ -668,15 +674,36 @@ struct SourceLoginSheet: View {
             failed = true
         }
         variableText = SourceVariables.variable(for: source.bookSourceUrl)
-        guard let raw = src.loginUi, !raw.isEmpty,
-              let data = raw.data(using: .utf8),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else { return }
-        fields = arr.compactMap { item in
-            guard let name = item["name"] as? String else { return nil }
-            return Field(name: name,
-                         type: (item["type"] as? String) ?? "text",
-                         action: (item["action"] as? String) ?? "")
+        // ── ① 静态 JSON（快 ⇒ 秒开）────────────────────────────────────────
+        if let raw = src.loginUi, !raw.isEmpty,
+           let data = raw.data(using: .utf8),
+           let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            fields = arr.compactMap { item in
+                guard let name = item["name"] as? String else { return nil }
+                return Field(name: name,
+                             type: (item["type"] as? String) ?? "text",
+                             action: (item["action"] as? String) ?? "")
+            }
+        }
+
+        // ── ② ⭐⭐⭐ **柴阅求值**（`@js:` 的 loginUi ⇒ 静态解析拿不到行）⭐⭐⭐
+        //   ⇒ 站方的登录表单常常是 `@js:` 薄壳（正文在 jsLib 里）⭐⭐⭐
+        //   ⇒ 静态失败 ⇒ 面板空白 ⇒ **没有按钮** ⇒ 用户以为「这个源不支持登录」⭐⭐⭐
+        //   ⇒ 柴阅的 `resolveLoginRows` 会**先跑 loginJs、再求值 loginUi** ⇒ 行拿得到 ⭐⭐⭐
+        do {
+            let rows = try await SourceService.shared.loginRows(source: source)
+            let mapped: [Field] = rows.compactMap { r in
+                guard !r.name.isEmpty else { return nil }
+                return Field(name: r.name, type: r.type, action: r.action)
+            }
+            // ⚠️ **柴阅的行更权威**（它求值过站方脚本）⇒ 有行就用它 ⭐⭐⭐
+            if !mapped.isEmpty { fields = mapped }
+        } catch {
+            // ⚠️ **如实说清**（不静默 ⇒ 用户知道「没按钮」是引擎没给还是源没有）⭐⭐⭐
+            if fields.isEmpty {
+                message = "登录表单取不到：\(String(describing: error))"
+                failed = true
+            }
         }
     }
 
