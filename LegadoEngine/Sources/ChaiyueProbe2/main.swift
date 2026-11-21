@@ -134,7 +134,16 @@ for fn in ["jmModeLabel", "jmStr", "jmSetMode", "jmLineLabel"] {
 
 let quote = String(UnicodeScalar(34))
 // ⭐⭐⭐ 与宿主同一套：自己 JSON.stringify + 每条 try/catch（柴阅的 evalJS 对数组不返回 JSON 文本）⭐⭐⭐
-let list = evalExprs.map { $0.isEmpty ? quote : $0 }.joined(separator: ",")
+// ⭐⭐⭐ 每个表达式转成【JS 字符串字面量】再 eval（裸表达式会让数组构造时就求值 ⇒ 一条炸全炸）⭐⭐⭐
+func jsStringLiteral(_ raw: String) -> String {
+    let q = String(UnicodeScalar(34))
+    if raw.isEmpty { return q + q }
+    let escaped = raw
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: q, with: "\\" + q)
+    return q + escaped + q
+}
+let list = evalExprs.map { jsStringLiteral($0) }.joined(separator: ",")
 let js = "JSON.stringify([\(list)].map(function(x){try{return eval(x);}catch(e){return '';}}))"
 // ⚠️⚠️ **别用 `try?` 吞掉错误**（2026-11-21 实证）⭐⭐⭐
 //   ⇒ 吞掉后只看到「结果为空」⇒ **看不出真因** ⇒ 排查绕了半天的弯 ⭐⭐⭐

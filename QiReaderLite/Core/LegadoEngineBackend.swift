@@ -314,6 +314,16 @@ final class LegadoEngineBackend {
         return out
     }
 
+    /// ⭐⭐⭐ **把一段表达式转成 JS 字符串字面量**（含转义）⭐⭐⭐
+    static func jsStringLiteral(_ raw: String) -> String {
+        let q = String(UnicodeScalar(34))            // 一个双引号字符
+        if raw.isEmpty { return q + q }
+        let escaped = raw
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: q, with: "\\" + q)
+        return q + escaped + q
+    }
+
     /// ⭐⭐⭐ **剥掉 JS 字符串字面量的外层引号**（`'...'` / `"..."` ⇒ 内容）⭐⭐⭐
     ///
     /// ⚠️ 站方常写成 `"'🌐 发布页地址（可改）'"`（外层双引号 + 内层单引号）⇒ ⇒ **递归剥一层** ⭐⭐⭐
@@ -341,8 +351,12 @@ final class LegadoEngineBackend {
         //     ⇒ 直接解 `[String]` 会失败（CI 报「viewName 批量求值结果解不开」）⭐⭐⭐
         //   ⇒ 正解：**在 JS 里自己 `JSON.stringify`**，并且**每条用 try/catch 包住**
         //     （一条表达式炸了不能拖垮整批 ⇒ 它的显示名回落空 ⇒ 面板回落技术名）⭐⭐⭐
-        let list = exprs.map { $0.isEmpty ? empty : $0 }.joined(separator: ",")
-        let js = "JSON.stringify([\(list)].map(function(x){try{return eval(x);}catch(e){return '';}}))"
+        // ⭐⭐⭐⭐⭐ **每个表达式要转成【JS 字符串字面量】再 eval**（2026-11-21 CI 实证）⭐⭐⭐
+        //   ⚠️⚠️ **踩过的坑**：直接在数组里放**裸表达式** ⇒ 数组**构造时**就求值 ⇒
+        //     一条抛错 ⇒ **整批炸** ⇒ 全部返回空 ⇒ 按钮名全没了 ⭐⭐⭐
+        //   ⇒ 正解：数组里放**字符串** ⇒ `eval(x)` 才逐条求值 ⇒ 一条炸不影响其它 ⭐⭐⭐
+        let list = exprs.map { Self.jsStringLiteral($0) }.joined(separator: ",")
+        let js = "JSON.stringify([\(list)].map(function(x){try{return eval(x);}catch(e){return '';}})"
         // ⚠️ Swift 5.9+ 的 `try?` **已摊平** optional ⇒ `raw` 直接是 `String` ⭐⭐⭐
         guard let raw = try? await web.evalJS(js),
               let data = raw.data(using: .utf8),
