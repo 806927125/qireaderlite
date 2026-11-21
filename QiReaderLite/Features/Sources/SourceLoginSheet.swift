@@ -34,6 +34,8 @@ struct SourceLoginSheet: View {
     /// 登录状态检测报告
     @State private var report: LoginStatusReport?
     @State private var probing = false
+    /// ⭐⭐⭐⭐⭐ **这个源有没有「退出登录」按钮**（柴阅同款判据：行里 action 含 `logout`）⭐⭐⭐
+    @State private var hasLogoutAction = false
     /// 番茄 sessionid（手动兜底）
     @State private var fqToken = ""
     /// 书源变量（JSON）—— 聚合源把「服务器地址 / 线路」存在这儿
@@ -166,6 +168,42 @@ struct SourceLoginSheet: View {
                             .foregroundStyle(failed ? Color.red : Theme.sub)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+
+                    // ── ⭐⭐⭐⭐⭐ **登录 / 退出登录**（柴阅同款 · 2026-11-22 移植）⭐⭐⭐
+                    //   ⇒ 「登录」跑站方 loginUrl + login()（**很多源就是直接打开登录网站**）⭐⭐⭐
+                    //   ⇒ 之前只有「行按钮」那条路 ⇒ 有些书源点登录**什么都不发生** ⭐⭐⭐
+                    HStack(spacing: 10) {
+                        Button {
+                            submitLogin()
+                        } label: {
+                            Label("登录", systemImage: "key.fill")
+                                .font(.system(size: 13, weight: .medium))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                        }
+                        .buttonStyle(GlassActionButtonStyle())
+                        .tint(Theme.accent)
+                        .disabled(busy)
+
+                        if hasLogoutAction {
+                            Button {
+                                logoutLogin()
+                            } label: {
+                                Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 12)
+                            }
+                            .buttonStyle(GlassActionButtonStyle())
+                            .tint(Theme.sub)
+                            .disabled(busy)
+                        }
+                        Text("「登录」= 跑站方 loginUrl（不少源就是直接打开登录网站）")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.sub)
+                    }
+                    .padding(12)
+                    .glassCard(cornerRadius: 12, variant: .regular)
 
                     // ── 引擎急救（卡死时点这个，不用重装 App）──────────
                     HStack(spacing: 10) {
@@ -690,6 +728,11 @@ struct SourceLoginSheet: View {
                              type: (item["type"] as? String) ?? "text",
                              action: (item["action"] as? String) ?? "")
             }
+            // ⭐⭐⭐ **有没有「退出登录」按钮**（柴阅同款判据）⭐⭐⭐
+            hasLogoutAction = arr.contains { item in
+                ((item["type"] as? String) ?? "") == "button"
+                    && ((item["action"] as? String) ?? "").contains("logout")
+            }
         }
 
         // ── ② ⭐⭐⭐ **柴阅求值**（`@js:` 的 loginUi ⇒ 静态解析拿不到行）⭐⭐⭐
@@ -708,6 +751,12 @@ struct SourceLoginSheet: View {
             //   ⇒ 若无条件用柴阅的行覆盖 ⇒ **静态源会被预设行顶掉**（可能不是站方真正的行）⭐⭐⭐
             //   ⇒ 规则：**静态优先**（秒开且最准）⇒ 静态为空才用柴阅求值出来的 ⭐⭐⭐
             if fields.isEmpty, !mapped.isEmpty { fields = mapped }
+            // ⭐⭐⭐ 柴阅路径也判一次（静态解析失败时用柴阅的行）⭐⭐⭐
+            if !hasLogoutAction {
+                hasLogoutAction = rows.contains { r in
+                    r.type == "button" && r.action.contains("logout")
+                }
+            }
         } catch {
             // ⚠️ **如实说清**（不静默 ⇒ 用户知道「没按钮」是引擎没给还是源没有）⭐⭐⭐
             if fields.isEmpty {
@@ -726,6 +775,46 @@ struct SourceLoginSheet: View {
                     let d = names[idx]
                     return d.isEmpty ? f : Field(name: d, type: f.type, action: f.action)
                 }
+            }
+        }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **主「登录」**（跑站方 loginUrl + login()）⭐⭐⭐
+    ///
+    /// ⚠️ **与「行按钮」的区别**：行按钮跑的是 `loginJs + action`；
+    ///   而这个跑的是站方**完整的登录流程**（`loginUrl` + `login()`）⭐⭐⭐
+    ///   ⇒ **不少书源的登录就是「直接打开登录网站」** ⇒ 必须走这条 ⭐⭐⭐
+    private func submitLogin() {
+        guard let s = current else { return }
+        busy = true
+        message = ""
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                let values = self.values
+                try await SourceService.shared.loginSubmit(source: s, formValues: values)
+                self.message = "✅ 已执行站方登录流程（登录网站可能已在 App 内置浏览器打开）"
+                SourceVariables.setLoginFormValues(values, for: s.bookSourceUrl)
+            } catch {
+                self.message = "❌ 登录失败：\(error.localizedDescription)"
+                self.failed = true
+            }
+        }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **「退出登录」**（跑站方带 `logout` 的 action）⭐⭐⭐
+    private func logoutLogin() {
+        guard let s = current else { return }
+        busy = true
+        message = ""
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                try await SourceService.shared.loginLogout(source: s)
+                self.message = "✅ 已执行站方退出流程"
+            } catch {
+                self.message = "❌ 退出失败：\(error.localizedDescription)"
+                self.failed = true
             }
         }
     }

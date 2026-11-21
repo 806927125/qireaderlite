@@ -115,9 +115,26 @@ console.log('\n=== 7. ★ 禁漫天堂：源侧函数库必须进 jsLib（否则
   ok(ui.some((x) => String(x.viewName || '').includes('jmModeLabel')), '模式按钮的显示名在 viewName（表达式）');
 }
 
+console.log('\n=== 7. ★ 柴阅登录面板的【三种动作】必须齐全（2026-11-22 移植对照） ===');
+{
+  const svc2 = strip(read('QiReaderLite/Core/SourceService.swift'));
+  const sheet2 = strip(read('QiReaderLite/Features/Sources/SourceLoginSheet.swift'));
+  ok(/case "loginSubmit"/.test(host), '★ 宿主有 loginSubmit op（② 主「登录」：跑站方 loginUrl + login()）');
+  ok(/web\.login\(formData: formData\)/.test(host), '★ 它调柴阅的 web.login(formData:)（★ 站方完整登录流程）');
+  ok(/case "loginLogout"/.test(host), '★ 宿主有 loginLogout op（③ 「退出登录」）');
+  ok(/contains\("logout"\)/.test(host), '★ 退出判据照抄柴阅：行里 action 含 "logout"');
+  ok(/func loginSubmit\(source: BookSource, formValues: \[String: String\]\)/.test(svc2), 'Service 有 loginSubmit');
+  ok(/func loginLogout\(source: BookSource\)/.test(svc2), 'Service 有 loginLogout');
+  ok(/Label\("登录", systemImage: "key\.fill"\)/.test(sheet2), '★ 面板有「登录」主按钮');
+  ok(/Label\("退出登录"/.test(sheet2), '★ 面板有「退出登录」按钮');
+  ok(/hasLogoutAction/.test(sheet2), '★ 面板会判「这个源有没有退出按钮」');
+}
+
 console.log('\n=== 8. 变异对照（改坏 ⇒ 必须红） ===');
 {
-  const m1 = host.replace(/web\.resolveLoginRows\(\)/, '[]');
+  // ⚠️⚠️⚠️ **必须全局替换**（`resolveLoginRows` 现在有**两处**：loginRows op + loginLogout op）⭐⭐⭐
+  //   ⇒ `String.replace` 只换第一处 ⇒ 变异无效 ⇒ 门禁没牙齿 ⭐⭐⭐
+  const m1 = host.split('web.resolveLoginRows()').join('[]');
   ok(!/web\.resolveLoginRows\(\)/.test(m1), '★ 变异①（宿主不求值）⇒ 被抓住');
 
   const m2 = sheet.replace(/SourceService\.shared\.loginRows\(source: source\)/, '[]');

@@ -65,6 +65,36 @@ final class SourceService {
         var names: [String] = []
     }
 
+    /// ⭐⭐⭐⭐⭐ **主「登录」按钮**（2026-11-22 移植柴阅的登录面板）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么必须单独有这个入口**（柴阅的登录面板有**三种**动作）⭐⭐⭐
+    ///   ① 行按钮   ⇒ `runLoginAction`（跑 `loginJs + action`）⭐⭐⭐
+    ///   ② **「登录」主按钮** ⇒ **`webBook.login(formData:)`** ⇒ **跑站方 `loginUrl` + `login()`** ⭐⭐⭐
+    ///      ⇒ **这才是「点进去直接进网站」的流程**（站方 loginUrl 里通常就是打开登录页）⭐⭐⭐
+    ///      ⇒ 轻阅之前**只实现了 ①** ⇒ ⇒ 有些书源的登录**点进去什么都不发生** ⭐⭐⭐
+    ///   ③ **「退出登录」** ⇒ 跑行里 action 含 `logout` 的那个 ⭐⭐⭐
+    func loginSubmit(source: BookSource, formValues: [String: String]) async throws -> Bool {
+        let dto: LoginResultDTO = try await call("loginSubmit",
+                                                 json(["formValues": formValues]),
+                                                 as: LoginResultDTO.self, source: source)
+        if !dto.error.isEmpty { throw ServiceError.engineFailed(dto.error) }
+        return dto.ok
+    }
+
+    /// ⭐⭐⭐⭐⭐ **「退出登录」**（柴阅同款判据：行里 action 含 `logout` 的那个）⭐⭐⭐
+    func loginLogout(source: BookSource) async throws -> Bool {
+        let dto: LoginResultDTO = try await call("loginLogout", json([:]), as: LoginResultDTO.self, source: source)
+        if !dto.error.isEmpty { throw ServiceError.engineFailed(dto.error) }
+        return dto.ok
+    }
+
+    /// ⭐⭐⭐ **登录动作的结果**
+    struct LoginResultDTO: Codable {
+        var ok: Bool = false
+        var error: String = ""
+        var msgs: [String] = []
+    }
+
     /// ⭐⭐⭐ **登录表单行的集合**
     struct LoginRowsDTO: Codable {
         var rows: [LoginRowDTO] = []

@@ -270,6 +270,38 @@ final class LegadoEngineBackend {
                         "default": row.defaultValue ?? ""]
             }]
 
+        case "loginSubmit":
+            // ⭐⭐⭐⭐⭐ **主「登录」按钮**（2026-11-22 移植柴阅的登录面板实证）⭐⭐⭐
+            //   ⇒ 柴阅的登录面板有**三种动作**，轻阅之前只实现了第一种 ⭐⭐⭐
+            //     ① 行按钮   ⇒ `runLoginAction`（跑 `loginJs + action`）⇒ 轻阅已有 ✔
+            //     ② **「登录」主按钮** ⇒ `webBook.login(formData:)` ⇒ **跑站方 `loginUrl` + `login()`** ⭐⭐⭐
+            //        ⇒ **这才是「点进去直接进网站」的流程**（站方 loginUrl 里通常就是打开登录页）⭐⭐⭐
+            //     ③ **「退出登录」** ⇒ 跑行里 action 含 `logout` 的那个 ⭐⭐⭐
+            //   ⇒ 缺 ② ⇒ 有些书源的登录**点进去什么都不发生**（站方的登录脚本压根没跑）⭐⭐⭐
+            let formData = (payload["formValues"] as? [String: String]) ?? [:]
+            do {
+                try await web.login(formData: formData)
+                return ["ok": true, "msgs": []]
+            } catch {
+                return ["ok": false, "error": String(describing: error), "msgs": []]
+            }
+
+        case "loginLogout":
+            // ⭐⭐⭐⭐⭐ **「退出登录」**（柴阅同款：找行里 action 含 `logout` 的那个）⭐⭐⭐
+            //   ⇒ 判据照抄柴阅：`rows.first { $0.type == .button && ($0.action ?? "").contains("logout") }` ⭐⭐⭐
+            let rows = try await web.resolveLoginRows()
+            let logout = rows.first { $0.type == .button && ($0.action ?? "").contains("logout") }?.action
+            guard let logout, !logout.isEmpty else {
+                return ["ok": false, "error": "这个书源没有「退出登录」按钮", "msgs": []]
+            }
+            let saved = web.savedLoginInfo
+            do {
+                try await web.runLoginAction(logout, formData: saved)
+                return ["ok": true, "msgs": []]
+            } catch {
+                return ["ok": false, "error": String(describing: error), "msgs": []]
+            }
+
         case "login":
             // ⭐⭐⭐ **登录动作**（柴阅的 `runLoginAction` 会自己把表单值写进 `loginInfo`）⭐⭐⭐
             //   ⇒ **不再需要**宿主手工灌 `sourceVars["loginInfo"]`（build300 那套）⭐⭐⭐
