@@ -64,6 +64,17 @@ jobs:
           swift run ChaiyueProbe
           cd ..
 
+      - name: ⭐⭐⭐⭐⭐ 禁漫天堂登录面板探针：viewName 求值 + action 能真跑
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-21 真机「登录面板没有小说/漫画/视频这些按钮」实证）：
+          #   ⇒ 按钮的行在 loginUi 里，但【显示名在 viewName（表达式）】+【action 的函数在 loginUrl 里】⭐⭐⭐
+          #   ⇒ 宿主执行 action / 求值 viewName 时**不会先跑 loginUrl** ⇒ 函数不在作用域 ⇒ **静默失败** ⭐⭐⭐
+          #   ⇒ 源侧解法：把函数库搬进 jsLib 顶层 ⇒ 本探针用**真引擎 + 真源**验证它真的通了 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe2
+          cd ..
+
       - name: 编译
         run: |
           # || true 只为让脚本能往下走到打印错误那步

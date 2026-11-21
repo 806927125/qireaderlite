@@ -84,6 +84,12 @@ let package = Package(
         .executableTarget(name: "ChaiyueProbe",
                           dependencies: ["ChaiyueEngine", "ChaiyueModels"],
                           path: "Sources/ChaiyueProbe"),
+        // ⭐⭐⭐⭐⭐ **「禁漫天堂」登录面板探针**（2026-11-21 真机「没有小说/漫画/视频这些按钮」实证）⭐⭐⭐
+        //   ⇒ 真引擎 + 真源 ⇒ 验「viewName 能求出人话名」+「action 能真跑」⭐⭐⭐
+        //   ⇒ Linux 没有 JSC ⇒ **只能靠 CI（macOS）跑** ⭐⭐⭐
+        .executableTarget(name: "ChaiyueProbe2",
+                          dependencies: ["ChaiyueEngine", "ChaiyueModels"],
+                          path: "Sources/ChaiyueProbe2"),
         .testTarget(name: "ChaiyueModelsTests",
                     dependencies: ["ChaiyueModels"],
                     path: "Tests/ChaiyueModelsTests"),

@@ -107,25 +107,29 @@ echo "=== typecheck（抓类型错：parse 抓不到）==="
 ENGINE_DIR="$(pwd)/LegadoEngine"
 ENGINE_MODULES=""
 find_modules() {
-  for d in "$ENGINE_DIR/.build/x86_64-unknown-linux-gnu/debug/Modules" \
-           "$ENGINE_DIR/.build/debug/Modules"; do
+  # ⭐⭐⭐⭐⭐ **顺序很重要**：优先【`swift build` 的默认输出目录】（2026-11-21 实证）⭐⭐⭐
+  #   ⚠️⚠️ **旧逻辑先找 `.build/x86_64-unknown-linux-gnu/debug/Modules`**（那是**双目标构建**留下的
+  #     **旧产物**）⇒ 宿主链的是**旧 .swiftmodule** ⇒ 新代码**根本没进模块** ⭐⭐⭐
+  #     ⇒ 报「cannot find X in scope」⇒ 而门禁自己却绿 ⇒ **假红 + 假绿** ⭐⭐⭐
+  for d in "$ENGINE_DIR/.build/debug/Modules" \
+           "$ENGINE_DIR/.build/x86_64-unknown-linux-gnu/debug/Modules"; do
     if [ -f "$d/LegadoEngine.swiftmodule" ]; then echo "$d"; return 0; fi
   done
   return 1
 }
 ENGINE_MODULES="$(find_modules || true)"
-# ⭐⭐⭐ **没有产物 ⇒ 先编一次**（新引擎是本地包 ⇒ 首次要拉 SwiftSoup/Kanna ⇒ 需要网）
-#   ⇒ 编不出来 ⇒ **显式 SKIP**（本组没验到 ⇒ 不许假绿）⭐⭐⭐
-if [ -z "$ENGINE_MODULES" ] && [ -d "$ENGINE_DIR" ]; then
-  echo "  （先编一次本地引擎包 LegadoEngine/ ……）"
-  (cd "$ENGINE_DIR" && "$SWIFTC" --version >/dev/null 2>&1) && \
-    # ⭐⭐⭐⭐⭐ **必须先删 build plan**（2026-11-21 移植柴阅实证）⭐⭐⭐
-    #   SwiftPM 的 **build plan（.build/*.yaml）不会自动纳入新加的 .swift 文件** ⭐⭐⭐
-    #   ⇒ 新文件（例：柴阅的 `Compat/LegadoPublicAPI.swift`）**根本没被编译** ⭐⭐⭐
-    #   ⇒ 症状：宿主引用新符号 ⇒ 报「cannot find X in scope」⇒ **看起来像代码写错了** ⭐⭐⭐
-    #   ⇒ 其实只是 plan 过期 ⇒ **假红** ⇒ 会把人带偏（去改本来正确的代码）⭐⭐⭐
-    # ⇒ 只删 yaml（保留 .build/debug 产物 ⇒ 仍是增量 ⇒ 约 12s）⭐⭐⭐
-    (cd "$ENGINE_DIR" && rm -f .build/*.yaml && timeout 900 swift build >/dev/null 2>&1)
+# ⭐⭐⭐⭐⭐ **无条件重编引擎**（2026-11-21 移植柴阅实证 ⇒ 又踩了一次）⭐⭐⭐
+#   ⚠️⚠️ **旧逻辑只在「找不到产物」时编一次** ⇒ 源码改了也**不重编** ⇒⭐⭐⭐
+#     ⇒ 宿主拿的是**旧 .swiftmodule** ⇒ 新代码**根本没进模块** ⇒ 报「cannot find X in scope」⭐⭐⭐
+#     ⇒ 而**门禁自己却绿**（因为它编的是旧模块）⇒ **假绿** ⭐⭐⭐
+#   ⇒ 现在：**每次都删 build plan + 重编**（约 20s）⇒ 源码改动必然进模块 ⭐⭐⭐
+#   ⇒ ⚠️ SwiftPM 的 **build plan（.build/*.yaml）不会自动纳入新加的 .swift 文件** ⭐⭐⭐
+if [ -d "$ENGINE_DIR" ]; then
+  echo "  （重编本地引擎包 LegadoEngine/ ⇒ 保证改动进模块）"
+  if (cd "$ENGINE_DIR" && "$SWIFTC" --version >/dev/null 2>&1); then
+    # ⭐⭐⭐ **删 build plan**（SwiftPM 的 plan 不会自动纳入新加的 .swift 文件）⭐⭐⭐
+    (cd "$ENGINE_DIR" && rm -f .build/*.yaml && timeout 900 swift build 2>&1 | tail -3)
+  fi
   ENGINE_MODULES="$(find_modules || true)"
 fi
 if [ -z "$ENGINE_MODULES" ]; then

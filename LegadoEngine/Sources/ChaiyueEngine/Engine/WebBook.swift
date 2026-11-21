@@ -13,9 +13,16 @@ public struct LoginRow: Codable, Hashable, Sendable {
     public var chars: [String]?
     public var defaultValue: String?
     public var style: ExploreKind.Style?
+    /// ⭐⭐⭐ **显示名（可选）**（2026-11-21 移植补丁）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么加它**：有些书源把「人话标题」放在 `viewName`（而不是 `name`）⭐⭐⭐
+    ///   而 `name` 是技术名（如 `jmModeN`）⇒ ⇒ 宿主直接显示 `name` ⇒ **用户看到的是技术名** ⭐⭐⭐
+    ///   ⇒ 症状：「登录面板没有『小说 / 漫画 / 视频』这些按钮」（其实有，只是显示成了 `jmModeN`）⭐⭐⭐
+    /// ⚠️ `viewName` 的值通常是**表达式**（如 `jmModeLabel('漫画')`）⇒ **要由宿主求值**才能拿到人话名 ⭐⭐⭐
+    public var viewName: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, type, action, chars, style
+        case name, type, action, chars, style, viewName
         case defaultValue = "default"
     }
 
@@ -27,6 +34,7 @@ public struct LoginRow: Codable, Hashable, Sendable {
         chars = try? c.decode([String].self, forKey: .chars)
         defaultValue = try? c.decode(String.self, forKey: .defaultValue)
         style = try? c.decode(ExploreKind.Style.self, forKey: .style)
+        viewName = try? c.decode(String.self, forKey: .viewName)
     }
 }
 

@@ -72,7 +72,43 @@ ok(/@js:_probeRows\(\)/.test(probe), '★ 探针的 fixture 用的是 @js: 形�
 ok(/type == \.button/.test(probe), '★ 探针断言「有 button 行」（★ 没按钮 ⇒ 探针红 ⇒ 拦住）');
 ok(/exit\(1\)/.test(probe), '探针失败时退出码非 0（CI 会红）');
 
-console.log('\n=== 6. 变异对照（改坏 ⇒ 必须红） ===');
+console.log('\n=== 6. ★ 禁漫天堂：显示名在 `viewName` ⇒ 必须能求值（2026-11-21 真机实证） ===');
+{
+  const svc = strip(read('QiReaderLite/Core/SourceService.swift'));
+  const sheet = strip(read('QiReaderLite/Features/Sources/SourceLoginSheet.swift'));
+  const host = strip(read('QiReaderLite/Core/LegadoEngineBackend.swift'));
+  const host2 = strip(read('LegadoEngine/Sources/LegadoEngine/LegadoEngineHost.swift'));
+
+  ok(/func loginViewNames\(source: BookSource, expressions: \[String\]\)/.test(svc),
+     '★ SourceService 有 loginViewNames（批量求值 viewName）');
+  ok(/var displayName: String = ""/.test(svc), 'LoginRowDTO 有 displayName（人话名）');
+  ok(/case "loginViewNames"/.test(host), '宿主有 loginViewNames op');
+  ok(/web\.evalJS\(js\)/.test(host), '★ 批量求值用引擎 evalJS（真求值，不是猜）');
+  ok(/viewExprs/.test(sheet), '★ 面板静态路径也收集 viewName');
+  ok(/loginViewNames\(source: source, expressions: viewExprs\)/.test(sheet),
+     '★ 面板静态路径也调 loginViewNames（静态源也能显示人话名）');
+  ok(/r\.displayName\.isEmpty \? r\.name : r\.displayName/.test(sheet),
+     '★ 柴阅路径优先用 displayName');
+  ok(/typealias LoginRow = ChaiyueEngine\.LoginRow/.test(host2), '宿主暴露 LoginRow 别名');
+}
+
+console.log('\n=== 7. ★ 禁漫天堂：源侧函数库必须进 jsLib（否则 action 点不动） ===');
+{
+  const fx = JSON.parse(read('test/fixtures/禁漫天堂-适配.json'));
+  const s0 = Array.isArray(fx) ? fx[0] : fx;
+  const lib = s0.jsLib || '';
+  for (const fn of ['jmSetMode', 'jmModeLabel', 'jmPickLine', 'jmFetchLines', 'jmTestCurrent', 'jmLineLabel', 'jmHostLabel']) {
+    ok(lib.includes('function ' + fn + '('), `★ jsLib 顶层有 ${fn}（action/viewName 才调得到）`);
+  }
+  ok((lib.match(/function jmStr\(/g) || []).length === 1,
+     '★ jmStr 没有重复定义（jsLib 与 loginUrl 各一份会互相覆盖）');
+  const ui = JSON.parse(s0.loginUi);
+  const modes = ui.filter((x) => String(x.action || '').includes('jmSetMode'));
+  ok(modes.length === 3, `有 3 个模式按钮（漫画/小说/视频）⇒ 实得 ${modes.length}`);
+  ok(ui.some((x) => String(x.viewName || '').includes('jmModeLabel')), '模式按钮的显示名在 viewName（表达式）');
+}
+
+console.log('\n=== 8. 变异对照（改坏 ⇒ 必须红） ===');
 {
   const m1 = host.replace(/web\.resolveLoginRows\(\)/, '[]');
   ok(!/web\.resolveLoginRows\(\)/.test(m1), '★ 变异①（宿主不求值）⇒ 被抓住');
@@ -86,8 +122,18 @@ console.log('\n=== 6. 变异对照（改坏 ⇒ 必须红） ===');
   const m4 = vars.replace(/var cur = loginInfo\(for: sourceUrl\)/, 'var cur = [String: String]()');
   ok(!/var cur = loginInfo\(for: sourceUrl\)/.test(m4), '★ 变异④（改成覆盖）⇒ 被抓住');
 
-  const m5 = ci.replace(/swift run ChaiyueProbe/, 'true');
-  ok(!/swift run ChaiyueProbe/.test(m5), '★ 变异⑤（CI 不跑探针）⇒ 被抓住');
+  // ⚠️⚠️ **必须精确匹配 `ChaiyueProbe2`**（现在有两个探针 ⇒ `ChaiyueProbe` 会把 `ChaiyueProbe2` 也匹配上）⭐⭐⭐
+  const m5 = ci.replace(/swift run ChaiyueProbe2/, 'true');
+  ok(!/swift run ChaiyueProbe2/.test(m5) && /swift run ChaiyueProbe\b/.test(m5),
+     '★ 变异⑤（CI 不跑禁漫天堂探针）⇒ 被抓住');
+
+  // ⑥ 源侧：函数库没进 jsLib ⇒ action 点不动（★ 真机症状的根因）⭐⭐⭐
+  const fx = JSON.parse(read('test/fixtures/禁漫天堂-适配.json'));
+  const s0 = Array.isArray(fx) ? fx[0] : fx;
+  const lib2 = s0.jsLib || '';
+  ok(lib2.includes('function jmSetMode('), '★ 基准：jsLib 里有 jmSetMode');
+  const libNoFns = lib2.replace(/function jm(SetMode|ModeLabel|PickLine|FetchLines|TestCurrent|LineLabel|HostLabel)\(/g, 'function __gone_$1(');
+  ok(!libNoFns.includes('function jmSetMode('), '★ 变异⑥（函数库不在 jsLib）⇒ 被抓住');
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`);

@@ -196,6 +196,18 @@ final class LegadoEngineBackend {
                 return ["ok": false, "error": String(describing: error), "msgs": []]
             }
 
+        case "loginViewNames":
+            // ⭐⭐⭐⭐⭐ **批量求值登录项的 `viewName` 表达式**（2026-11-21 真机实证）⭐⭐⭐
+            //   ⇒ 有些书源把「人话标题」放在 `viewName`（**表达式**，如 `jmModeLabel('漫画')`）⭐⭐⭐
+            //   ⇒ 而 `name` 是**技术名**（`jmModeN`）⇒ ⇒ 面板显示技术名 ⇒
+            //     ⇒ **用户看到的是「没有小说 / 漫画 / 视频 这些按钮」**（其实有，只是认不出）⭐⭐⭐
+            //   ⇒ **一次求值一批**（不是逐条 ⇒ 十几条按钮不会跑十几秒）⭐⭐⭐
+            //   ⚠️ **静态 loginUi 的行也得走这里** ⇒ 因为柴阅对静态源只返回预设行 ⇒
+            //     ⇒ 静态行由宿主自己解析 ⇒ 但 `viewName` 仍需引擎求值 ⭐⭐⭐
+            let exprs = (payload["expressions"] as? [String]) ?? []
+            let names = await resolveViewNames(exprs, web: web)
+            return ["names": names]
+
         case "loginRows":
             // ⭐⭐⭐⭐⭐ **登录表单行 = 柴阅的 `resolveLoginRows`**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
             //   ⇒ 站方的 `loginUi` 常常是 **`@js:` / `<js>` 薄壳**（正文在 jsLib 里）⭐⭐⭐
@@ -203,12 +215,21 @@ final class LegadoEngineBackend {
             //   ⇒ 柴阅的 `resolveLoginRows` 会**先跑 `loginJs`、再求值 `loginUi`** ⇒ 行拿得到 ⭐⭐⭐
             //   ⇒ `result` 绑的是**已保存的登录信息**（柴阅的 `userInfo_` 槽 ⇒ 经我们的 store 转换）⭐⭐⭐
             let rows = try await web.resolveLoginRows()
+            // ⭐⭐⭐⭐⭐ **显示名：优先用 `viewName`（人话名）**（2026-11-21 真机实证）⭐⭐⭐
+            //   ⇒ 有些书源把标题放在 `viewName`（**表达式**，如 `jmModeLabel('漫画')`），
+            //     而 `name` 是**技术名**（`jmModeN`）⇒ ⇒ 直接显示 `name` ⇒ **用户看不到「小说/漫画/视频」** ⭐⭐⭐
+            //   ⇒ 这里把**所有 viewName 拼成一个数组表达式，一次求值**（一次调用 ⇒ 不慢）⭐⭐⭐
+            //   ⇒ 动态回填也保住（测速把 ms 写进变量 ⇒ 重新拉一次就更新）⭐⭐⭐
+            let displayNames = await resolveViewNames(rows.map { $0.viewName ?? "" }, web: web)
             return ["rows": rows.map { row in
-                ["name": row.name,
-                 "type": row.type.rawValue,
-                 "action": row.action ?? "",
-                 "chars": row.chars ?? [],
-                 "default": row.defaultValue ?? ""]
+                let idx = rows.firstIndex(of: row) ?? 0
+                let disp = idx < displayNames.count ? displayNames[idx] : ""
+                return ["name": row.name,
+                        "displayName": (disp.isEmpty ? row.name : disp),
+                        "type": row.type.rawValue,
+                        "action": row.action ?? "",
+                        "chars": row.chars ?? [],
+                        "default": row.defaultValue ?? ""]
             }]
 
         case "login":
@@ -256,6 +277,32 @@ final class LegadoEngineBackend {
             // ⚠️ **不认识就明确报错**（不静默返回空 ⇒ 不假成功）⭐⭐⭐
             throw ServiceError.engineFailed("新引擎不支持「\(op)」这个操作")
         }
+    }
+
+    // MARK: - ⭐⭐⭐ 显示名求值（`viewName`）
+
+    /// ⭐⭐⭐⭐⭐ **批量求值登录项的 `viewName`**（2026-11-21 真机实证）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么要它**：有些书源把「人话标题」放在 `viewName`（**表达式**），
+    ///   而 `name` 是技术名（`jmModeN` / `jmLine3`）⇒ ⇒ 面板显示技术名 ⇒
+    ///   ⇒ **用户看到「没有小说 / 漫画 / 视频这些按钮」**（其实有，只是认不出）⭐⭐⭐
+    ///
+    /// ⭐⭐⭐ **为什么批量一次求值**（而不是逐条）：
+    ///   逐条 = N 次会话创建（N 个按钮 ⇒ 十几秒）⇒ ⇒ **拼成一个数组表达式 ⇒ 一次求值** ⭐⭐⭐
+    ///
+    /// ⚠️ 求值失败（表达式依赖不存在的东西）⇒ **回落 `name`** ⇒ 不影响其它项 ⭐⭐⭐
+    private static func resolveViewNames(_ exprs: [String],
+                                         web: LegadoEngineHost.WebBook) async -> [String] {
+        guard exprs.contains(where: { !$0.isEmpty }) else { return [] }
+        let empty = String(UnicodeScalar(34))            // 一个双引号字符（避免转义地狱）
+        let js = "[" + exprs.map { $0.isEmpty ? empty : $0 }.joined(separator: ",") + "]"
+        // ⚠️ Swift 5.9+ 的 `try?` **已摊平** optional ⇒ `raw` 直接是 `String` ⭐⭐⭐
+        guard let raw = try? await web.evalJS(js),
+              let data = raw.data(using: .utf8),
+              let list = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return list
     }
 
     // MARK: - 形状对齐（App 侧的契约 —— **UI 不改 ⇒ 键名一字不改**）

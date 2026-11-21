@@ -56,4 +56,10 @@ public enum LegadoEngineHost {
     /// ⭐⭐⭐ 宿主要实现的交互协议（轻阅的实现见 `ChaiyueSourceUI.swift`）⭐⭐⭐
     public typealias InteractionPresenter = ChaiyueEngine.SourceInteractionPresenter
     #endif
+
+    // ⭐⭐⭐⭐⭐ **登录面板的一行**（含 `viewName` ⇒ 人话显示名）⭐⭐⭐
+    //   ⚠️⚠️ **必须在【无条件区】**（2026-11-21 实证）⭐⭐⭐
+    //   ⇒ 之前放在 `#if canImport(WebKit)` 里 ⇒ **Linux 沙盒上不存在** ⇒ 宿主编不过 ⭐⭐⭐
+    //   ⇒ 而 `LoginRow` 本身**不依赖 WebKit** ⇒ 无条件暴露才对 ⭐⭐⭐
+    public typealias LoginRow = ChaiyueEngine.LoginRow
 }

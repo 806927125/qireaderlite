@@ -38,11 +38,31 @@ final class SourceService {
     /// ⭐⭐⭐ **登录表单的一行**（站方 `loginUi` 的契约）
     struct LoginRowDTO: Codable {
         var name: String = ""
+        /// ⭐⭐⭐ **人话显示名**（由 `viewName` 表达式求值而来 ⇒ 技术名 `jmModeN` ⇒ 「📕 漫画」）⭐⭐⭐
+        var displayName: String = ""
         /// text / password / button / toggle / select（柴阅 `LoginRow.Kind` 的 rawValue）
         var type: String = "text"
         var action: String = ""
         var chars: [String] = []
         var `default`: String = ""
+    }
+
+    /// ⭐⭐⭐⭐⭐ **批量求值登录项的 `viewName` 表达式**（2026-11-21 真机实证）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么需要**：有些书源把「人话标题」放在 `viewName`（**表达式**），
+    ///   而 `name` 是**技术名**（`jmModeN`）⇒ ⇒ 面板显示技术名 ⇒
+    ///   ⇒ **用户看到的是「没有小说 / 漫画 / 视频 这些按钮」**（其实有，只是认不出）⭐⭐⭐
+    /// ⇒ 静态 `loginUi` 的行由宿主自己解析 ⇒ 但 `viewName` **仍需引擎求值** ⇒ 走这个方法 ⭐⭐⭐
+    func loginViewNames(source: BookSource, expressions: [String]) async throws -> [String] {
+        let dto: LoginViewNamesDTO = try await call("loginViewNames",
+                                                     json(["expressions": expressions]),
+                                                     as: LoginViewNamesDTO.self, source: source)
+        return dto.names
+    }
+
+    /// ⭐⭐⭐ **批量求值的结果**
+    struct LoginViewNamesDTO: Codable {
+        var names: [String] = []
     }
 
     /// ⭐⭐⭐ **登录表单行的集合**

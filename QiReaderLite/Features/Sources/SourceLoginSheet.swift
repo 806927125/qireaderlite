@@ -675,11 +675,17 @@ struct SourceLoginSheet: View {
         }
         variableText = SourceVariables.variable(for: source.bookSourceUrl)
         // ── ① 静态 JSON（快 ⇒ 秒开）────────────────────────────────────────
+        //   ⭐⭐⭐⭐⭐ **保留 `viewName` 表达式**（2026-11-21 真机实证）⭐⭐⭐
+        //   ⇒ 有些书源把「人话标题」放在 `viewName`（**表达式**，如 `jmModeLabel('漫画')`）
+        //     而 `name` 是**技术名**（`jmModeN`）⇒ ⇒ 面板显示技术名 ⇒
+        //     ⇒ **用户看到的是「没有小说 / 漫画 / 视频 这些按钮」**（其实有，只是认不出）⭐⭐⭐
+        var viewExprs: [String] = []
         if let raw = src.loginUi, !raw.isEmpty,
            let data = raw.data(using: .utf8),
            let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
             fields = arr.compactMap { item in
                 guard let name = item["name"] as? String else { return nil }
+                viewExprs.append((item["viewName"] as? String) ?? "")
                 return Field(name: name,
                              type: (item["type"] as? String) ?? "text",
                              action: (item["action"] as? String) ?? "")
@@ -694,7 +700,8 @@ struct SourceLoginSheet: View {
             let rows = try await SourceService.shared.loginRows(source: source)
             let mapped: [Field] = rows.compactMap { r in
                 guard !r.name.isEmpty else { return nil }
-                return Field(name: r.name, type: r.type, action: r.action)
+                return Field(name: r.displayName.isEmpty ? r.name : r.displayName,
+                             type: r.type, action: r.action)
             }
             // ⭐⭐⭐⭐⭐ **只在【静态解析不出来】时才用柴阅的行**（2026-11-21 实证）⭐⭐⭐
             //   ⇒ 柴阅的 `resolveLoginRows` **只处理 `@js:`/`<js>`**；静态 JSON 走它的**预设行** ⭐⭐⭐
@@ -706,6 +713,19 @@ struct SourceLoginSheet: View {
             if fields.isEmpty {
                 message = "登录表单取不到：\(String(describing: error))"
                 failed = true
+            }
+        }
+
+        // ── ③ ⭐⭐⭐⭐⭐ **统一求值 `viewName`**（静态 / 柴阅两条路都要）⭐⭐⭐
+        //   ⇒ 静态 loginUi 的行由宿主自己解析 ⇒ 但 `viewName` 是表达式 ⇒ **仍需引擎求值** ⭐⭐⭐
+        //   ⇒ **一次求值一批**（静态路径不经过柴阅的 loginRows ⇒ 这里单独调一次）⭐⭐⭐
+        if !viewExprs.isEmpty, viewExprs.contains(where: { !$0.isEmpty }) {
+            if let names = try? await SourceService.shared.loginViewNames(source: source, expressions: viewExprs),
+               names.count == fields.count {
+                fields = fields.enumerated().map { idx, f in
+                    let d = names[idx]
+                    return d.isEmpty ? f : Field(name: d, type: f.type, action: f.action)
+                }
             }
         }
     }
