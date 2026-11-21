@@ -48,8 +48,8 @@ console.log('=== 1. 柴阅的 ReaderPlatform 已 vendor ===');
 console.log('\n=== 2. 宿主实现了柴阅的交互协议 ===');
 {
   const ui = read('QiReaderLite/Core/ChaiyueSourceUI.swift');
-  ok(/final class ChaiyueInteractionPresenter: NSObject, SourceInteractionPresenter/.test(ui),
-     '★ 实现了 SourceInteractionPresenter');
+  ok(/final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost\.InteractionPresenter/.test(ui),
+     '★ 实现了柴阅的 SourceInteractionPresenter（走 LegadoEngineHost 别名）');
   ok(/func presentBrowser\(/.test(ui), '★ presentBrowser（java.startBrowser / startBrowserAwait）');
   ok(/func presentVerificationCode\(/.test(ui), '★ presentVerificationCode（验证码）');
   ok(/func copyText\(/.test(ui), '★ copyText（java.copyText）');
@@ -81,7 +81,32 @@ console.log('\n=== 4. 浏览器真的能弹出来（App 根接线） ===');
      '★ sheet 里用轻阅的 BrowserSheet（它早就写好、一直没人调用）');
 }
 
-console.log('\n=== 5. 变异对照（改坏 ⇒ 必须红） ===');
+console.log('\n=== 6. ★ 宿主不得直接引用柴阅的模块名（import 不 re-export ⇒ Apple 编译必挂） ===');
+{
+  // ⭐⭐⭐⭐⭐ **这一类错误沙盒抓不到**（宿主 UI 层要 UIKit/WebKit ⇒ Linux 编不到）⭐⭐⭐
+  //   ⇒ 2026-11-21 真机：CI 报 7 个「cannot find type 'ChaiyueEngine' / 'BrowserRequest' in scope」⭐⭐⭐
+  //   ⇒ 静态扫 **宿主源码里出现的 `ChaiyueEngine.` / `ChaiyueModels.`** ⇒ 全部必须走 `LegadoEngineHost.` 别名 ⭐⭐⭐
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p2 = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p2);
+      else if (e.name.endsWith('.swift')) files.push(p2);
+    }
+  };
+  walk(path.join(ROOT, 'QiReaderLite'));
+  const bad = [];
+  for (const f of files) {
+    const t = strip(fs.readFileSync(f, 'utf8'));
+    const m = t.match(/\bChaiyue(?:Engine|Models)\.[A-Za-z_][A-Za-z0-9_]*/g);
+    if (m) bad.push(`${path.relative(ROOT, f)}: ${[...new Set(m)].join(', ')}`);
+  }
+  ok(bad.length === 0, '宿主源码没有直接引用 ChaiyueEngine./ChaiyueModels.（必须走 LegadoEngineHost. 别名）',
+     bad.join(' | '));
+}
+
+console.log('\n=== 7. 变异对照（改坏 ⇒ 必须红） ===');
+
 {
   const rt = read('QiReaderLite/Core/ChaiyueRuntime.swift');
   const app = read('QiReaderLite/App/QiReaderLiteApp.swift');
@@ -98,6 +123,12 @@ console.log('\n=== 5. 变异对照（改坏 ⇒ 必须红） ===');
 
   const m4 = rt.replace('static func installUI()', 'static func installUI_disabled()');
   ok(!/static func installUI\(\)/.test(m4), '★ 变异④（installUI 改名 ⇒ App 调不到）⇒ 被抓住');
+
+  // ⑤ 宿主直接引用柴阅模块名（★ Apple 编译必挂 ⇒ 沙盒抓不到 ⇒ 这条静态门禁专门抓它）⭐⭐⭐
+  // ⚠️⚠️⚠️ **必须用 split/join 全局替换**（`String.replace` 不带 g 只换第一处 ⇒ 变异无效 ⇒ 门禁没牙齿）⭐⭐⭐
+  const m5 = rt.split('LegadoEngineHost.PlatformUI').join('ChaiyueEngine.PlatformSourceUI');
+  ok(!/LegadoEngineHost\.PlatformUI/.test(m5) && /ChaiyueEngine\.PlatformSourceUI/.test(m5),
+     '★ 变异⑤（直接引用 ChaiyueEngine.）⇒ 被抓住');
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`);

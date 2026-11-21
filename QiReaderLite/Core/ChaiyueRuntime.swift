@@ -1,5 +1,8 @@
 import Foundation
 import LegadoEngine
+#if canImport(WebKit) && !os(Linux)
+import UIKit
+#endif
 
 // ⭐⭐⭐⭐⭐ **柴阅引擎的运行环境**（2026-11-21 移植柴阅/Chaiyue）
 //
@@ -62,7 +65,7 @@ enum ChaiyueRuntime {
     ///   ⇒ 聚合源的「🍅番茄登录 / 🔐注册书源 / 🏝用户后台」**全是浏览器流程** ⭐⭐⭐
     ///     ⇒ 浏览器不工作 ⇒ 拿不到 token/cookie ⇒ **登录永远失败** ⭐⭐⭐
     /// ⇒ 现在：柴阅的默认实现（后台 WKWebView 渲染 + Cookie 同步）+ 轻阅的 UI presenter ⭐⭐⭐
-    static let platformUI: ChaiyueEngine.PlatformSourceUI = {
+    static let platformUI: LegadoEngineHost.PlatformUI = {
         let ui = LegadoEngineHost.PlatformUI(environment: environment)
         ui.presenter = ChaiyueInteractionPresenter.shared
         // ⚠️ toast ⇒ 走轻阅的 Toast（站方登录结果就是用 toast 报的）⭐⭐⭐

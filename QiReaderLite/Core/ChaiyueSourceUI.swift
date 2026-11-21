@@ -52,12 +52,12 @@ struct BrowserItem: Identifiable {
 /// ⇒ 柴阅的 `PlatformSourceUI`（= `SourceUIDelegate` 的完整实现）通过它把
 ///   「开浏览器 / 要验证码 / 复制 / 外链 / 视频」交给轻阅的 UI ⭐⭐⭐
 @MainActor
-final class ChaiyueInteractionPresenter: NSObject, SourceInteractionPresenter {
+final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost.InteractionPresenter {
     static let shared = ChaiyueInteractionPresenter()
 
     /// ⭐⭐⭐ **浏览器**（`java.startBrowser` / `startBrowserAwait` / `showBrowser`）⭐⭐⭐
-    func presentBrowser(_ request: BrowserRequest,
-                        completion: @escaping @MainActor (BrowserResult?) -> Void) {
+    func presentBrowser(_ request: LegadoEngineHost.BrowserRequest,
+                        completion: @escaping @MainActor (LegadoEngineHost.BrowserResult?) -> Void) {
         // ⚠️⚠️ **html/js 场景 ⇒ 轻阅的 BrowserSheet 撑不住** ⇒ 交给**柴阅的后台渲染** ⭐⭐⭐
         //   （柴阅的 `WebViewRenderer` 支持 html/js ⇒ 返回渲染后的 HTML）⭐⭐⭐
         if let html = request.html, !html.isEmpty {
@@ -73,7 +73,7 @@ final class ChaiyueInteractionPresenter: NSObject, SourceInteractionPresenter {
             // ⚠️⚠️ **`waitsForResult` ⇒ 站方在等结果 ⇒ 必须回 URL 与 HTML** ⭐⭐⭐
             //   （不等待时也给 URL，站方能用它做后续）⭐⭐⭐
             if request.waitsForResult {
-                completion(BrowserResult(url: url, body: html))
+                completion(LegadoEngineHost.BrowserResult(url: url, body: html))
             } else {
                 completion(nil)
             }
