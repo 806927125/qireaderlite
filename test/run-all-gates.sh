@@ -81,6 +81,10 @@ declare -a GATES=(
   #   ⇒ 柴阅把「浏览器/验证码/后台渲染/toast」交给宿主 ⇒ 轻阅之前**没实现** ⇒ **静默失败** ⭐⭐⭐
   #   ⇒ 聚合源的「🍅番茄登录 / 🔐注册书源 / 🏝用户后台」全是浏览器流程 ⇒ 浏览器不工作 ⇒ **登录永远失败** ⭐⭐⭐
   "login-platform-wiring:test/login-platform-wiring.test.js"
+  # ⭐⭐⭐⭐⭐ **explore 的「0 本」必须能【定责】**（2026-11-21 真机「书单 0 本」实证）⭐⭐⭐
+  #   ⇒ 以前只有一句「书单 0 本」⇒ 分不清「站方没数据 / 规则没匹配上 / URL 错了」⭐⭐⭐
+  #   ⇒ 现在：引擎在**同一次请求**里带回诊断 ⇒ UI 的提示**带原因** ⇒ 一眼定责 ⭐⭐⭐
+  "explore-diag-attribution:test/explore-diag-attribution.test.js"
   # ⭐⭐⭐⭐⭐ **条件编译块的 import 完整性**（2026-11-21 移植柴阅的真实事故）⭐⭐⭐
   #   ⇒ 柴阅的 `Digests` 拆文件时漏了 `import CommonCrypto` ⇒ **Linux 沙盒编不到** ⭐⭐⭐
   #   ⇒ 沙盒门禁全绿 ⇒ 直到 CI 才报「cannot find 'CC_SHA224' in scope」⭐⭐⭐

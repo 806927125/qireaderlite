@@ -56,6 +56,53 @@ extension JSSource {
 
 // MARK: - ③ 诊断出口（宿主 `explain` / `explainToc` op 用）
 
+// ⭐⭐⭐⭐⭐ **探索（explore）的诊断出口**（2026-11-21 真机「explore 结果不可信：书单 0 本」实证）⭐⭐⭐
+//
+// ⚠️⚠️⚠️ **为什么必须有它**：
+//   轻阅对 explore 的判定只有「返回 0 本 ⇒ 不可信」⇒ **分不清**下面三种 ⭐⭐⭐
+//     ① **站方真的没数据**（源站挂了 / 该分类为空 / 要令牌）⇒ **书源/站方问题** ⭐⭐⭐
+//     ② **站方有数据但规则没匹配上**（站方改版 ⇒ `ruleExplore.bookList` 过时）⇒ **书源问题** ⭐⭐⭐
+//     ③ **URL 本身错了**（分类 URL 没求值 / 参数错）⇒ **引擎/宿主问题** ⭐⭐⭐
+//   ⇒ 光看「0 本」**无法定责** ⇒ 必须让引擎**一次性把事实摆出来** ⭐⭐⭐
+//
+// ⭐⭐⭐ **本出口只发【一次】请求** ⇒ 书单与诊断来自**同一份响应**（不重复请求）⭐⭐⭐
+extension WebBook {
+    /// ⭐⭐⭐⭐⭐ **探索 + 诊断**（一次请求 ⇒ 书单 + 站方状态 + 字节数 + 规则是否命中）⭐⭐⭐
+    public func exploreBookWithDiagnostics(url: String, page: Int = 1) async throws -> ([SearchBook], [String: String]) {
+        try await RuleSession.run(SourceDescriptor(source), env: environment) { session in
+            let ruleData = RuleData()
+            let analyzeUrl = try AnalyzeUrl(url, page: page, baseUrl: session.source.key, session: session, ruleData: ruleData)
+            let res = try WebBook.loginCheck(session, analyzeUrl, try analyzeUrl.getStrResponse())
+            let body = res.body()
+
+            // ── 诊断（只打键名/数字，**不打正文**，正文可能很大且含敏感信息）⭐⭐⭐
+            var diag: [String: String] = [:]
+            diag["请求URL"] = url
+            diag["最终URL"] = res.url()
+            diag["状态码"] = String(res.statusCode())
+            diag["响应字节"] = String(body.utf8.count)
+            let rule = self.source.exploreRule.bookList ?? ""
+            diag["规则长度"] = String(rule.count)
+            diag["规则是不是JS"] = (rule.hasPrefix("@js:") || rule.hasPrefix("<js>")) ? "是" : "否"
+            diag["规则首段"] = String(rule.prefix(48)).replacingOccurrences(of: "\n", with: " ")
+
+            let books = try BookListParser.analyze(session: session, ruleData: ruleData, analyzeUrl: analyzeUrl,
+                                                   baseUrl: res.url(), body: body, isSearch: false,
+                                                   isRedirect: res.url() != analyzeUrl.url)
+            diag["解析出"] = "\(books.count) 本"
+            // ⭐⭐⭐ **区分「站方没数据」与「规则没匹配上」** ⭐⭐⭐
+            //   · 响应几乎为空 ⇒ 站方没给内容（站方/源站问题）⭐⭐⭐
+            //   · 响应有内容但解析 0 条 ⇒ **规则没匹配上**（站方改版 ⇒ 书源规则过时）⭐⭐⭐
+            let looksEmpty = body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            diag["判定"] = books.isEmpty
+                ? (looksEmpty ? "站方返回空内容（源站/站方问题）" : "站方有内容但规则未匹配（书源规则过时）")
+                : "正常"
+            return (books, diag)
+        }
+    }
+}
+
+
 /// ⭐⭐⭐⭐⭐ **诊断出口：发一次请求，把 URL/状态/字节报出来** ⭐⭐⭐
 ///
 /// ⚠️ **为什么需要**：轻阅的 `explain` / `explainToc` 是**诊断 op**

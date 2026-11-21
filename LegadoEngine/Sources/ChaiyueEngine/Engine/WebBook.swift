@@ -47,7 +47,9 @@ public final class WebBook: Sendable {
         try await RuleSession.run(SourceDescriptor(source), env: environment, watchCookies: watchCookies, body)
     }
 
-    private static func loginCheck(_ session: RuleSession, _ analyzeUrl: AnalyzeUrl, _ res: StrResponse) throws -> StrResponse {
+    // ⭐⭐⭐ **移植补丁（2026-11-21）**：`private` → internal ⇒ 让 `Compat/LegadoPublicAPI.swift`
+    //   的诊断出口能复用它（否则要复制一份 ⇒ 逻辑漂移）⭐⭐⭐
+    static func loginCheck(_ session: RuleSession, _ analyzeUrl: AnalyzeUrl, _ res: StrResponse) throws -> StrResponse {
         guard let checkJs = session.source.loginCheckJs, !checkJs.isBlank else { return res }
         return (try analyzeUrl.evalJS(checkJs, result: res) as? StrResponse) ?? res
     }

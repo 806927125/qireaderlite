@@ -58,7 +58,8 @@ ok(/LegadoEngineHost\.WebBook\(source: parsed, environment: env\)/.test(host), '
 ok(/web\.searchBook\(/.test(host), 'search → web.searchBook');
 ok(/web\.exploreKinds\(refresh:\s*true\)/.test(host), '★ exploreKinds → web.exploreKinds(refresh: true)（柴阅原生求值 `@js:`）');
 ok(!/web\.exploreKinds\(\)/.test(host), '★ 没有「不 refresh」的调用（★ 默认 false ⇒ 命中旧缓存 ⇒ 筛选无效）');
-ok(/web\.exploreBook\(/.test(host), 'explore → web.exploreBook');
+ok(/web\.exploreBookWithDiagnostics\(/.test(host),
+   'explore → web.exploreBookWithDiagnostics（柴阅的解析链 + 诊断 ⇒ 能定责）');
 ok(/web\.getBookInfo\(/.test(host), 'bookInfo → web.getBookInfo');
 ok(/web\.getChapterList\(/.test(host), 'toc → web.getChapterList');
 ok(/web\.getContent\(/.test(host), 'content → web.getContent');

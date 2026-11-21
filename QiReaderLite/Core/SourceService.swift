@@ -531,6 +531,31 @@ final class SourceService {
             return "只解析出 \(n) 个分类\(extra)"
                 + "（站方正常是几十上百个 ⇒ 说明站方的分类没出来）\(hint)"
         case "explore":
+            // ⭐⭐⭐⭐⭐ **把「0 本」的原因摆出来**（2026-11-21 真机「书单 0 本」定责实证）⭐⭐⭐
+            //   ⇒ 以前只有一句「书单 0 本」⇒ **分不清是书源问题还是引擎问题** ⭐⭐⭐
+            //   ⇒ 现在：引擎在同一次请求里带回诊断（状态码/字节数/规则是否命中）⭐⭐⭐
+            //   ⇒ 三种可能一眼可辨：⭐⭐⭐
+            //     · 站方返回空内容 ⇒ **源站/站方问题**（源站挂了 / 要令牌 / 分类没数据）⭐⭐⭐
+            //     · 站方有内容但规则未匹配 ⇒ **书源规则过时**（站方改版）⭐⭐⭐
+            //     · 状态码非 2xx ⇒ **站方接口问题**（403/404/500）⭐⭐⭐
+            let diag = dict["__diag"] as? [String: String] ?? [:]
+            if !diag.isEmpty {
+                let verdict = diag["判定"] ?? ""
+                let code = diag["状态码"] ?? "?"
+                let bytes = diag["响应字节"] ?? "?"
+                let ruleJS = diag["规则是不是JS"] ?? "?"
+                var why = "书单 0 本"
+                if let c = Int(code), c >= 400 {
+                    why += "（站方返回 HTTP \(c) ⇒ 站方接口问题）"
+                } else if verdict.contains("站方返回空") {
+                    why += "（站方返回空内容，\(bytes) 字节 ⇒ 源站/站方问题）"
+                } else if verdict.contains("规则未匹配") {
+                    why += "（站方有内容 \(bytes) 字节，但书的解析规则没匹配上 ⇒ 书源规则过时）"
+                } else {
+                    why += "（\(bytes) 字节，规则=\(ruleJS)）"
+                }
+                return why
+            }
             return "书单 0 本"
         case "bookInfo":
             // ⭐ 兼容嵌套形状（`["book": {...}]`）

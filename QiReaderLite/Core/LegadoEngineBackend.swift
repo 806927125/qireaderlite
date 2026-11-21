@@ -108,9 +108,20 @@ final class LegadoEngineBackend {
         case "explore":
             let kindUrl = (payload["kindUrl"] as? String) ?? ""
             let page = (payload["page"] as? Int) ?? 1
-            let books = try await web.exploreBook(url: kindUrl, page: page)
+            // ⭐⭐⭐⭐⭐ **用【诊断版】**（2026-11-21 真机「书单 0 本」定责实证）⭐⭐⭐
+            //   ⇒ 一次请求 ⇒ 同时拿到「书单」与「站方状态/字节/规则是否命中」⭐⭐⭐
+            //   ⇒ **分得清是站方没数据、还是规则没匹配上、还是 URL 错了** ⭐⭐⭐
+            //   ⇒ 没有它就只能说「0 本」⇒ **定不了责**（书源问题 vs 引擎问题）⭐⭐⭐
+            let (books, diag) = try await web.exploreBookWithDiagnostics(url: kindUrl, page: page)
             let items: [[String: Any]] = books.map { bookListItem($0) }
-            return ["books": items, "total": books.count, "nextUrl": ""]
+            var out: [String: Any] = ["books": items, "total": books.count, "nextUrl": ""]
+            out["__diag"] = diag
+            // ⭐⭐⭐ **诊断也进引擎日志**（用户能直接看到「谁的问题」）⭐⭐⭐
+            if books.isEmpty {
+                let summary = diag.map { "\($0.key)=\($0.value)" }.joined(separator: " · ")
+                engineLog("[explore] 0 本 ⇒ \(summary)")
+            }
+            return out
 
         case "bookInfo":
             let info = try await web.getBookInfo(book(from: payload))
