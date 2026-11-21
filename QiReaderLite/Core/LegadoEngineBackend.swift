@@ -336,7 +336,13 @@ final class LegadoEngineBackend {
                                               web: LegadoEngineHost.WebBook) async -> [String] {
         guard exprs.contains(where: { !$0.isEmpty }) else { return [] }
         let empty = String(UnicodeScalar(34))            // 一个双引号字符（避免转义地狱）
-        let js = "[" + exprs.map { $0.isEmpty ? empty : $0 }.joined(separator: ",") + "]"
+        // ⭐⭐⭐⭐⭐ **必须自己 JSON.stringify，并给每条包 try/catch**（2026-11-21 CI 实证）⭐⭐⭐
+        //   ⇒ 柴阅的 `evalJS` 返回 `AnalyzeUrl.stringify(值)` ⇒ 对**数组**不是 JSON 数组文本 ⭐⭐⭐
+        //     ⇒ 直接解 `[String]` 会失败（CI 报「viewName 批量求值结果解不开」）⭐⭐⭐
+        //   ⇒ 正解：**在 JS 里自己 `JSON.stringify`**，并且**每条用 try/catch 包住**
+        //     （一条表达式炸了不能拖垮整批 ⇒ 它的显示名回落空 ⇒ 面板回落技术名）⭐⭐⭐
+        let list = exprs.map { $0.isEmpty ? empty : $0 }.joined(separator: ",")
+        let js = "JSON.stringify([\(list)].map(function(x){try{return eval(x);}catch(e){return '';}}))"
         // ⚠️ Swift 5.9+ 的 `try?` **已摊平** optional ⇒ `raw` 直接是 `String` ⭐⭐⭐
         guard let raw = try? await web.evalJS(js),
               let data = raw.data(using: .utf8),

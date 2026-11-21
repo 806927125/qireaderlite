@@ -127,7 +127,9 @@ for (i, e) in exprs.enumerated() {
 print("字面量条目：\(finalNames.filter { !$0.isEmpty }.count) ／ 需引擎求值：\(evalExprs.count)")
 
 let quote = String(UnicodeScalar(34))
-let js = "[" + evalExprs.map { $0.isEmpty ? quote : $0 }.joined(separator: ",") + "]"
+// ⭐⭐⭐ 与宿主同一套：自己 JSON.stringify + 每条 try/catch（柴阅的 evalJS 对数组不返回 JSON 文本）⭐⭐⭐
+let list = evalExprs.map { $0.isEmpty ? quote : $0 }.joined(separator: ",")
+let js = "JSON.stringify([\(list)].map(function(x){try{return eval(x);}catch(e){return '';}}))"
 // ⚠️⚠️ **别用 `try?` 吞掉错误**（2026-11-21 实证）⭐⭐⭐
 //   ⇒ 吞掉后只看到「结果为空」⇒ **看不出真因** ⇒ 排查绕了半天的弯 ⭐⭐⭐
 // ⚠️⚠️ **平台能力标记**：Linux 沙盒没有 JSC ⇒ 表达式类按钮名**必然**求不出 ⭐⭐⭐
