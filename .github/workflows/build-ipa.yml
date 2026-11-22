@@ -130,7 +130,9 @@ jobs:
           p = pathlib.Path("QiReaderLite/Core/EngineRevision.generated.swift")
           p.write_text(
               "// ⭐⭐⭐⭐⭐ **引擎 revision（CI 生成 ⇒ 真值）** —— **不许手改**\n"
-              "// ⚠️ 自动生成：CI 用「SPM checkout 出来的引擎目录的 git HEAD」覆写 ⭐⭐⭐\n"
+              "// ⚠️ 自动生成：CI 用「本地引擎包 LegadoEngine/ 的 git HEAD」覆写 ⭐⭐⭐\n"
+              "// ⚠️ 引擎代码 = 柴阅/Chaiyue（vendor 在 LegadoEngine/Sources/Chaiyue*）⭐⭐⭐\n"
+              "//   ⇒ 语义 = Legado 3.0；模块名/类型名保留 LegadoEngine（宿主 import 不变 ⇒ UI 零改动）⭐⭐⭐\n"
               "enum EngineRevision {\n"
               "    /// ⭐ 真实 revision（CI 注入）\n"
               f"    static let generated: String = \"{rev}\"\n"

@@ -129,7 +129,17 @@ final class EngineLogPanel: NSObject, ObservableObject {
     /// 引擎自检：把缺什么、卡在哪一步一次列清
     func diagnose() -> String {
         var lines: [String] = []
-        lines.append("引擎：LegadoEngine（Legado 3.0 语义）")
+        // ⭐⭐⭐⭐⭐ **引擎名要说真话**（2026-11-22 用户问「你现在到底啥引擎」）⭐⭐⭐
+        //   ⇒ 引擎代码 = **柴阅/Chaiyue** 的 `ReaderModels` + `RuleEngine` + `ReaderPlatform`（vendor 进本仓库）⭐⭐⭐
+        //   ⇒ 显示仍写「LegadoEngine（Legado 3.0 语义）」⇒ **过时且误导**（引擎早就换了）⭐⭐⭐
+        //   ⇒ 模块名/类型名**故意保留** `LegadoEngine`（宿主 import 不变 ⇒ UI 零改动）⭐⭐⭐
+        lines.append("引擎：柴阅 Chaiyue（Legado 语义 · 模块名 LegadoEngine）")
+        // ⭐⭐⭐ **把 revision 接上**（此前 `EngineRevision.generated` **没有任何引用** ⇒ 被 Release 优化剥掉
+        //   ⇒ 面板只有硬编码名、没有 sha ⇒ **不可追溯** ⇒ 已知缺口这轮补上）⭐⭐⭐
+        let rev = EngineRevision.generated
+        if !rev.isEmpty && rev != "unknown" {
+            lines.append("引擎 revision：\(rev)")
+        }
         lines.append("App 版本：\(AppPaths.appVersionLine)")
         if !recentLogs.isEmpty {
             lines.append("—— 最近引擎日志 ——")

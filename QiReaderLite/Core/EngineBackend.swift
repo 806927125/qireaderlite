@@ -5,16 +5,19 @@ import Foundation
 /// ⭐⭐⭐ **老 JS 引擎（WKWebView）已于 2026-10-25 退役**（用户明确要求：「老引擎给我去掉先」）
 /// ⇒ 「用哪个引擎」的开关、「失败自动回退」的开关 ⇒ **全部删除** ⇒ 用户不再需要操心这件事 ⭐⭐⭐
 ///
-/// ⚠️ **唯一残留**：`login` / `loginProbe` 两个 op（站方登录）**暂时**还跑在老引擎的 WKWebView 上
-/// ⇒ 它们迁到新引擎后 ⇒ `RuleSandbox.swift` 的 WKWebView 壳 + `Resources/engine/*.js` 一并物理删除 ⭐⭐⭐
+/// ⭐⭐⭐ 2026-11-21：**登录已全部迁到柴阅引擎**（loginRows / loginSubmit / loginLogout）
+///   ⇒ 老引擎的 WKWebView 壳（RuleSandbox）+ `Resources/engine/*.js` 已物理删除 ⭐⭐⭐
 public enum EngineBackend {
     private static let key = "qr.engineBackend"
 
     /// ⭐⭐⭐ **只有一个引擎了**（2026-11-19 用户决定：「整个搬过来，现在这个引擎不要了」）
-    ///   · 引擎 = `LegadoEngine`（Legado 3.0 语义，从「六阅 LegadoR iOS」二进制逆向重建）
+    ///   · 引擎 = **柴阅/Chaiyue** 的 `ReaderModels` + `RuleEngine` + `ReaderPlatform`（vendor 进本仓库）
+    ///     ⇒ 语义 = Legado 3.0；**模块名/类型名保留 `LegadoEngine`**（宿主 import 不变 ⇒ UI 零改动）
     ///   · 老的两条（WebView JS 引擎 / 自研 Swift 引擎）**已物理删除** ⇒ 没有开关、没有回退 ⭐⭐⭐
     public enum Kind: String {
-        case legado = "LegadoEngine（Legado 3.0 语义）"
+        // ⭐⭐⭐ **显示真话**（2026-11-22）：引擎代码是**柴阅/Chaiyue**的（vendor 进本仓库）⭐⭐⭐
+        //   ⇒ 模块名/类型名保留 `LegadoEngine`（宿主 import 不变 ⇒ UI 零改动）⭐⭐⭐
+        case legado = "柴阅 Chaiyue（Legado 语义）"
     }
 
     /// 当前后端

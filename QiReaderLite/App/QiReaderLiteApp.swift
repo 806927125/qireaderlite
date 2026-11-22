@@ -36,7 +36,7 @@ struct QiReaderLiteApp: App {
         //   ⇒ UI 在后台线程更新 ⇒ 闪退风险 ⭐⭐⭐
         //   ⇒ 现在**只由 EngineLogBootstrap 挂一次**（它负责切主线程）⭐⭐⭐
         // ⭐⭐⭐ 2026-11-19：老引擎（WebView JS + 自研 Swift）**全部退役**
-        //   ⇒ 引擎 = `LegadoEngine`（Legado 3.0 语义，引擎自带 JSC + 自己的网络层）
+        //   ⇒ 引擎 = **柴阅/Chaiyue**（vendor 进本仓库；语义 = Legado 3.0；模块名保留 LegadoEngine）
         //   ⇒ **没有 JS 后端要装、也没有引擎沙盒要起** ⭐⭐⭐
     }
 
