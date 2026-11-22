@@ -785,7 +785,7 @@ struct SourceLoginSheet: View {
     ///   而这个跑的是站方**完整的登录流程**（`loginUrl` + `login()`）⭐⭐⭐
     ///   ⇒ **不少书源的登录就是「直接打开登录网站」** ⇒ 必须走这条 ⭐⭐⭐
     private func submitLogin() {
-        guard let s = current else { return }
+        guard let s = source else { return }
         busy = true
         message = ""
         Task { @MainActor in
@@ -804,7 +804,7 @@ struct SourceLoginSheet: View {
 
     /// ⭐⭐⭐⭐⭐ **「退出登录」**（跑站方带 `logout` 的 action）⭐⭐⭐
     private func logoutLogin() {
-        guard let s = current else { return }
+        guard let s = source else { return }
         busy = true
         message = ""
         Task { @MainActor in
