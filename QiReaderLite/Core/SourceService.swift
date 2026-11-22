@@ -45,6 +45,19 @@ final class SourceService {
         var action: String = ""
         var chars: [String] = []
         var `default`: String = ""
+
+        enum CodingKeys: String, CodingKey { case name, displayName, type, action, chars, `default` }
+
+        /// ⭐⭐⭐ **缺字段不炸**（同 `LoginResultDTO` ⇒ 引擎少返字段不该整个失败）⭐⭐⭐
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+            displayName = (try? c.decodeIfPresent(String.self, forKey: .displayName)) ?? ""
+            type = (try? c.decodeIfPresent(String.self, forKey: .type)) ?? "text"
+            action = (try? c.decodeIfPresent(String.self, forKey: .action)) ?? ""
+            chars = (try? c.decodeIfPresent([String].self, forKey: .chars)) ?? []
+            `default` = (try? c.decodeIfPresent(String.self, forKey: .default)) ?? ""
+        }
     }
 
     /// ⭐⭐⭐⭐⭐ **批量求值登录项的 `viewName` 表达式**（2026-11-21 真机实证）⭐⭐⭐
@@ -63,6 +76,13 @@ final class SourceService {
     /// ⭐⭐⭐ **批量求值的结果**
     struct LoginViewNamesDTO: Codable {
         var names: [String] = []
+
+        enum CodingKeys: String, CodingKey { case names }
+        /// ⭐⭐⭐ **缺字段不炸**（引擎少返 `names` 不该整个失败）⭐⭐⭐
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            names = (try? c.decodeIfPresent([String].self, forKey: .names)) ?? []
+        }
     }
 
     /// ⭐⭐⭐⭐⭐ **主「登录」按钮**（2026-11-22 移植柴阅的登录面板）⭐⭐⭐
@@ -89,15 +109,37 @@ final class SourceService {
     }
 
     /// ⭐⭐⭐ **登录动作的结果**
+    ///
+    /// ⭐⭐⭐⭐⭐ **自定义 `init(from:)`**（2026-11-23 真机实证）⭐⭐⭐
+    ///   ⇒ 之前用**合成的** `init(from:)` ⇒ **属性默认值不生效**（Swift 的合成解码器不读默认值）⭐⭐⭐
+    ///   ⇒ 引擎只回 `{"ok":true,"msgs":[]}`（**没有 `error` 字段**）⇒ **整个解码失败** ⇒
+    ///     面板报「解析 LoginResultDTO 失败 —— 缺字段 error」⭐⭐⭐
+    ///   ⇒ 正解：`decodeIfPresent ?? 默认值` ⇒ **少任何一个字段都不炸** ⭐⭐⭐
     struct LoginResultDTO: Codable {
         var ok: Bool = false
         var error: String = ""
         var msgs: [String] = []
+
+        enum CodingKeys: String, CodingKey { case ok, error, msgs }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? false
+            error = (try? c.decodeIfPresent(String.self, forKey: .error)) ?? ""
+            msgs = (try? c.decodeIfPresent([String].self, forKey: .msgs)) ?? []
+        }
     }
 
     /// ⭐⭐⭐ **登录表单行的集合**
     struct LoginRowsDTO: Codable {
         var rows: [LoginRowDTO] = []
+
+        enum CodingKeys: String, CodingKey { case rows }
+        /// ⭐⭐⭐ **缺字段不炸**（引擎少返 `rows` 不该整个失败）⭐⭐⭐
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            rows = (try? c.decodeIfPresent([LoginRowDTO].self, forKey: .rows)) ?? []
+        }
     }
 
     func login(source: BookSource, action: String,
