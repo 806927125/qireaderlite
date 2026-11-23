@@ -347,8 +347,9 @@ final class AnalyzeUrl {
             let quoted = v.hasPrefix("\"") && v.hasSuffix("\"")
             return quoted ? "\(name)(len=\(v.count),⚠️带引号)" : "\(name)(len=\(v.count))"
         }
+        // ⚠️ `HTTPRequest.url` 是 **String**（不是 URL）⇒ 别写 `.absoluteString`（Linux 编得过、macOS 编不过）⭐⭐⭐
         session.env.log(session.source.key,
-                        "→ \(request.method) \(request.url.absoluteString)  头[\(parts.joined(separator: ","))]")
+                        "→ \(request.method) \(request.url)  头[\(parts.joined(separator: ","))]")
     }
 
     // MARK: - Cookie

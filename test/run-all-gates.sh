@@ -238,6 +238,27 @@ else
   SKIPPED+=("变异(引擎替换)")
 fi
 
+# ── 变异测试（shell 层）：⭐⭐⭐⭐⭐ **引擎包编译失败必须被抓住**（2026-11-24 build318 实证）──
+#   ⇒ 原来的 `swift build … | tail -3` **把引擎的编译失败吞掉了**（管道退出码 = tail 的）⭐⭐⭐
+#   ⇒ 门禁拿**旧 .swiftmodule** 继续编 App ⇒ **全绿** ⇒ ⇒ 我改的引擎文件**根本没被编过** ⭐⭐⭐
+#   ⇒ ⇒ 同样的错只能等 CI 才发现（build318 就这么挂了一轮）⭐⭐⭐
+#   ⇒ 本变异把引擎改坏 ⇒ 门禁**必须红** ⇒ 复原 ⇒ 必须绿 ⭐⭐⭐
+if git diff --quiet -- LegadoEngine/ 2>/dev/null; then
+  if bash test/mutation-engine-build-gate.sh > /tmp/mutation-engbuild.out 2>&1; then
+    printf "%-24s %-22s %s\n" "变异(引擎编译)" "✅" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-engbuild.out | tail -1)"
+    MP="$(grep -oE '通过 [0-9]+' /tmp/mutation-engbuild.out | tail -1 | grep -oE '[0-9]+')"
+    TOTAL_PASS=$((TOTAL_PASS + ${MP:-0}))
+  else
+    printf "%-24s %-22s %s\n" "变异(引擎编译)" "❌ 有失败" "$(grep -oE '通过 [0-9]+ / 失败 [0-9]+' /tmp/mutation-engbuild.out | tail -1)"
+    grep -E "✗" /tmp/mutation-engbuild.out | head -5
+    TOTAL_FAIL=$((TOTAL_FAIL+1))
+    FAILED+=("变异(引擎编译)")
+  fi
+else
+  printf "%-24s %-22s %s\n" "变异(引擎编译)" "⚠️ 跳过" "LegadoEngine/ 有未提交改动（变异脚本会改源码 ⇒ 先 commit）"
+  SKIPPED+=("变异(引擎编译)")
+fi
+
 # ── Swift 原生层：swiftc 真编真跑（Core/ 是纯 Foundation → 沙盒里能跑）──
 # ⚠️ 这一步是「引擎能力用 Swift 写」能落地的**前提**：
 #    能力写在 Swift 里，就得能在沙盒里验（3 秒出结果，不用等 CI）。

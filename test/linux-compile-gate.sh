@@ -135,7 +135,17 @@ if [ -d "$ENGINE_DIR" ]; then
   echo "  （重编本地引擎包 LegadoEngine/ ⇒ 保证改动进模块）"
   if (cd "$ENGINE_DIR" && "$SWIFTC" --version >/dev/null 2>&1); then
     # ⭐⭐⭐ **删 build plan**（SwiftPM 的 plan 不会自动纳入新加的 .swift 文件）⭐⭐⭐
-    (cd "$ENGINE_DIR" && rm -f .build/*.yaml && timeout 900 swift build 2>&1 | tail -3)
+    # ⚠️⚠️⚠️ **2026-11-24 build318 实证：这层原来用 `| tail -3` ⇒ 管道把 `swift build` 的失败吞了** ⭐⭐⭐
+    #   ⇒ **引擎包编译失败也不报红** ⇒ 后面拿**旧 .swiftmodule** 继续编 ⇒ **门禁全绿** ⭐⭐⭐
+    #   ⇒ 而我改的引擎文件（`AnalyzeUrl.swift`）**根本没被编过** ⇒ **假绿** ⭐⭐⭐
+    #   ⇒ 正解：**退出码必须被检查** ⇒ 引擎编不过 ⇒ **门禁必须红** ⭐⭐⭐
+    if (cd "$ENGINE_DIR" && rm -f .build/*.yaml && timeout 900 swift build > "$TMP/engine-build.txt" 2>&1); then
+      tail -3 "$TMP/engine-build.txt"
+    else
+      echo "❌ **引擎包编译失败**（这层原来吞错 ⇒ 门禁假绿 ⇒ 2026-11-24 build318 实证）⭐⭐⭐"
+      grep -E "error:" "$TMP/engine-build.txt" | head -20 | sed 's/^/     /'
+      exit 1
+    fi
   fi
   ENGINE_MODULES="$(find_modules || true)"
 fi

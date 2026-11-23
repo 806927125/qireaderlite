@@ -645,8 +645,11 @@ struct SourceLoginSheet: View {
     ///    但那个输入框是「手动兜底」→ 不会自动填 → 用户以为没登录成功。
     /// ⇒ 现在：内置浏览器登录完（loginUi 的动作跑完）→ 自动抓 → 自动填 → **自动写进**
     ///   ① `source.getLoginInfoMap()['手动填写番茄token(可不填)']`（站方 jsLib 直接读这个键 ✅）
-    ///   ② `loginHeader`（栖阅机制 → 自动注入到每次请求头 ✅）
-    ///   ⇒ 站方不用 cookie 也能认出番茄 sessionid ⇒ 发现页/正文/翻页全通 ✅
+    ///   ② **真 cookie**（站方主路径就是 `cookie.getCookie('fanqienovel.com')` ✅）
+    ///   ⚠️⚠️ **绝不再写 `loginHeader` 槽**（2026-11-24 真机「Token 格式错误」真凶）：
+    ///      **站方的 token 也存在那个槽** ⇒ 番茄一写就把 token 冲掉 ⇒ 站方直接拒 ⭐⭐⭐
+    ///      ⇒ 而且柴阅引擎只认 **JSON 形态**的 loginHeader ⇒ `"Cookie: …"` 形态**本来就注入不了** ⭐⭐⭐
+    ///      ⇒ ⇒ 写它 = **纯破坏、零收益** ⭐⭐⭐
     private func autoFillFQSessionId() {
         let jar = CookieJar.cookieString(for: "https://fanqienovel.com")
         guard let sid = Self.extractSessionId(jar), !sid.isEmpty else { return }
