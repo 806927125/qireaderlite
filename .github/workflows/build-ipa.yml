@@ -75,6 +75,18 @@ jobs:
           swift run ChaiyueProbe2
           cd ..
 
+      - name: ⭐⭐⭐⭐⭐ 书山聚合 v6 全链探针：真引擎 + 真源 + 真网络
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-23 实证）：
+          #   沙盒（Linux）**没有 JavaScriptCore** ⇒ `@js:` / `<js>` 求值跑不了 ⭐⭐⭐
+          #   ⇒ 「书山聚合 v6 在轻阅里到底能不能跑」**只能靠 macOS 真引擎真跑** ⇒ ⭐⭐⭐
+          #   ⇒ 而且这个源的 `exploreUrl` 有 10240 字符、`jsLib` 有 84KB ⇒ **必须真跑才知道** ⭐⭐⭐
+          #   ⇒ 探针还要验 **改名后的 `ssh_*` 符号在全局可用**（证明隔离化没打断作用域）⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe3
+          cd ..
+
       - name: 编译
         run: |
           # || true 只为让脚本能往下走到打印错误那步

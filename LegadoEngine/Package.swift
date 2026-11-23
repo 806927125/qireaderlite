@@ -90,6 +90,15 @@ let package = Package(
         .executableTarget(name: "ChaiyueProbe2",
                           dependencies: ["ChaiyueEngine", "ChaiyueModels"],
                           path: "Sources/ChaiyueProbe2"),
+        // ⭐⭐⭐⭐⭐ **「书山聚合 v6」全链探针**（2026-11-23）⭐⭐⭐
+        //   ⇒ 沙盒（Linux）**没有 JSC** ⇒ `@js:` / `<js>` 求值跑不了 ⇒
+        //   ⇒ 「这个源在轻阅里能不能跑」**只能靠 macOS CI 真引擎真跑** ⇒ ⭐⭐⭐
+        //   ⇒ 探针证明 5 件事：① exploreUrl 能求值出分类 ② ruleExplore 能解析出书单
+        //   ⇒   ③ 详情/目录/正文三段通 ④ 登录面板 26 行能求出
+        //   ⇒   ⑤ **改名后的 `ssh_*` 符号在全局可用**（证明隔离化没打断作用域）⭐⭐⭐
+        .executableTarget(name: "ChaiyueProbe3",
+                          dependencies: ["ChaiyueEngine", "ChaiyueModels"],
+                          path: "Sources/ChaiyueProbe3"),
         .testTarget(name: "ChaiyueModelsTests",
                     dependencies: ["ChaiyueModels"],
                     path: "Tests/ChaiyueModelsTests"),

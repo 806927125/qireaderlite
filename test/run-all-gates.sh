@@ -107,6 +107,10 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **Linux 编译门禁**（改了 Core/ 沙盒却全绿 ⇒ 因为它**根本没被编过**）
   #   ⇒ 现在 swiftc 真编 + **链真引擎** ⇒ 3 秒抓到 ⇒ 不用等 5 分钟 CI
   "linux-compile:test/linux-compile-gate.test.js"
+  # ⭐⭐⭐⭐⭐ **书山聚合适配门禁**（2026-11-23）
+  #   ⇒ 钉死「顶层符号隔离化」的 7 条断言（引用计数守恒 / 幂等 / 非 JS 字段未误改 …）⭐⭐⭐
+  #   ⇒ 探针（真引擎真跑）在 **CI（macOS）** 上跑 ⇒ 这里只守**静态**性质 ⭐⭐⭐
+  "shushan-adapt:test/shushan-adapt.test.js"
 )
 TOTAL_PASS=0
 TOTAL_FAIL=0
