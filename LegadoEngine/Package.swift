@@ -99,6 +99,14 @@ let package = Package(
         .executableTarget(name: "ChaiyueProbe3",
                           dependencies: ["ChaiyueEngine", "ChaiyueModels"],
                           path: "Sources/ChaiyueProbe3"),
+        // ⭐⭐⭐⭐⭐ **token 管道探针**（2026-11-24 真机「Token 格式错误」实证）⭐⭐⭐
+        //   ⇒ 真机症状：站方回「Token 格式错误」⇒ 实测 = **token 不是合法 base64** ⭐⭐⭐
+        //   ⇒ 本探针用**真引擎 + 真源 + 真站方**逐环取证：JS 侧的 getLoginHeader 形态、
+        //     站方 ssh_buildHeaders 的产物、**重启往返**、以及站方的真实判定 ⭐⭐⭐
+        //   ⇒ ⚠️ 依赖 `LegadoEngine` target（要用宿主同款的 `ChaiyueKeyValueStore` 接线）⭐⭐⭐
+        .executableTarget(name: "ChaiyueProbe4",
+                          dependencies: ["LegadoEngine", "ChaiyueEngine", "ChaiyueModels"],
+                          path: "Sources/ChaiyueProbe4"),
         .testTarget(name: "ChaiyueModelsTests",
                     dependencies: ["ChaiyueModels"],
                     path: "Tests/ChaiyueModelsTests"),

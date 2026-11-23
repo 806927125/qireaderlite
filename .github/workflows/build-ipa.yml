@@ -87,6 +87,21 @@ jobs:
           swift run ChaiyueProbe3
           cd ..
 
+      - name: ⭐⭐⭐⭐⭐ token 管道探针：登录头 → 站方签名 → 真站方判定
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-24 真机「Token 格式错误」实证）：
+          #   站方对 token 的判定表（沙盒直连实测）：
+          #     空/缺 → 「非法请求，请先登录」/ **带引号或非 base64 → 「Token 格式错误」**
+          #     长度不对 → 「Token 长度不正确」/ 其它 → 「Token 无效或已失效」⭐⭐⭐
+          #   ⇒ 「Token 格式错误」**只可能是我们发出去的 token 被弄坏了**（带引号/非 base64）⭐⭐⭐
+          #   ⇒ 而「上游的权威测试只断言了 Swift 侧的 loginHeader，**没断言 JS 侧**」⭐⭐⭐
+          #      ⇒ JS 侧 `String(source.getLoginHeader())` 是不是原样字符串 ⇒ **没被任何测试覆盖** ⭐⭐⭐
+          #   ⇒ 本探针用**真引擎 + 真源 + 真站方**逐环取证（含「重启往返」）⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe4
+          cd ..
+
       - name: 编译
         run: |
           # || true 只为让脚本能往下走到打印错误那步
