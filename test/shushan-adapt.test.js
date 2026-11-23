@@ -252,6 +252,39 @@ if (orig) {
   console.log('  ⚠️ 没有原始源 fixture ⇒ 跳过非 JS 字段断言');
 }
 
+// ---------- ⑧ 模板字符串内部不得被改动 ⭐⭐⭐
+// ⚠️⭐⭐⭐ 站方常用**模板字符串拼一整段 HTML + 内联 JS**（`java.startBrowser` 打开的自建页面）
+//   ⇒ 那段 JS 跑在**另一个作用域**里 ⇒ **它自己定义 `clearAll`/`pick`/`selection` 等**
+//   ⇒ ⇒ **改了它 ⇒ 页面里的 `onclick="clearAll()"` 就找不到函数** ⇒ **功能坏** ⭐⭐⭐
+//   ⇒ ⇒ 所以「模板内部不得被改名」是**必须钉死**的一条 ⭐⭐⭐
+if (orig) {
+  const quasisOf = (code) => {
+    const out = [];
+    (function walk(n) {
+      if (!n || typeof n.type !== 'string') return;
+      if (n.type === 'TemplateLiteral') for (const q of n.quasis) out.push(q.value.cooked || q.value.raw || '');
+      for (const k of Object.keys(n)) {
+        if (k === 'type' || k === 'start' || k === 'end') continue;
+        const v = n[k];
+        if (Array.isArray(v)) for (const c of v) walk(c);
+        else if (v && typeof v.type === 'string') walk(v);
+      }
+    })(acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'script' }));
+    return out;
+  };
+  const qo = quasisOf(orig.jsLib || '');
+  const qn = quasisOf(src.jsLib || '');
+  let tplDiff = [];
+  if (qo.length !== qn.length) {
+    tplDiff = [`段数不同 原 ${qo.length} → 新 ${qn.length}`];
+  } else {
+    for (let i = 0; i < qo.length; i++) if (qo[i] !== qn[i]) tplDiff.push(`第 ${i} 段被改动`);
+  }
+  check('⑧ 模板字符串内部未被改动（另一个作用域）', tplDiff.length === 0, tplDiff.slice(0, 4).join(' | '));
+} else {
+  console.log('  ⚠️ 没有原始源 fixture ⇒ 跳过模板字符串断言');
+}
+
 // ---------- ⑦ loginUi 的 action 域正确 ----------
 {
   const rows = JSON.parse(src.loginUi);
