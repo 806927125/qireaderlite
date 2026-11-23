@@ -590,15 +590,15 @@ struct SourceLoginSheet: View {
             HStack(spacing: 10) {
                 Button {
                     let raw = fqToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // ① 栖阅机制：loginHeader → **自动注入到每次请求头**
-                    //    （聚合源要 sessionid 才能同步番茄数据）
-                    if raw.isEmpty {
-                        SourceVariables.setLoginHeader("", for: source.bookSourceUrl)
-                    } else {
-                        let v = raw.hasPrefix("sessionid=") ? raw : "sessionid=" + raw
-                        SourceVariables.setLoginHeader("Cookie: " + v, for: source.bookSourceUrl)
-                    }
-                    // ② 站方自己也读这个键（双保险，两边都能用）
+                    // ① ⭐⭐⭐⭐⭐ **绝不再往 `loginHeader` 槽里写「Cookie: …」**（2026-11-24 真机真凶）⭐⭐⭐⭐⭐
+                    //   ⇒ **站方的 token 也存在这个槽**（`source.putLoginHeader(token)`）⭐⭐⭐
+                    //   ⇒ ⇒ 番茄兜底一写 ⇒ **站方的 token 被冲掉** ⇒ ⇒ 站方回「**Token 格式错误**」⭐⭐⭐
+                    //   ⇒ ⇒ 而且新引擎（柴阅）只认 **JSON 形态**的 loginHeader ⇒
+                    //      `"Cookie: …"` 形态**本来就注入不了请求头** ⇒ **纯破坏、零收益** ⭐⭐⭐
+                    //   ⇒ 现在：番茄 sessionid 走**站方真正读的两条路** ⭐⭐⭐
+                    //      ① `source.getLoginInfoMap()['手动填写番茄token(可不填)']`（站方 jsLib 直接读 ✅）
+                    //      ② **真 cookie**（站方主路径就是 `cookie.getCookie('fanqienovel.com')` ✅）
+                    // ② 站方自己读这个键（双保险，两边都能用）
                     //    ⚠️ 站方取值用正则 `/sessionid=[^;]+/` ⇒ **必须带 `sessionid=` 前缀**
                     //    只填裸值的话正则匹配不上 ⇒ fqssionid 为空 ⇒ 白填 ❗
                     let stationSide = raw.isEmpty ? "" :
@@ -606,7 +606,9 @@ struct SourceLoginSheet: View {
                     SourceVariables.setLoginInfoValue(
                         "手动填写番茄token(可不填)", stationSide,
                         for: source.bookSourceUrl)
-                    fqTokenSaved = true
+                    // ③ **再写一份成真 cookie**（站方主路径就是 cookie.getCookie('fanqienovel.com')）
+                    if !raw.isEmpty { Self.writeFanqieCookie(raw) }
+                    fqTokenSaved = !raw.isEmpty
                 } label: {
                     Label(fqTokenSaved ? "已保存" : "保存", systemImage: fqTokenSaved ? "checkmark" : "square.and.arrow.down")
                         .font(.system(size: 13, weight: .medium))
@@ -650,9 +652,21 @@ struct SourceLoginSheet: View {
         guard let sid = Self.extractSessionId(jar), !sid.isEmpty else { return }
         if fqToken != sid { fqToken = sid }
         SourceVariables.setLoginInfoValue("手动填写番茄token(可不填)", sid, for: source.bookSourceUrl)
-        SourceVariables.setLoginHeader("Cookie: sessionid=" + sid, for: source.bookSourceUrl)
-        // ③ **再写一份成真 cookie**（站方主路径就是 cookie.getCookie('fanqienovel.com')）
-        //    ⇒ 拿不到 cookie 时还能靠 loginInfo / loginHeader 兜底（三条路都通）
+        // ⭐⭐⭐⭐⭐ **绝不再往 `loginHeader` 槽里写「Cookie: sessionid=…」**（2026-11-24 真机真凶）⭐⭐⭐⭐⭐
+        //   ⇒ **站方的 token 也在这个槽** ⇒ ⇒ 番茄这次写会把 token 冲掉 ⇒ ⇒ 「Token 格式错误」⭐⭐⭐
+        //   ⇒ 番茄 sessionid 走**真 cookie**（站方主路径）+ loginInfo 键 ⇒ 两条路都通 ⭐⭐⭐
+        Self.writeFanqieCookie(sid)
+        fqTokenSaved = true
+    }
+
+    /// ⭐⭐⭐ **把番茄 sessionid 写成真 cookie**（站方主路径：`cookie.getCookie('fanqienovel.com')`）⭐⭐⭐
+    ///
+    /// ⚠️ 为什么要独立成一个函数：**两个入口**（手动保存 / 自动抓）都要写 ⇒ ⇒ 抽出来免得漏 ⭐⭐⭐
+    private static func writeFanqieCookie(_ raw: String) {
+        let sid = raw.contains("sessionid=")
+            ? String(raw.dropFirst("sessionid=".count))
+            : raw
+        guard !sid.isEmpty else { return }
         if let c = HTTPCookie(properties: [
             .domain: "fanqienovel.com", .path: "/",
             .name: "sessionid", .value: sid,
@@ -660,7 +674,6 @@ struct SourceLoginSheet: View {
         ]) {
             HTTPCookieStorage.shared.setCookie(c)
         }
-        fqTokenSaved = true
     }
 
     /// 从 cookie 串里抠出 sessionid 的值

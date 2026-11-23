@@ -31,7 +31,16 @@ enum ChaiyueRuntime {
     ///   ⚠️ **但 `androidID` 依赖 `environment`** ⇒ 它必须是 **computed**（不能是 `static let`）
     ///     ⇒ 否则会形成 **初始化循环** ⇒ 编译期死锁/崩溃 ⭐⭐⭐
     static let environment: LegadoEngineHost.Environment = {
-        LegadoEngineHost.Environment(store: store)
+        let env = LegadoEngineHost.Environment(store: store)
+        // ⭐⭐⭐⭐⭐ **把引擎内部日志接进 App 的日志面板**（2026-11-24 真机「Token 格式错误」排查）⭐⭐⭐
+        //   引擎自己会打：「ajax(...) error」「loginUi 脚本出错」「≡链接为详情页」…⭐⭐⭐
+        //   ⇒ **以前这些日志全丢**（宿主没接 logger）⇒ 登录失败/请求失败时**没有任何证据**⭐⭐⭐
+        //   ⇒ 现在：引擎的日志面板里能直接看到 ⇒ 真机一次就能定位 ⭐⭐⭐
+        //   ⚠️ **回调来自后台线程** ⇒ `EngineLogPanel` 是 `@MainActor` ⇒ 必须切主线程 ⭐⭐⭐
+        env.setLogger { key, message in
+            Task { @MainActor in EngineLogPanel.shared.appendLog("[\(key)] \(message)") }
+        }
+        return env
     }()
 
     /// ⭐⭐⭐⭐⭐ **装上柴阅的界面委托**（浏览器 / 验证码 / 后台渲染 / toast …）⭐⭐⭐

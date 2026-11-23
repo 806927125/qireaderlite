@@ -80,6 +80,16 @@ final class LegadoEngineBackend {
         let parsed = try parseSource(payload, fallback: source)
         // ② 引擎环境（全局共享 ⇒ 状态/缓存都共享）⭐⭐⭐
         let env = ChaiyueRuntime.environment
+        // ⭐⭐⭐⭐⭐ **把宿主的 cookie 灌进引擎的 cookie 罐**（2026-11-24 真机实证）⭐⭐⭐⭐⭐
+        //   ⇒ 站方的 jsLib 直接用 **`cookie.getCookie('fanqienovel.com')`** 取番茄 sessionid ⭐⭐⭐
+        //   ⇒ **以前 payload 里带了 `cookieSnapshot`，但引擎压根没读** ⇒ ⇒ 站方永远读到空 ⭐⭐⭐
+        //   ⇒ ⇒ 「番茄登了还是说没登录」的另一半根因 ⭐⭐⭐
+        //   ⇒ 现在：每个 op 灌一次 ⇒ 站方读得到 ⭐⭐⭐
+        if let snap = payload["cookieSnapshot"] as? [String: String] {
+            for (host, cookie) in snap where !cookie.isEmpty {
+                env.cookies.replaceCookie(url: host, cookie: cookie)
+            }
+        }
         // ③ 柴阅的引擎门面 ⭐⭐⭐
         let web = LegadoEngineHost.WebBook(source: parsed, environment: env)
 

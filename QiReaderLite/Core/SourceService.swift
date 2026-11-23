@@ -145,6 +145,12 @@ final class SourceService {
     func login(source: BookSource, action: String,
                formValues: [String: String]) async throws -> (ok: Bool, message: String, messages: [String]) {
         var p: [String: Any] = ["action": action, "formValues": formValues]
+        // ⭐⭐⭐⭐⭐ **自愈：清掉宿主旧格式的登录头**（否则登录写进去的 token 会被番茄那次写冲掉）⭐⭐⭐
+        //   ⇒ 详见 `SourceVariables.clearLegacyCookieLoginHeader` 的注释（真机「Token 格式错误」真凶）⭐⭐⭐
+        if SourceVariables.clearLegacyCookieLoginHeader(for: source.bookSourceUrl) {
+            EngineLogPanel.shared.appendLog(
+                "⚠️ [登录] 已清掉宿主旧格式的登录头（\"Cookie: …\"）⇒ 它曾覆盖站方的 token ⭐⭐⭐")
+        }
         // ⭐⭐⭐ 走缓存（同上）
         var srcDict = await SourceDictCache.dict(for: source)
         srcDict["__variables"] = await effectiveVars(for: source)
@@ -207,6 +213,13 @@ final class SourceService {
                 SourceVariables.setLoginHeader(h, for: source.bookSourceUrl)
             }
         }
+        // ⭐⭐⭐⭐⭐ **登录头的指纹**（2026-11-24 真机「Token 格式错误」排查）⭐⭐⭐
+        //   ⇒ 站方判定表（沙盒直连实测）：token 非 base64 ⇒ 必然回「Token 格式错误」⭐⭐⭐
+        //   ⇒ 这里打「长度 / 是否 base64 / 是否带引号」⇒ **不泄露内容**，但一眼能分开
+        //     「落盘层就坏了」还是「JS 侧读出来才坏」⭐⭐⭐
+        let lh = SourceVariables.loginHeader(for: source.bookSourceUrl)
+        EngineLogPanel.shared.appendLog("[登录] 登录头(token)：\(TokenFingerprint.describe(lh))")
+        EngineLogPanel.shared.appendLog("[登录] ⇒ \(TokenFingerprint.verdict(lh))")
         let dict = raw as? [String: Any] ?? [:]
         let ok = dict["ok"] as? Bool ?? false
         let err = dict["error"] as? String ?? ""
@@ -272,6 +285,23 @@ final class SourceService {
         p["source"] = srcDict
         // cookie 快照：同理，Legado 的 cookie.getCookie(url) 也是同步的。
         p["cookieSnapshot"] = CookieJar.snapshot()
+        // ⭐⭐⭐⭐⭐ **自愈：清掉宿主旧格式的登录头**（2026-11-24 真机「Token 格式错误」真凶）⭐⭐⭐
+        //   ⇒ 宿主 UI 的「番茄 sessionid」兜底曾把 `"Cookie: sessionid=..."` 写进**站方 token 的同一个槽**⭐⭐⭐
+        //   ⇒ ⇒ 站方把它当 token 发出去 ⇒ ⇒ 站方回「Token 格式错误」⭐⭐⭐
+        //   ⇒ 这里**每个 op 都自愈一次** ⇒ 用户的设备**不用重装源、不用重登**就能恢复 ⭐⭐⭐
+        if SourceVariables.clearLegacyCookieLoginHeader(for: source.bookSourceUrl) {
+            EngineLogPanel.shared.appendLog(
+                "⚠️ [\(op)] 已清掉宿主旧格式的登录头（\"Cookie: …\"）⇒ 它曾覆盖站方的 token ⇒ 站方会回「Token 格式错误」⭐⭐⭐")
+        }
+        // ⭐⭐⭐⭐⭐ **发请求前的 token 自检**（2026-11-24 真机「Token 格式错误」排查）⭐⭐⭐
+        //   ⇒ 站方对 token 的判定：非 base64 ⇒ **必然**回「Token 格式错误」⭐⭐⭐
+        //   ⇒ **只在异常时打**（否则日志会被淹）⇒ 但真机一次就能定位 ⭐⭐⭐
+        let lhNow = SourceVariables.loginHeader(for: source.bookSourceUrl)
+        if !lhNow.isEmpty, !TokenFingerprint.isBase64(lhNow) {
+            EngineLogPanel.shared.appendLog(
+                "⚠️ [\(op)] 登录头不是合法 base64（\(TokenFingerprint.describe(lhNow))）"
+                + "⇒ 站方会回「Token 格式错误」⭐⭐⭐")
+        }
         // ⭐⭐⭐ **新引擎（自研 Swift 引擎）优先** —— 老引擎已被完全替换
         let raw = try await Self.invokeEngine(op, p, source: source)
         // 站方 JS 改过的书籍变量 / 登录信息 → 落盘（下次调用直接生效）

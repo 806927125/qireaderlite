@@ -35,6 +35,12 @@ declare -a GATES=(
   #      ⇒ 满屏「cannot find 'EngineLogPanel'」⇒ **沙盒完全看不见**（那个文件 import UIKit ⇒ 只留了 stub）⭐⭐⭐
   #   ⇒ 现在静态扫全工程源码 ⇒ 撞名 / 引用不存在的 `X.shared` **3 秒就抓** ⭐⭐⭐
   "app-type-sanity:test/app-type-sanity.test.js"
+  # ⭐⭐⭐⭐⭐ **loginHeader 槽的归属**（2026-11-24 真机「Token 格式错误」真凶）⭐⭐⭐⭐⭐
+  #   ⇒ 站方的 token 与宿主的「Cookie: sessionid=…」（番茄兜底）**抢同一个槽**⭐⭐⭐
+  #   ⇒ ⇒ 番茄那次写把 token 冲掉 ⇒ ⇒ 站方解不出 base64 ⇒ ⇒ 回「Token 格式错误」⭐⭐⭐
+  #   ⇒ 现在：**番茄兜底不再写那个槽** + 每个 op **自愈**清掉宿主旧格式 ⭐⭐⭐
+  #   ⇒ 且 cookie 快照**真被引擎吃掉**（站方 `cookie.getCookie(...)` 才有值）⭐⭐⭐
+  "login-header-slot:test/login-header-slot.test.js"
   # ⭐⭐⭐⭐⭐ **站方 exploreUrl 的分类归一化：旧引擎 JS ⇔ 新 Swift 双实现对拍**
   #   （2026-11-19 真机 build296 实证：换装新引擎丢了「先求值 @js: 的 exploreUrl」⇒ 分类 url 为空
   #     ⇒ `url 解析失败: ` ⇒ LegadoError 错误 1 ⇒ **发现页整个用不了**⭐⭐⭐）

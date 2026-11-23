@@ -264,6 +264,50 @@ rc4d=${PIPESTATUS[0]}
 [ $rc4d -ne 0 ] && rc=$rc4d
 _sum "$TMP/out4d.txt"
 
+# ── 第四组之五：**登录头指纹**（2026-11-24 真机「Token 格式错误」）────
+# ⭐⭐⭐ 判据来自**站方服务器的真实判定表**（沙盒直连实测）⭐⭐⭐：
+#   token 非 base64（带引号 / JSON 包着 / 站方的 'none' 兜底）⇒ 站方必然回「Token 格式错误」
+# ⇒ 这组门禁钉死那个判据 ⇒ 改坏了它门禁必须红 ⭐⭐⭐
+echo
+echo "=== 编译 Core/TokenFingerprint.swift（swiftc 真编）==="
+mkdir -p "$TMP/tokenfp"
+cp test/token-fingerprint-test.swift "$TMP/tokenfp/main.swift"
+if ! "$SWIFTC" -O "$TMP/tokenfp/main.swift" QiReaderLite/Core/TokenFingerprint.swift -o "$TMP/tokenfp-test" 2>"$TMP/err4e.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4e.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/tokenfp-test" | tee "$TMP/out4e.txt"
+rc4e=${PIPESTATUS[0]}
+[ $rc4e -ne 0 ] && rc=$rc4e
+_sum "$TMP/out4e.txt"
+
+# ── 第四组之六：**loginHeader 槽的自愈**（2026-11-24 真机「Token 格式错误」真凶）────
+# ⭐⭐⭐ 站方的 token 与宿主的「Cookie: …」抢同一个槽 ⇒ 番茄那次写把 token 冲掉
+#   ⇒ 站方解不出 base64 ⇒ 「Token 格式错误」
+# ⇒ 这组门禁钉死「自愈」：用户的设备不用重装源就能恢复，且**站方 token 绝不能被误清**⭐⭐⭐
+echo
+echo "=== 编译 Core/SourceVariables.swift（登录头自愈，swiftc 真编）==="
+mkdir -p "$TMP/lhs"
+cp test/login-header-selfheal-test.swift "$TMP/lhs/main.swift"
+if ! "$SWIFTC" -O "$TMP/lhs/main.swift" \
+      QiReaderLite/Core/SourceVariables.swift \
+      QiReaderLite/Core/StationVarForm.swift \
+      QiReaderLite/Core/EngineLog.swift \
+      -o "$TMP/lhs-test" 2>"$TMP/err4f2.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4f2.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/lhs-test" | tee "$TMP/out4f2.txt"
+rc4f2=${PIPESTATUS[0]}
+[ $rc4f2 -ne 0 ] && rc=$rc4f2
+_sum "$TMP/out4f2.txt"
+
 # ── 第五组：新引擎适配层（老 JS 引擎 → 自研 Swift 引擎）────
 # ⭐⭐⭐ 这组的意义：适配层把两个模型的字段名一一对上
 #   ⇒ 对错一个字段 = 「某条规则静默失效」⇒ iOS 真机构建要等 CI ⇒ 这里 3 秒抓错

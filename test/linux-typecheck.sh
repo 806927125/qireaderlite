@@ -80,6 +80,7 @@ echo "▶ 类型检查 Foundation 层…"
   QiReaderLite/Core/SourceRawArchive.swift \
   QiReaderLite/Core/SourceImportDiff.swift \
   QiReaderLite/Core/SourceDictCache.swift \
+  QiReaderLite/Core/TokenFingerprint.swift \
   QiReaderLite/Core/ServiceError.swift \
   test/linux-shims/RuleSandboxStub.swift \
   "$OUT/ReaderHost.swift" \

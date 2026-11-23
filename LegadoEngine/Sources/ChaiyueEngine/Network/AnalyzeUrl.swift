@@ -321,6 +321,7 @@ final class AnalyzeUrl {
     private func perform() throws -> HTTPResponse {
         if session.isCancelled { throw RuleError.cancelled }
         let request = buildRequest()
+        logOutgoingHeaders(request)
         var attempt = 0
         while true {
             do {
@@ -330,6 +331,24 @@ final class AnalyzeUrl {
                 if attempt > retry || session.isCancelled { throw error }
             }
         }
+    }
+
+    /// ⭐⭐⭐⭐⭐ **移植补丁（2026-11-24）**：**打印真实发出的请求头** ⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **为什么必须有它**（真机「Token 格式错误」实证）：
+    ///   站方靠 `x-novel-token` 认人 ⇒ **它带引号 / 不是 base64 ⇒ 站方直接拒** ⭐⭐⭐
+    ///   ⇒ 但宿主/引擎两侧**都看不到真正发出去的头** ⇒ 只能猜 ⇒ 反复改错地方 ⭐⭐⭐
+    ///   ⇒ 这里打「头名 + 值长度 + 是否带引号」⇒ **一眼看出是不是 token 被 JSON 编码了** ⭐⭐⭐
+    ///
+    /// ⚠️ **不打印头的值**（凭据会落盘 ⇒ 绝不能写进去）⇒ 只打长度与形态 ⭐⭐⭐
+    private func logOutgoingHeaders(_ request: HTTPRequest) {
+        let parts = request.headers.keys.sorted().map { name -> String in
+            let v = request.headers[name] ?? ""
+            let quoted = v.hasPrefix("\"") && v.hasSuffix("\"")
+            return quoted ? "\(name)(len=\(v.count),⚠️带引号)" : "\(name)(len=\(v.count))"
+        }
+        session.env.log(session.source.key,
+                        "→ \(request.method) \(request.url.absoluteString)  头[\(parts.joined(separator: ","))]")
     }
 
     // MARK: - Cookie

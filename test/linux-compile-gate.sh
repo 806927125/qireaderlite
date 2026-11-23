@@ -64,6 +64,9 @@ FILES=(
   "QiReaderLite/Core/SourceVariables.swift"
   "QiReaderLite/Core/StationVarForm.swift"
   "QiReaderLite/Core/SourceDictCache.swift"
+  # ⭐⭐⭐⭐⭐ **TokenFingerprint.swift**（2026-11-24 真机「Token 格式错误」）
+  #   ⇒ 纯 Foundation ⇒ 沙盒能编能跑 ⇒ 「token 是不是合法 base64」**当天就能验** ⭐⭐⭐
+  "QiReaderLite/Core/TokenFingerprint.swift"
   "QiReaderLite/Core/SourceRawArchive.swift"
   # ⭐⭐⭐⭐⭐ **SourceImportDiff.swift**（2026-11-23 真机「有书源时导不进去」）
   #   ⇒ 纯 Foundation ⇒ **沙盒能编能跑** ⇒ 导入的「有没有变化」判定**当天就能验** ⭐⭐⭐

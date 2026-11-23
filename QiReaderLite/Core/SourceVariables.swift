@@ -697,6 +697,33 @@ enum SourceVariables {
         }
     }
 
+    // MARK: - ⭐⭐⭐⭐⭐ **宿主旧格式登录头的清理**（2026-11-24 真机「Token 格式错误」真凶）⭐⭐⭐⭐⭐
+
+    /// ⭐⭐⭐⭐⭐ **宿主自己的「Cookie: xxx」形态**（栖阅 loginHeader 是纯字符串 ⇒ 老引擎会解析成请求头）⭐⭐⭐
+    ///
+    /// ⚠️⚠️⚠️ **它会摧毁站方的 token** ⭐⭐⭐（真机「Token 格式错误」的根因）⭐⭐⭐：
+    ///   · 站方（书山聚合）把 **token 本身** 存进 loginHeader（`source.putLoginHeader(token)`）⭐⭐⭐
+    ///   · 宿主 UI 的「番茄 sessionid」兜底**也**写同一个槽（写成 `"Cookie: sessionid=xxx"`）⭐⭐⭐
+    ///   ⇒ ⇒ **两个用途抢一个槽** ⇒ ⇒ 番茄那次写就把站方的 token 冲掉了 💥⭐⭐⭐
+    ///   ⇒ ⇒ 站方下一次请求把 `"Cookie: sessionid=xxx"` 当 token 发出去 ⭐⭐⭐
+    ///   ⇒ ⇒ 站方解不出 base64 ⇒ ⇒ 回「**Token 格式错误**」⭐⭐⭐⭐⭐
+    ///   （站方判定表实测：空 ⇒「请先登录」/ 非 base64 ⇒「Token 格式错误」/ 长度不对 ⇒「Token 长度不正确」）⭐⭐⭐
+    ///
+    /// ✅ **正解**：这个形态**只可能是宿主自己写的**（站方 token 是裸 base64 ⇒ 绝不会以 "Cookie: " 开头）
+    ///   ⇒ 见到就**清掉** ⇒ 用户的设备**不需要重装源/重登**也能自愈 ⭐⭐⭐
+    @discardableResult
+    static func clearLegacyCookieLoginHeader(for sourceUrl: String) -> Bool {
+        let cur = loginHeader(for: sourceUrl)
+        guard cur.hasPrefix("Cookie: ") else { return false }
+        setLoginHeader("", for: sourceUrl)
+        return true
+    }
+
+    /// ⭐⭐⭐ **是不是宿主的旧格式**（「Cookie: xxx」）⭐⭐⭐
+    static func isLegacyCookieLoginHeader(_ value: String) -> Bool {
+        value.hasPrefix("Cookie: ")
+    }
+
     /// 改登录信息里的**一项**（不覆盖别的字段）
     ///
     /// ⚠️ 为什么要这个：站方（🍅大灰狼）的 exploreUrl 会读
