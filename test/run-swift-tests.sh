@@ -174,6 +174,33 @@ rc4b=${PIPESTATUS[0]}
 [ $rc4b -ne 0 ] && rc=$rc4b
 _sum "$TMP/out4b.txt"
 
+# ── 第四组之二之三：**书源导入「新增/更新/未变」判定**（2026-11-23）────
+# ⭐⭐⭐⭐⭐ 用户真机反馈：「同个要看**有没有变化**，**有变化就是要更新书源**，
+#   现在是**有书源的情况下导不进去**」⭐⭐⭐
+#   ⇒ 旧实现只返回**「新增条数」** ⇒ 已有源更新时返回 **0** ⇒ Toast「导入 0 个书源」
+#     ⇒ **源其实已被替换** ⇒ **用户以为没导进去** ⭐⭐⭐
+# ⇒ 判定逻辑放在**纯 Foundation** 的 `Core/SourceImportDiff.swift` ⇒ ⇒ 沙盒能**真编真跑** ⭐⭐⭐
+#   ⚠️ 若放 `Store.swift`（import SwiftUI）⇒ **沙盒编不到 ⇒ 等于没有门禁** ⭐⭐⭐
+echo
+echo "=== 编译 Core/SourceImportDiff.swift（书源导入判定，swiftc 真编）==="
+mkdir -p "$TMP/diff"
+cp test/source-import-diff-test.swift "$TMP/diff/main.swift"
+if ! "$SWIFTC" -O "$TMP/diff/main.swift" \
+      QiReaderLite/Core/SourceImportDiff.swift \
+      QiReaderLite/Core/BookSource.swift \
+      QiReaderLite/Core/SourceRawArchive.swift \
+      -o "$TMP/diff-test" 2>"$TMP/err4d.txt"; then
+  echo "❌ 编译失败："
+  cat "$TMP/err4d.txt" | head -30
+  exit 1
+fi
+echo "✓ 编译通过"
+echo
+"$TMP/diff-test" | tee "$TMP/out4d.txt"
+rc4d=${PIPESTATUS[0]}
+[ $rc4d -ne 0 ] && rc=$rc4d
+_sum "$TMP/out4d.txt"
+
 # ── 第四组之二之二：**站方变量的形态静态判定**（Core/StationVarForm.swift）────
 # ⭐⭐⭐⭐⭐ 2026-10-27 真机复盘：手机上**已经躺着的旧污染**第一次 op 之前永远判不出来
 #   ⇒ 静态扫描站方 jsLib ⇒ 装机第一次跑就知道这一格是 map 还是凭据 ⇒ 污染能清掉

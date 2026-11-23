@@ -78,6 +78,7 @@ echo "▶ 类型检查 Foundation 层…"
   QiReaderLite/Core/SourceService.swift \
   QiReaderLite/Core/SourceFileImport.swift \
   QiReaderLite/Core/SourceRawArchive.swift \
+  QiReaderLite/Core/SourceImportDiff.swift \
   QiReaderLite/Core/SourceDictCache.swift \
   QiReaderLite/Core/ServiceError.swift \
   test/linux-shims/RuleSandboxStub.swift \

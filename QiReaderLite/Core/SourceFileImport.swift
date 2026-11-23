@@ -12,11 +12,11 @@ import Foundation
 /// ⇒ 三样缺一样，都是「选中打不开」——**症状一样，根因三个** ⭐⭐⭐
 enum SourceFileImport {
 
-    /// 读一个文件并导入书源 ⇒ 返回导入个数
+    /// 读一个文件并导入书源 ⇒ 返回导入统计（新增/更新/未变）
     /// - Note: 必须先开安全作用域；读不出来**明确报错**（不许静默）
     @discardableResult
     @MainActor
-    static func importFile(_ url: URL, into store: SourceStore) throws -> Int {
+    static func importFile(_ url: URL, into store: SourceStore) throws -> SourceImportDiff.Stats {
         // ⭐ 安全作用域只有 Apple 平台有 ⇒ Linux 沙盒门禁要能编过 ⇒ 用 #if 收起来
         #if canImport(Darwin)
         let scoped = url.startAccessingSecurityScopedResource()
@@ -29,8 +29,9 @@ enum SourceFileImport {
             throw SourceImportError.readFailed(url.lastPathComponent, error.localizedDescription)
         }
         do {
-            let list = try BookSourceParser.parse(data)
-            return store.importSources(list)
+            // ⭐⭐⭐ **`archive: false`** ⇒ **先比后存**（否则判不出「有没有变化」）⭐⭐⭐
+            let parsed = try BookSourceParser.parse(data, archive: false)
+            return store.importSources(parsed.list, raws: parsed.raws)
         } catch {
             throw SourceImportError.parseFailed(url.lastPathComponent, error.localizedDescription)
         }

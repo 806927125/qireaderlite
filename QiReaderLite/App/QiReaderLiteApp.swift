@@ -50,8 +50,9 @@ struct QiReaderLiteApp: App {
                 .onOpenURL { url in
                     Task { @MainActor in
                         do {
-                            let n = try SourceFileImport.importFile(url, into: sources)
-                            Toast.show("从文件导入 \(n) 个书源")
+                            let st = try SourceFileImport.importFile(url, into: sources)
+                            // ⭐⭐⭐ **说清「新增/更新/未变」**（旧版只报新增个数 ⇒ 更新时显示 0）⭐⭐⭐
+                            Toast.show("从文件导入完成：\(st.summary)")
                         } catch {
                             Toast.show("导入失败：\(error.localizedDescription)")
                         }

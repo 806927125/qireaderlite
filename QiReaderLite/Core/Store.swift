@@ -30,23 +30,54 @@ final class SourceStore: ObservableObject {
         persist()
     }
 
-    /// 按 bookSourceUrl 覆盖式导入，重复的更新、不重复的追加，返回新增条数
+    /// ⭐⭐⭐⭐⭐ **导入书源：新增 / 更新 / 未变，三种结果分开算**（2026-11-23 真机反馈）
+    ///
+    /// ⚠️⚠️ **用户原话**：「同个要看**有没有变化**，**有变化就是要更新书源**，
+    ///   现在是**有书源的情况下导不进去**」⭐⭐⭐
+    ///
+    /// ⭐⭐⭐ **旧实现为什么让用户以为「导不进去」**：
+    ///   旧版只返回**「新增条数」** ⇒ 已有同 URL 书源时返回 **0**
+    ///   ⇒ Toast 显示「**导入 0 个书源**」⇒ **但源其实已经被替换了** ⇒ **用户以为没生效** ⭐⭐⭐
+    ///
+    /// ⭐⭐⭐ **现在的语义**：
+    ///   - **新增**：这个 `bookSourceUrl` 之前没有
+    ///   - **更新**：之前有 ⇒ **内容有变化**（拿「上次导入存档的原始 JSON」比）⇒ ⇒ 覆盖
+    ///   - **未变**：之前有 ⇒ **内容一样** ⇒ ⇒ **不动它**（保留用户在 App 里的改动）⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **「有没有变化」的基准 = 上次导入时的原始 JSON 存档**（`SourceRawArchive`）⭐⭐⭐
+    ///   ⇒ ⇒ **导入流程必须「先比后存」** ⇒ 所以调用方要用
+    ///     `BookSourceParser.parse(data, archive: false)` ⇒ 别在解析时就覆盖存档 ⭐⭐⭐
+    ///
+    /// - Parameters:
+    ///   - list: 解析出来的源
+    ///   - raws: 按 `bookSourceUrl` 索引的**原始 JSON**（比较基准 + 更新后的存档内容）
     @discardableResult
-    func importSources(_ list: [BookSource]) -> Int {
+    func importSources(_ list: [BookSource], raws: [String: [String: Any]] = [:]) -> SourceImportDiff.Stats {
         // ⭐⭐⭐ **用「导入时的原始 JSON 存档」把模型缺的字段补上**
         //   （`loginUi` 是 build153 才加的 ⇒ 老版本存下来的源缺它 ⇒ 登录界面整没了）
         let list = list.map { SourceRawArchive.patch($0) }
+        // ⭐⭐⭐⭐⭐ **判定逻辑放在 `SourceImportDiff`（纯 Foundation）** ⭐⭐⭐
+        //   ⇒ `Store.swift` import SwiftUI ⇒ **沙盒编不到** ⇒ 逻辑放这儿**门禁才验得到** ⭐⭐⭐
+        let incoming: [(source: BookSource, raw: [String: Any]?)] = list.map {
+            (source: $0, raw: raws[$0.bookSourceUrl])
+        }
+        let plan = SourceImportDiff.plan(existing: sources, incoming: incoming) { url in
+            SourceRawArchive.raw(for: url)
+        }
+        // ⭐⭐⭐ **应用决策**：新增 + 更新 ⇒ 覆盖；未变 ⇒ **不动** ⭐⭐⭐
         var index = Dictionary(sources.map { ($0.bookSourceUrl, $0) }, uniquingKeysWith: { _, last in last })
-        var added = 0
-        for s in list where !s.bookSourceUrl.isEmpty {
-            if index[s.bookSourceUrl] == nil { added += 1 }
-            index[s.bookSourceUrl] = s
+        for s in plan.added + plan.updated { index[s.bookSourceUrl] = s }
+        // ⭐⭐⭐ **「先比后存」** ⇒ 判定完之后才更新存档 ⇒ ⇒ 下次导入才判得出「未变」⭐⭐⭐
+        for s in list {
+            if let newRaw = raws[s.bookSourceUrl] {
+                SourceRawArchive.save(newRaw, for: s.bookSourceUrl)
+            }
         }
         sources = index.values.sorted { $0.name < $1.name }
         // ⭐⭐⭐ 源变了 ⇒ 缓存要清
         SourceDictCache.invalidate()
         persist()
-        return added
+        return plan.stats
     }
 
     func remove(ids: Set<String>) {

@@ -261,8 +261,9 @@ struct SourcesView: View {
     /// ⭐⭐⭐ 走共享的导入器（和「从别的 App 打开文件」同一条路 ⇒ 行为一致、错误提示一致）
     private func load(_ url: URL) {
         do {
-            let n = try SourceFileImport.importFile(url, into: store)
-            Toast.show("导入 \(n) 个书源")
+            let st = try SourceFileImport.importFile(url, into: store)
+            // ⭐⭐⭐ **说清「新增/更新/未变」**（旧版只报「新增个数」⇒ 更新时显示 0 ⇒ 用户以为没导进去）⭐⭐⭐
+            Toast.show("导入完成：\(st.summary)")
         } catch {
             importError = error.localizedDescription
         }
@@ -273,18 +274,20 @@ struct SourcesView: View {
     //    "Expected expression in list of expressions"（字面看不懂：以为在写 where 子句）
     private func importJSON(_ text: String) {
         do {
-            let list = try BookSourceParser.parse(Data(text.utf8))
-            let n = store.importSources(list)
-            Toast.show("导入 \(n) 个书源")
+            // ⭐⭐⭐ **`archive: false`** ⇒ 先比后存（判「有没有变化」）⭐⭐⭐
+            let parsed = try BookSourceParser.parse(Data(text.utf8), archive: false)
+            let st = store.importSources(parsed.list, raws: parsed.raws)
+            Toast.show("导入完成：\(st.summary)")
         } catch {
             importError = error.localizedDescription
         }
     }
     private func importData(_ data: Data, from source: String) {
         do {
-            let list = try BookSourceParser.parse(data)
-            let n = store.importSources(list)
-            Toast.show("从\(source)导入 \(n) 个书源")
+            // ⭐⭐⭐ **`archive: false`** ⇒ 先比后存（判「有没有变化」）⭐⭐⭐
+            let parsed = try BookSourceParser.parse(data, archive: false)
+            let st = store.importSources(parsed.list, raws: parsed.raws)
+            Toast.show("从\(source)导入完成：\(st.summary)")
         } catch {
             importError = error.localizedDescription
         }

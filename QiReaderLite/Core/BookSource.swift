@@ -316,13 +316,45 @@ struct BookSource: Codable, Identifiable, Hashable {
 enum BookSourceParser {
     /// 失败时把真实原因带出来 —— 「没解析出书源」这种报错等于没报。
     static func parse(_ data: Data) throws -> [BookSource] {
+        try parse(data, archive: true).list
+    }
+
+    /// ⭐⭐⭐⭐⭐ **解析一个书源文件**（2026-11-23 真机：「有书源的情况下导不进去」）
+    ///
+    /// - Parameter archive: **要不要立刻覆盖「原始 JSON 存档」**
+    ///   - `true`（默认）：普通解析 ⇒ 顺手存档（老行为）
+    ///   - ⚠️ **`false`（导入流程必须用）**：**先不存** ⇒ 因为导入要**先比后存** ⭐⭐⭐
+    ///     ⇒ 否则「上次导入的内容」被本次覆盖 ⇒ ⇒ **判不出「有没有变化」** ⭐⭐⭐
+    ///
+    /// - Returns: `list` = 补齐字段后的模型；`raws` = **按 `bookSourceUrl` 索引的原始 JSON**
+    ///   ⇒ raws 是「有没有变化」的**比较基准** ⭐⭐⭐
+    static func parse(_ data: Data, archive: Bool) throws -> (list: [BookSource], raws: [String: [String: Any]]) {
         let list = try parseRaw(data)
         // ⭐⭐⭐ **用原始 JSON 补齐模型丢掉的字段**（见 patchMissingFields 的说明）
         let raw = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         let patched = patchAll(list, raw: raw)
-        // ⭐⭐⭐ **顺手把原始 JSON 存档** ⇒ 以后模型再加字段，**老源也能补回来**（不用重导）
-        archiveRaw(patched, raw: raw)
-        return patched
+        let dicts = rawDicts(from: raw)
+        if archive {
+            // ⭐⭐⭐ **顺手把原始 JSON 存档** ⇒ 以后模型再加字段，**老源也能补回来**（不用重导）
+            archiveRaw(patched, raw: raw)
+        }
+        return (patched, dicts)
+    }
+
+    /// ⭐⭐⭐ **从「任意 JSON 形状」里抽出逐个源的原始字典**（按 `bookSourceUrl` 索引）
+    static func rawDicts(from raw: Any?) -> [String: [String: Any]] {
+        guard let raw else { return [:] }
+        var dicts: [[String: Any]] = []
+        func collect(_ v: Any) {
+            if let d = v as? [String: Any] { dicts.append(d) }
+            else if let a = v as? [Any] { a.forEach(collect) }
+        }
+        collect(raw)
+        var byURL: [String: [String: Any]] = [:]
+        for d in dicts {
+            if let u = d["bookSourceUrl"] as? String, !u.isEmpty { byURL[u] = d }
+        }
+        return byURL
     }
 
     /// 把原始 JSON 逐源存档（`SourceRawArchive`）

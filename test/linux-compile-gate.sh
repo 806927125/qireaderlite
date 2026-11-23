@@ -65,6 +65,10 @@ FILES=(
   "QiReaderLite/Core/StationVarForm.swift"
   "QiReaderLite/Core/SourceDictCache.swift"
   "QiReaderLite/Core/SourceRawArchive.swift"
+  # ⭐⭐⭐⭐⭐ **SourceImportDiff.swift**（2026-11-23 真机「有书源时导不进去」）
+  #   ⇒ 纯 Foundation ⇒ **沙盒能编能跑** ⇒ 导入的「有没有变化」判定**当天就能验** ⭐⭐⭐
+  #   ⇒ ⚠️ 逻辑若放在 `Store.swift`（import SwiftUI）⇒ **沙盒编不到 ⇒ 等于没有门禁** ⭐⭐⭐
+  "QiReaderLite/Core/SourceImportDiff.swift"
   "QiReaderLite/Core/LegadoCompat.swift"
   "QiReaderLite/Core/ServiceError.swift"      # ⭐⭐⭐ 错误类型独立文件 ⇒ 两组都能编
   # ⭐ **`EngineLog.swift`**（纯 Foundation 的日志出口）⇒ 真文件可编 ⭐⭐⭐
