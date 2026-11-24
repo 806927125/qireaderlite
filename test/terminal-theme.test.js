@@ -96,6 +96,17 @@ const app = read('App/QiReaderLiteApp.swift');
 ok(/GlassTintStore\.percent == 45/.test(app) && /GlassTintStore\.percent = 8/.test(app),
    '⭐⭐⭐ 旧默认 45 会被一次性对齐到 8（用户自己调过的不动）');
 
+// ── ③b ⭐⭐⭐⭐⭐ **必须强制深色外观**（2026-11-24 真机：「这些按钮太白了」）⭐⭐⭐⭐⭐
+//   ⇒ 下拉菜单 / 筛选胶囊 / 标签栏 / 分类筛选页的按钮 / 阅读页底部面板
+//     **全是系统玻璃**（iOS 26 的 `.glassEffect`）⇒ **系统按「当前外观」渲染** ⭐⭐⭐
+//   ⇒ App 以前**从来没强制过外观** ⇒ 跟系统走（浅色）⇒ 深空底上变成**一排乳白板** ⭐⭐⭐
+//   ⇒ 正解：**根部 `.preferredColorScheme(.dark)`** ⇒ 一处 ⇒ 系统玻璃全切深色 ⭐⭐⭐
+const appRoot = app;
+ok(/preferredColorScheme\(\.dark\)/.test(appRoot),
+   '⭐⭐⭐⭐⭐ App 根部强制了深色外观（系统玻璃不再渲染成乳白）');
+ok(!/preferredColorScheme\(\.light\)/.test(appRoot),
+   '⭐⭐⭐⭐⭐ 没有任何地方把外观改回浅色');
+
 // ── ④ ⭐⭐⭐⭐⭐ **发现页的筛选键必须还在**（用户明确要求）⭐⭐⭐⭐⭐ ──
 const explore = read('Features/Explore/ExploreView.swift');
 for (const sym of ['filterBar', 'filterChip', 'applySourceFilter', 'infoMap']) {
