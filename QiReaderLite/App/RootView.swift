@@ -30,13 +30,14 @@ struct RootView: View {
         .tint(Theme.accent)
         // ⭐⭐⭐⭐⭐ **导航栏：深色玻璃**（星澜终端）⭐⭐⭐⭐⭐
         //   ⇒ `.toolbarColorScheme(.dark)` ⇒ 标题/按钮自动变浅色（深底上才看得见）⭐⭐⭐
-        //   ⇒ `.ultraThinMaterial` ⇒ 毛玻璃底 ⇒ 底下��深空背景隐约透出来 ⭐⭐⭐
+        //   ⇒ `.ultraThinMaterial` ⇒ 毛玻璃底 ⇒ 底下的深空背景隐约透出来 ⭐⭐⭐
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        // ⭐⭐⭐ **标签栏同样走毛玻璃 + 深色**（底下就是深空背景）⭐⭐⭐
-        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
+        // ⭐⭐⭐ **标签栏【不要】再叠一层 material** ⭐⭐⭐
+        //   ⇒ iOS 26 的 `TabView` 标签栏**本身就是系统液态玻璃**（自带高光和描边）⭐⭐⭐
+        //   ⇒ 再叠 `.ultraThinMaterial` ⇒ **两个玻璃打架** ⇒ 出来是一坨灰糊（本仓库踩过）⭐⭐⭐
+        //   ⇒ 只把配色切到深色，让系统玻璃自己在深空底上工作 ⭐⭐⭐
         .toolbarColorScheme(.dark, for: .tabBar)
     }
 }
