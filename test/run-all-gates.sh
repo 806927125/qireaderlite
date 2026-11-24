@@ -41,6 +41,12 @@ declare -a GATES=(
   #   ⇒ 现在：**番茄兜底不再写那个槽** + 每个 op **自愈**清掉宿主旧格式 ⭐⭐⭐
   #   ⇒ 且 cookie 快照**真被引擎吃掉**（站方 `cookie.getCookie(...)` 才有值）⭐⭐⭐
   "login-header-slot:test/login-header-slot.test.js"
+  # ⭐⭐⭐⭐⭐ **书山适配版的改名隔离必须【完整】且【可复现】**（2026-11-24 真机「切平台无效」实证）⭐⭐⭐⭐⭐
+  #   ⇒ 站方的筛选 action 是**字符串** ⇒ 改名（按 AST 改）**漏掉了里面的调用** ⭐⭐⭐
+  #   ⇒ 引擎里符号未定义 ⇒ ReferenceError ⇒ **筛选静默失效**（切到 QQ 阅读，分类还在番茄）⭐⭐⭐
+  #   ⇒ 门禁①：适配版必须能由脚本从原源**原样重新生成**（手改也会被抓到）⭐⭐⭐
+  #   ⇒ 门禁②：适配版里不许残留「旧名调用点」（判据是**调用点**，URL 里的名字不算）⭐⭐⭐
+  "shushan-rename-calls:test/shushan-rename-call-sites.test.js"
   # ⭐⭐⭐⭐⭐ **站方 exploreUrl 的分类归一化：旧引擎 JS ⇔ 新 Swift 双实现对拍**
   #   （2026-11-19 真机 build296 实证：换装新引擎丢了「先求值 @js: 的 exploreUrl」⇒ 分类 url 为空
   #     ⇒ `url 解析失败: ` ⇒ LegadoError 错误 1 ⇒ **发现页整个用不了**⭐⭐⭐）

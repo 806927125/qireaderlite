@@ -107,6 +107,13 @@ let package = Package(
         .executableTarget(name: "ChaiyueProbe4",
                           dependencies: ["LegadoEngine", "ChaiyueEngine", "ChaiyueModels"],
                           path: "Sources/ChaiyueProbe4"),
+        // ⭐⭐⭐⭐⭐ **发现页筛选 action 真跑探针**（2026-11-24 真机「切平台无效」实证）⭐⭐⭐⭐⭐
+        //   ⇒ 站方的筛选 action 是**字符串** ⇒ 「顶层符号隔离化」（改名）**按 AST 改** ⇒ 漏改 ⭐⭐⭐
+        //   ⇒ 漏改 ⇒ 引擎里符号未定义 ⇒ **ReferenceError** ⇒ **筛选静默失效**（平台切不动）⭐⭐⭐
+        //   ⇒ 本探针**真跑一次 action** ⇒ 断言「站方变量真的变了」⇒ 这类回归必红 ⭐⭐⭐
+        .executableTarget(name: "ChaiyueProbe5",
+                          dependencies: ["LegadoEngine", "ChaiyueEngine", "ChaiyueModels"],
+                          path: "Sources/ChaiyueProbe5"),
         .testTarget(name: "ChaiyueModelsTests",
                     dependencies: ["ChaiyueModels"],
                     path: "Tests/ChaiyueModelsTests"),

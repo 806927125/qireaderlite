@@ -102,6 +102,18 @@ jobs:
           swift run ChaiyueProbe4
           cd ..
 
+      - name: ⭐⭐⭐⭐⭐ 发现页筛选探针：切平台 action 真跑 ⇒ 站方变量真变了
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-24 真机「切平台无效」实证）：
+          #   站方的**筛选 action 是一段字符串** ⇒ 「顶层符号隔离化」**按 AST 改名 ⇒ 漏改** ⭐⭐⭐
+          #   ⇒ 引擎里 `setConfig` 未定义 ⇒ **ReferenceError** ⇒ **筛选静默失效**（零报错）⭐⭐⭐
+          #   ⇒ 「大灰狼能切、书山不能切」= 大灰狼的 action **自包含**，书山的 action **依赖 jsLib 符号** ⭐⭐⭐
+          #   ⇒ 本探针**真跑一次 action** ⇒ 断言「站方变量真的变了」⇒ 这类回归必红 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe5
+          cd ..
+
       - name: 编译
         run: |
           # || true 只为让脚本能往下走到打印错误那步

@@ -187,6 +187,56 @@ function makeRenamer(dom, refsOnly = false) {
   return { walk, edits, count: () => changed, collectLocals };
 }
 
+
+/**
+ * ⭐⭐⭐⭐⭐ **字符串字面量里的「调用点」也要改名**（2026-11-24 真机「切平台无效」实证）⭐⭐⭐
+ *
+ * ⚠️⚠️⚠️ **为什么必须多这一层**：
+ *   站方的**筛选 action 是一段字符串**：
+ *     `action: "(function(){ … setConfig.call(this,{gender:v}); java.refreshExplore(); })()"`
+ *   ⇒ **AST 看不见字符串里的标识符** ⇒ 只按 AST 改名 ⇒ **这些调用点必然漏改** ⭐⭐⭐
+ *   ⇒ 漏改 ⇒ 引擎里 `setConfig` **未定义** ⇒ **ReferenceError** ⇒
+ *     **筛选静默失效**（源站切不动、分类还在番茄）⭐⭐⭐⭐⭐
+ *   ⇒ 实测：全源字符串字面量里的顶层符号调用点**只有 4 处，全在 exploreUrl，全是 `setConfig`** ⭐⭐⭐
+ *
+ * ⭐⭐⭐ **只改「调用点」**（`NAME(` 或 `NAME.call(`）⇒ **URL 里的 `fb.shushan.vip` 不会被误伤** ⭐⭐⭐
+ *   （站方 jsLib 会生成 HTML 页面、里面也有 `onclick="…()"` ⇒ 一刀切改名字会改坏那些页面）⭐⭐⭐
+ *
+ * @returns {Array<{start:number,end:number,text:string}>} 与 AST pass 的 edits **同一坐标系** ⇒ 可直接合并 ⭐⭐⭐
+ */
+function collectCallSiteEditsInStrings(code, label, lookup, nameList) {
+  /** @type {{start:number,end:number,text:string}[]} */
+  const edits = [];
+  if (!code || !nameList || !nameList.length) return edits;
+  let ast;
+  try { ast = parse(code, label); } catch (e) { return edits; }
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // ⚠️ 长的名字排前面 ⇒ 避免「短名先匹配」⭐⭐⭐
+  const names = [...nameList].sort((a, b) => b.length - a.length);
+  const re = new RegExp(
+    '(?<![A-Za-z0-9_$.])(' + names.map(esc).join('|') + ')(?=\\s*\\(|\\s*\\.\\s*call\\s*\\()', 'g');
+  (function walk(node) {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'Literal' && typeof node.value === 'string') {
+      // ⭐ 用**原始文本**（含引号与转义）⇒ 偏移与源文件一致 ⇒ edits 可直接合并 ⭐⭐⭐
+      const raw = code.slice(node.start, node.end);
+      let m; const r = new RegExp(re.source, 'g');
+      while ((m = r.exec(raw)) !== null) {
+        const nu = lookup(m[1]);
+        if (!nu) continue;
+        edits.push({ start: node.start + m.index, end: node.start + m.index + m[1].length, text: nu });
+      }
+    }
+    for (const k of Object.keys(node)) {
+      if (k === 'type' || k === 'start' || k === 'end') continue;
+      const v = node[k];
+      if (Array.isArray(v)) { for (const c of v) walk(c); }
+      else if (v && typeof v.type === 'string') walk(v);
+    }
+  })(ast);
+  return edits;
+}
+
 /** 应用编辑（从后往前，避免偏移失效） */
 function applyEdits(code, edits) {
   const sorted = edits.slice().sort((a, b) => b.start - a.start);
@@ -245,6 +295,8 @@ console.log(`jsLib   顶层符号 ${libNames.length} 个 ⇒ 改名 ${libDom.siz
 console.log(`loginUrl 顶层符号 ${luiNames.length} 个 ⇒ 改名 ${luiDom.size} 个（前缀 ${P_LUI}）`);
 
 const renamed = new Set([...libDom.keys(), ...luiDom.keys()]);
+// ⭐⭐⭐ **被改名的符号名单**（供「字符串字面量里的调用点」那一层用）⭐⭐⭐
+const ALL_NAME_LIST = [...ALL.keys()];
 const overlap = libNames.filter(n => luiNames.includes(n) && renamed.has(n));
 console.log(`两个域重名且都改名的符号 ${overlap.length} 个 ⇒ 改名后彻底分离 ✔`);
 
@@ -305,7 +357,10 @@ function patchRuleText(code, label, dom) {
     const r = makeRenamer(dom);
     r.walk(ast, null, null);
     otherCount += r.count();
-    return `${m[1]}@js:` + applyEdits(body, r.edits);
+    // ⭐⭐⭐⭐⭐ **字符串字面量里的调用点也要改**（筛选 action 是字符串 ⇒ AST 看不见）⭐⭐⭐
+    const strEdits = collectCallSiteEditsInStrings(body, label, typeof dom === 'function' ? dom : (n) => dom.get(n), ALL_NAME_LIST);
+    otherCount += strEdits.length;
+    return `${m[1]}@js:` + applyEdits(body, r.edits.concat(strEdits));
   }
 
   // ② 混合：把每个 `<js>…</js>` 段单独处理，其余原样
@@ -315,7 +370,10 @@ function patchRuleText(code, label, dom) {
       const r = makeRenamer(dom);
       r.walk(ast, null, null);
       otherCount += r.count();
-      return '<js>' + applyEdits(body, r.edits) + '</js>';
+      // ⭐⭐⭐⭐⭐ **字符串字面量里的调用点也要改**（筛选 action 是字符串 ⇒ AST 看不见）⭐⭐⭐
+      const strEdits = collectCallSiteEditsInStrings(body, label, typeof dom === 'function' ? dom : (n) => dom.get(n), ALL_NAME_LIST);
+      otherCount += strEdits.length;
+      return '<js>' + applyEdits(body, r.edits.concat(strEdits)) + '</js>';
     });
   }
 
@@ -327,7 +385,10 @@ function patchRuleText(code, label, dom) {
   r.collectLocals(ast);
   r.walk(ast, null, null);
   otherCount += r.count();
-  return applyEdits(code, r.edits);
+  // ⭐⭐⭐⭐⭐ **字符串字面量里的调用点也要改**（筛选 action 是字符串 ⇒ AST 看不见）⭐⭐⭐
+  const strEdits = collectCallSiteEditsInStrings(code, label, typeof dom === 'function' ? dom : (n) => dom.get(n), ALL_NAME_LIST);
+  otherCount += strEdits.length;
+  return applyEdits(code, r.edits.concat(strEdits));
 }
 
 // exploreUrl / searchUrl / header
@@ -378,8 +439,10 @@ if (typeof src.loginUi === 'string') {
       const a = parse(row.action, 'loginUi.action');
       const r = makeRenamer(uiResolver);
       r.walk(a, null, null);
-      row.action = applyEdits(row.action, r.edits);
-      uiCount += r.count();
+      // ⭐⭐⭐⭐⭐ **字符串字面量里的调用点也要改**（同上）⭐⭐⭐
+      const strEdits = collectCallSiteEditsInStrings(row.action, 'loginUi.action', uiResolver, ALL_NAME_LIST);
+      row.action = applyEdits(row.action, r.edits.concat(strEdits));
+      uiCount += r.count() + strEdits.length;
     }
   }
   src.loginUi = JSON.stringify(rows, null, 2);
