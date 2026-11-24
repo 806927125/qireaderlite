@@ -214,8 +214,12 @@ struct BookshelfView: View {
             } label: {
                 VStack(spacing: 12) {
                     // 进度环 + 封面（原型 `.cabin .ring`）
-                    ProgressRing(progress: item.finished ? 1 : 0, size: 128) {
-                        AnyView(
+                    // ⚠️ `center` 是 **AnyView**（不是闭包）⇒ **不能用尾随闭包语法** ⭐⭐⭐
+                    //   （`swiftc -parse` 只查语法、查不出这种「参数标签/尾随闭包」错 ⇒ 只有 Xcode 编译抓得到）⭐⭐⭐
+                    ProgressRing(
+                        progress: item.finished ? 1 : 0,
+                        size: 128,
+                        center: AnyView(
                             CoverImage(url: item.book.cleanCover, width: 92, height: 92)
                                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                                 .overlay(
@@ -223,7 +227,7 @@ struct BookshelfView: View {
                                         .stroke(Terminal.edge, lineWidth: 1)
                                 )
                         )
-                    }
+                    )
 
                     // 书名（衬线大字）
                     Text(item.book.name)

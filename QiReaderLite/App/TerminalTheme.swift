@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // =============================================================================
 // ⭐⭐⭐⭐⭐ **「星澜终端」视觉层**（2026-11-24，按用户给的 HTML 原型做的换肤）⭐⭐⭐⭐⭐
@@ -101,11 +102,11 @@ struct TerminalBackdrop: View {
                 let w = geo.size.width, h = geo.size.height
                 ZStack {
                     orb(w * 0.16, h * 0.08, min(w, h) * 0.62,
-                        Color(red: 0.23, green: 0.36, blue: 0.86), drift ? 1.0 : 0.0)
+                        Color(red: 0.23, green: 0.36, blue: 0.86), phase: drift ? 1.0 : 0.0)
                     orb(w * 0.84, h * 0.72, min(w, h) * 0.56,
-                        Color(red: 0.49, green: 0.23, blue: 0.93), drift ? 1.0 : 0.0)
+                        Color(red: 0.49, green: 0.23, blue: 0.93), phase: drift ? 1.0 : 0.0)
                     orb(w * 0.72, h * 0.45, min(w, h) * 0.42,
-                        Color(red: 0.86, green: 0.15, blue: 0.47), drift ? 1.0 : 0.0)
+                        Color(red: 0.86, green: 0.15, blue: 0.47), phase: drift ? 1.0 : 0.0)
                 }
             }
             .ignoresSafeArea()
@@ -159,9 +160,12 @@ struct StarField: View {
             let cols = 12, rows = 26
             for r in 0..<rows {
                 for c in 0..<cols {
-                    let x = size.width * (Double(c) + rnd() * 0.9) / Double(cols)
-                    let y = size.height * (Double(r) + rnd() * 0.9) / Double(rows)
-                    let r0 = 0.6 + rnd() * 0.9
+                    // ⚠️⚠️ **Swift 不做 CGFloat ↔ Double 的隐式转换** ⭐⭐⭐
+                    //   ⇒ 这里必须**全程用 CGFloat** ⇒ 否则 Xcode 编译报
+                    //   「binary operator '*' cannot be applied to 'CGFloat' and 'Double'」⭐⭐⭐
+                    let x = size.width * (CGFloat(c) + CGFloat(rnd() * 0.9)) / CGFloat(cols)
+                    let y = size.height * (CGFloat(r) + CGFloat(rnd() * 0.9)) / CGFloat(rows)
+                    let r0 = CGFloat(0.6 + rnd() * 0.9)
                     ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: r0, height: r0)),
                              with: .color(.white.opacity(0.35 + rnd() * 0.45)))
                 }
@@ -218,7 +222,8 @@ struct ProgressRing: View {
             Circle()
                 .stroke(Color.white.opacity(0.10), lineWidth: lineWidth)
             Circle()
-                .trim(from: 0, to: max(0.001, min(1, progress)))
+                // ⚠️ `trim(from:to:)` 收 **CGFloat** ⇒ `progress` 是 Double ⇒ 必须显式转 ⭐⭐⭐
+                .trim(from: 0, to: CGFloat(max(0.001, min(1, progress))))
                 .stroke(Terminal.gradientV,
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
