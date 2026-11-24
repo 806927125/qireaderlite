@@ -59,10 +59,11 @@ struct ReaderSkinBackground: View {
 
             // ② 柴阅的皮肤底是**纯色 + 一点层次** ⇒ 这里给一层**极轻的上下渐变**
             //    （纯色太「死」；但**不做大辉光** —— 那是栖阅的做法，不是柴阅的）⭐⭐⭐
+            // ⚠️ `intensity` 要真的用上（否则是未使用变量 ⇒ 编译警告）⇒ 调「层次」的深浅 ⭐⭐⭐
             LinearGradient(colors: [
-                theme.bg.mix(with: .white, amount: isDark ? 0.03 : 0.10),
+                theme.bg.mix(with: .white, amount: (isDark ? 0.03 : 0.10) * max(0.2, min(1, intensity))),
                 theme.bg,
-                theme.bg.mix(with: .black, amount: isDark ? 0.10 : 0.03),
+                theme.bg.mix(with: .black, amount: (isDark ? 0.10 : 0.03) * max(0.2, min(1, intensity))),
             ],
             startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()

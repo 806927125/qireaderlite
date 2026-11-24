@@ -271,18 +271,19 @@ struct ReaderTheme: Identifiable {
     //   以前面板那层白纱是**写死的白色**（`Color.white.opacity(max(glassTint, 0.12))`）⭐⭐⭐
     //   ⇒ 浅色纸底上没问题 ⇒ **夜间底上就是一块乳白板**（白纱 + 玻璃 ⇒ 灰糊）⭐⭐⭐
     //   ⇒ 正解：**深色底用黑纱、浅色底才用白纱** ⇒ 两种底都通透可读 ⭐⭐⭐⭐⭐
-    var isDark: Bool { ReaderTheme.isDark(self) }
+    /// ⭐⭐⭐ **实例侧的深色判定**（名字叫 `isDarkTheme`，避免和静态的 `ReaderTheme.isDark(_:)` 同名）⭐⭐⭐
+    var isDarkTheme: Bool { ReaderTheme.isDark(self) }
 
     /// ⭐⭐⭐ 面板的「压底纱」（栖阅的 dimming layer）
     ///   · 浅色底 ⇒ 白纱（压住后面的正文字）
     ///   · 深色底 ⇒ **黑纱**（白纱会把玻璃变成乳白板）
     func panelVeil(white: Double) -> Color {
-        isDark ? Color.black.opacity(0.34) : Color.white.opacity(max(white, 0.12))
+        isDarkTheme ? Color.black.opacity(0.34) : Color.white.opacity(max(white, 0.12))
     }
 
     /// ⭐⭐⭐ 控件（旋钮/小按钮）的底色
     var controlFill: Color {
-        isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.05)
+        isDarkTheme ? Color.white.opacity(0.12) : Color.black.opacity(0.05)
     }
 
     // ⭐⭐⭐⭐⭐ **阅读页 chrome 的配色**（照栖阅 `appThemeTint` 的思路：**跟着阅读主题走**）⭐⭐⭐⭐⭐
@@ -292,13 +293,13 @@ struct ReaderTheme: Identifiable {
     //   ⇒ 正解：每项都给**深/浅两档**，由 `isDark` 选 ⭐⭐⭐
 
     /// 面板里的正文色
-    var chromeInk: Color { isDark ? Color.white.opacity(0.90) : Color(white: 0x22 / 0xff) }
+    var chromeInk: Color { isDarkTheme ? Color.white.opacity(0.90) : Color(white: 0x22 / 0xff) }
     /// 面板里的次级文字
-    var chromeSubInk: Color { isDark ? Color.white.opacity(0.62) : Color(white: 0x55 / 0xff) }
+    var chromeSubInk: Color { isDarkTheme ? Color.white.opacity(0.62) : Color(white: 0x55 / 0xff) }
     /// 面板里的发丝线
-    var hairLineColor: Color { isDark ? Color.white.opacity(0.16) : Color.black.opacity(0.07) }
+    var hairLineColor: Color { isDarkTheme ? Color.white.opacity(0.16) : Color.black.opacity(0.07) }
     /// 面板内层（子分组）的底
-    var panelInnerFill: Color { isDark ? Color.black.opacity(0.26) : Color.white.opacity(0.55) }
+    var panelInnerFill: Color { isDarkTheme ? Color.black.opacity(0.26) : Color.white.opacity(0.55) }
     /// 选中项的高亮色（跟 App 主色同族）
     var chromeAccent: Color { Terminal.cyan }
 }

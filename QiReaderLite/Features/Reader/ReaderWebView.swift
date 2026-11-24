@@ -688,8 +688,8 @@ struct ReaderWebView: View {
                 // ⭐⭐⭐ 柴阅的「外观」用**衬线体文字 "Aa"**（系统图标在中文环境会变「格式」）⭐⭐⭐
                 barItem("大小", textIcon: "Aa") { showSettings = true }
                 // ⭐⭐⭐ 柴阅的「日间/夜间」是一键切换 ⇒ 轻阅有 16 套配色 ⇒ 在夜间/纸白之间切 ⭐⭐⭐
-                barItem(theme.isDark ? "日间" : "夜间",
-                        theme.isDark ? "sun.max" : "moon") { toggleDayNight() }
+                barItem(theme.isDarkTheme ? "日间" : "夜间",
+                        theme.isDarkTheme ? "sun.max" : "moon") { toggleDayNight() }
                 // 真机排版自检 —— 沙盒验不了 CoreText，只能让 App 自己吐状态。
                 barItem("自检", "stethoscope") { showPageDiag = true }
             }

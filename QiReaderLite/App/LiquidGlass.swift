@@ -222,22 +222,23 @@ struct LiquidGlass: ViewModifier {
         let fill = GlassFill(tint: tint, strength: s, veil: max(glassTint, minVeil))
         // ⭐⭐⭐ 异形玻璃（柴阅底栏）⇒ 两层都用同一个形状，否则描边会跟外形错位 ⭐⭐⭐
         let shape: AnyShape
-        let inner: AnyShape
+        let innerShape: AnyShape
         if let top = unevenTop, let bottom = unevenBottom {
             shape = AnyShape(UnevenRoundedRectangle(
                 topLeadingRadius: top, bottomLeadingRadius: bottom,
                 bottomTrailingRadius: bottom, topTrailingRadius: top,
                 style: .continuous))
-            inner = AnyShape(UnevenRoundedRectangle(
+            innerShape = AnyShape(UnevenRoundedRectangle(
                 topLeadingRadius: max(top - 1, 1), bottomLeadingRadius: max(bottom - 1, 1),
                 bottomTrailingRadius: max(bottom - 1, 1), topTrailingRadius: max(top - 1, 1),
                 style: .continuous))
         } else {
             shape = AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            inner = AnyShape(RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
-                                             style: .continuous))
+            innerShape = AnyShape(RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
+                                                   style: .continuous))
         }
-        let inner = inner.strokeBorder(.white.opacity(0.10 * s), lineWidth: 1)
+        // ⚠️ **名字要跟 `innerShape` 区分开**（同名 `let` 会「重复声明」⇒ 编译不过）⭐⭐⭐
+        let inner = innerShape.strokeBorder(.white.opacity(0.10 * s), lineWidth: 1)
 
         let withFill = content.background(fill).clipShape(shape)
         let withRim = withFill.overlay(GlassRim(cornerRadius: cornerRadius, strength: s,

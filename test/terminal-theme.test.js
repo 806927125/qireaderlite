@@ -152,7 +152,7 @@ for (const f of swiftFiles(readerDir)) {
     if (!/Color\(white:\s*0x/.test(line)) return;
     // ⭐⭐⭐ **主题定义里的「浅色分支」是合法的**（写死灰阶 = 浅色主题的值）
     //   ⇒ 但它必须**成对**：同一行里必须有 `isDark ?`（深色分支）⇒ 否则就是「只写了一边」⭐⭐⭐
-    if (/isDark\s*\?/.test(line)) return;
+    if (/isDark\w*\s*\?/.test(line)) return;   // `isDarkTheme ?` / `isDark ?` 都算「成对」
     greyHits.push(`${path.relative(APP, f)}:${i + 1}`);
   });
 }
