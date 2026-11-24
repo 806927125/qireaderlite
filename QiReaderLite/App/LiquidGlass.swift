@@ -80,22 +80,49 @@ private struct GlassRim: View {
 
     var body: some View {
         // 镜面描边：左上最亮，这是玻璃感的关键一笔
-        let shape: AnyShape
+        // ⚠️⚠️ **不能用 `AnyShape`** ⇒ 它只保证 `Shape` ⇒ **没有 `strokeBorder`** ⇒ 编译不过 ⭐⭐⭐
+        //   ⇒ 所以这里用 @ViewBuilder **分别画两种形状**（具体类型才有 strokeBorder）⭐⭐⭐
+        let gradient = LinearGradient(
+            colors: [.white.opacity(0.62 * strength),
+                     .white.opacity(0.10 * strength),
+                     .white.opacity(0.30 * strength)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
         if let top = unevenTop, let bottom = unevenBottom {
-            shape = AnyShape(UnevenRoundedRectangle(
+            UnevenRoundedRectangle(
                 topLeadingRadius: top, bottomLeadingRadius: bottom,
                 bottomTrailingRadius: bottom, topTrailingRadius: top,
-                style: .continuous))
+                style: .continuous)
+                .strokeBorder(gradient, lineWidth: 1)
         } else {
-            shape = AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(gradient, lineWidth: 1)
         }
-        return shape
-            .strokeBorder(
-                LinearGradient(colors: [.white.opacity(0.62 * strength),
-                                        .white.opacity(0.10 * strength),
-                                        .white.opacity(0.30 * strength)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                lineWidth: 1)
+    }
+}
+
+/// ⭐⭐⭐ **内层描边**（镜面细线）—— 单独一个 View，**因为 `AnyShape` 没有 `strokeBorder`** ⭐⭐⭐
+private struct GlassInnerStroke: View {
+    var cornerRadius: CGFloat
+    var unevenTop: CGFloat?
+    var unevenBottom: CGFloat?
+    var strength: Double
+
+    var body: some View {
+        let gradient = LinearGradient(
+            colors: [.white.opacity(0.10 * strength),
+                     .white.opacity(0.04 * strength),
+                     .white.opacity(0.08 * strength)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+        if let top = unevenTop, let bottom = unevenBottom {
+            UnevenRoundedRectangle(
+                topLeadingRadius: max(top - 1, 1), bottomLeadingRadius: max(bottom - 1, 1),
+                bottomTrailingRadius: max(bottom - 1, 1), topTrailingRadius: max(top - 1, 1),
+                style: .continuous)
+                .strokeBorder(gradient, lineWidth: 1)
+        } else {
+            RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1), style: .continuous)
+                .strokeBorder(gradient, lineWidth: 1)
+        }
     }
 }
 
@@ -221,29 +248,25 @@ struct LiquidGlass: ViewModifier {
         let s = variant == .clear ? strength * 0.45 : strength
         let fill = GlassFill(tint: tint, strength: s, veil: max(glassTint, minVeil))
         // ⭐⭐⭐ 异形玻璃（柴阅底栏）⇒ 两层都用同一个形状，否则描边会跟外形错位 ⭐⭐⭐
+        // ⚠️ `AnyShape` **没有 `strokeBorder`** ⇒ 描边那一层必须用**具体形状**（下面的 GlassInnerStroke）⭐⭐⭐
         let shape: AnyShape
-        let innerShape: AnyShape
         if let top = unevenTop, let bottom = unevenBottom {
             shape = AnyShape(UnevenRoundedRectangle(
                 topLeadingRadius: top, bottomLeadingRadius: bottom,
                 bottomTrailingRadius: bottom, topTrailingRadius: top,
                 style: .continuous))
-            innerShape = AnyShape(UnevenRoundedRectangle(
-                topLeadingRadius: max(top - 1, 1), bottomLeadingRadius: max(bottom - 1, 1),
-                bottomTrailingRadius: max(bottom - 1, 1), topTrailingRadius: max(top - 1, 1),
-                style: .continuous))
         } else {
             shape = AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            innerShape = AnyShape(RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
-                                                   style: .continuous))
         }
-        // ⚠️ **名字要跟 `innerShape` 区分开**（同名 `let` 会「重复声明」⇒ 编译不过）⭐⭐⭐
-        let inner = innerShape.strokeBorder(.white.opacity(0.10 * s), lineWidth: 1)
 
         let withFill = content.background(fill).clipShape(shape)
         let withRim = withFill.overlay(GlassRim(cornerRadius: cornerRadius, strength: s,
                                                 unevenTop: unevenTop, unevenBottom: unevenBottom))
-        let withInner = withRim.overlay(inner).compositingGroup()
+        let withInner = withRim.overlay(
+            GlassInnerStroke(cornerRadius: cornerRadius,
+                             unevenTop: unevenTop, unevenBottom: unevenBottom,
+                             strength: s)
+        ).compositingGroup()
         let withShadow = withInner
             .shadow(color: .black.opacity(0.13 * s), radius: 12, x: 0, y: 5)
             .shadow(color: .white.opacity(0.10 * s), radius: 2, x: 0, y: -1)

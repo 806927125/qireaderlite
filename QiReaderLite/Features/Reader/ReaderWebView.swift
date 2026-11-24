@@ -1071,7 +1071,7 @@ struct ReaderWebView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(PageTurnMode.all) { m in
-                        ChipButton(title: m.name, selected: pageTurnMode == m.raw) {
+                        ChipButton(title: m.name, selected: pageTurnMode == m.raw, theme: theme) {
                             pageTurnMode = m.raw
                             pageTurn = m.raw != "scroll"
                         }
@@ -1244,7 +1244,7 @@ struct ReaderWebView: View {
             Text("段落对齐").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
             ForEach(ReaderParaAlign.all) { a in
-                ChipButton(title: a.name, selected: paraAlign == a.raw) { paraAlign = a.raw }
+                ChipButton(title: a.name, selected: paraAlign == a.raw, theme: theme) { paraAlign = a.raw }
             }
         }
         .padding(.vertical, 8)
@@ -1256,7 +1256,7 @@ struct ReaderWebView: View {
             Text("底线范围").font(.subheadline).foregroundStyle(Theme.ink)
             Spacer()
             ForEach(ReaderBaselineScope.all) { sc in
-                ChipButton(title: sc.name, selected: baselineScope == sc.raw) { baselineScope = sc.raw }
+                ChipButton(title: sc.name, selected: baselineScope == sc.raw, theme: theme) { baselineScope = sc.raw }
             }
         }
         .padding(.vertical, 6)
@@ -1512,6 +1512,8 @@ struct ReaderWebContainer: UIViewRepresentable {
 private struct ChipButton: View {
     let title: String
     let selected: Bool
+    /// ⭐⭐⭐ **阅读主题**（配色随主题走 ⇒ 深色主题上不能写死）⭐⭐⭐
+    let theme: ReaderTheme
     let action: () -> Void
 
     var body: some View {
