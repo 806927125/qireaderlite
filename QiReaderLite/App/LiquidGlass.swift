@@ -74,10 +74,22 @@ private struct GlassFill: View {
 private struct GlassRim: View {
     var cornerRadius: CGFloat
     var strength: Double
+    /// ⭐⭐⭐ **异形（上窄下宽）** —— 柴阅阅读页底栏的形状 ⇒ 描边要跟外形一致 ⭐⭐⭐
+    var unevenTop: CGFloat? = nil
+    var unevenBottom: CGFloat? = nil
 
     var body: some View {
         // 镜面描边：左上最亮，这是玻璃感的关键一笔
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let shape: AnyShape
+        if let top = unevenTop, let bottom = unevenBottom {
+            shape = AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: top, bottomLeadingRadius: bottom,
+                bottomTrailingRadius: bottom, topTrailingRadius: top,
+                style: .continuous))
+        } else {
+            shape = AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+        return shape
             .strokeBorder(
                 LinearGradient(colors: [.white.opacity(0.62 * strength),
                                         .white.opacity(0.10 * strength),
@@ -128,6 +140,11 @@ struct LiquidGlass: ViewModifier {
     ///   · 顶栏胶囊/返回键太小，太透就没轮廓了
     ///   · 大面积卡片不需要下限（它就是想透出底下的插画）
     var minVeil: Double = 0
+    /// ⭐⭐⭐⭐⭐ **异形玻璃（上窄 / 下宽）** —— 柴阅的阅读页底栏就是这个形状 ⭐⭐⭐⭐⭐
+    ///   （`UnevenRoundedRectangle`：上左右 32 / 下左右 45 ⇒ 视觉上「托住」内容）⭐⭐⭐
+    ///   ⇒ 不给就是普通圆角矩形（**老行为不变**）⭐⭐⭐
+    var unevenTop: CGFloat? = nil
+    var unevenBottom: CGFloat? = nil
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -178,6 +195,14 @@ struct LiquidGlass: ViewModifier {
         if isCircle {
             content.glassEffect(g, in: .circle)
                 .background(veil, in: Circle())
+        } else if let top = unevenTop, let bottom = unevenBottom {
+            // ⭐⭐⭐ 异形玻璃（柴阅底栏的形状）⇒ 系统的 glassEffect 接受任意 Shape ✔
+            let shape = UnevenRoundedRectangle(
+                topLeadingRadius: top, bottomLeadingRadius: bottom,
+                bottomTrailingRadius: bottom, topTrailingRadius: top,
+                style: .continuous)
+            content.glassEffect(g, in: shape)
+                .background(veil, in: shape)
         } else {
             content.glassEffect(g, in: .rect(cornerRadius: cornerRadius))
                 .background(veil, in: RoundedRectangle(cornerRadius: cornerRadius,
@@ -195,13 +220,28 @@ struct LiquidGlass: ViewModifier {
         // 磨砂（.ultraThinMaterial）还在，但上面的白渐变和高光压到 45% → 更透。
         let s = variant == .clear ? strength * 0.45 : strength
         let fill = GlassFill(tint: tint, strength: s, veil: max(glassTint, minVeil))
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        let inner = RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
-                                     style: .continuous)
-            .strokeBorder(.white.opacity(0.10 * s), lineWidth: 1)
+        // ⭐⭐⭐ 异形玻璃（柴阅底栏）⇒ 两层都用同一个形状，否则描边会跟外形错位 ⭐⭐⭐
+        let shape: AnyShape
+        let inner: AnyShape
+        if let top = unevenTop, let bottom = unevenBottom {
+            shape = AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: top, bottomLeadingRadius: bottom,
+                bottomTrailingRadius: bottom, topTrailingRadius: top,
+                style: .continuous))
+            inner = AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: max(top - 1, 1), bottomLeadingRadius: max(bottom - 1, 1),
+                bottomTrailingRadius: max(bottom - 1, 1), topTrailingRadius: max(top - 1, 1),
+                style: .continuous))
+        } else {
+            shape = AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            inner = AnyShape(RoundedRectangle(cornerRadius: max(cornerRadius - 1, 1),
+                                             style: .continuous))
+        }
+        let inner = inner.strokeBorder(.white.opacity(0.10 * s), lineWidth: 1)
 
         let withFill = content.background(fill).clipShape(shape)
-        let withRim = withFill.overlay(GlassRim(cornerRadius: cornerRadius, strength: s))
+        let withRim = withFill.overlay(GlassRim(cornerRadius: cornerRadius, strength: s,
+                                                unevenTop: unevenTop, unevenBottom: unevenBottom))
         let withInner = withRim.overlay(inner).compositingGroup()
         let withShadow = withInner
             .shadow(color: .black.opacity(0.13 * s), radius: 12, x: 0, y: 5)
@@ -236,6 +276,14 @@ extension View {
     ///    出来是一坨发灰的糊状物（真机一眼就看出来"怪"）。
     ///    这个修饰符已经把两条路都封了（iOS26 → 系统 `.capsule`，
     ///    17~25 → 手搓 cornerRadius 999），**一个就够**。
+    /// ⭐⭐⭐⭐⭐ **异形玻璃（上窄 / 下宽）** —— 柴阅阅读页底栏的形状 ⭐⭐⭐⭐⭐
+    ///   （`top` = 上方左右圆角，`bottom` = 下方左右圆角）⭐⭐⭐
+    func liquidGlassUneven(top: CGFloat, bottom: CGFloat, strength: Double = 1.15,
+                           variant: GlassVariant = .regular, minVeil: Double = 0.10) -> some View {
+        modifier(LiquidGlass(cornerRadius: bottom, strength: strength, variant: variant,
+                             minVeil: minVeil, unevenTop: top, unevenBottom: bottom))
+    }
+
     func glassCapsule(strength: Double = 1.1,
                       tint: [Color] = [.white.opacity(0.26), .white.opacity(0.08)]) -> some View {
         // ⚠️ iOS 26 上必须走 LiquidGlass 修饰器（它内部有 @Environment 能拿到

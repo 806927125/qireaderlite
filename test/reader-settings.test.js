@@ -111,16 +111,16 @@ ok(/\.sheet\(isPresented: \$showDisplaySettings\)/.test(web) &&
 // 磁贴：一层统一淡底 + 两行文字
 {
   // 规格：按钮背景 rgba(0,0,0,.05)（不是 --fill 的冷灰 12%）
-  ok(/background\(Color\.black\.opacity\(0\.05\)/.test(ft),
-     '8 格磁贴底色 rgba(0,0,0,.05)（规格表）');
+  ok(/background\(theme\.controlFill/.test(ft),
+     '8 格磁贴底色**随主题自适应**（深色主题上不再是一块黑）');
   ok(!/Color\.white\.opacity\(ready \?/.test(ft), '磁贴不叠第二层白底');
 }
 // 「小 / 大」的圆用 ZStack + Circle().fill() **直接画出来** ——
 // 圆在 ZStack 里是 flexible view，会填满 34×34，保证完整正圆，
 // 不用跟背景裁剪 / 布局挤压较劲。
 ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(web), '「小/大」的圆是直接画出来的（ZStack + Circle.fill）');
-ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.05\)\)/.test(web),
-   '「小 / 大」是圆形底 rgba(0,0,0,.05)（规格表）');
+ok(/Circle\(\)\.fill\(theme\.controlFill\)/.test(web),
+   '「小 / 大」是圆形底（**随主题自适应**）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -133,8 +133,8 @@ ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(w
 // 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
 ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
    '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
-ok(/Circle\(\)\.fill\(Color\.black\.opacity\(0\.05\)\)/.test(web),
-   '「小 / 大」是圆形底 rgba(0,0,0,.05)（规格表）');
+ok(/Circle\(\)\.fill\(theme\.controlFill\)/.test(web),
+   '「小 / 大」是圆形底（**随主题自适应**）');
 // 幕布（scrim）：面板弹出时后面内容要压暗。
 // iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
 // 所以手动加一层，放在 ZStack 最底层、正文之下。
@@ -201,8 +201,8 @@ ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
 //    不用 Glass.tint() —— tint 是色彩映射，系统会自己反向调节 → 滑块等于没接。
 ok(/\.glassEffect\(Glass\.regular,/.test(panel),
    '面板是**液态玻璃** .glassEffect(.regular)');
-ok(/Color\.white\.opacity\(max\(glassTint, 0\.12\)\)/.test(panel),
-   '面板的白纱层可调（有下限 0.12，盖在正文上不能透到字打架）');
+ok(/theme\.panelVeil\(white: max\(glassTint, 0\.12\)\)/.test(panel),
+   '面板白纱层可调（有下限 0.12）且**随主题反**（深色底用黑纱 ⇒ 不是乳白板）');
 // ⚠️ 白 tint 别调回 0.35 —— 玻璃会白得一点都不通透，后面的正文看不见
 //    （用户：「液态玻璃透明度调整一下，一点都不透明」）。
 ok(!/glassEffect\(\.clear/.test(panel),
@@ -304,8 +304,10 @@ ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
 // 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
 // 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
 ok(/\.glassEffect\(Glass\.regular,/.test(panel), '面板是液态玻璃 .regular');
-ok(/\.background\(Color\.white\.opacity\(max\(glassTint, 0\.12\)\)/.test(panel),
-   '面板有自绘白纱层（内层白块要能分层）');
+ok(/theme\.panelVeil\(white:/.test(panel),
+   '面板有自绘纱层（随主题反）');
+ok(/theme\.panelInnerFill/.test(web),
+   '面板内层白块也随主题（深色底上不再是一块乳白）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
 ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
@@ -419,8 +421,8 @@ ok(/padding\(\.top, 12\)/.test(panel),
 // ⚠️ 参考实现建议「去掉置灰（enabled:false）」让它看着正常 —— **不采纳**。
 //    未实现的功能（朗读 / 高亮 / 气泡 / 格式 / 页眉页脚）置灰是用户明确要的：
 //    宁可看起来淡，也不能让用户以为点得动。撤置灰 = 伪装成已完成。
-ok(/foregroundStyle\(ready \? Color\(white: 0x22 \/ 0xff\) : Theme\.sub\.opacity\(0\.45\)\)/.test(web),
-   '未实现功能仍置灰（不采纳参考实现「去掉置灰」的建议）');
+ok(/foregroundStyle\(ready \? theme\.chromeInk : theme\.chromeSubInk\.opacity\(0\.7\)\)/.test(web),
+   '未实现功能仍置灰（不采纳参考实现「去掉置灰」的建议）**且配色随主题**');
 ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假完成提示');
 
 // ── 版本号可见 ──
@@ -445,9 +447,9 @@ ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假
 {
   const pc2 = web.slice(web.indexOf('private var panelContent: some View {'),
                          web.indexOf('private var hairLine'));
-  ok(/padding\(EdgeInsets\(top: 14, leading: 12, bottom: 2, trailing: 12\)\)[\s\S]{0,140}background\(\s*Color\.white\.opacity\(0\.55\)/.test(pc2),
+  ok(/padding\(EdgeInsets\(top: 14, leading: 12, bottom: 2, trailing: 12\)\)[\s\S]{0,140}background\(\s*theme\.panelInnerFill/.test(pc2),
      'top-card：padding 在 background 之前（CSS 的 padding 在 background 之内）');
-  ok(/Color\.white\.opacity\(0\.55\)/.test(pc2), 'top-card 底色 white@0.55（ui.txt 原值）');
+  ok(/theme\.panelInnerFill/.test(pc2), 'top-card 底色**随主题自适应**（深色底上不是乳白块）');
   ok(/cornerRadius: 16/.test(pc2), 'top-card 圆角 16');
   ok(/shadow\(color: Color\.black\.opacity\(0\.04\), radius: 6, x: 0, y: 1\)/.test(pc2),
      'top-card 阴影 0 1px 6px rgba(0,0,0,.04)');
@@ -533,18 +535,25 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   const top = rv.slice(rv.indexOf('private var topBar'),
                        rv.indexOf('private var bottomBar'));
   const bot = rv.slice(rv.indexOf('private var bottomBar'));
-  // ① 顶栏中间：书名 + 副标题要装在一个圆角胶囊里
-  ok(/Text\(book\.name\)[\s\S]{0,220}Text\(book\.sourceName\)[\s\S]{0,200}liquidGlass\(cornerRadius: 20/.test(top),
-     '顶栏书名+副标题装在圆角胶囊里（栖阅那样）');
+  // ① ⭐⭐⭐ 顶栏：**柴阅是【一整条玻璃胶囊】+ 居中衬线书名**（2026-11-25 换了参照对象）⭐⭐⭐
+  ok(/Text\(book\.name\)[\s\S]{0,300}design: \.serif/.test(top),
+     '顶栏书名用**衬线体**（柴阅那样）');
+  ok(/liquidGlass\(cornerRadius: 28/.test(top) && /frame\(height: 56\)/.test(top),
+     '顶栏是【一整条玻璃胶囊】（柴阅那样：高 56 / 圆角 28）');
+  ok(/VStack\(spacing: 1\)[\s\S]{0,1200}frame\(maxWidth: \.infinity\)/.test(top),
+     '顶栏书名**居中**（前后等分）');
+  ok(!/frame\(maxWidth: 340\)/.test(top),
+     '不再有「限宽 340 的小胶囊」（柴阅是整条胶囊）');
   // ② 底栏：‹ 在最左、› 在最右，滑块夹中间
-  const arrowRow = bot.slice(bot.indexOf('HStack(spacing: 10) {'),
+  const arrowRow = bot.slice(bot.indexOf('HStack(spacing: 4) {'),
                              bot.indexOf('HStack(spacing: 0) {'));
-  ok(arrowRow.indexOf('chevron.left') < arrowRow.indexOf('Slider(')
-     && arrowRow.indexOf('Slider(') < arrowRow.indexOf('chevron.right'),
-     '底栏 ‹ 在最左、› 在最右，滑块在中间（栖阅那样）');
-  ok(arrowRow.indexOf('chevron.right') < arrowRow.indexOf('chevron.left') + 100
-     || arrowRow.indexOf('chevron.left') < arrowRow.indexOf('chevron.right'),
-     '两个箭头不堆在同一边');
+  ok(arrowRow.indexOf('backward.fill') < arrowRow.indexOf('Slider(')
+     && arrowRow.indexOf('Slider(') < arrowRow.indexOf('forward.fill'),
+     '底栏 上一章在最左、下一章在最右，滑块在中间（柴阅那样）');
+  ok(/liquidGlassUneven\(top: 32, bottom: 45/.test(bot),
+     '⭐⭐⭐ 底栏是**异形玻璃**（上窄 32 / 下宽 45 —— 柴阅那样）');
+  ok(/toggleDayNight\(\)/.test(bot),
+     '⭐⭐⭐ 底栏有**日/夜一键切换**（柴阅那样）');
 }
 
 // ── 用户一次提的 5 个问题 ──
@@ -599,10 +608,13 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
   // ③ 设置面板整块都能往下拖 → 必须 simultaneousGesture（gesture 会被子视图吃掉）
   ok(/\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 6\)/.test(rv),
      '设置面板用 simultaneousGesture（gesture 会让上半拖不动）');
-  // ④ 顶栏书名胶囊要居中
-  ok(/Spacer\(minLength: 8\)[\s\S]{0,120}Text\(book\.name\)[\s\S]{0,400}Spacer\(minLength: 8\)/.test(top),
-     '顶栏书名胶囊前后各有 Spacer（居中）');
-  ok(/frame\(maxWidth: 340\)/.test(top), '书名胶囊限宽 340');
+  // ④ ⭐⭐⭐ 顶栏：**柴阅是【整条胶囊】+ 居中衬线书名**（2026-11-25 参照对象换了）⭐⭐⭐
+  ok(/VStack\(spacing: 1\)[\s\S]{0,1200}frame\(maxWidth: \.infinity\)/.test(top),
+     '顶栏书名**居中**（柴阅：frame(maxWidth: .infinity)）');
+  ok(/liquidGlass\(cornerRadius: 28/.test(top) && /frame\(height: 56\)/.test(top),
+     '顶栏是【一整条玻璃胶囊】（柴阅：高 56 / 圆角 28）');
+  ok(!/frame\(maxWidth: 340\)/.test(top),
+     '不再有「限宽 340 的小胶囊」（柴阅是整条胶囊）');
   ok(/if swipeUpExit \{ dismiss\(\) \}/.test(rv), '上滑退出接 dismiss');
   ok(!/上滑退出阅读[\s\S]{0,200}\.disabled\(true\)/.test(rv), '「上滑退出阅读」开关不再置灰');
 }
@@ -815,8 +827,8 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
      'glassCard 入口默认 .clear');
   ok(/minVeil: 0/.test(comp),
      '大卡片白纱下限 0（滑块能一路透到底）');
-  ok(/glassEffect\(Glass\.regular,[\s\S]{0,200}Color\.white\.opacity\(max\(glassTint, 0\.12\)\)/.test(rvw),
-     '阅读器面板是 .regular + 白纱下限 0.12（盖在正文上，不能透到字打架）');
+  ok(/glassEffect\(Glass\.regular,[\s\S]{0,200}theme\.panelVeil\(white: max\(glassTint, 0\.12\)\)/.test(rvw),
+     '阅读器面板是 .regular + 纱层下限 0.12（盖在正文上，不能透到字打架）且随主题反');
 
   // 「最透明那档」要真的透：下限压到底
   ok(/minVeil: Double = 0\.10/.test(lg),

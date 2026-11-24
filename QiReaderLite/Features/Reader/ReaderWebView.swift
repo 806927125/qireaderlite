@@ -290,7 +290,11 @@ struct ReaderWebView: View {
         let sig = "\(c.fontSize)|\(c.lineSpacing)|\(c.paragraphSpacing)|\(c.horizontalMargin)|\(c.topMargin)|\(c.verticalJustify)|\(c.baselineScope.raw)|\(themeKey)|\(darkScheme == .dark)"
         let pager = pageCtl.pager
         pager.config = c
-        pager.background = UIColor(theme.bg)
+        // ⭐⭐⭐⭐⭐ **分页画布改成透明**（2026-11-25）⭐⭐⭐⭐⭐
+        //   ⇒ 以前刷成 `theme.bg`（**一整块纯色**）⇒ **会把混色背景整个盖住** ⭐⭐⭐
+        //   ⇒ 改透明 ⇒ 玻璃页浮在「混色背景」上 ⇒ 与栖阅一致（页面是浮层、底是混色）⭐⭐⭐
+        //   ⇒ 滚动模式本来就是 `.clear`（`box.bodyView.backgroundColor = .clear`）⇒ 两边一致 ✅
+        pager.background = UIColor.clear
         pageCtl.setMode(pageTurnMode)
         pager.setPageSize(c.pageSize(in: size))
 
@@ -377,8 +381,10 @@ struct ReaderWebView: View {
         //    内容被裁掉一半」。内层 .bottom 是给面板贴底用的，两层都要 .bottom。
         ZStack(alignment: .bottom) {
             ZStack(alignment: .bottom) {
-                theme.bg.ignoresSafeArea()
-                GlassBackdrop()
+                // ⭐⭐⭐⭐⭐ **混色阅读背景**（照栖阅 `ColorMixedBackground` 搬，2026-11-25）⭐⭐⭐⭐⭐
+                //   ⇒ 底色渐变 + 三团辉光 + 一道高光 ⇒ 不再是「一块纯色」⭐⭐⭐
+                //   ⇒ 辉光配色跟外壳同族（青/紫/粉）⇒ 整套 App 一套美学 ⭐⭐⭐
+                ReaderSkinBackground(theme: theme)
                 // 幕布（scrim）：面板弹出时把后面内容压暗一层。
                 //
                 // ⚠️ iOS 的 detent sheet **理论上**自带 dimmed background，
@@ -500,6 +506,11 @@ struct ReaderWebView: View {
                 settingsSheet
         }
         .background(theme.bg)
+        // ⭐⭐⭐⭐⭐ **隐藏系统导航栏**（2026-11-25 照柴阅）⭐⭐⭐⭐⭐
+        //   ⇒ 柴阅的阅读页是**全屏 + 自带 chrome**（顶栏胶囊 + 异形底栏）⭐⭐⭐
+        //   ⇒ 留着系统导航栏 ⇒ 上面多一条重复的标题栏 ⇒ 观感对不上 ⭐⭐⭐
+        //   ⇒ 返回键由我们的顶栏胶囊提供（dismiss()）⭐⭐⭐
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             guard !started else { return }
             started = true
@@ -591,63 +602,71 @@ struct ReaderWebView: View {
     // MARK: - 顶栏 / 底栏
 
     /// 顶栏：圆形返回 / 中间书名+来源 / 右侧圆形封面（照栖阅截图）
+    // MARK: - 顶栏（⭐⭐⭐ 照**柴阅** `ReaderChrome.topBar` 重写，2026-11-25）
+
+    /// ⭐⭐⭐⭐⭐ **柴阅的顶栏 = 一整条玻璃胶囊**（不是系统导航栏 + 几个圆钮）⭐⭐⭐⭐⭐
+    ///   · 高 56 · 圆角 28（= 胶囊）· 左右各留 10
+    ///   · 左：返回（44×44 命中区）· 中：**书名居中 + 衬线体** · 右：书签/更多（我们用封面）
     private var topBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 2) {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(Theme.ink)
-                    .frame(width: 34, height: 34)
-                    .glassCircle()
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            // ⚠️ 栖阅顶栏中间是**一个圆角胶囊**，里面装着书名 + 副标题两行。
-            //    我原来只是两个裸 Text，没有胶囊底 → 跟栖阅对不上。
-            Spacer(minLength: 8)
-            // ⚠️ 胶囊要**居中**（栖阅那样），所以前后各一个 Spacer 等分剩余空间。
-            VStack(alignment: .leading, spacing: 1) {
-                Text(book.name).font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.ink).lineLimit(1)
-                Text(book.sourceName).font(.caption2).foregroundStyle(Theme.sub).lineLimit(1)
+            .buttonStyle(.plain)
+
+            // ⭐⭐⭐ **书名居中 + 衬线体**（柴阅 `.serif(16)`）⭐⭐⭐
+            VStack(spacing: 1) {
+                Text(book.name)
+                    .font(.system(size: 16, weight: .medium, design: .serif))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                // ⭐⭐⭐ **第二行放「章节名 + 页码」**（柴阅把翻页信息放在页眉）
+                //   ⇒ 源名不放这儿了（详情页/书架上都有，翻页时更需要知道「在哪一章」）⭐⭐⭐
+                Text(pageTurn
+                     ? "\(session.current?.title ?? "") · 第\(session.index + 1)章 · \(pageInfo.page)/\(max(pageInfo.total, 1))页"
+                     : "\(session.current?.title ?? "") · 第\(session.index + 1)/\(max(session.flat.count, 1))章")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.sub)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .liquidGlass(cornerRadius: 20, strength: 1.0)
-            .frame(maxWidth: 340)
-            Spacer(minLength: 8)
-            // coverUrl 是非可选 String，别用 if let（CI 就是在这儿红的）
+            .frame(maxWidth: .infinity)
+
+            // 右侧：封面（柴阅这里是书签 + 更多；轻阅没有书签功能，保留封面）
             if !book.coverUrl.isEmpty, let coverURL = URL(string: book.coverUrl) {
                 AsyncImage(url: coverURL) { img in
                     img.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
                     Color.clear
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: 32, height: 32)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
-                .shadow(radius: 2, y: 1)
+                .overlay(Circle().stroke(Terminal.edge, lineWidth: 1))
             }
         }
-        .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 8)
+        .padding(.horizontal, 6)
+        .frame(height: 56)
+        // ⭐⭐⭐ 整条胶囊玻璃（系统玻璃自带高光 ⇒ 不要再叠描边）⭐⭐⭐
+        .liquidGlass(cornerRadius: 28, strength: 1.15)
+        .padding(.horizontal, 10)
+        .safeAreaPadding(.top, 8)
     }
 
-    /// 底栏：半透明浮层 —— 章节名 + n/N、左右箭头 + 进度滑杆、四个功能键
+    // MARK: - 底栏（⭐⭐⭐ 照**柴阅** `ReaderChrome.bottomPanel` 重写，2026-11-25）
+
+    /// ⭐⭐⭐⭐⭐ **柴阅的底栏 = 异形玻璃面板**（上窄 32 / 下宽 45）⭐⭐⭐⭐⭐
+    ///   · 第一行：[‹][章节滑杆][›]（52 高）
+    ///   · 第二行：4 个工具（目录 / 大小 / 日夜 / 自检）——柴阅是(目录/朗读/日夜/外观)⭐⭐⭐
+    ///   · 工具**依次浮现**（柴阅的 stagger 动画）⭐⭐⭐
     private var bottomBar: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Text(session.current?.title ?? "").font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.ink).lineLimit(1)
-                Spacer(minLength: 8)
-                // 翻页模式下多显示一层"页码 / 总页数"
-                Text(pageTurn
-                     ? "\(pageInfo.page) / \(max(pageInfo.total, 1)) 页 · 第\(session.index + 1)章"
-                     : "\(session.index + 1) / \(max(session.flat.count, 1))")
-                    .font(.footnote).foregroundStyle(Theme.sub)
-            }
-            // ⚠️ 栖阅是 **‹ 在最左、› 在最右**，滑块夹在中间。
-            //    我之前把两个箭头都堆在左边（‹ › 滑块），跟栖阅对不上。
-            HStack(spacing: 10) {
+        VStack(spacing: 0) {
+            // ① 第一行：上一章 / 章节滑杆 / 下一章
+            HStack(spacing: 4) {
                 Button { session.step(-1) } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
+                    Image(systemName: "backward.fill").font(.system(size: 17))
                 }
                 .disabled(session.index <= 0)
                 Slider(
@@ -656,36 +675,63 @@ struct ReaderWebView: View {
                         set: { session.jump(to: Int($0.rounded())) }),
                     in: 0...Double(max(session.flat.count - 1, 1)), step: 1)
                 Button { session.step(1) } label: {
-                    Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
+                    Image(systemName: "forward.fill").font(.system(size: 17))
                 }
                 .disabled(session.index >= session.flat.count - 1)
             }
+            .frame(height: 52)
             .foregroundStyle(Theme.ink)
+
+            // ② 第二行：4 个工具（柴阅同款）
             HStack(spacing: 0) {
                 barItem("目录", "list.bullet") { showCatalog = true }
-                // 朗读 / 章内搜索之前是「点了弹『还没接』」——
-                // 给用户一个点下去只会挨骂的按钮，比没有更糟。先撤掉，
-                // 等真接上了（正文要从 WKWebView 里取）再加回来。
-                barItem("大小", "textformat.size") { showSettings = true }
+                // ⭐⭐⭐ 柴阅的「外观」用**衬线体文字 "Aa"**（系统图标在中文环境会变「格式」）⭐⭐⭐
+                barItem("大小", textIcon: "Aa") { showSettings = true }
+                // ⭐⭐⭐ 柴阅的「日间/夜间」是一键切换 ⇒ 轻阅有 16 套配色 ⇒ 在夜间/纸白之间切 ⭐⭐⭐
+                barItem(theme.isDark ? "日间" : "夜间",
+                        theme.isDark ? "sun.max" : "moon") { toggleDayNight() }
                 // 真机排版自检 —— 沙盒验不了 CoreText，只能让 App 自己吐状态。
-                // 翻页/标题出问题时点一下截图，能省掉好几轮猜。
                 barItem("自检", "stethoscope") { showPageDiag = true }
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .liquidGlass(cornerRadius: 22, strength: 1.15)
-        .padding(.horizontal, 12).padding(.bottom, 12)
+        .padding(EdgeInsets(top: 8, leading: 10, bottom: 10, trailing: 10))
+        // ⭐⭐⭐ **异形玻璃**（上窄下宽）——柴阅底栏的形状 ⭐⭐⭐
+        .liquidGlassUneven(top: 32, bottom: 45, strength: 1.15)
+        .padding(.horizontal, 10)
+        .safeAreaPadding(.bottom, 8)
     }
 
-    private func barItem(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+    /// ⭐⭐⭐ **一键日/夜切换**（柴阅底栏有这一颗）⭐⭐⭐
+    private func toggleDayNight() {
+        let cur = ReaderTheme.all.first(where: { $0.key == themeKey }) ?? .paper
+        themeKey = ReaderTheme.isDark(cur) ? ReaderTheme.paper.key : ReaderTheme.dark.key
+    }
+
+    /// 一个工具按钮（`textIcon` 优先 ⇒ 柴阅的「Aa」那种文字图标）
+    private func barItem(_ title: String, _ icon: String? = nil,
+                         textIcon: String? = nil,
+                         action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon).font(.system(size: 16))
-                Text(title).font(.caption2)
+            VStack(spacing: 6) {
+                Group {
+                    if let textIcon {
+                        // ⭐ 柴阅用衬线体文字画 "Aa"（系统 `textformat` 在中文环境会变「格式」）⭐
+                        Text(textIcon)
+                            .font(.system(size: 19, weight: .regular, design: .serif))
+                    } else {
+                        Image(systemName: icon ?? "circle").font(.system(size: 20, weight: .regular))
+                    }
+                }
+                .frame(height: 24)
+                Text(title)
+                    .font(.system(size: 11))
             }
             .foregroundStyle(Theme.ink)
             .frame(maxWidth: .infinity)
+            .frame(height: 66)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     /// 阅读设置 —— 照栖阅那一版布局：
@@ -771,7 +817,8 @@ struct ReaderWebView: View {
                 Color.clear
                     .glassEffect(Glass.regular,
                                  in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .background(Color.white.opacity(max(glassTint, 0.12)),
+                    // ⭐⭐⭐ **白纱要随主题反**（深色底用黑纱 ⇒ 玻璃才通透、不是乳白板）⭐⭐⭐
+                    .background(theme.panelVeil(white: max(glassTint, 0.12)),
                                 in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -864,7 +911,8 @@ struct ReaderWebView: View {
             }
             .padding(EdgeInsets(top: 14, leading: 12, bottom: 2, trailing: 12))
             .background(
-                Color.white.opacity(0.55),
+                // ⭐⭐⭐ 深色底 ⇒ 用黑底（白底在夜间主题上是一块乳白）⭐⭐⭐
+                theme.panelInnerFill,
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
             .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 1)
@@ -881,7 +929,8 @@ struct ReaderWebView: View {
     /// ⚠️ **发丝线**：@3x 下 1pt = 3 个物理像素，太粗。
     ///    系统分隔线是 1 个物理像素 = `1 / UIScreen.main.scale` pt。
     private var hairLine: some View {
-        Color.black.opacity(0.07)
+        // ⭐⭐⭐ 发丝线也要随主题（深色底上黑线看不见）⭐⭐⭐
+        theme.hairLineColor
             .frame(height: 1.0 / UIScreen.main.scale)
             .padding(.horizontal, 2)
             .padding(.bottom, 10)
@@ -905,9 +954,9 @@ struct ReaderWebView: View {
     ///           font-size:14; color:#555 }
     private func sizeKnob(_ text: String) -> some View {
         ZStack {
-            Circle().fill(Color.black.opacity(0.05))
+            Circle().fill(theme.controlFill)
             Text(text).font(.system(size: 14))
-                .foregroundStyle(Color(white: 0x55 / 0xff))
+                .foregroundStyle(theme.chromeSubInk)
         }
         .frame(width: 34, height: 34)
     }
@@ -923,13 +972,13 @@ struct ReaderWebView: View {
             HStack(spacing: 6) {
                 Text(ReaderFont.name(for: fontKey))
                 Image(systemName: "chevron.down").font(.system(size: 11))
-                    .foregroundStyle(Color(white: 0x99 / 0xff))
+                    .foregroundStyle(theme.chromeSubInk.opacity(0.85))
             }
             .font(.system(size: 14))
-            .foregroundStyle(Color(white: 0x33 / 0xff))
+            .foregroundStyle(theme.chromeInk)
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
-            .background(Color.black.opacity(0.06),
+            .background(theme.controlFill,
                         in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }
@@ -950,7 +999,7 @@ struct ReaderWebView: View {
     private func paletteRow(_ list: [ReaderTheme], icon: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 17))
-                .foregroundStyle(Color(white: 0x88 / 0xff))
+                .foregroundStyle(theme.chromeSubInk)
                 .frame(width: 28)
             ForEach(list) { t in
                 Button { themeKey = t.key } label: {
@@ -984,15 +1033,15 @@ struct ReaderWebView: View {
     private var followSystemRow: some View {
         HStack {
             Image(systemName: "circle.lefthalf.filled")
-                .font(.system(size: 18)).foregroundStyle(Color(white: 0x77 / 0xff))
+                .font(.system(size: 18)).foregroundStyle(theme.chromeSubInk)
             Text("跟随系统深浅色").font(.system(size: 15))
-                .foregroundStyle(Color(white: 0x33 / 0xff))
+                .foregroundStyle(theme.chromeInk)
             Spacer()
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(followSystemAppearance
                           ? Color(red: 74/255, green: 144/255, blue: 217/255)
-                          : Color(white: 0xd8 / 0xff))
+                          : theme.controlFill)
                     .frame(width: 50, height: 29)
                 Circle().fill(.white)
                     .frame(width: 24, height: 24)
@@ -1017,7 +1066,7 @@ struct ReaderWebView: View {
     private var pageTurnRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "book").font(.system(size: 17))
-                .foregroundStyle(Color(white: 0x88 / 0xff))
+                .foregroundStyle(theme.chromeSubInk)
                 .frame(width: 28)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -1103,14 +1152,14 @@ struct ReaderWebView: View {
                 Text(name).font(.system(size: 18, weight: .semibold))
                 Text(subtitle ?? "").font(.system(size: 13))
             }
-            .foregroundStyle(ready ? Color(white: 0x22 / 0xff) : Theme.sub.opacity(0.45))
+            .foregroundStyle(ready ? theme.chromeInk : theme.chromeSubInk.opacity(0.7))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .frame(maxWidth: .infinity)
             .padding(.top, 9)
             .padding(.horizontal, 4)
             .padding(.bottom, 8)
-            .background(Color.black.opacity(0.05),
+            .background(theme.controlFill,
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -1469,14 +1518,14 @@ private struct ChipButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 14))
-                .foregroundStyle(selected ? Color.white : Color(white: 0x33 / 0xff))
+                .foregroundStyle(selected ? Terminal.bg : theme.chromeInk)
                 .padding(.horizontal, 17)
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(selected
-                             ? Color(red: 74/255, green: 144/255, blue: 217/255)
-                             : Color.black.opacity(0.06))
+                             ? theme.chromeAccent
+                             : theme.controlFill)
                 )
                 .fixedSize()
         }

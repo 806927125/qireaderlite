@@ -120,6 +120,46 @@ ok(/applySourceFilter/.test(explore) && /infoMap/.test(explore),
 // ⭐ 而且筛选芯片不能被换肤改成「不可点」
 ok(/\.glassCapsule\(\)/.test(explore), '⭐⭐⭐ 筛选键仍是液态玻璃胶囊（可点）');
 
+// ── ④b ⭐⭐⭐⭐⭐ **阅读页 UI（照栖阅搬）** ⭐⭐⭐⭐⭐
+//   ① 混色背景（栖阅 `ColorMixedBackground`：渐变 + 三团辉光 + 一道高光）⭐⭐⭐
+//   ② chrome 配色**跟着阅读主题走**（栖阅 `appThemeTint` 的思路）⭐⭐⭐
+//      ⇒ 以前全是**写死的浅色版** ⇒ 夜间主题上深灰字 + 黑控件底 ⇒ **全看不见** ⭐⭐⭐⭐⭐
+const readerDir = path.join(APP, 'Features/Reader');
+const skinPath = path.join(readerDir, 'ReaderSkinBackground.swift');
+ok(fs.existsSync(skinPath), '⭐⭐⭐⭐⭐ 阅读页「皮肤底」在（ReaderSkinBackground.swift —— 柴阅的观感）');
+if (fs.existsSync(skinPath)) {
+  const mb = fs.readFileSync(skinPath, 'utf8');
+  ok(mb.includes('gradientColors'), '⭐⭐⭐ 皮肤底有渐变（不是一块纯色）');
+  const mbCode = mb.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  ok(!/primaryGlow|tertiaryGlow/.test(mbCode),
+     '⭐⭐⭐ 皮肤底**不做三团辉光**（那是栖阅的做法，柴阅是纯色底 + 章节号装饰）');
+}
+const rweb = fs.existsSync(path.join(readerDir, 'ReaderWebView.swift'))
+  ? fs.readFileSync(path.join(readerDir, 'ReaderWebView.swift'), 'utf8') : '';
+ok(rweb.includes('ReaderSkinBackground(theme:'),
+   '⭐⭐⭐⭐⭐ 阅读页用上了皮肤底（不是一块纯色）');
+ok(/toolbar\(\.hidden, for: \.navigationBar\)/.test(rweb),
+   '⭐⭐⭐⭐⭐ 阅读页隐藏系统导航栏（柴阅的阅读页是自带 chrome 的全屏页）');
+ok(/theme\.panelVeil\(/.test(rweb),
+   '⭐⭐⭐⭐⭐ 面板白纱走主题自适应（深色底用黑纱，不是乳白板）');
+ok(/pager\.background = UIColor\.clear/.test(rweb),
+   '⭐⭐⭐⭐⭐ 分页画布透明（不然纯色底会把混色背景整个盖住）');
+// ⭐⭐⭐ **写死的灰阶文字**（`Color(white: 0x…`）⇒ 深色主题上不可读 ⇒ 一律不许 ⭐⭐⭐
+const greyHits = [];
+for (const f of swiftFiles(readerDir)) {
+  const code = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  code.split('\n').forEach((line, i) => {
+    if (!/Color\(white:\s*0x/.test(line)) return;
+    // ⭐⭐⭐ **主题定义里的「浅色分支」是合法的**（写死灰阶 = 浅色主题的值）
+    //   ⇒ 但它必须**成对**：同一行里必须有 `isDark ?`（深色分支）⇒ 否则就是「只写了一边」⭐⭐⭐
+    if (/isDark\s*\?/.test(line)) return;
+    greyHits.push(`${path.relative(APP, f)}:${i + 1}`);
+  });
+}
+ok(greyHits.length === 0,
+   '⭐⭐⭐⭐⭐ 阅读页没有写死的灰阶文字（Color(white: 0x…）—— 深色主题上会看不见',
+   greyHits.slice(0, 4).join(', '));
+
 // ── ⑤ 终端首页的结构件都在（原型 v-terminal 的标志性元素）──────────
 const shelf = read('Features/Bookshelf/BookshelfView.swift');
 for (const sym of ['TerminalTitle', 'ProgressRing', 'QuickBubble', 'RecentSpine', '继续阅读']) {

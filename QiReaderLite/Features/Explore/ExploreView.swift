@@ -336,6 +336,8 @@ struct ExploreView: View {
                     // 栖阅的书籍卡片右侧没有箭头，只能彻底不用 NavigationLink。
                     Button { pickedBook = b } label: { BookRow(book: b) }
                         .buttonStyle(.plain)
+                        // ⭐ 行底清掉（深色下默认行底是纯黑）
+                        .listRowBackground(Color.clear)
                 }
                 .listStyle(.plain)
                 .disabled(true)
@@ -363,6 +365,8 @@ struct ExploreView: View {
                         .buttonStyle(.plain)
                         // BookRow 自己是玻璃卡片，List 的默认行背景会把它压住
                         .listRowSeparator(.hidden)
+                        // ⭐⭐⭐ 行底也要清（深色下默认行底是纯黑 ⇒ 卡片边缘会露出黑边）⭐⭐⭐
+                        .listRowBackground(Color.clear)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                 }
@@ -392,6 +396,10 @@ struct ExploreView: View {
                         Spacer()
                     }
                     .listRowSeparator(.hidden)
+                    // ⭐⭐⭐ **必须清掉 List 的默认行背景**（2026-11-24 真机：「下面有一个黑色长块」）⭐⭐⭐
+                    //   ⇒ 这一行只有个转圈、**没有卡片** ⇒ 行的默认底（深色下 = **纯黑**）就整块露出来 ⭐⭐⭐
+                    //   ⇒ 而上面的书卡自己有玻璃底 ⇒ 看不出来 ⇒ **只有这行是黑块** ⭐⭐⭐
+                    .listRowBackground(Color.clear)
                     // ⚠️ 挂 id（换分类时 loadMoreID 变 ⇒ task 重跑 ⇒ 翻新分类的第一页）
                     //   但 **loadMore() 成功后不再自增** ⇒ 不会自动连翻 ✅
                     .task(id: loadMoreID) { await loadMore() }
@@ -401,6 +409,8 @@ struct ExploreView: View {
                         .foregroundStyle(Theme.sub)
                         .frame(maxWidth: .infinity)
                         .listRowSeparator(.hidden)
+                        // ⭐ 同上：默认行底在深色下是纯黑 ⇒ 也要清掉
+                        .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.plain)
