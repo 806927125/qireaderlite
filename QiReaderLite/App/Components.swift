@@ -13,14 +13,14 @@ import SwiftUI
 //    这里用 GlassBackdrop 的半透明符号点缀替代观感，素材另换开源图。
 
 extension Theme {
-    /// 页面底色：浅蓝白渐变（跟栖阅一致的观感）
-    static let pageTop = Color(red: 0.855, green: 0.898, blue: 0.965)
-    static let pageBottom = Color(red: 0.949, green: 0.965, blue: 0.984)
-    /// 标签配色（栖阅的胶囊是多色的，不是统一灰）
-    static let tagPurple = Color(red: 0.62, green: 0.42, blue: 0.78)
-    static let tagGreen = Color(red: 0.20, green: 0.62, blue: 0.42)
-    static let tagOrange = Color(red: 0.85, green: 0.52, blue: 0.16)
-    static let tagBlue = Color(red: 0.25, green: 0.45, blue: 0.82)
+    /// 页面底色：**深空渐变**（星澜终端，2026-11-24）
+    static let pageTop = Terminal.bg
+    static let pageBottom = Terminal.bg
+    /// 标签配色（终端的胶囊是多色的：青/紫/粉）
+    static let tagPurple = Terminal.violet
+    static let tagGreen = Terminal.cyan
+    static let tagOrange = Terminal.pink
+    static let tagBlue = Terminal.cyan
 }
 
 // MARK: - 页面底
@@ -33,53 +33,11 @@ extension Theme {
 ///    栖阅那种高饱和插画正是为此存在的，所以这里加了彩色光斑来给玻璃"咬东西"。
 struct PageBackdrop: View {
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Theme.pageTop, Theme.pageBottom],
-                startPoint: .top, endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            // 彩色光斑：给玻璃折射提供高对比内容，比纯符号有效得多
-            GeometryReader { geo in
-                let w = geo.size.width, h = geo.size.height
-                ZStack {
-                    blob(w * 0.16, h * 0.10, 190, Color(red: 0.62, green: 0.78, blue: 1.0))
-                    blob(w * 0.88, h * 0.20, 210, Color(red: 0.95, green: 0.78, blue: 0.92))
-                    blob(w * 0.10, h * 0.52, 170, Color(red: 0.76, green: 0.88, blue: 1.0))
-                    blob(w * 0.82, h * 0.68, 230, Color(red: 0.88, green: 0.82, blue: 1.0))
-                    blob(w * 0.42, h * 0.92, 200, Color(red: 0.70, green: 0.90, blue: 0.94))
-                    // ⚠️ 中间再补一块 —— 卡片大多落在页面中部，
-                    //    底下没颜色的话，玻璃就算全透也看不出"透"（就一片浅蓝白）。
-                    blob(w * 0.56, h * 0.34, 250, Color(red: 0.96, green: 0.74, blue: 0.86))
-                }
-            }
-            .ignoresSafeArea()
-
-            GlassBackdrop()
-                .opacity(0.5)
-        }
-        .allowsHitTesting(false)
-    }
-
-    /// ⭐⭐⭐ **光斑：径向渐变，不用 blur**（2026-10-24 真机崩溃日志实证）
-    ///
-    /// ⚠️ 原来每个光斑是 `Circle + .blur(radius: 42)` ⇒ **6 次全屏高斯模糊**
-    ///   ⇒ 玻璃还要**采样**这个背景 ⇒ 每个玻璃视图 = 一次「采样 + 模糊」
-    ///   ⇒ iOS 26/27（尤其 27 Beta）上，**页面弹出的那一瞬间**光算背景就够呛
-    ///   ⇒ 真机崩溃日志：`scene-update watchdog`（推页面 > 10 秒）⇒ **app 死机**⭐⭐⭐
-    ///   ⇒ 而且设备 `Thermal serious`（排版/模糊排的）
-    ///
-    /// ⇒ 现在：**径向渐变**（零模糊成本，视觉几乎一样 —— 本来就是柔和光斑）⭐⭐⭐
-    private func blob(_ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ c: Color) -> some View {
-        RadialGradient(
-            colors: [c.opacity(0.55), c.opacity(0.0)],
-            center: .center,
-            startRadius: 0,
-            endRadius: size / 2
-        )
-        .frame(width: size, height: size)
-        .position(x: x, y: y)
+        // ⭐⭐⭐⭐⭐ **换成「星澜终端」深空背景**（2026-11-24）⭐⭐⭐⭐⭐
+        //   ⇒ 深空底 + 星点 + 三个漂移光球（原型）⭐⭐⭐
+        //   ⇒ ⚠️ 光斑**一律径向渐变、绝不 `.blur()`** ⇒ 零模糊成本 ⇒ 不会触发
+        //      「scene-update watchdog」那个真机死机坑 ⭐⭐⭐
+        TerminalBackdrop()
     }
 }
 
@@ -106,9 +64,11 @@ struct GlassCard: ViewModifier {
         //    叠出来的效果是"半透明白卡片"，不是液态玻璃 —— 这坑我踩过一次。
         content.liquidGlass(
             cornerRadius: cornerRadius,
+            // ⭐⭐⭐ **深色底的玻璃：白纱要很薄**（原型 rgba(255,255,255,.06)）⭐⭐⭐
+            //   ⇒ 以前是 .30/.22 ⇒ 那是**浅色底**上的参数 ⇒ 深空底上会糊成一片乳白 ⭐⭐⭐
             tint: strong
-                ? [Color.white.opacity(0.30), Theme.pageTop.opacity(0.10)]
-                : [Color.white.opacity(0.22), Theme.pageTop.opacity(0.08)],
+                ? [Color.white.opacity(0.12), Terminal.bg.opacity(0.06)]
+                : [Color.white.opacity(0.08), Terminal.bg.opacity(0.04)],
             strength: strong ? 1.15 : 1.0,
             variant: variant,
             // 大卡片不设白纱下限 —— 它就是要能一路透到底（透出底下的彩色光斑）
@@ -197,8 +157,10 @@ struct BigTitle: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
+            // ⭐⭐⭐ **衬线大字**（原型用 Noto Serif SC ⇒ iOS 没有 ⇒ 用系统 `.serif` 设计字型）
+            //   ⇒ `.system(design: .serif)` 在中文下会落到系统的宋体/新宋体 ⇒ 观感接近 ⭐⭐⭐
             Text(text)
-                .font(.largeTitle)
+                .font(.system(size: 28, weight: .bold, design: .serif))
                 .foregroundStyle(Theme.ink)
             if let subtitle {
                 Text(subtitle)
@@ -278,7 +240,7 @@ struct ShelfCard: View {
                 // 底部细进度条
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.6))
+                        Capsule().fill(Terminal.glass2)
                         Capsule().fill(Theme.accent)
                             .frame(width: max(3, geo.size.width * progress))
                     }
@@ -292,7 +254,8 @@ struct ShelfCard: View {
 }
 
 extension Theme {
-    static let tagPink = Color(red: 0.82, green: 0.30, blue: 0.52)
+    /// ⭐⭐⭐ 标签配色现在住在 `Terminal`（主题层）⇒ 换肤只改那一处 ⭐⭐⭐
+    static let tagPink = Terminal.tagPink
 }
 
 // MARK: - 书源彩色图标
@@ -318,14 +281,8 @@ struct SourceBadge: View {
         self.size = size
     }
 
-    private static let palette: [Color] = [
-        Color(red: 0.30, green: 0.52, blue: 0.88),
-        Color(red: 0.62, green: 0.42, blue: 0.78),
-        Color(red: 0.85, green: 0.52, blue: 0.16),
-        Color(red: 0.24, green: 0.66, blue: 0.52),
-        Color(red: 0.82, green: 0.36, blue: 0.52),
-        Color(red: 0.40, green: 0.62, blue: 0.80),
-    ]
+    /// ⭐⭐⭐ 调色板住在 `Terminal`（主题层）⇒ 换肤只改那一处 ⭐⭐⭐
+    private static let palette: [Color] = Terminal.sourcePalette
 
     private var tint: Color {
         let h = abs(name.hashValue)

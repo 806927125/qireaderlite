@@ -168,8 +168,11 @@ struct ExploreView: View {
             HStack(spacing: 3) {
                 Text(f.title)
                     .font(.system(size: 12))
+                // ⭐⭐⭐ 终端皮肤：当前值用**青色**（一眼看出「现在选的是哪个」）⭐⭐⭐
+                //   ⚠️ **只改颜色，不改任何逻辑** ⇒ 筛选键的行为一字未动 ⭐⭐⭐
                 Text(cur.isEmpty ? "请选择" : cur)
                     .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Terminal.cyan)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))

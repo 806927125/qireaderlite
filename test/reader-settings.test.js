@@ -826,17 +826,23 @@ ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
 
   // 卡片在 0 档本来就是纯玻璃（一点白都没有）→ 要让「透」被看见，
   // 底下得有颜色可折射，否则就是一片浅蓝白
+  // ⭐⭐⭐ 2026-11-24：页底实现换成了「星澜终端」深空背景（`App/TerminalTheme.swift`）
+  //   ⇒ 这三条断言的**意图不变**（守护真机死机那个坑），只是**改看新实现** ⭐⭐⭐
   const backd = stripComments(fsE.readFileSync(path.join(ROOT, 'App/Components.swift'), 'utf8'));
+  const termBg = stripComments(fsE.readFileSync(path.join(ROOT, 'App/TerminalTheme.swift'), 'utf8'));
+  const bgAll = backd + '\n' + termBg;
   // ⭐⭐⭐ 2026-10-24 真机崩溃日志：光斑原来是 `Circle + .blur(radius: 42)`（6 次全屏高斯模糊）
   //   ⇒ 玻璃还要**采样**这个背景 ⇒ **页面弹出的那一瞬间**就算背景 ⇒ iOS 27 Beta 上超 10 秒
   //   ⇒ `scene-update watchdog` 杀进程（app 死机）⇒ 设备还 Thermal serious
-  // ⇒ 现在：**径向渐变**（零模糊成本，视觉几乎一样）
-  ok(/RadialGradient\(/.test(backd) && !/\.blur\(radius: 42\)/.test(backd),
+  // ⇒ 现在：**径向渐变**（零模糊成本，视觉几乎一样）⭐⭐⭐
+  ok(/RadialGradient\(/.test(bgAll) && !/\.blur\(radius: 42\)/.test(bgAll),
      '页底光斑改用径向渐变（不再有 6 次全屏高斯模糊 ⇒ 弹出即卡）⭐');
-  ok(/c\.opacity\(0\.5[0-9]?\)/.test(backd),
-     '光斑颜色不透明度还在 0.5x（玻璃得有东西可折射）');
-  ok((backd.match(/blob\(w \* /g) || []).length >= 6,
-     '页底多补了一块中间光斑（卡片落在页面中部才有颜色透出来）');
+  ok(!/\.blur\(/.test(bgAll),
+     '⭐⭐⭐ 页底**一处 blur 都没有**（2026-11-24 换深空背景时最容易顺手加 blur ⇒ 必须盯住）⭐⭐⭐');
+  ok(/c\.opacity\(0\.5[0-9]?\)/.test(bgAll) || /opacity\(0\.42\)/.test(bgAll),
+     '光斑颜色不透明度还在 0.4x~0.5x（玻璃得有东西可折射）');
+  ok((bgAll.match(/orb\(w \* /g) || []).length + (bgAll.match(/glow\(w \* /g) || []).length >= 3,
+     '页底有多块光斑（含中间那块 ⇒ 卡片落在页面中部才有颜色透出来）');
 }
 
 // ⚠️ 汇总行 —— 以前这个文件**不打印汇总**，后果是：

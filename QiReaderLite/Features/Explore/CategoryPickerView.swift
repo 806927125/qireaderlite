@@ -118,7 +118,7 @@ struct CategoryPickerView: View {
                                                 .frame(height: 38)
                                                 .background(
                                                     RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                                        .fill(on ? Theme.accent : Color.white.opacity(0.5))
+                                                        .fill(on ? Theme.accent : Terminal.dim)
                                                 )
                                         }
                                         .buttonStyle(.plain)

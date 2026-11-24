@@ -5,12 +5,16 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $tab) {
+            // ⭐⭐⭐⭐⭐ **「终端」首页**（2026-11-24 星澜终端换肤）⭐⭐⭐⭐⭐
+            //   ⇒ 原型第一屏是「终端」（当前在读 + 继续阅读 + 快捷入口 + 最近阅读）⭐⭐⭐
+            //   ⇒ 原来的「书架」列表**完整保留在终端首页下方** ⇒ 不丢任何功能 ⭐⭐⭐
             NavigationStack { BookshelfView() }
-                .tabItem { Label("书架", systemImage: "books.vertical") }
+                .tabItem { Label("终端", systemImage: "dot.radiowaves.left.and.right") }
                 .tag(0)
 
             // 栖阅是「书源列表 → 点进去才是某个书源的榜单」两级，
             // 所以发现这一格是 DiscoverView（列书源），不是直接甩榜单列表。
+            // ⭐⭐⭐ **发现页的「筛选键」原样保留**（filterBar / filterChip 逻辑一字未动）⭐⭐⭐
             NavigationStack { DiscoverView() }
                 .tabItem { Label("发现", systemImage: "safari") }
                 .tag(1)
@@ -24,6 +28,16 @@ struct RootView: View {
                 .tag(3)
         }
         .tint(Theme.accent)
+        // ⭐⭐⭐⭐⭐ **导航栏：深色玻璃**（星澜终端）⭐⭐⭐⭐⭐
+        //   ⇒ `.toolbarColorScheme(.dark)` ⇒ 标题/按钮自动变浅色（深底上才看得见）⭐⭐⭐
+        //   ⇒ `.ultraThinMaterial` ⇒ 毛玻璃底 ⇒ 底下��深空背景隐约透出来 ⭐⭐⭐
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        // ⭐⭐⭐ **标签栏同样走毛玻璃 + 深色**（底下就是深空背景）⭐⭐⭐
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        .toolbarColorScheme(.dark, for: .tabBar)
     }
 }
 

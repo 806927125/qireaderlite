@@ -137,7 +137,7 @@ struct SourceTestView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
-        .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
     }
 
     // MARK: - 测试结果
@@ -179,7 +179,7 @@ struct SourceTestView: View {
             }
         }
         .padding(12)
-        .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
     }
 
     // MARK: - 五份源码（书源规则原文）
@@ -218,7 +218,7 @@ struct SourceTestView: View {
             }
         }
         .padding(12)
-        .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
     }
 
     /// 一个可展开的「源码」段
@@ -302,7 +302,7 @@ struct SourceTestView: View {
             }
         }
         .padding(12)
-        .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
     }
 
     // MARK: - 跑

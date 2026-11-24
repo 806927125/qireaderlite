@@ -38,7 +38,7 @@ struct LoginStatusSheet: View {
                                 .foregroundStyle(Theme.ink)
                         }
                         .padding(12)
-                        .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+                        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
 
                         // 明细
                         VStack(alignment: .leading, spacing: 6) {
@@ -53,7 +53,7 @@ struct LoginStatusSheet: View {
                             }
                         }
                         .padding(12)
-                        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+                        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
 
                         // 站方原文（会员卡片）
                         if !r.stationMessages.isEmpty {
@@ -68,7 +68,7 @@ struct LoginStatusSheet: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(12)
-                            .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+                            .background(Terminal.glass2, in: .rect(cornerRadius: 12))
                         }
                     }
                 }

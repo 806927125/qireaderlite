@@ -22,7 +22,9 @@ import SwiftUI
 /// Reader …），逐个传参必然漏改、也不一致。
 /// Environment 一处注入，全站自动跟随。
 private struct GlassTintKey: EnvironmentKey {
-    static let defaultValue: Double = 0.38
+    // ⭐⭐⭐ 星澜终端皮肤：白纱 **0.07**（≈ 原型的 rgba(255,255,255,.06)）⭐⭐⭐
+    //   ⇒ 深色底上再叠 38% 白纱 ⇒ 玻璃会变成「乳白板子」⇒ 跟原型的通透玻璃不像 ⭐⭐⭐
+    static let defaultValue: Double = 0.07
 }
 
 extension EnvironmentValues {
@@ -44,7 +46,9 @@ struct GlassTintStore {
     static var percent: Double {
         get {
             // 第一次读（key 不存在）时 double(forKey:) 返回 0 → 当成默认值
-            guard UserDefaults.standard.object(forKey: key) != nil else { return 45 }
+            // ⭐⭐⭐ **默认 8**（星澜终端：白纱≈6~7% ⇒ 通透玻璃）⭐⭐⭐
+            //   以前是 45（浅色底上要「乳白玻璃」）⇒ 深色底上 38% 白纱会糊成一片白 ⭐⭐⭐
+            guard UserDefaults.standard.object(forKey: key) != nil else { return 8 }
             return min(max(UserDefaults.standard.double(forKey: key), 0), 100)
         }
         set {

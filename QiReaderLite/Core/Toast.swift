@@ -25,7 +25,7 @@ enum Toast {
         lbl.text = text
         lbl.font = .systemFont(ofSize: 15, weight: .medium)
         lbl.textColor = .white
-        lbl.backgroundColor = UIColor.black.withAlphaComponent(0.78)
+        lbl.backgroundColor = Terminal.toastBg
         lbl.textAlignment = .center
         lbl.numberOfLines = 0
         lbl.alpha = 0

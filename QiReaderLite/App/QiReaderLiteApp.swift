@@ -30,6 +30,10 @@ struct QiReaderLiteApp: App {
         UserDefaults.standard.removeObject(forKey: "qr.useNewEngine")
         UserDefaults.standard.removeObject(forKey: "qr.fallbackLegacy")
         UserDefaults.standard.removeObject(forKey: "qr.engine.legacy240")
+        // ⭐⭐⭐⭐⭐ **玻璃白纱：把「旧默认 45」一次性对齐到新皮肤（2026-11-24 星澜终端）** ⭐⭐⭐⭐⭐
+        //   ⇒ 旧默认 45 = 浅色底上的「乳白玻璃」⇒ 换深色底后 38% 白纱会把玻璃糊成一片白 ⭐⭐⭐
+        //   ⇒ **只改「等于旧默认」的那一档**（用户自己调过的不动）⇒ 零打扰 ⭐⭐⭐
+        if GlassTintStore.percent == 45 { GlassTintStore.percent = 8 }
         // ⭐⭐⭐ **日志出口挂上**（诊断要能进「引擎日志」面板 ⇒ 用户直接看到）⭐⭐⭐
         //   ⚠️⚠️ 之前这里又赋了一次 sink ⇒ **覆盖掉** `EngineLogBootstrap.install()` 里
         //   那个 `Task { @MainActor in … }` 的版本 ⇒ 后台线程直接改 @Published 状态
@@ -74,13 +78,24 @@ struct QiReaderLiteApp: App {
 
 // MARK: - 主题
 
+// ⭐⭐⭐⭐⭐ **「星澜终端」配色**（2026-11-24 按 HTML 原型换肤）⭐⭐⭐⭐⭐
+//
+// ⚠️⚠️⚠️ **为什么改这里就等于「全 App 换肤」** ⭐⭐⭐
+//   所有页面的配色都走 `Theme.xxx` ⇒ ⇒ **只改这一处常量** ⇒ 全 App 一次变深空玻璃 ⭐⭐⭐
+//   ⇒ **不要去各个页面里手改颜色**（会漂、且下次换肤又要改一遍）⭐⭐⭐
 enum Theme {
-    static let bg = Color(red: 0.949, green: 0.961, blue: 0.969)
-    static let card = Color.white
-    static let ink = Color(red: 0.13, green: 0.15, blue: 0.20)
-    static let sub = Color(red: 0.45, green: 0.48, blue: 0.54)
-    static let accent = Color(red: 0.310, green: 0.478, blue: 0.851)
-    static let line = Color.black.opacity(0.07)
+    /// 页面底色（深空 #070912）
+    static let bg = Terminal.bg
+    /// 卡片底（玻璃）
+    static let card = Terminal.glass
+    /// 主文字（#eef2ff）
+    static let ink = Terminal.ink
+    /// 次级文字
+    static let sub = Terminal.dim
+    /// 主强调色（青 #7dd3fc）
+    static let accent = Terminal.cyan
+    /// 分隔线（白描边）
+    static let line = Terminal.edge
 }
 
 extension View {
@@ -89,7 +104,12 @@ extension View {
         self
             .padding(padding)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
+            // ⭐⭐⭐ **深色底上卡片要有一圈描边**，否则玻璃的边界看不出来（浅色底上靠阴影就够）⭐⭐⭐
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Theme.line, lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
     }
 }
 

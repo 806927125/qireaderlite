@@ -21,7 +21,7 @@ struct QRSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 1
-    var accent: Color = Color(red: 74 / 255, green: 144 / 255, blue: 217 / 255)
+    var accent: Color = Theme.accent
 
     /// thumb 直径（ui.txt 的 26px）
     private let thumb: CGFloat = 26

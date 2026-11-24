@@ -87,7 +87,7 @@ struct EngineLogSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(12)
-                    .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+                    .background(Terminal.glass2, in: .rect(cornerRadius: 12))
 
                     // ── 急救区：引擎卡死时先点这个 ──
                     VStack(alignment: .leading, spacing: 8) {
@@ -117,7 +117,7 @@ struct EngineLogSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(12)
-                    .background(Color.white.opacity(0.6), in: .rect(cornerRadius: 12))
+                    .background(Terminal.glass2, in: .rect(cornerRadius: 12))
 
                     section("自检摘要", summary)
 
@@ -142,7 +142,7 @@ struct EngineLogSheet: View {
                             }
                         }
                         .padding(12)
-                        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+                        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
                     }
 
                     // ── 诊断时间线：按步骤分组 ──────────────────────────────
@@ -175,7 +175,7 @@ struct EngineLogSheet: View {
                                 }
                             }
                             .padding(10)
-                            .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+                            .background(Terminal.glass2, in: .rect(cornerRadius: 12))
                         }
                     }
 
@@ -299,6 +299,6 @@ struct EngineLogSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
-        .background(Color.white.opacity(0.55), in: .rect(cornerRadius: 12))
+        .background(Terminal.glass2, in: .rect(cornerRadius: 12))
     }
 }
