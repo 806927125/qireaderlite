@@ -1,3 +1,4 @@
+#if os(iOS)
 import Foundation
 
 /// 主题库里的预设主题：点一下就从内置主题包复制一份进「我的主题」，之后可以随意改
@@ -90,3 +91,4 @@ struct ReaderThemePreset: Identifiable {
         }
     }
 }
+#endif  // #if os(iOS)

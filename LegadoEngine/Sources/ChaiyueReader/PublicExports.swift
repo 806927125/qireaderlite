@@ -1,3 +1,4 @@
+#if os(iOS)
 // ⭐⭐⭐⭐⭐ **宿主可见性出口**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
 //
 // ⚠️ **为什么需要这个文件**：SwiftPM 的 **product 不 re-export 依赖模块** ⭐⭐⭐
@@ -20,3 +21,4 @@ import ChaiyueEngine
 
 /// 书源脚本发给界面的一次性事件（宿主实现 `ChaiyueReaderLibrary.callBack(_:book:chapter:)` 时要用）
 public typealias SourceCallBackEvent = ChaiyueEngine.SourceCallBackEvent
+#endif  // #if os(iOS)

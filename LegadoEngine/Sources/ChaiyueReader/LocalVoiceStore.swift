@@ -1,3 +1,4 @@
+#if os(iOS)
 #if canImport(Crypto)
 import Crypto
 #elseif canImport(CryptoKit)
@@ -511,3 +512,4 @@ nonisolated final class VoicePackTransfer: NSObject, URLSessionDownloadDelegate,
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
+#endif  // #if os(iOS)

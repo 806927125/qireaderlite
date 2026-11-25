@@ -1,3 +1,4 @@
+#if os(iOS)
 // ⭐⭐⭐⭐⭐ **平台条件编译补丁**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
 //
 // ⚠️ **为什么需要**：阅读器界面用满 UIKit（`UIScreen` / `UIApplication` / `UIImpactFeedbackGenerator` …）
@@ -5,7 +6,6 @@
 //   ⇒ 用 `#if canImport(UIKit)` 包裹：**Apple 平台功能完全不变**，Linux 上跳过这段界面代码 ⭐⭐⭐
 //   ⇒ 与上游的 diff 仅此两行（去掉即可回到柴阅原样）⭐⭐⭐
 #if canImport(Crypto)
-#if canImport(UIKit)
 import Crypto
 #elseif canImport(CryptoKit)
 import CryptoKit
@@ -278,4 +278,4 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         self.webView = nil
     }
 }
-#endif  // #if canImport(UIKit)
+#endif  // #if os(iOS)

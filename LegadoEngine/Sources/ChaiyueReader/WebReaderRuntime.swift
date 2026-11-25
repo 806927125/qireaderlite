@@ -1,3 +1,4 @@
+#if os(iOS)
 import Foundation
 
 /// 网页模式的页面骨架与分页运行时。
@@ -1185,3 +1186,4 @@ enum WebReaderRuntime {
     })();
     """#
 }
+#endif  // #if os(iOS)
