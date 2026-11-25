@@ -59,13 +59,12 @@ let package = Package(
         // ① 柴阅的模型层（原样，target 名改成 ChaiyueModels）
         .target(
             name: "ChaiyueModels",
+            path: "Sources/ChaiyueModels",
             swiftSettings: [.swiftLanguageMode(.v5)],
-            path: "Sources/ChaiyueModels"
         ),
         // ② 柴阅的引擎层（原样 + 条件编译补丁）
         .target(
             name: "ChaiyueEngine",
-            swiftSettings: [.swiftLanguageMode(.v5)],
             dependencies: [
                 "ChaiyueModels",
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
@@ -73,7 +72,8 @@ let package = Package(
                 .product(name: "Sextant", package: "Sextant"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ],
-            path: "Sources/ChaiyueEngine"
+            path: "Sources/ChaiyueEngine",
+            swiftSettings: [.swiftLanguageMode(.v5)],
         ),
         // ⭐⭐⭐⭐⭐ **柴阅的【登录配套设施】（ReaderPlatform）已并入 `ChaiyueEngine`**（2026-11-21）⭐⭐⭐
         //   目录：`Sources/ChaiyueEngine/Platform/`（原样 vendor，文件整体 `#if canImport(WebKit)`）⭐⭐⭐
@@ -85,33 +85,32 @@ let package = Package(
         // ③ 我们的适配层（宿主契约 + 状态搬运；**纯逻辑 ⇒ Linux 沙盒可编 ⇒ 门禁活着**）
         .target(
             name: "LegadoEngine",
-            swiftSettings: [.swiftLanguageMode(.v5)],
             dependencies: ["ChaiyueEngine", "ChaiyueModels"],
-            path: "Sources/LegadoEngine"
+            path: "Sources/LegadoEngine",
+            swiftSettings: [.swiftLanguageMode(.v5)],
         ),
         // ⭐⭐⭐⭐⭐ ④ 柴阅的【排版与分页内核】（ReaderKit；只依赖 ChaiyueModels ⇒ 干净）⭐⭐⭐
         .target(
             name: "ChaiyueReaderKit",
-            swiftSettings: [.swiftLanguageMode(.v6)],
             dependencies: ["ChaiyueModels"],
-            path: "Sources/ChaiyueReaderKit"
+            path: "Sources/ChaiyueReaderKit",
+            swiftSettings: [.swiftLanguageMode(.v6)],
         ),
         // ⭐⭐⭐⭐⭐ ⑤ 柴阅的【阅读服务子集】（ReaderServices 的 Reading/Content/Library/Sources/Speech/Support）⭐⭐⭐
         .target(
             name: "ChaiyueReaderServices",
-            swiftSettings: [.swiftLanguageMode(.v6)],
             dependencies: [
                 "ChaiyueModels",
                 "ChaiyueEngine",
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
-            path: "Sources/ChaiyueReaderServices"
+            path: "Sources/ChaiyueReaderServices",
+            swiftSettings: [.swiftLanguageMode(.v6)],
         ),
         // ⭐⭐⭐⭐⭐ ⑥ 柴阅的【阅读界面本体】（App/Sources/Reader）⭐⭐⭐
         .target(
             name: "ChaiyueReader",
-            swiftSettings: [.swiftLanguageMode(.v6)],
             dependencies: [
                 "ChaiyueModels",
                 "ChaiyueEngine",
@@ -119,7 +118,8 @@ let package = Package(
                 "ChaiyueReaderServices",
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],
-            path: "Sources/ChaiyueReader"
+            path: "Sources/ChaiyueReader",
+            swiftSettings: [.swiftLanguageMode(.v6)],
         ),
         // ⚠️⚠️ **旧的 `LegadoEngineTests` 已删**（2026-11-21 移植柴阅）⭐⭐⭐
         //   它测的是**我们自己那套已被替换掉的引擎** ⇒ 符号全没了 ⇒ 测不了 ⭐⭐⭐
