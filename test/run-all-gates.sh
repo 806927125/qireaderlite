@@ -56,6 +56,12 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **正文阅读页的「柴阅皮肤」**（2026-11-25 用户：「我要全搬柴阅的」）⭐⭐⭐⭐⭐
   #   ⇒ 四套皮肤（宣纸/晴窗/星夜/烛灯）+ 一页的页眉页脚 + 章节号装饰 + 排版默认值 ⭐⭐⭐
   "reader-skin-chaiyue:test/reader-skin-chaiyue.test.js"
+  # ⭐⭐⭐⭐⭐ **沙盒语法门禁**（2026-11-25 build322 实证：括号剥错 ⇒ 烧了一轮 CI）⭐⭐⭐⭐⭐
+  #   ⇒ `swiftc -parse` **只查语法**（不需要 SwiftUI/UIKit）⇒ Linux 沙盒就能查全量 App 源码 ⭐⭐⭐
+  #   ⇒ 15 秒扫 67 个文件 ⇒ **语法错不再跑到 CI 才发现** ⭐⭐⭐
+  #   ⚠️ 它**抓不到类型错** ⇒ CI 仍然要跑（那是唯一能验类型的东西）⭐⭐⭐
+  #   ⚠️ **必须用 `.test.js` 包一层**：runner 是 `node "$file"` ⇒ `.sh` 会被当 JS 解析 ⭐⭐⭐
+  "syntax-parse:test/syntax-parse-gate.test.js"
   # ⭐⭐⭐⭐⭐ **站方 exploreUrl 的分类归一化：旧引擎 JS ⇔ 新 Swift 双实现对拍**
   #   （2026-11-19 真机 build296 实证：换装新引擎丢了「先求值 @js: 的 exploreUrl」⇒ 分类 url 为空
   #     ⇒ `url 解析失败: ` ⇒ LegadoError 错误 1 ⇒ **发现页整个用不了**⭐⭐⭐）
