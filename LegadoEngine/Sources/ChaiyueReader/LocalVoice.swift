@@ -177,10 +177,6 @@ final class SystemVoiceEngine: @unchecked Sendable {
         let collector = PCMCollector()
         let semaphore = DispatchSemaphore(value: 0)
         synthesizer.write(utterance) { buffer in
-            guard let buffer else {
-                semaphore.signal()
-                return
-            }
             collector.append(buffer)
             if (buffer as? AVAudioPCMBuffer)?.frameLength == 0 { semaphore.signal() }
         }

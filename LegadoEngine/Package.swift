@@ -1,4 +1,8 @@
-// swift-tools-version:5.9
+// swift-tools-version:6.0
+// ⭐⭐⭐ **tools 6.0 ⇒ 默认语言模式 = Swift 6**（与柴阅 `Packages/ReaderCore/Package.swift` 一致）⭐⭐⭐
+//   柴阅的阅读器/会话层是按 **Swift 6** 写的（SwiftUI 的 `View` 在 Swift 6 才是 @MainActor）⭐⭐⭐
+//   ⇒ 我们照搬的代码里大量「从 @MainActor 上下文调 @MainActor 方法」在 Swift 5 下是**硬错误**⭐⭐⭐
+//   ⇒ ⇒ 三个阅读器 target 用 Swift 6；**引擎侧三个 target 仍钉在 Swift 5**（它们是按 Swift 5 写的，别动）⭐⭐⭐
 import PackageDescription
 
 // ⭐⭐⭐⭐⭐ **轻阅 Lite 的引擎包（2026-11-21 起 = 柴阅/Chaiyue 的引擎实现）**
@@ -55,11 +59,13 @@ let package = Package(
         // ① 柴阅的模型层（原样，target 名改成 ChaiyueModels）
         .target(
             name: "ChaiyueModels",
+            swiftLanguageModes: [.v5],
             path: "Sources/ChaiyueModels"
         ),
         // ② 柴阅的引擎层（原样 + 条件编译补丁）
         .target(
             name: "ChaiyueEngine",
+            swiftLanguageModes: [.v5],
             dependencies: [
                 "ChaiyueModels",
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
@@ -79,18 +85,21 @@ let package = Package(
         // ③ 我们的适配层（宿主契约 + 状态搬运；**纯逻辑 ⇒ Linux 沙盒可编 ⇒ 门禁活着**）
         .target(
             name: "LegadoEngine",
+            swiftLanguageModes: [.v5],
             dependencies: ["ChaiyueEngine", "ChaiyueModels"],
             path: "Sources/LegadoEngine"
         ),
         // ⭐⭐⭐⭐⭐ ④ 柴阅的【排版与分页内核】（ReaderKit；只依赖 ChaiyueModels ⇒ 干净）⭐⭐⭐
         .target(
             name: "ChaiyueReaderKit",
+            swiftLanguageModes: [.v6],
             dependencies: ["ChaiyueModels"],
             path: "Sources/ChaiyueReaderKit"
         ),
         // ⭐⭐⭐⭐⭐ ⑤ 柴阅的【阅读服务子集】（ReaderServices 的 Reading/Content/Library/Sources/Speech/Support）⭐⭐⭐
         .target(
             name: "ChaiyueReaderServices",
+            swiftLanguageModes: [.v6],
             dependencies: [
                 "ChaiyueModels",
                 "ChaiyueEngine",
@@ -102,6 +111,7 @@ let package = Package(
         // ⭐⭐⭐⭐⭐ ⑥ 柴阅的【阅读界面本体】（App/Sources/Reader）⭐⭐⭐
         .target(
             name: "ChaiyueReader",
+            swiftLanguageModes: [.v6],
             dependencies: [
                 "ChaiyueModels",
                 "ChaiyueEngine",
