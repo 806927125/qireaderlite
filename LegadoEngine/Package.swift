@@ -59,13 +59,13 @@ let package = Package(
         // ① 柴阅的模型层（原样，target 名改成 ChaiyueModels）
         .target(
             name: "ChaiyueModels",
-            swiftLanguageModes: [.v5],
+            swiftSettings: [.swiftLanguageMode(.v5)],
             path: "Sources/ChaiyueModels"
         ),
         // ② 柴阅的引擎层（原样 + 条件编译补丁）
         .target(
             name: "ChaiyueEngine",
-            swiftLanguageModes: [.v5],
+            swiftSettings: [.swiftLanguageMode(.v5)],
             dependencies: [
                 "ChaiyueModels",
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
@@ -85,21 +85,21 @@ let package = Package(
         // ③ 我们的适配层（宿主契约 + 状态搬运；**纯逻辑 ⇒ Linux 沙盒可编 ⇒ 门禁活着**）
         .target(
             name: "LegadoEngine",
-            swiftLanguageModes: [.v5],
+            swiftSettings: [.swiftLanguageMode(.v5)],
             dependencies: ["ChaiyueEngine", "ChaiyueModels"],
             path: "Sources/LegadoEngine"
         ),
         // ⭐⭐⭐⭐⭐ ④ 柴阅的【排版与分页内核】（ReaderKit；只依赖 ChaiyueModels ⇒ 干净）⭐⭐⭐
         .target(
             name: "ChaiyueReaderKit",
-            swiftLanguageModes: [.v6],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             dependencies: ["ChaiyueModels"],
             path: "Sources/ChaiyueReaderKit"
         ),
         // ⭐⭐⭐⭐⭐ ⑤ 柴阅的【阅读服务子集】（ReaderServices 的 Reading/Content/Library/Sources/Speech/Support）⭐⭐⭐
         .target(
             name: "ChaiyueReaderServices",
-            swiftLanguageModes: [.v6],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             dependencies: [
                 "ChaiyueModels",
                 "ChaiyueEngine",
@@ -111,7 +111,7 @@ let package = Package(
         // ⭐⭐⭐⭐⭐ ⑥ 柴阅的【阅读界面本体】（App/Sources/Reader）⭐⭐⭐
         .target(
             name: "ChaiyueReader",
-            swiftLanguageModes: [.v6],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             dependencies: [
                 "ChaiyueModels",
                 "ChaiyueEngine",
