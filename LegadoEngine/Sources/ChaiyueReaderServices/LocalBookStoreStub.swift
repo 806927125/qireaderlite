@@ -43,4 +43,20 @@ public final class LocalBookStore: Sendable {
     public func resourceData(_ url: String) throws -> Data {
         throw BookServiceError.localBooksUnavailable
     }
+
+    // MARK: - 本地媒体（听书 / 短剧 / 漫画）⭐⭐⭐
+    //
+    // ⚠️ 柴阅原版这两个方法在 `LocalBooks/LocalMediaImporter.swift` 的扩展里，
+    //   依赖本地媒体文件解析 ⇒ 轻阅阅读器不做本地书 ⇒ 这里**同样明确失败** ⭐⭐⭐
+    //   （不是静默返回空 ⇒ 宿主能区分「没这功能」与「取不到」）⭐⭐⭐
+
+    /// 本地书的直链与请求头（听书/短剧）
+    public func mediaPlayback(for book: Book, chapter: BookChapter) throws -> MediaPlayback {
+        throw BookServiceError.localBooksUnavailable
+    }
+
+    /// 本地书的图片地址（漫画）
+    public func mediaImages(for book: Book, chapter: BookChapter) throws -> [String] {
+        throw BookServiceError.localBooksUnavailable
+    }
 }
