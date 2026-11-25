@@ -130,19 +130,22 @@ let package = Package(
         //   ⚠️ 部分用例需要 JSC ⇒ Linux 上会失败（桩如实抛错）⇒ **平台差异，不是移植错** ⭐⭐⭐
         .testTarget(name: "ChaiyueRuleEngineTests",
                     dependencies: ["ChaiyueEngine", "ChaiyueModels"],
-                    path: "Tests/ChaiyueRuleEngineTests"),
+                    path: "Tests/ChaiyueRuleEngineTests",
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         // ⭐⭐⭐⭐⭐ **登录表单探针**（2026-11-21 真机「登录界面没按钮」实证）⭐⭐⭐
         //   ⇒ 真跑柴阅的 `resolveLoginRows` ⇒ 证明「`@js:` 的 loginUi 能解析出按钮」⭐⭐⭐
         //   ⇒ Linux 没 JSC ⇒ **只能靠 CI（macOS）跑它** ⭐⭐⭐
         .executableTarget(name: "ChaiyueProbe",
                           dependencies: ["ChaiyueEngine", "ChaiyueModels"],
-                          path: "Sources/ChaiyueProbe"),
+                          path: "Sources/ChaiyueProbe",
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         // ⭐⭐⭐⭐⭐ **「禁漫天堂」登录面板探针**（2026-11-21 真机「没有小说/漫画/视频这些按钮」实证）⭐⭐⭐
         //   ⇒ 真引擎 + 真源 ⇒ 验「viewName 能求出人话名」+「action 能真跑」⭐⭐⭐
         //   ⇒ Linux 没有 JSC ⇒ **只能靠 CI（macOS）跑** ⭐⭐⭐
         .executableTarget(name: "ChaiyueProbe2",
                           dependencies: ["ChaiyueEngine", "ChaiyueModels"],
-                          path: "Sources/ChaiyueProbe2"),
+                          path: "Sources/ChaiyueProbe2",
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         // ⭐⭐⭐⭐⭐ **「书山聚合 v6」全链探针**（2026-11-23）⭐⭐⭐
         //   ⇒ 沙盒（Linux）**没有 JSC** ⇒ `@js:` / `<js>` 求值跑不了 ⇒
         //   ⇒ 「这个源在轻阅里能不能跑」**只能靠 macOS CI 真引擎真跑** ⇒ ⭐⭐⭐
@@ -151,7 +154,8 @@ let package = Package(
         //   ⇒   ⑤ **改名后的 `ssh_*` 符号在全局可用**（证明隔离化没打断作用域）⭐⭐⭐
         .executableTarget(name: "ChaiyueProbe3",
                           dependencies: ["ChaiyueEngine", "ChaiyueModels"],
-                          path: "Sources/ChaiyueProbe3"),
+                          path: "Sources/ChaiyueProbe3",
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         // ⭐⭐⭐⭐⭐ **token 管道探针**（2026-11-24 真机「Token 格式错误」实证）⭐⭐⭐
         //   ⇒ 真机症状：站方回「Token 格式错误」⇒ 实测 = **token 不是合法 base64** ⭐⭐⭐
         //   ⇒ 本探针用**真引擎 + 真源 + 真站方**逐环取证：JS 侧的 getLoginHeader 形态、
@@ -159,16 +163,19 @@ let package = Package(
         //   ⇒ ⚠️ 依赖 `LegadoEngine` target（要用宿主同款的 `ChaiyueKeyValueStore` 接线）⭐⭐⭐
         .executableTarget(name: "ChaiyueProbe4",
                           dependencies: ["LegadoEngine", "ChaiyueEngine", "ChaiyueModels"],
-                          path: "Sources/ChaiyueProbe4"),
+                          path: "Sources/ChaiyueProbe4",
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         // ⭐⭐⭐⭐⭐ **发现页筛选 action 真跑探针**（2026-11-24 真机「切平台无效」实证）⭐⭐⭐⭐⭐
         //   ⇒ 站方的筛选 action 是**字符串** ⇒ 「顶层符号隔离化」（改名）**按 AST 改** ⇒ 漏改 ⭐⭐⭐
         //   ⇒ 漏改 ⇒ 引擎里符号未定义 ⇒ **ReferenceError** ⇒ **筛选静默失效**（平台切不动）⭐⭐⭐
         //   ⇒ 本探针**真跑一次 action** ⇒ 断言「站方变量真的变了」⇒ 这类回归必红 ⭐⭐⭐
         .executableTarget(name: "ChaiyueProbe5",
                           dependencies: ["LegadoEngine", "ChaiyueEngine", "ChaiyueModels"],
-                          path: "Sources/ChaiyueProbe5"),
+                          path: "Sources/ChaiyueProbe5",
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "ChaiyueModelsTests",
                     dependencies: ["ChaiyueModels"],
-                    path: "Tests/ChaiyueModelsTests"),
+                    path: "Tests/ChaiyueModelsTests",
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
