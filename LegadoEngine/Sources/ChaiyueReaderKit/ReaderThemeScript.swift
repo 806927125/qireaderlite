@@ -1,5 +1,12 @@
 import Foundation
+
+// ⭐⭐⭐⭐⭐ **平台条件编译补丁**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
+//   · Linux 沙盒没有 JavaScriptCore ⇒ `ReaderThemeScript` 的脚本执行部分编不到 ⭐⭐⭐
+//   ⇒ 真实实现整体放进 `#if canImport(JavaScriptCore)`；Linux 上用 `ReaderThemeScriptStub.swift` 的桩 ⭐⭐⭐
+//   ⇒ **Apple 平台功能完全不变**；桩「如实失败」（不伪装成功）⇒ 门禁不会假绿 ⭐⭐⭐
+#if canImport(JavaScriptCore)
 import JavaScriptCore
+#endif
 
 /// 页眉页脚的三段文字
 public struct ReaderChromeText: Sendable, Hashable {
@@ -57,6 +64,7 @@ public struct ReaderScriptContext: Sendable, Hashable {
 /// - `paragraphClass(text, index)`：返回类名（对应样式表里的 `p.类名`），null 表示不分类
 ///
 /// 脚本跑在独立线程的 JavaScriptCore 里，没有网络、文件与定时器；单次调用超时后整份脚本停用，阅读照常
+#if canImport(JavaScriptCore)
 public final class ReaderThemeScript: @unchecked Sendable {
     public private(set) var error: String?
     public private(set) var hasHeader = false
@@ -201,3 +209,4 @@ public final class ReaderThemeScript: @unchecked Sendable {
 private final class ResultBox<T>: @unchecked Sendable {
     var value: T?
 }
+#endif  // #if canImport(JavaScriptCore)

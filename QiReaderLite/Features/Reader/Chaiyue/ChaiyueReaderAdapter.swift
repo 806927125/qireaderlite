@@ -96,7 +96,11 @@ enum ChaiyueReaderAdapter {
     ///   柴阅的 `ReaderSession.chapters` 是**数组**，`position.chapterIndex` 是**下标**
     ///   ⇒ 我们的 `BookCatalog.plain`（过滤掉卷）**不能直接用** ⇒ 会整体错位 ⭐⭐⭐
     ///
-    /// - Returns: (整表, 正文章下标表) —— 后者给出「正文章」在整表里的下标
+    /// ⚠️ **两套下标口径**（换算必须走这里，否则进度会错位）⭐⭐⭐：
+    ///   宿主 `LibraryItem.lastChapterIndex` = **正章节下标**（老阅读器存的）
+    ///   柴阅 `Book.durChapterIndex` / `session.position.chapterIndex` = **整表下标**（含卷）
+    ///
+    /// - Returns: (整表, 正章节 → 整表 的下标表)
     static func chapters(_ list: [Chapter], bookUrl: String) -> (all: [LegadoEngineHost.ChapterModel], plainIndexes: [Int]) {
         var all: [LegadoEngineHost.ChapterModel] = []
         var plainIndexes: [Int] = []

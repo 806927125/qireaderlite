@@ -23,6 +23,20 @@ struct BookDetailView: View {
     private var source: BookSource? { sources.source(id: book.origin) }
     private var inShelf: Bool { library.contains(book) }
 
+    /// ⭐⭐⭐ **接着上次读的那一章**（没有记录才从第一章开始）⭐⭐⭐
+    ///
+    /// ⚠️ `LibraryItem.lastChapterIndex` 是**正章节下标**（过滤掉卷的那种）
+    ///   ⇒ 这里要拿同一口径的章表来换算 ⭐⭐⭐
+    private var resumeChapter: Chapter? {
+        let plain = chapters.filter { !$0.isVolume }
+        guard !plain.isEmpty else { return nil }
+        if let last = library.item(for: book.id)?.lastChapterIndex,
+           last > 0, last < plain.count {
+            return plain[last]
+        }
+        return plain.first
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -150,7 +164,10 @@ struct BookDetailView: View {
     private var actionBar: some View {
         HStack(spacing: 10) {
             Button {
-                readerChapter = chapters.first(where: { !$0.isVolume })
+                // ⭐⭐⭐⭐⭐ **「开始阅读」= 接着上次读的位置**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+                //   以前这里固定开**第一章** ⇒ 读到第 50 章再点「开始阅读」还是从第一章开始
+                //   ⇒ 柴阅的阅读器是**记住进度**的 ⇒ 这里也改成跟着进度走 ⭐⭐⭐
+                readerChapter = resumeChapter
             } label: {
                 Label("开始阅读", systemImage: "book")
                     .font(.system(size: 17, weight: .semibold))

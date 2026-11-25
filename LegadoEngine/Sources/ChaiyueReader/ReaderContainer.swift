@@ -1,3 +1,9 @@
+// ⭐⭐⭐⭐⭐ **平台条件编译补丁**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
+//
+// ⚠️ **为什么需要**：阅读器界面用满 UIKit（`UIScreen` / `UIApplication` / `UIImpactFeedbackGenerator` …）
+//   ⇒ **iOS-only** ⇒ Linux 沙盒编不到 SwiftUI/UIKit ⇒ 若不隔离，**整个包的 Linux 编译门禁全废** ⭐⭐⭐
+//   ⇒ 用 `#if canImport(UIKit)` 包裹：**Apple 平台功能完全不变**，Linux 上跳过这段界面代码 ⭐⭐⭐
+//   ⇒ 与上游的 diff 仅此两行（去掉即可回到柴阅原样）⭐⭐⭐
 import ChaiyueReaderKit
 import ChaiyueModels
 import ChaiyueReaderServices
@@ -14,6 +20,12 @@ struct ReaderContainer: View {
     @State private var flight: CGRect?
     @State private var closing = false
     @State private var savedBrightness: CGFloat?
+
+    /// ⭐⭐⭐ **宿主要能 new 它** ⇒ 显式 public init
+    /// （`public struct` 的默认 memberwise init 是 internal，宿主编不过）⭐⭐⭐
+    init(launch: ReaderLaunch) {
+        self.launch = launch
+    }
 
     /// 窗口安全区（容器忽略了安全区，GeometryReader 读不到）
     private var insets: EdgeInsets {
@@ -387,3 +399,4 @@ private struct TocPlaceholder: View {
         .contentShape(Rectangle())
     }
 }
+#endif  // #if canImport(UIKit)

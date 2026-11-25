@@ -1,4 +1,8 @@
+#if canImport(Crypto)
+import Crypto
+#elseif canImport(CryptoKit)
 import CryptoKit
+#endif
 import Foundation
 import Observation
 

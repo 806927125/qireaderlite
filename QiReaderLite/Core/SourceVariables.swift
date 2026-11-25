@@ -229,7 +229,7 @@ enum SourceVariables {
     ///   ⇒ 整份覆盖 ⇒ 站方每次都回落默认值 ⇒ **筛选全乱** ⭐⭐⭐
     static func setStationVarMap(_ obj: [String: Any], for sourceUrl: String) {
         guard !sourceUrl.isEmpty else { return }
-        var cur = [String: Any]()
+        var cur = stationVarObject(for: sourceUrl)
         for (k, v) in obj { cur[k] = v }
         let merged = jsonString(cur)
         // ⚠️ 长度上限保护（与 setVariable 一致 ⇒ 超长拒收）

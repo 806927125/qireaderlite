@@ -126,6 +126,10 @@ final class ChaiyueReaderHost {
     private let qiBook: QiBook
     /// 轻阅侧的章表（用于回写章名）
     private let qiChapters: [QiChapter]
+    /// ⭐⭐⭐ **正章节下标 → 整表下标**（轻阅口径 → 柴阅口径）⭐⭐⭐
+    private let plainToWhole: [Int]
+    /// ⭐⭐⭐ **整表下标 → 正章节下标**（柴阅口径 → 轻阅口径）⭐⭐⭐
+    private let wholeToPlain: [Int: Int]
 
     init(book: QiBook,
          chapters: [QiChapter],
@@ -153,37 +157,61 @@ final class ChaiyueReaderHost {
         if !converted.all.isEmpty {
             library.chapterStore.saveChapters(converted.all, bookUrl: book.cleanBookUrl)
         }
+        // ⭐⭐⭐ 两套下标口径的换算表（轻阅正章节 ↔ 柴阅整表）⭐⭐⭐
+        plainToWhole = converted.plainIndexes
+        var inverse: [Int: Int] = [:]
+        for (plain, whole) in converted.plainIndexes.enumerated() { inverse[whole] = plain }
+        wholeToPlain = inverse
 
-        // ── ③ 起始章号 ────────────────────────────────────────────────
+        // ── ③ 书架镜像：轻阅书库 → 柴阅书架仓（阅读器要读进度 / 书签）──
+        //    ⚠️⚠️ **已存在的条目不许覆盖它的进度** ⭐⭐⭐：
+        //      柴阅阅读时把进度写进**柴阅的**书架仓 ⇒ 万一 App 被杀（没回写）
+        //      ⇒ 柴阅那份更新、App 那份旧 ⇒ 这次镜像若用 App 的旧值覆盖 ⇒ **用户的阅读位置丢了** ⭐⭐⭐
+        //      ⇒ 所以：**书架仓里已有的进度优先** ⇒ 只有新书才用轻阅的进度播种 ⭐⭐⭐
+        for item in libraryItems {
+            // ⚠️ 轻阅的 `lastChapterIndex` 是**正章节下标** ⇒ 换算成柴阅的整表下标 ⭐⭐⭐
+            let whole = plainToWhole[safe: item.lastChapterIndex] ?? item.lastChapterIndex
+            var mirrored = ChaiyueReaderAdapter.book(item.book, sourceName: item.book.sourceName,
+                                                      chapterIndex: whole)
+            mirrored.totalChapterNum = item.book.totalChapterNum
+            if let stored = library.shelf.book(mirrored.bookUrl) {
+                // ⚠️ 保留书架仓里的进度（可能是上次没写回 App 的新进度）⭐⭐⭐
+                mirrored.durChapterIndex = stored.durChapterIndex
+                mirrored.durChapterPos = stored.durChapterPos
+                mirrored.durChapterTitle = stored.durChapterTitle
+            }
+            library.shelf.add(mirrored)
+        }
+
+        // ── ④ 起始章号 ────────────────────────────────────────────────
         //    ⚠️ 柴阅的 `durChapterIndex` 是**整表（含卷）的下标** ⭐⭐⭐
         //      ⇒ 我们传的 `start` 是「正文章」⇒ 要换算成整表下标 ⇒ 不能直接用 ✗⭐⭐⭐
         var startIndex = -1
         if let start {
-            // 先在「正文章表」里找到它，再换算成整表下标
+            // 显式选了某一章（详情页目录里点的）⇒ 以它为准 ⭐⭐⭐
             let plainList = chapters.filter { !$0.isVolume }
             if let plainIndex = plainList.firstIndex(where: { $0.url == start.url }),
                let wholeIndex = converted.plainIndexes[safe: plainIndex] {
                 startIndex = wholeIndex
             }
         }
-        if startIndex < 0 { startIndex = progressIndex }
+        if startIndex < 0 {
+            // 没显式选 ⇒ 用**书架仓里的进度**（崩溃保护：上次没写回 App 也不丢位置）⭐⭐⭐
+            startIndex = library.shelf.book(book.cleanBookUrl)?.durChapterIndex ?? -1
+        }
+        if startIndex < 0 {
+            // 兜底用轻阅存的进度 ⇒ ⚠️ **它是「正章节下标」** ⇒ 必须换算成柴阅的「整表下标」⭐⭐⭐
+            startIndex = plainToWhole[safe: progressIndex] ?? -1
+        }
 
-        // ── ④ 书：轻阅的书 → 柴阅的书（带上进度）──────────────────────
+        // ── ⑤ 书：轻阅的书 → 柴阅的书（带上进度）──────────────────────
         let chaiyueBook = ChaiyueReaderAdapter.book(book, sourceName: source?.bookSourceName ?? book.sourceName,
                                                      chapterIndex: startIndex)
         chaiyueBook.totalChapterNum = chapters.filter { !$0.isVolume }.count
         if startIndex >= 0, startIndex < chapters.count {
             chaiyueBook.durChapterTitle = chapters[startIndex].title
         }
-
-        // ── ⑤ 书架镜像：轻阅书库 → 柴阅书架仓（阅读器要读进度 / 书签）──
-        //    ⚠️ 顺序很重要：**先铺书架，再放这一本** ⇒ 这一本带正确进度 ⭐⭐⭐
-        for item in libraryItems {
-            var mirrored = ChaiyueReaderAdapter.book(item.book, sourceName: item.book.sourceName,
-                                                      chapterIndex: item.lastChapterIndex)
-            mirrored.totalChapterNum = item.book.totalChapterNum
-            library.shelf.add(mirrored)
-        }
+        // ⚠️ 这一本要**盖掉**镜像值（它带着刚算出来的起始章号）⭐⭐⭐
         library.shelf.add(chaiyueBook)
 
         // ── ⑥ 柴阅的 AppModel（阅读器的环境）────────────────────────────
@@ -209,7 +237,7 @@ final class ChaiyueReaderHost {
     /// ⭐⭐⭐ **退出阅读：把进度回写回轻阅的书架** ⭐⭐⭐
     ///
     /// ⚠️ 柴阅把进度写进了**它自己的**书架仓 ⇒ 轻阅的书库看不到 ⇒ 必须搬回来 ⭐⭐⭐
-    /// - Returns: 读到的章下标（整表口径，-1 = 没读到）
+    /// - Returns: 读到的章下标（**正章节下标**，轻阅口径；-1 = 没读到）
     @discardableResult
     func writeBackProgress(to libraryStore: LibraryStore?) -> Int {
         guard let libraryStore else { return -1 }
@@ -217,17 +245,21 @@ final class ChaiyueReaderHost {
         //   ⇒ 书架仓那份是 `ReaderSession.saveProgress()` 写的副本，做兜底 ⭐⭐⭐
         let live = model.session.position.chapterIndex
         let stored = library.shelf.book(qiBook.cleanBookUrl)
-        let index = live >= 0 ? live : (stored?.durChapterIndex ?? -1)
-        guard index >= 0 else { return index }
-        let title = stored?.durChapterTitle ?? qiChapters[safe: index]?.title ?? ""
-        libraryStore.saveProgress(bookID: qiBook.id, chapterIndex: index, ratio: 0, chapterTitle: title)
-        return index
+        let whole = live >= 0 ? live : (stored?.durChapterIndex ?? -1)
+        guard whole >= 0 else { return whole }
+        // ⚠️⚠️ **口径换算**：柴阅给的是「整表下标（含卷）」，轻阅的 `lastChapterIndex`
+        //   是「正章节下标」（老阅读器存的）⇒ 不换算 ⇒ 书架上会显示成错乱的章号 ⭐⭐⭐
+        let plain = wholeToPlain[whole] ?? whole
+        let title = stored?.durChapterTitle ?? qiChapters[safe: whole]?.title ?? ""
+        libraryStore.saveProgress(bookID: qiBook.id, chapterIndex: plain, ratio: 0, chapterTitle: title)
+        return plain
     }
 }
 
 // MARK: - 小工具
 
-extension Array {
+/// ⚠️ **文件私有**（不给整个 App 加扩展 ⇒ 以后别的模块想加同名扩展也不会撞）⭐⭐⭐
+private extension Array {
     /// 安全下标（柴阅的目录是「整表（含卷）」，轻阅的章表口径不同 ⇒ 换算时越界很常见）⭐⭐⭐
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil

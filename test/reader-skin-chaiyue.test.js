@@ -87,8 +87,11 @@ const readPkg = (rel) => {
 {
   const screens = read('Features/Settings/SettingsScreens.swift');
   ok(/ReaderThemeSpec\.all/.test(screens), '④ 主题页列的是柴阅的 `ReaderThemeSpec.all`');
+  ok(/ReaderThemeStore\.shared\.themes/.test(screens),
+     '④ 主题页也列柴阅 `ThemeStore` 里的**自定义主题**（CSS/JS 主题）');
   ok(/reader\.darkTheme/.test(screens), '④ 主题页写的是柴阅的深色主题槽 `reader.darkTheme`');
   ok(/reader\.lightTheme/.test(screens), '④ 主题页也写柴阅的浅色主题槽 `reader.lightTheme`');
+  ok(/reader\.customTheme/.test(screens), '④ 主题页写柴阅的自定义主题槽 `reader.customTheme`');
   ok(!/ReaderTheme\.all/.test(screens), '④ 不再用我们重写版的 `ReaderTheme.all`');
 }
 

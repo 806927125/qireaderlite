@@ -188,6 +188,26 @@ console.log('\n── ③ 柴阅阅读器必须在（而且是唯一的那套）
   ok(/saveChapters\(/.test(host), '③ 目录预写进柴阅的章节缓存（不重复请求站方）');
 }
 
+console.log('\n── ③b 进度：两套下标口径必须换算（否则书架上章号会乱）──');
+{
+  const host = fs.readFileSync(path.join(ROOT, 'Features/Reader/Chaiyue/ChaiyueReaderHost.swift'), 'utf8');
+  const detail = fs.readFileSync(path.join(ROOT, 'Features/BookDetail/BookDetailView.swift'), 'utf8');
+
+  // 柴阅的章号 = 整表下标（含卷）；轻阅 `lastChapterIndex` = 正章节下标
+  ok(/plainToWhole/.test(host) && /wholeToPlain/.test(host),
+     '③b 宿主侧有两套下标的换算表（正章节 ↔ 整表）');
+  ok(/wholeToPlain\[whole\]/.test(host),
+     '③b 回写进度时把柴阅的整表下标换算成轻阅的正章节下标');
+  ok(/plainToWhole\[safe: progressIndex\]/.test(host),
+     '③b 起读位置把轻阅的正章节下标换算成柴阅的整表下标');
+
+  // 「开始阅读」要接着上次读的位置（否则读到第 50 章再点还是从第一章开始）
+  ok(/resumeChapter/.test(detail), '③b 详情页有「接着上次读的位置」');
+  ok(/readerChapter = resumeChapter/.test(detail), '③b 「开始阅读」用 resumeChapter');
+  ok(/lastChapterIndex/.test(detail) && /plain\[last\]/.test(detail),
+     '③b resumeChapter 按**正章节下标**取章（与轻阅存的进度同口径）');
+}
+
 console.log('\n── ④ 变异对照：门禁必须能红 ──');
 {
   // ⚠️ 把一个老符号注入临时副本 ⇒ 同一个扫描器必须报出来

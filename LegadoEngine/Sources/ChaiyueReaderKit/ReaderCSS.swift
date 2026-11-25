@@ -440,9 +440,11 @@ public struct ReaderColor: Sendable, Hashable {
         return byte(red) << 16 | byte(green) << 8 | byte(blue)
     }
 
+    #if canImport(UIKit) || canImport(AppKit)
     public var platform: PlatformColor {
         PlatformColor(red: red, green: green, blue: blue, alpha: alpha)
     }
+    #endif
 
     public init?(css: String) {
         let text = css.trimmingCharacters(in: .whitespaces).lowercased()

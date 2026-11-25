@@ -430,6 +430,73 @@ struct ReaderThemesScreen: View {
             }
             .padding(.horizontal, 14)
             .glassCard(cornerRadius: 16, strong: true)
+
+            // ⭐⭐⭐ **柴阅的自定义主题**（CSS/JS 主题 ⇒ `ThemeStore` 管）⭐⭐⭐
+            //   自定义主题的编辑/导入在**柴阅自己的「外观」面板**里（`StylePanel` → 主题小页纸）⭐⭐⭐
+            //   ⇒ 这里只负责**选用**（写 `reader.customTheme` ⇒ 盖过内置主题）⭐⭐⭐
+            if !customThemes.isEmpty {
+                VStack(spacing: 0) {
+                    sectionTitle("自定义主题")
+                    ForEach(Array(customThemes.enumerated()), id: \.element.id) { index, t in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(Theme.ink.opacity(0.07))
+                                .frame(height: 1)
+                                .padding(.leading, 36)
+                        }
+                        customThemeRow(t)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .glassCard(cornerRadius: 16, strong: true)
+            }
+        }
+    }
+
+    /// ⭐⭐⭐ 柴阅主题仓里的自定义主题（`@Observable` ⇒ 读了就会自动刷新）⭐⭐⭐
+    private var customThemes: [CustomReaderTheme] { ReaderThemeStore.shared.themes }
+
+    private func sectionTitle(_ t: String) -> some View {
+        HStack {
+            Text(t)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.sub)
+            Spacer()
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 2)
+    }
+
+    private func customThemeRow(_ t: CustomReaderTheme) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.ink.opacity(0.07))
+                    .frame(width: 34, height: 42)
+                Image(systemName: "paintbrush")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.sub)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t.name)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.ink)
+                Text(t.mode.rawValue == "web" ? "网页渲染" : "原生渲染")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.sub)
+            }
+            Spacer()
+            if currentId == t.id {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            customTheme = t.id
+            darkTheme = t.id
         }
     }
 

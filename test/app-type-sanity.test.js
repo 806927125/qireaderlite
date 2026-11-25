@@ -37,9 +37,14 @@ function walk(dir, out) {
 }
 
 // ⭐⭐⭐ **顶层类型**（行首零缩进）⇒ 嵌套类型不算「同名撞车」⭐⭐⭐
-const TYPE_DECL_TOP = /^(?:@[\w:]+\s+)*(?:(?:public|internal|private|fileprivate|open|final)\s+)*(class|struct|enum|actor|protocol)\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
+// ⚠️⚠️ **修饰符表要全**（2026-11-25 实证）⭐⭐⭐：
+//   柴阅的 `LocalVoiceStore.swift` 里写的是 **`nonisolated final class VoicePackTransfer`** ⭐⭐⭐
+//   ⇒ 修饰符表里没有 `nonisolated` ⇒ **这个类型被当成「不存在」** ⇒ 门禁误报「引用了不存在的 X.shared」⭐⭐⭐
+//   ⇒ 所以：**Swift 的访问级别 + 其它声明修饰符都要列进来** ⭐⭐⭐
+const DECL_MODIFIERS = '(?:public|internal|private|fileprivate|open|final|nonisolated|package|distributed)';
+const TYPE_DECL_TOP = new RegExp('^(?:@[\\w:]+\\s+)*(?:' + DECL_MODIFIERS + '\\s+)*(class|struct|enum|actor|protocol)\\s+([A-Za-z_][A-Za-z0-9_]*)', 'gm');
 // ⭐ **任意缩进的类型声明**（含嵌套）⇒ 只用来做「引用能不能解析」的判断 ⭐
-const TYPE_DECL_ANY = /(?:^|\n)\s*(?:@[\w:]+\s+)*(?:(?:public|internal|private|fileprivate|open|final)\s+)*(class|struct|enum|actor|protocol)\s+([A-Za-z_][A-Za-z0-9_]*)/g;
+const TYPE_DECL_ANY = new RegExp('(?:^|\\n)\\s*(?:@[\\w:]+\\s+)*(?:' + DECL_MODIFIERS + '\\s+)*(class|struct|enum|actor|protocol)\\s+([A-Za-z_][A-Za-z0-9_]*)', 'g');
 
 /**
  * ⭐⭐⭐⭐⭐ **花括号深度剖面**（2026-11-19 实证 —— 这条差点写错）
@@ -101,7 +106,25 @@ check(`扫到引擎文件（${engineFiles.length} 个）`, engineFiles.length > 
 // ① 同一模块内不许有【同名顶层类型】（撞名 ⇒ invalid redeclaration）
 // ─────────────────────────────────────────────────────────────
 console.log('\n=== 1. 同一模块内不许有同名顶层类型 ===');
-for (const [label, files] of [['App(QiReaderLite)', appFiles], ['引擎(LegadoEngine)', engineFiles]]) {
+// ⭐⭐⭐⭐⭐ **必须按【target / 模块】分组判**（2026-11-25 实证）⭐⭐⭐⭐⭐
+//   SPM 的 `Sources/` 下**每个子目录就是一个模块（target）**⭐⭐⭐
+//   ⇒ 不同模块里同名类型**不冲突**（Swift 靠模块名消歧，引用时写 `模块名.类型名`）⭐⭐⭐
+//   ⇒ 柴阅的 `ResultBox`（`ChaiyueEngine`）与 `ResultBox`（`ChaiyueReaderKit`）
+//      是**两个模块各一份** ⇒ **不是撞名** ⇒ 门禁原先把整个包当一个命名空间扫 ⇒ 误报 ⭐⭐⭐
+//   ⇒ 正解：**同 target 内才可能出现 `invalid redeclaration`** ⇒ 按 target 分组判 ⭐⭐⭐
+//   ⚠️ 同 target 内仍要查（那才是真撞名 ⇒ App 编不过）⭐⭐⭐
+const engineGroups = new Map();
+for (const f of engineFiles) {
+  const rel = path.relative(ENGINE_DIR, f);
+  const target = rel.split(path.sep)[0];
+  if (!engineGroups.has(target)) engineGroups.set(target, []);
+  engineGroups.get(target).push(f);
+}
+const typeGroups = [['App(QiReaderLite)', appFiles]];
+for (const [target, files2] of [...engineGroups.entries()].sort()) {
+  typeGroups.push([`引擎/${target}`, files2]);
+}
+for (const [label, files] of typeGroups) {
   const map = declaredTypes(files, true);
   // ⭐⭐⭐ **只查【跨文件】的同名** ⇒ 同一文件里的重复声明多半是 `#if` 平台分支
   //   （如 `JSBridge` 的 Apple 版 / Linux stub ⇒ 互斥 ⇒ 不是撞名）⭐⭐⭐
@@ -159,6 +182,12 @@ const SYSTEM_SHARED = new Set([
   'NSUbiquitousKeyValueStore', 'CKContainer', 'CLLocationManager', 'UITableView', 'UIView',
   'HTTPCookieStorage', 'URLCache', 'UIScreen', 'UIWindow', 'WKUserContentController',
 ]);
+// ⭐⭐⭐⭐⭐ **Apple SDK 自带类型的白名单**（2026-11-25 实证）⭐⭐⭐⭐⭐
+//   柴阅的 `SpeechController.swift` 用了 **`MPRemoteCommandCenter.shared`**（MediaPlayer 框架）
+//   ⇒ 它**不是本仓库定义的类型** ⇒ 门禁若只认「工程里声明过的」⇒ 误报「引用了不存在的 X.shared」⭐⭐⭐
+//   ⇒ 补一份**前缀白名单**（Apple SDK 的类型前缀）⇒ 既能放过系统类型，又不会放过我们自己的拼错 ⭐⭐⭐
+//   ⚠️ 我们自己的类型**没有一个用这些前缀**（`Qi*` / `Chaiyue*` / `LegadoEngineHost` …）⇒ 不会削弱门禁 ⭐⭐⭐
+const APPLE_SDK_PREFIX = /^(UI|NS|AV|MP|WK|SF|CA|CG|CT|CF|MK|CL|SK|VN|MT|ML|AR|SCN|CML|MF|LA|EC|CK|QL)/;
 const allDeclared = new Set([...declaredTypes(appFiles, false).keys(), ...declaredTypes(engineFiles, false).keys()]);
 const missing = new Map();
 for (const f of [...appFiles, ...engineFiles]) {
@@ -166,6 +195,7 @@ for (const f of [...appFiles, ...engineFiles]) {
   for (const m of code.matchAll(/\b([A-Z][A-Za-z0-9_]*)\.shared\b/g)) {
     const t = m[1];
     if (allDeclared.has(t) || SYSTEM_SHARED.has(t)) continue;
+    if (APPLE_SDK_PREFIX.test(t)) continue;   // ⭐ Apple SDK 自带的类型（不是本工程定义的）⭐⭐⭐
     if (!missing.has(t)) missing.set(t, []);
     missing.get(t).push(path.relative(ROOT, f));
   }

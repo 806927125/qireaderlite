@@ -1,3 +1,8 @@
+// ⭐⭐⭐⭐⭐ **平台条件编译补丁**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
+//   · 本文件依赖 **TextKit / AppKit**（`NSTextContainer` / `NSLayoutManager` / `NSBezierPath` …）
+//   ⇒ **只有 iOS/macOS 能编** ⇒ Linux 沙盒编不到 ⇒ 用条件编译隔离 ⭐⭐⭐
+//   ⇒ Apple 平台功能**完全不变**；Linux 上这些类型不存在（只有 `ChaiyueReader` 用到它们，而它本身也是 iOS-only）⭐⭐⭐
+#if canImport(UIKit) || canImport(AppKit)
 import Foundation
 import ChaiyueModels
 
@@ -515,3 +520,4 @@ final class PageJustifier: NSObject, NSLayoutManagerDelegate, @unchecked Sendabl
         return true
     }
 }
+#endif  // #if canImport(UIKit) || canImport(AppKit)
