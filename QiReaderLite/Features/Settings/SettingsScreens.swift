@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ChaiyueReader
 
 // ══════════════════════════════════════════════════════════════════
 //  ⭐⭐⭐⭐⭐ **App 设置区 = 柴阅的「一页一个独立子页」** ⭐⭐⭐⭐⭐
@@ -134,93 +135,75 @@ struct SettingsScreenScaffold<Content: View>: View {
 
 // MARK: - ① 阅读设置（柴阅 ReadingSettingsScreen）
 
-/// ⭐⭐⭐ **阅读设置页** —— 柴阅把「细项」放这儿，面板只留高频项。
-/// 这里是本轮从**被删掉的栖阅面板**里迁过来的全部细项。
+/// ⭐⭐⭐⭐⭐ **阅读设置页 = 柴阅阅读器真正认的设置项**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+///
+/// ⚠️⚠️⚠️ **键名必须与柴阅的 `ReaderSettings` 一模一样** ⭐⭐⭐：
+///   柴阅的 `ReaderSettings` 直接读写 `UserDefaults.standard`
+///   （包内 `ChaiyueReader/ReaderSettings.swift`，键如 `reader.fontSize` / `reader.spacing` / `reader.pageStyle`）
+///   ⇒ 轻阅这边用 `@AppStorage` 写**同样的键** ⇒ **两边天然同步，零桥接代码** ⭐⭐⭐
+///   ⇒ 而且柴阅的阅读器**立刻生效**（它读的就是这些键）⭐⭐⭐
+///
+/// ⚠️⚠️ **老阅读器那些细项（行底线 / 垂直两端对齐 / 宽屏双页 / 内容限制在页眉页脚之间…）清掉了** ⭐⭐⭐：
+///   那些是**我们自己重写版阅读器**的功能 ⇒ 阅读器换成柴阅的 ⇒ **柴阅没有这些能力**
+///   ⇒ 留在设置页里就是「摆着不点」的死设置 ⇒ 一并删掉（不做假开关）⭐⭐⭐
 struct ReadingSettingsScreen: View {
-    @AppStorage("reader.paraAlign") private var paraAlign: String = "justify"
-    @AppStorage("reader.verticalJustify") private var verticalJustify: Bool = false
-    @AppStorage("reader.showBaseline") private var showBaseline: Bool = false
-    @AppStorage("reader.baselineScope") private var baselineScope: String = "full"
-    @AppStorage("reader.baselineColor") private var baselineColorHex: String = "#B8B8B8"
-    @AppStorage("reader.tapAnywhere") private var tapAnywhere: Bool = true
-    @AppStorage("reader.swipeUpExit") private var swipeUpExit: Bool = false
-    @AppStorage("reader.twoPageSpread") private var twoPageSpread: Bool = false
-    @AppStorage("reader.contentInHeaderFooter") private var contentInHeaderFooter: Bool = false
-    @AppStorage("reader.pageTurn") private var pageTurn: Bool = true
-    @AppStorage("reader.followSystem") private var followSystem: Bool = false
+    @AppStorage("reader.fontSize") private var fontSize: Double = 19
+    @AppStorage("reader.spacing") private var spacing: Int = 1
+    @AppStorage("reader.pageStyle") private var pageStyle: String = "slide"
+    @AppStorage("reader.brightness") private var brightness: Double = -1
+    @AppStorage("reader.keepScreenOn") private var keepScreenOn: Bool = true
+    @AppStorage("reader.tapNext") private var tapNext: Bool = false
+    @AppStorage("reader.paragraphComments") private var paragraphComments: Bool = true
+    @AppStorage("reader.autoAddToShelf") private var autoAddToShelf: Bool = true
+    @AppStorage("reader.conversion") private var conversion: Int = 0
+    @AppStorage("reader.preload") private var preload: Int = 3
 
-    private var baselineColorBinding: Binding<Color> {
-        Binding(
-            get: { Color(hex: baselineColorHex) },
-            set: { baselineColorHex = $0.hexString }
-        )
-    }
+    /// 亮度：-1 = 跟随系统（柴阅的 `ReaderSettings.brightness` 是 `Double?`，落盘用 -1 表示 nil）⭐⭐⭐
+    private var followSystemBrightness: Bool { brightness < 0 }
+    private var clampedBrightness: Double { followSystemBrightness ? 0.5 : min(max(brightness, 0), 1) }
 
     var body: some View {
         SettingsScreenScaffold(title: "阅读设置",
-                               subtitle: "面板里放的是高频项；这些细项在这里改（柴阅也是这么分的）") {
+                               subtitle: "这些就是柴阅阅读器真正认的项 —— 改完立刻生效") {
             VStack(spacing: 0) {
-                SettingsToggleRow(icon: "hand.tap", title: "点击页面任意位置翻页",
+                sectionTitle("排版")
+                fontSizeRow
+                divider
+                spacingRow
+                divider
+                pageStyleRow
+                divider
+                fontFamilyHint
+            }
+            .padding(.horizontal, 14)
+            .glassCard(cornerRadius: 16, strong: true)
+
+            VStack(spacing: 0) {
+                sectionTitle("屏幕")
+                brightnessRow
+                divider
+                SettingsToggleRow(icon: "sun.max", title: "阅读时保持屏幕常亮",
+                                  isOn: $keepScreenOn, tint: Theme.tagBlue)
+                divider
+                SettingsToggleRow(icon: "hand.tap", title: "点击两侧都翻页",
                                   subtitle: "关闭后：点中间出菜单，点两侧才翻页",
-                                  isOn: $tapAnywhere, tint: Theme.tagBlue)
-                divider
-                SettingsToggleRow(icon: "arrow.up", title: "上滑退出阅读",
-                                  isOn: $swipeUpExit, tint: Theme.tagBlue)
-                divider
-                SettingsToggleRow(icon: "book", title: "点两侧翻章",
-                                  subtitle: "翻页方式在阅读页的「外观」面板里选",
-                                  isOn: $pageTurn, tint: Theme.tagBlue)
-                divider
-                SettingsToggleRow(icon: "circle.lefthalf.filled", title: "跟随系统深浅色",
-                                  isOn: $followSystem, tint: Theme.tagPurple)
+                                  isOn: $tapNext, tint: Theme.tagBlue)
             }
             .padding(.horizontal, 14)
             .glassCard(cornerRadius: 16, strong: true)
 
             VStack(spacing: 0) {
-                sectionTitle("段落")
-                SettingsToggleRow(icon: "arrow.up.and.down", title: "垂直两端对齐",
-                                  subtitle: "每页文字自动调整行间距填满页面，底部对齐整齐",
-                                  isOn: $verticalJustify, tint: Theme.tagGreen)
+                sectionTitle("正文")
+                SettingsToggleRow(icon: "text.bubble", title: "显示段评气泡",
+                                  subtitle: "书源在段落里给了段评时，段末冒一个小气泡",
+                                  isOn: $paragraphComments, tint: Theme.tagGreen)
                 divider
-                alignRow
-            }
-            .padding(.horizontal, 14)
-            .glassCard(cornerRadius: 16, strong: true)
-
-            VStack(spacing: 0) {
-                sectionTitle("行底线")
-                SettingsToggleRow(icon: "line.3.horizontal", title: "显示行底线",
-                                  isOn: $showBaseline, tint: Theme.tagGreen)
-                if showBaseline {
-                    divider
-                    HStack(spacing: 10) {
-                        Image(systemName: "paintpalette")
-                            .font(.system(size: 17))
-                            .foregroundStyle(Theme.tagGreen)
-                            .frame(width: 26)
-                        Text("底线颜色")
-                            .font(.system(size: 15))
-                            .foregroundStyle(Theme.ink)
-                        Spacer()
-                        ColorPicker("", selection: baselineColorBinding, supportsOpacity: false)
-                            .labelsHidden()
-                    }
-                    .padding(.vertical, 11)
-                    divider
-                    scopeRow
-                }
-            }
-            .padding(.horizontal, 14)
-            .glassCard(cornerRadius: 16, strong: true)
-
-            VStack(spacing: 0) {
-                sectionTitle("未实现")
-                SettingsRow(icon: "rectangle.split.2x1", title: "宽屏同屏显示左右两页",
-                            subtitle: "还没接", disabled: true)
+                conversionRow
                 divider
-                SettingsRow(icon: "rectangle.split.2x1.bottomhalf", title: "内容限制在页眉页脚之间",
-                            subtitle: "还没接", disabled: true)
+                SettingsToggleRow(icon: "books.vertical", title: "读过的书自动加入书架",
+                                  isOn: $autoAddToShelf, tint: Theme.tagGreen)
+                divider
+                preloadRow
             }
             .padding(.horizontal, 14)
             .glassCard(cornerRadius: 16, strong: true)
@@ -245,19 +228,64 @@ struct ReadingSettingsScreen: View {
         .padding(.bottom, 2)
     }
 
-    private var alignRow: some View {
+    // MARK: - 行
+
+    private var fontSizeRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "text.justify")
+            Image(systemName: "textformat.size")
                 .font(.system(size: 17))
-                .foregroundStyle(Theme.tagGreen)
+                .foregroundStyle(Theme.tagBlue)
                 .frame(width: 26)
-            Text("段落对齐")
+            Text("字号")
                 .font(.system(size: 15))
                 .foregroundStyle(Theme.ink)
             Spacer()
-            Picker("", selection: $paraAlign) {
-                ForEach(ReaderParaAlign.all, id: \.raw) { a in
-                    Text(a.name).tag(a.raw)
+            Text("\(Int(fontSize))")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 28, alignment: .trailing)
+            Stepper("", value: $fontSize, in: 12...36, step: 1)
+                .labelsHidden()
+        }
+        .padding(.vertical, 11)
+    }
+
+    private var spacingRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.up.and.down")
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.tagBlue)
+                .frame(width: 26)
+            Text("行距")
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Picker("", selection: $spacing) {
+                ForEach(Self.spacingLevels, id: \.raw) { s in
+                    Text(s.name).tag(s.raw)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 190)
+            .tint(Theme.accent)
+        }
+        .padding(.vertical, 11)
+    }
+
+    private var pageStyleRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "rectangle.split.2x1")
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.tagBlue)
+                .frame(width: 26)
+            Text("翻页方式")
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Picker("", selection: $pageStyle) {
+                ForEach(PageTurnStyle.allCases) { s in
+                    Text(s.title).tag(s.rawValue)
                 }
             }
             .pickerStyle(.menu)
@@ -267,19 +295,62 @@ struct ReadingSettingsScreen: View {
         .padding(.vertical, 11)
     }
 
-    private var scopeRow: some View {
+    private var fontFamilyHint: some View {
         HStack(spacing: 10) {
-            Image(systemName: "character.cursor.ibeam")
+            Image(systemName: "character")
                 .font(.system(size: 17))
-                .foregroundStyle(Theme.tagGreen)
+                .foregroundStyle(Theme.tagBlue)
                 .frame(width: 26)
-            Text("底线范围")
+            Text("正文字体")
                 .font(.system(size: 15))
                 .foregroundStyle(Theme.ink)
             Spacer()
-            Picker("", selection: $baselineScope) {
-                ForEach(ReaderBaselineScope.all, id: \.raw) { s in
-                    Text(s.name).tag(s.raw)
+            Text("在「字体」页选")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.sub)
+        }
+        .padding(.vertical, 11)
+    }
+
+    private var brightnessRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "circle.lefthalf.filled")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Theme.tagBlue)
+                    .frame(width: 26)
+                Text("亮度")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+                Toggle("跟随系统", isOn: Binding(
+                    get: { followSystemBrightness },
+                    set: { on in brightness = on ? -1 : clampedBrightness }
+                ))
+                .labelsHidden()
+                .tint(Theme.accent)
+            }
+            if !followSystemBrightness {
+                Slider(value: $brightness, in: 0...1)
+                    .tint(Theme.accent)
+            }
+        }
+        .padding(.vertical, 11)
+    }
+
+    private var conversionRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "character.book.closed")
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.tagGreen)
+                .frame(width: 26)
+            Text("简繁转换")
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Picker("", selection: $conversion) {
+                ForEach(ChineseConversion.allCases, id: \.rawValue) { c in
+                    Text(c.title).tag(c.rawValue)
                 }
             }
             .pickerStyle(.menu)
@@ -288,21 +359,67 @@ struct ReadingSettingsScreen: View {
         }
         .padding(.vertical, 11)
     }
+
+    private var preloadRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.tagGreen)
+                .frame(width: 26)
+            Text("预加载章节")
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Text("\(preload) 章")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.accent)
+            Stepper("", value: $preload, in: 0...10, step: 1)
+                .labelsHidden()
+        }
+        .padding(.vertical, 11)
+    }
+
+    /// ⭐⭐⭐ **行距三档**（柴阅的 `ReaderSettings.spacing` 是 0/1/2 三档，不是连续值）⭐⭐⭐
+    private struct SpacingLevel: Identifiable {
+        let raw: Int
+        let name: String
+        var id: Int { raw }
+    }
+
+    private static let spacingLevels: [SpacingLevel] = [
+        SpacingLevel(raw: 0, name: "紧凑"),
+        SpacingLevel(raw: 1, name: "标准"),
+        SpacingLevel(raw: 2, name: "宽松"),
+    ]
 }
 
 // MARK: - ② 阅读主题（柴阅 ReaderThemesScreen）
 
-/// 16 套配色 + 4 套皮肤（两层分开：配色 = 颜色，皮肤 = 版式与装饰）。
+/// ⭐⭐⭐⭐⭐ **阅读主题页 = 柴阅的内置主题**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+///
+/// ⚠️ **不再有「我们重写版的 16 套配色 + 4 套皮肤」** ⭐⭐⭐：
+///   那是我们照着柴阅**观感重画**的产物（build322）⇒ 现在正文界面**整体换成柴阅原版**
+///   ⇒ 主题也用柴阅的（`ReaderThemeSpec.all` = 宣纸 / 晴窗 / 星夜 / 烛灯 / 纸张 / 素白 / 豆绿 / 雾灰 / 暮色 / 夜间）⭐⭐⭐
+///   ⇒ 自定义主题（CSS/JS）由柴阅自己的**外观面板**管理（`StylePanel` → 主题小页纸）⭐⭐⭐
 struct ReaderThemesScreen: View {
-    @AppStorage("reader.theme") private var themeKey: String = "paper"
+    /// ⭐⭐⭐ 柴阅的浅色主题槽 ⭐⭐⭐
+    @AppStorage("reader.lightTheme") private var lightTheme: String = "paper"
+    /// ⭐⭐⭐ 柴阅的深色主题槽 ⭐⭐⭐
+    @AppStorage("reader.darkTheme") private var darkTheme: String = "night"
+    /// ⭐⭐⭐ 柴阅的自定义主题槽（选了自定义主题就盖过内置主题）⭐⭐⭐
+    @AppStorage("reader.customTheme") private var customTheme: String = ""
+
+    /// ⭐⭐⭐ **轻阅全局强制深色外观** ⇒ 阅读页里 `colorScheme` 恒为 `.dark`
+    ///   ⇒ 柴阅的 `settings.theme(for: .dark)` 取的是 **`darkTheme`** ⇒ 用户在这里选的主题要写进 `darkTheme` ⭐⭐⭐
+    ///   ⇒ 浅色主题同时写进 `lightTheme` ⇒ 万一以后不强制深色了，用户选的主题还在 ⭐⭐⭐
+    private var currentId: String { customTheme.isEmpty ? darkTheme : customTheme }
 
     var body: some View {
         SettingsScreenScaffold(title: "阅读主题",
-                               subtitle: "配色管颜色，皮肤管字体与章节号装饰 —— 每套配色自带一个皮肤") {
+                               subtitle: "柴阅的内置主题 —— 皮肤与配色都在这里") {
             VStack(spacing: 0) {
-                // ⚠️ 别用 `enumerated()`：元素类型变成元组 ⇒ `id:` 推不出 ID ⇒ 编译错 ⭐⭐⭐
-                ForEach(ReaderTheme.all) { t in
-                    if t.key != ReaderTheme.all.first?.key {
+                ForEach(Array(ReaderThemeSpec.all.enumerated()), id: \.element.id) { index, t in
+                    if index > 0 {
                         Rectangle()
                             .fill(Theme.ink.opacity(0.07))
                             .frame(height: 1)
@@ -316,7 +433,7 @@ struct ReaderThemesScreen: View {
         }
     }
 
-    private func themeRow(_ t: ReaderTheme) -> some View {
+    private func themeRow(_ t: ReaderThemeSpec) -> some View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -324,18 +441,18 @@ struct ReaderThemesScreen: View {
                     .frame(width: 34, height: 42)
                 Text("文")
                     .font(.system(size: 14))
-                    .foregroundStyle(t.ink)
+                    .foregroundStyle(t.fg)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(t.name)
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.ink)
-                Text("皮肤 · \(t.skin.name)")
+                Text(t.skin.map { "皮肤 · \($0.name)" } ?? (t.isDark ? "深色" : "浅色"))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.sub)
             }
             Spacer()
-            if themeKey == t.key {
+            if currentId == t.id {
                 Image(systemName: "checkmark")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.accent)
@@ -343,20 +460,30 @@ struct ReaderThemesScreen: View {
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .onTapGesture { themeKey = t.key }
+        .onTapGesture { select(t) }
+    }
+
+    private func select(_ t: ReaderThemeSpec) {
+        customTheme = ""
+        darkTheme = t.id
+        if !t.isDark { lightTheme = t.id }
     }
 }
 
 // MARK: - ③ 字体（柴阅 FontsScreen）
 
+/// ⭐⭐⭐⭐⭐ **字体页 = 柴阅的字体选择**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+///
+/// ⚠️ 柴阅的 `ReaderSettings.font` 是 **`ReaderFontChoice`（Int 原始值）** ⭐⭐⭐
+///   ⇒ 键 `reader.font`；`reader.customFont` 是导入字体的 PostScript 名（优先级更高）⭐⭐⭐
 struct FontsScreen: View {
-    @AppStorage("reader.fontKey") private var fontKey: String = "system"
+    @AppStorage("reader.font") private var font: Int = ReaderFontChoice.song.rawValue
 
     var body: some View {
         SettingsScreenScaffold(title: "字体") {
             VStack(spacing: 0) {
-                ForEach(ReaderFont.all) { f in
-                    if f.raw != ReaderFont.all.first?.raw {
+                ForEach(Array(ReaderFontChoice.allCases.enumerated()), id: \.element.id) { index, f in
+                    if index > 0 {
                         Rectangle()
                             .fill(Theme.ink.opacity(0.07))
                             .frame(height: 1)
@@ -370,19 +497,19 @@ struct FontsScreen: View {
         }
     }
 
-    private func fontRow(_ f: ReaderFont) -> some View {
+    private func fontRow(_ f: ReaderFontChoice) -> some View {
         HStack(spacing: 12) {
             Text("永")
-                .font(ReaderFontPicker.fontFor(f, size: 20))
+                .font(Self.previewFont(f, size: 20))
                 .foregroundStyle(Theme.ink)
                 .frame(width: 34, height: 42)
                 .background(Theme.ink.opacity(0.06),
                             in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(f.name)
-                .font(ReaderFontPicker.fontFor(f, size: 15))
+                .font(Self.previewFont(f, size: 15))
                 .foregroundStyle(Theme.ink)
             Spacer()
-            if fontKey == f.raw {
+            if font == f.rawValue {
                 Image(systemName: "checkmark")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.accent)
@@ -390,7 +517,16 @@ struct FontsScreen: View {
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .onTapGesture { fontKey = f.raw }
+        .onTapGesture { font = f.rawValue }
+    }
+
+    /// 每项用它自己的字体渲染（柴阅同款）
+    private static func previewFont(_ f: ReaderFontChoice, size: CGFloat) -> Font {
+        switch f {
+        case .song: return .custom("Songti SC", size: size)
+        case .kai:  return .custom("Kaiti SC", size: size)
+        case .ping: return .system(size: size)
+        }
     }
 }
 

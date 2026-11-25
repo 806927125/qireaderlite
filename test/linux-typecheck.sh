@@ -38,15 +38,12 @@ sed 's/^import SwiftUI$//' QiReaderLite/Core/Store.swift > "$OUT/Store.swift"
 #   ⇒ 它含 WebKit/UIKit（WKWebView 壳 + 宿主工具）⇒ Linux 的 shim 覆盖不到
 #   ⇒ 这一层**验不到它**（明说，不装作全绿）⇒ 真编 = macOS CI ⭐⭐⭐
 
-# 阅读界面的桥也要真检查：它是 WebKit 层，Linux 上有 shim，能抓类型错
-sed -e 's/^import WebKit$//' -e 's/^import UIKit$//' \
-    -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
-    QiReaderLite/Core/ReaderHost.swift > "$OUT/ReaderHost.swift"
-
-# 阅读会话的接线逻辑也要真检查（纯 Foundation/Combine，不碰 SwiftUI）
-sed -e 's/^import Combine$//' \
-    -e 's|^import Foundation$|import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif|' \
-    QiReaderLite/Core/ReaderSession.swift > "$OUT/ReaderSession.swift"
+# ⚠️⚠️ **阅读会话那两层已删**（2026-11-25 接柴阅阅读器）⭐⭐⭐
+#   · `Core/ReaderHost.swift`（栖阅那套 WebView 阅读器）—— 早就删了 ⭐⭐⭐
+#   · `Core/ReaderSession.swift`（我们自己的阅读会话）—— 本轮删（换成柴阅的 `ReaderSession`）⭐⭐⭐
+#   ⇒ 这一层**不再有纯 Foundation 的阅读接线可类型检查** ⭐⭐⭐
+#   ⇒ 柴阅的阅读链路在 `LegadoEngine/Sources/ChaiyueReader*`（纯 Foundation 部分由
+#     `LegadoEngine` 包的 `swift build` 覆盖 ⇒ 见 `linux-compile-gate.sh`）⭐⭐⭐
 
 # ⭐⭐⭐ **新引擎后端**（legado-engine）—— 需要本地已编译的 LegadoCore 模块
 #
@@ -59,7 +56,8 @@ LEGADO_MODULES="${LEGADO_MODULES:-../legado-engine/.build/debug/Modules}"
 EXTRA=()
 if [[ -f "$LEGADO_MODULES/LegadoCore.swiftmodule" ]]; then
   echo "▶ 找到 LegadoCore 模块：$LEGADO_MODULES"
-  EXTRA=(-I "$LEGADO_MODULES" QiReaderLite/Core/LegadoEngineBackend.swift)
+  # ⚠️ `EngineBackend.swift` 也依赖引擎模块（它调 `LegadoEngineBackend`）⇒ 一起放这儿 ⭐⭐⭐
+  EXTRA=(-I "$LEGADO_MODULES" QiReaderLite/Core/LegadoEngineBackend.swift QiReaderLite/Core/EngineBackend.swift)
 else
   echo "⚠️  没找到 LegadoCore 模块（先在 ../legado-engine 跑 swift build）⇒ 跳过新引擎后端的类型检查"
 fi
@@ -69,10 +67,13 @@ echo "▶ 类型检查 Foundation 层…"
   test/linux-shims/CombineShim.swift \
   test/linux-shims/WebKitUIKitShim.swift \
   test/linux-shims/URLSessionConfigShim.swift \
+  QiReaderLite/Core/AppPaths.swift \
   QiReaderLite/Core/BookSource.swift \
   QiReaderLite/Core/Book.swift \
+  QiReaderLite/Core/AnalyzeUrl.swift \
   QiReaderLite/Core/SourceVariables.swift \
-  QiReaderLite/Core/EngineBackend.swift \
+  QiReaderLite/Core/StationVarForm.swift \
+  QiReaderLite/Core/EngineLog.swift \
   QiReaderLite/Core/LegadoCompat.swift \
   "$OUT/Store.swift" \
   QiReaderLite/Core/SourceService.swift \
@@ -83,8 +84,6 @@ echo "▶ 类型检查 Foundation 层…"
   QiReaderLite/Core/TokenFingerprint.swift \
   QiReaderLite/Core/ServiceError.swift \
   test/linux-shims/RuleSandboxStub.swift \
-  "$OUT/ReaderHost.swift" \
-  "$OUT/ReaderSession.swift" \
   "${EXTRA[@]}" \
   2>&1 | tee "$OUT/log.txt"
 

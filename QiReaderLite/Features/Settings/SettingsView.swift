@@ -1,4 +1,5 @@
 import SwiftUI
+import ChaiyueReader
 
 /// ⭐⭐⭐⭐⭐ **设置入口页**（柴阅式）⭐⭐⭐⭐⭐
 ///
@@ -19,8 +20,12 @@ struct SettingsView: View {
     @EnvironmentObject private var store: SourceStore
     @EnvironmentObject private var library: LibraryStore
 
-    @AppStorage("reader.theme") private var themeKey: String = "paper"
-    @AppStorage("reader.fontKey") private var fontKey: String = "system"
+    // ⭐⭐⭐ **主题/字体都改成柴阅的槽位**（2026-11-25 接柴阅阅读器）⭐⭐⭐
+    //   轻阅全局强制深色外观 ⇒ 阅读页里 `colorScheme == .dark`
+    //   ⇒ 柴阅的 `settings.theme(for: .dark)` 取的是 **`darkTheme`** ⭐⭐⭐
+    @AppStorage("reader.darkTheme") private var themeKey: String = "night"
+    //   柴阅的 `ReaderSettings.font` 是 `ReaderFontChoice` 的原始值（Int）⭐⭐⭐
+    @AppStorage("reader.font") private var fontKey: Int = ReaderFontChoice.song.rawValue
     /// 液态玻璃浓度 —— 跟阅读器「更多设置 → 玻璃通透度」**同一个 key**，两边实时同步。
     ///
     /// ⚠️ 为什么设置页也要放一份：
@@ -73,14 +78,14 @@ struct SettingsView: View {
                         NavigationLink {
                             ReaderThemesScreen()
                         } label: {
-                            rowLabel("paintpalette", "阅读主题", "\(ReaderTheme.all.first(where: { $0.key == themeKey })?.name ?? "")", Theme.tagPurple)
+                            rowLabel("paintpalette", "阅读主题", "\(ReaderThemeSpec.find(themeKey)?.name ?? "")", Theme.tagPurple)
                         }
                         .buttonStyle(.plain)
 
                         NavigationLink {
                             FontsScreen()
                         } label: {
-                            rowLabel("character", "字体", ReaderFont.name(for: fontKey), Theme.tagGreen)
+                            rowLabel("character", "字体", ReaderFontChoice(rawValue: fontKey)?.name ?? "宋体", Theme.tagGreen)
                         }
                         .buttonStyle(.plain)
 

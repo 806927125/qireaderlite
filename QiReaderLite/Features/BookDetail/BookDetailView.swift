@@ -92,7 +92,11 @@ struct BookDetailView: View {
             }
         }
         .fullScreenCover(item: $readerChapter) { ch in
-            ReaderWebView(book: book, chapters: chapters, start: ch)
+            // ⭐⭐⭐⭐⭐ **柴阅的阅读界面**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+            //   以前这里开的是**我们自己手写**的那套阅读界面（WebView + 自研原生分页/滚动）⭐⭐⭐
+            //   ⇒ 本轮**整套删掉**，正文界面全部用柴阅的 ⭐⭐⭐
+            //   ⇒ 目录已经在详情页取好了 ⇒ 直接喂给柴阅 ⇒ 阅读器不重复请求站方 ⭐⭐⭐
+            ChaiyueReaderScreen(book: book, chapters: chapters, start: ch)
         }
         .alert("目录诊断", isPresented: Binding(
             get: { tocDiag != nil }, set: { if !$0 { tocDiag = nil } })) {

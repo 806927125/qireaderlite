@@ -22,7 +22,7 @@ typealias QiBookSource = BookSource
 //     · 我们的 `Book`       ⇒ 柴阅 `ChaiyueModels.Book`
 //     · 我们的 `Chapter`    ⇒ 柴阅 `ChaiyueModels.BookChapter`
 //     · 我们的 `BookSource` ⇒ 柴阅 `ChaiyueModels.BookSource`
-//   ⇒ 老阅读器（`Features/Reader/Paging/*` + `ReaderWebView.swift`）是**自己排版、自己拉正文**的，
+//   ⇒ 老阅读器（`Features/Reader/Paging/` 那一整套 + WebView 阅读页）是**自己排版、自己拉正文**的，
 //     所以它只认我们自己的模型；
 //   ⇒ 柴阅阅读器（`ChaiyueReader`）走的是柴阅的权威链路：
 //       `BookContentService` → `ContentProcessor` → `ReaderSession` → `ReaderModel` → `ReaderKit` 排版

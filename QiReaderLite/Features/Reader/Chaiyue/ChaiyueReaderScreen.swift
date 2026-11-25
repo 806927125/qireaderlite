@@ -5,8 +5,7 @@ import ChaiyueReader
 // ⭐⭐⭐⭐⭐ **柴阅阅读器的宿主视图**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
 //
 // ⚠️⚠️⚠️ **这里是「老阅读器 → 柴阅阅读器」的换乘点** ⭐⭐⭐：
-//   以前是 `.fullScreenCover { ReaderWebView(book:chapters:start:) }`
-//   —— `ReaderWebView` 是**我们自己手写**的那套（WebView + 自研原生分页/滚动）⭐⭐⭐
+//   以前这里开的是**我们自己手写**的那套阅读界面（WebView + 自研原生分页/滚动）⭐⭐⭐
 //   ⇒ 现在换成**柴阅的 `ReaderContainer`**（`ChaiyueReader` 模块）
 //     ⇒ 阅读正文界面 = **柴阅原版**（皮肤 / 页眉页脚 / 章节号装饰 / 段评气泡 / 朗读 / 目录 / 书签）⭐⭐⭐
 //
@@ -23,6 +22,9 @@ struct ChaiyueReaderScreen: View {
     @EnvironmentObject private var sources: SourceStore
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
+    /// ⭐⭐⭐ 当前外观（轻阅全局强制深色 ⇒ 这里恒为 `.dark`）
+    ///   ⇒ 柴阅的 `settings.theme(for: scheme)` 取的是 `darkTheme` ⇒ 主题页要写 `reader.darkTheme` ⭐⭐⭐
+    @Environment(\.colorScheme) private var scheme
 
     /// 宿主对象（造柴阅的 `AppModel` + 镜像书架/书源/目录）
     @State private var host: ChaiyueReaderHost?
@@ -66,7 +68,8 @@ struct ChaiyueReaderScreen: View {
                                   start: start,
                                   source: source,
                                   libraryItems: library.items,
-                                  progressIndex: progress)
+                                  progressIndex: progress,
+                                  scheme: scheme)
         host = h
         launch = h.launch
         if h.launch.book.name.isEmpty {

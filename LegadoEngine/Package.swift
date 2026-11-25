@@ -22,7 +22,13 @@ import PackageDescription
 //   ⇒ ⚠️ 这是**我们加的补丁**（与上游有 diff）⇒ 同步柴阅上游时需重新套用 ⇒ 已记录 ⭐⭐⭐
 let package = Package(
     name: "LegadoEngine",
-    platforms: [.iOS(.v16), .macOS(.v13)],
+    // ⭐⭐⭐⭐⭐ **平台下限 = iOS 17 / macOS 14**（2026-11-25 柴阅阅读器 vendor 后抬高）⭐⭐⭐
+    //   柴阅的阅读器/会话层用 **@Observable（Observation 框架）** ⇒ 需要 iOS 17 / macOS 14 ⭐⭐⭐
+    //   （柴阅自己的 `Packages/ReaderCore/Package.swift` 声明的就是 iOS 17 / macOS 14 ⇒ 与上游一致）⭐⭐⭐
+    //   ⚠️ 本 App 的 deployment target 是 **iOS 26** ⇒ 抬高包下限对 App 无影响 ⭐⭐⭐
+    //   ⚠️ 之前是 .iOS(.v16)/.macOS(.v13) ⇒ 柴阅的 `SourceRepository.swift` 报
+    //      「'Observable()' is only available in macOS 14.0 or newer」⭐⭐⭐
+    platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
         .library(name: "LegadoEngine", targets: ["LegadoEngine"]),
         // ⭐⭐⭐⭐⭐ **柴阅的【阅读器】整包 vendor**（2026-11-25 用户要求：「阅读正文界面的老代码全部删掉，全部用柴阅的」）⭐⭐⭐

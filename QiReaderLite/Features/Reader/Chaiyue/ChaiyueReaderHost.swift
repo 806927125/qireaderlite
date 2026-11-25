@@ -42,6 +42,15 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
     /// 替换规则：轻阅没有替换规则仓 ⇒ 空（柴阅的 `ContentProcessor` 会原样处理正文）⭐⭐⭐
     var replaceRules: [ReplaceRule] = []
 
+    /// ⭐⭐⭐⭐⭐ **会话缓存：一本书一个会话** ⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️⚠️⚠️ **为什么必须缓存**（不然进度会分叉）⭐⭐⭐：
+    ///   柴阅的 `ReaderContainer` 启动时会调 `app.library.readerSession(for: launch.book)`
+    ///   ⇒ 宿主侧如果每次都**新建**一个会话 ⇒ 界面用的会话与宿主手里的是**两个对象**
+    ///   ⇒ 界面里翻到的位置写在 A 会话上，宿主回写进度时读的是 B 会话 ⇒ **进度永远是 0** ⭐⭐⭐
+    ///   ⇒ 所以：**同一本书永远返回同一个会话** ⭐⭐⭐
+    private var sessions: [String: ReaderSession] = [:]
+
     init(directory: URL = AppPaths.chaiyueDir) {
         shelf = BookshelfRepository(fileURL: directory.appendingPathComponent("bookshelf.json"))
         sources = SourceRepository(fileURL: directory.appendingPathComponent("sources.json"))
@@ -61,6 +70,8 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
     ///
     /// - Parameter book: **柴阅的书**（`ReaderContainer` 传进来的 `launch.book`）
     func readerSession(for book: LegadoEngineHost.BookModel) -> ReaderSession {
+        // ⭐⭐⭐ 同一本书 ⇒ 同一个会话（否则界面与宿主的进度会分叉）⭐⭐⭐
+        if let existing = sessions[book.bookUrl] { return existing }
         // ① 正文服务：源（从柴阅的书源仓里取）+ 引擎环境（宿主与引擎共享的那一个）+ 章节缓存
         let source = sources.source(for: book.origin)
         let service = BookContentService(source: source,
@@ -73,6 +84,7 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
                                     processor: processor, preloadCount: preloadCount)
         session.readingRecords = readingRecords
         session.autoAddToShelf = { true }
+        sessions[book.bookUrl] = session
         return session
     }
 
@@ -102,6 +114,13 @@ final class ChaiyueReaderHost {
     let app: AppModel
     /// 柴阅的「打开阅读器」请求
     let launch: ReaderLaunch
+    /// ⭐⭐⭐ **柴阅的阅读会话**（界面与宿主共用这一份 ⇒ 进度不分叉）⭐⭐⭐
+    let session: ReaderSession
+    /// ⭐⭐⭐ **柴阅的阅读模型**（宿主侧持有，用来读进度 / 提交可见位置）⭐⭐⭐
+    ///
+    /// ⚠️ 柴阅的 `ReaderContainer` 内部会用**同一份 session** 再建一个模型驱动界面
+    ///   ⇒ 两边共用一份会话 ⇒ **正文只拉一次、进度只有一份** ⭐⭐⭐
+    let model: ReaderModel
 
     /// 轻阅侧的书（用于回写进度）
     private let qiBook: QiBook
@@ -113,7 +132,8 @@ final class ChaiyueReaderHost {
          start: QiChapter?,
          source: QiBookSource?,
          libraryItems: [LibraryItem],
-         progressIndex: Int) {
+         progressIndex: Int,
+         scheme: ColorScheme = .dark) {
         self.qiBook = book
         self.qiChapters = chapters
         self.library = ChaiyueHostLibrary()
@@ -174,6 +194,14 @@ final class ChaiyueReaderHost {
         //     （柴阅的 `ReaderContainer.close()` 调 `app.closeReader()` ⇒ 置 nil）⭐⭐⭐
         app.openReader(chaiyueBook)
         launch = app.reader ?? ReaderLaunch(book: chaiyueBook, origin: nil, coverKey: nil)
+
+        // ── ⑦ 会话与模型 ─────────────────────────────────────────────
+        //    ⭐⭐⭐ **会话必须先由宿主建好**（`readerSession(for:)` 内部会缓存）
+        //      ⇒ 柴阅的 `ReaderContainer` 随后调 `app.library.readerSession(for:)` 拿到的
+        //        **就是这一份** ⇒ 界面与宿主共用一个会话 ⇒ 进度不分叉 ⭐⭐⭐
+        session = library.readerSession(for: launch.book)
+        model = ReaderModel(session: session, settings: app.settings,
+                            theme: app.settings.theme(for: scheme))
     }
 
     // MARK: - 回写
@@ -185,8 +213,11 @@ final class ChaiyueReaderHost {
     @discardableResult
     func writeBackProgress(to libraryStore: LibraryStore?) -> Int {
         guard let libraryStore else { return -1 }
+        // ⚠️ 位置以**会话里的实时位置**为准（界面翻到哪就是哪）
+        //   ⇒ 书架仓那份是 `ReaderSession.saveProgress()` 写的副本，做兜底 ⭐⭐⭐
+        let live = model.session.position.chapterIndex
         let stored = library.shelf.book(qiBook.cleanBookUrl)
-        let index = stored?.durChapterIndex ?? -1
+        let index = live >= 0 ? live : (stored?.durChapterIndex ?? -1)
         guard index >= 0 else { return index }
         let title = stored?.durChapterTitle ?? qiChapters[safe: index]?.title ?? ""
         libraryStore.saveProgress(bookID: qiBook.id, chapterIndex: index, ratio: 0, chapterTitle: title)
