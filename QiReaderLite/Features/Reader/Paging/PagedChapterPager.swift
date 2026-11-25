@@ -365,7 +365,8 @@ final class PagedChapterPager: NSObject {
             skin: skin,
             secondary: skin.secondaryColor(base: config.textColor),
             headerHeight: config.headerHeight,
-            footerHeight: config.footerHeight)
+            footerHeight: config.footerHeight,
+            horizontalMargin: config.horizontalMargin)
         v.setPage(paginator: r.paginator, page: gp.page, bg: background,
                   baseline: config.showBaseline, baselineColor: config.baselineColor,
                   scope: config.baselineScope, chrome: chrome)

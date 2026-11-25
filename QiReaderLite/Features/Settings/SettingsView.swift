@@ -1,9 +1,14 @@
 import SwiftUI
 
-/// 设置页 —— 照栖阅截图 5 还原。
-/// 栖阅的分组式列表：会员中心卡片 → 配置/朗读/替换净化/目录规则 → 阅读设置/字体/预缓存 → 外观/统计
-/// 轻阅还没有替换净化、目录规则、字体管理这些，先把**已有能力**摆出来，
-/// 没做的做成灰态而不是弹「还没接」。
+/// ⭐⭐⭐⭐⭐ **设置入口页**（柴阅式）⭐⭐⭐⭐⭐
+///
+/// 柴阅的设置区 = **一页一个独立子页**（About / Backup / Cache / Fonts /
+/// ReaderThemes / ReadingSettings / SpeechSettings）⇒ 轻阅照抄这个结构，
+/// 子页在 `SettingsScreens.swift`。
+///
+/// ⚠️ 这里**只做入口**：排版细项在「阅读设置」页、配色在「阅读主题」页 ——
+///    （原来它们塞在阅读页的**栖阅面板**里，本轮已按柴阅的位置搬走）⭐⭐⭐
+///
 /// 从 Info.plist 的 CFBundleVersion 读 build 号（CI 注入的 CURRENT_PROJECT_VERSION）。
 enum AppBuildInfo {
     /// CI 注入的 CURRENT_PROJECT_VERSION（拼在 CFBundleVersion 里）
@@ -14,8 +19,8 @@ struct SettingsView: View {
     @EnvironmentObject private var store: SourceStore
     @EnvironmentObject private var library: LibraryStore
 
-    @AppStorage("fontSize") private var fontSize: Double = 18
-    @AppStorage("lineSpacing") private var lineSpacing: Double = 6
+    @AppStorage("reader.theme") private var themeKey: String = "paper"
+    @AppStorage("reader.fontKey") private var fontKey: String = "system"
     /// 液态玻璃浓度 —— 跟阅读器「更多设置 → 玻璃通透度」**同一个 key**，两边实时同步。
     ///
     /// ⚠️ 为什么设置页也要放一份：
@@ -53,42 +58,52 @@ struct SettingsView: View {
                         .buttonStyle(.plain)
                     }
 
+                    // ⭐⭐⭐⭐⭐ **设置项 = 柴阅的「一页一个独立子页」** ⭐⭐⭐⭐⭐
+                    //   柴阅：About / Backup / Cache / Fonts / ReaderThemes /
+                    //        ReadingSettings / SpeechSettings
+                    //   轻阅：阅读设置 / 阅读主题 / 字体 / 缓存 / 备份 / 关于
                     settingsGroup {
-                        // 阅读设置：真的能改
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "textformat.size")
-                                    .font(.system(size: 17))
-                                    .foregroundStyle(Theme.tagBlue)
-                                    .frame(width: 26)
-                                Text("正文字号")
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(Theme.ink)
-                                Spacer()
-                                Text("\(Int(fontSize))")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Theme.accent)
-                            }
-                            Slider(value: $fontSize, in: 12...28, step: 1)
-                                .tint(Theme.accent)
-
-                            HStack(spacing: 10) {
-                                Image(systemName: "text.justify")
-                                    .font(.system(size: 17))
-                                    .foregroundStyle(Theme.tagGreen)
-                                    .frame(width: 26)
-                                Text("行间距")
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(Theme.ink)
-                                Spacer()
-                                Text("\(Int(lineSpacing))")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Theme.accent)
-                            }
-                            Slider(value: $lineSpacing, in: 0...20, step: 1)
-                                .tint(Theme.accent)
+                        NavigationLink {
+                            ReadingSettingsScreen()
+                        } label: {
+                            rowLabel("textformat.size", "阅读设置", "", Theme.tagBlue)
                         }
-                        .padding(.vertical, 4)
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            ReaderThemesScreen()
+                        } label: {
+                            rowLabel("paintpalette", "阅读主题", "\(ReaderTheme.all.first(where: { $0.key == themeKey })?.name ?? "")", Theme.tagPurple)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            FontsScreen()
+                        } label: {
+                            rowLabel("character", "字体", ReaderFont.name(for: fontKey), Theme.tagGreen)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            CacheScreen()
+                        } label: {
+                            rowLabel("externaldrive", "缓存", "", Theme.tagBlue)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            BackupScreen()
+                        } label: {
+                            rowLabel("icloud", "备份", "", Theme.tagBlue)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            AboutScreen()
+                        } label: {
+                            rowLabel("info.circle", "关于", "build \(AppBuildInfo.number)", Theme.tagPurple)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     // 外观：液态玻璃浓度（全局，跟阅读器里的滑块同一个 key）
@@ -112,28 +127,6 @@ struct SettingsView: View {
                             Text("数值越大越不透明（玻璃越实、字越清楚）")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Theme.sub)
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    // 引擎信息：让用户能自己确认装的是哪一版
-                    settingsGroup {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "gearshape.2")
-                                    .font(.system(size: 17))
-                                    .foregroundStyle(Theme.tagPurple)
-                                    .frame(width: 26)
-                                Text("规则引擎")
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(Theme.ink)
-                                Spacer()
-                                PillTag(text: "轻阅", color: Theme.accent, filled: true)
-                            }
-                            Text(EngineInfo.version)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.sub)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.vertical, 4)
                     }

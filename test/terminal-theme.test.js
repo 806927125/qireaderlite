@@ -140,8 +140,17 @@ ok(rweb.includes('ReaderSkinBackground(theme:'),
    '⭐⭐⭐⭐⭐ 阅读页用上了皮肤底（不是一块纯色）');
 ok(/toolbar\(\.hidden, for: \.navigationBar\)/.test(rweb),
    '⭐⭐⭐⭐⭐ 阅读页隐藏系统导航栏（柴阅的阅读页是自带 chrome 的全屏页）');
-ok(/theme\.panelVeil\(/.test(rweb),
-   '⭐⭐⭐⭐⭐ 面板白纱走主题自适应（深色底用黑纱，不是乳白板）');
+// ⭐⭐⭐⭐⭐ **2026-11-25 柴阅化**：栖阅那版「底部 overlay 面板 + 白纱」**已经删掉**，
+//   面板改成**柴阅式的 sheet** ⇒ 新的判据是「sheet 强制外观跟阅读主题走」
+//   （否则深色阅读时弹出来的是**浅色 sheet + 深色字** = 看不见）⭐⭐⭐
+const stylePanel = fs.existsSync(path.join(readerDir, 'ReaderStylePanel.swift'))
+  ? fs.readFileSync(path.join(readerDir, 'ReaderStylePanel.swift'), 'utf8') : '';
+ok(/preferredColorScheme\(theme\.isDarkTheme \? \.dark : \.light\)/.test(stylePanel),
+   '⭐⭐⭐⭐⭐ 外观面板强制外观跟阅读主题走（深色阅读 ⇒ 深色 sheet，不许乳白板）');
+ok(/presentationDetents\(\[\.height\(548\)\]\)/.test(stylePanel),
+   '⭐⭐⭐⭐⭐ 外观面板是柴阅式的 sheet（高 548），不是栖阅的底部 overlay');
+ok(!/theme\.panelVeil\(/.test(rweb),
+   '⭐⭐⭐⭐⭐ 栖阅那版「底部 overlay 面板 + 白纱」已经删掉（改柴阅 sheet）');
 ok(/pager\.background = UIColor\.clear/.test(rweb),
    '⭐⭐⭐⭐⭐ 分页画布透明（不然纯色底会把混色背景整个盖住）');
 // ⭐⭐⭐ **写死的灰阶文字**（`Color(white: 0x…`）⇒ 深色主题上不可读 ⇒ 一律不许 ⭐⭐⭐

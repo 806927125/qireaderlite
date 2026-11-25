@@ -1,865 +1,177 @@
+#!/usr/bin/env node
 /**
- * 阅读设置面板门禁（照栖阅那一版布局）。
+ * ⭐⭐⭐⭐⭐ **门禁：阅读设置面板必须是「柴阅式」**（2026-11-25 重写）⭐⭐⭐⭐⭐
  *
- * 用户给了参考截图：字号滑杆 + 字体 → 浅色/深色两排配色格子
- * → 跟随系统深浅色 → 翻页方式（仿真/滑动/平移/无动画/上下滚动）
- * → 功能宫格（大小/间距/朗读/高亮/气泡/格式/标题样式/页眉页脚/更多）。
+ * ⚠️⚠️⚠️ **为什么整条重写**（不是放宽）⭐⭐⭐：
+ *   用户原话：「**阅读界面是不是有老代码保留，全给替换成柴阅的，设置那些也要替换**」⭐⭐⭐
+ *   ⇒ 旧的这条门禁整条是**冲栖阅那版面板**去的（照参考截图 1:1 复刻）：
+ *       底部 overlay 磨砂大卡 + 字号方块滑杆 + 配色格子 + **8 个功能磁贴**
+ *   ⇒ 那版面板本轮**删掉了** ⇒ 门禁必须**按新意图重写**：
+ *       柴阅的「外观」= **sheet**（高 548）+ 细轨滑块 + 字号步进 + 行距三档
+ *                    + 字体分段 + 主题小页纸条 + 翻页方式 ⭐⭐⭐
+ *       排版**细项**挪到 **App 设置的「阅读设置」子页**（柴阅的位置）⭐⭐⭐
  *
- * 硬要求：**没接上的功能只摆位不点**（灰掉、disabled）。
- * 给用户一个点下去只会挨骂的按钮，比没有更糟。
+ * ⭐⭐⭐ 每条断言都要问「把它改坏，它会不会红」⇒ 都能被变异对照证伪 ⭐⭐⭐
  */
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', 'QiReaderLite');
 
-/**
- * 剥掉源码里的注释（块注释 + 行注释）。
- *
- * 血的教训：门禁用正则查源码时，**注释里提一嘴某个函数名**就会被误判成
- * 「代码里有这个」。这轮就因为我在注释里写了 `as? CTLine` 和 `enumerated()`，
- * 门禁报了两个假阳性。查源码的断言一律先剥注释。
- */
 function stripComments(src) {
-  // ⚠️ 旧写法 /\/[\s\S]*?\*\//g **漏了一个 \***，实际含义变成
-  //    「/ … * … /」，从文件开头的 /// 一路吃到中间的 */，把半个文件删掉。
-  //    正确：\/\* 要两个字符紧邻，且先删块注释再删行注释。
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '');
+  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
 }
-
-/** stripComments 自检 —— 门禁工具自己出错，下面所有断言都是随机结果 */
-function selfTestStripComments() {
-  const src = ['/// 文档', 'let a = 1 /* 块 */', '// 行 @State x', 'let b = 2'].join('\n');
-  const out = stripComments(src);
-  return out.includes('let a = 1') && out.includes('let b = 2')
-      && !out.includes('文档') && !out.includes('块') && !out.includes('行 @State');
-}
-
 let pass = 0, fail = 0;
-function ok(c, label, extra) {
-  if (c) { pass++; console.log(`  ✓ ${label}`); }
-  else { fail++; console.log(`  ✗ ${label}${extra ? '  → ' + extra : ''}`); }
+const ok = (c, m, extra) => {
+  if (c) { pass++; console.log('  ✓', m); }
+  else { fail++; console.log('  ✗', m, extra === undefined ? '' : '→ ' + extra); }
+};
+const readIf = (rel) => {
+  const p = path.join(ROOT, rel);
+  return fs.existsSync(p) ? stripComments(fs.readFileSync(p, 'utf8')) : '';
+};
+const web = readIf('Features/Reader/ReaderWebView.swift');
+const panel = readIf('Features/Reader/ReaderStylePanel.swift');
+const screens = readIf('Features/Settings/SettingsScreens.swift');
+
+// ── ① ⭐⭐⭐ 柴阅面板的 6 个组件都在 ──
+{
+  ok(fs.existsSync(path.join(ROOT, 'Features/Reader/ReaderStylePanel.swift')),
+     '① 柴阅面板文件在（ReaderStylePanel.swift）');
+  ok(/struct ReaderStylePanel: View/.test(panel), '① 有 ReaderStylePanel');
+  for (const [label, re] of [
+    ['亮度行',        /private var brightnessRow: some View/],
+    ['字号步进',      /private var sizeStepper: some View/],
+    ['行距三档',      /private var spacingPicker: some View/],
+    ['字体分段',      /private var fontPicker: some View/],
+    ['主题条',        /private var themeRow: some View/],
+    ['翻页方式',      /private var modeRow: some View/],
+  ]) ok(re.test(panel), `① 面板有${label}`);
+  for (const [label, re] of [
+    ['细轨滑块',      /struct ReaderGlassSlider: View/],
+    ['字号步进器',    /struct ReaderFontSizeStepper: View/],
+    ['行距三档选择器', /struct ReaderSpacingPicker: View/],
+    ['行距图标',      /struct ReaderSpacingGlyph: Shape/],
+    ['字体分段',      /struct ReaderFontPicker: View/],
+    ['主题条',        /struct ReaderThemeStrip: View/],
+    ['主题小页纸',    /struct ReaderThemeSwatch: View/],
+  ]) ok(re.test(panel), `① 有${label}组件`);
 }
 
-const web = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
-const chip = web.slice(web.indexOf('private struct ChipButton'));
-const panel = web.slice(web.indexOf('private var settingsSheet'),
-                         web.indexOf('private var settingsContent'));
-// ⚠️ 必须在 `private func hairLine` **之前**切断 ——
-//    否则第二个 hairLine 会匹配到函数定义而不是调用，顺序断言必挂。
-// 用「函数定义 + {」定位，避开注释里同名的字样
-const _hairDef = web.indexOf('private func hairLine: some View {');
-const pc = web.slice(web.indexOf('private var panelContent'),
-                      _hairDef > 0 ? _hairDef : web.length);
-const featureGrid = web.slice(web.indexOf('private var featureGrid'),
-                               web.indexOf('private func featureTileLabel'));
-const ft = web.slice(web.indexOf('private func featureTileLabel'),
-                         web.indexOf('private var displaySettingsPage'));
-const fontMenu = web.slice(web.indexOf('private var fontMenu'),
-                              web.indexOf('private var paletteGrid'));   // paletteGrid 紧跟 fontMenu
-const slider = fs.readFileSync(path.join(ROOT, 'Features/Reader/Paging/QRSlider.swift'), 'utf8');
-const sizeRow = web.slice(web.indexOf('private var sizeRow'),
-                          web.indexOf('private func sizeKnob'));
-const pageTurn = web.slice(web.indexOf('private var pageTurnRow'),
-                            web.indexOf('private var featureGrid'));
-const view = stripComments(fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderView.swift'), 'utf8'));
-
-console.log('\n── 面板结构（照参考截图 1:1）──');
-for (const [label, re] of [
-  ['字号行：小方块+滑块+大方块+字体下拉', /private var sizeRow/],
-  ['小/大 是灰底圆角方块',            /private func sizeKnob/],
-  ['字体下拉是胶囊',                  /private var fontMenu/],
-  ['分隔线',                          /private var hairLine/],
-  ['配色格子（浅色一排）',            /paletteRow\(ReaderTheme\.light/],
-  ['配色格子（深色一排）',            /paletteRow\(ReaderTheme\.darkRow/],
-  ['跟随系统深浅色',                  /跟随系统深浅色/],
-  ['翻页方式那一行（底并进上半卡片）',  /private var pageTurnRow/],
-  ['功能磁贴 4+4（照栖阅）',          /private var featureGrid/],
-  // v2 参考实现：color white @ 0.35、borderRadius 22、padding fromLTRB(12,14,12,14)
-  ['子页：显示设置',                  /private var displaySettingsPage/],
-  ['子页：间距设置',                  /private var layoutSettingsPage/],
-]) ok(re.test(web), label);
-
-console.log('\n── 液态玻璃：用系统层级的，不是自己糊一层 ──');
-// Apple 规则（WWDC25 session 323）：
-//   · iOS 26 的 partial-height sheet **默认就是液态玻璃**
-//   · .large 全屏 detent 是不透明的
-//   · 自定义 presentationBackground 会**覆盖掉**系统的玻璃 → 要去掉
-ok(!/FitSheetHeight/.test(web.replace(/\/\/[^\n]*/g,'')), '不再有 FitSheetHeight（面板改 overlay）');
-// ⚭� 结构差异：栖阅那块面板是**一整块玻璃**，内部只有细分隔线，
-//    配色格 / 磁贴 / 翻页行都直接坐在玻璃上，**没有各自的半透明卡片底**。
-//    我原来给每张卡片都垫了 Color.white.opacity(0.34)，
-//    结果后面透不出插画，看着像「一堆卡片」而不是「一块面板」。
-ok((web.match(/Color\.white\.opacity\(0\.34\)/g) || []).length === 0,
-   '面板内部**没有任何独立的半透明白卡片底**（栖阅是一整块玻璃）');
-// ⚠️⚠️ build79 之后用户还是说「不像」，这才是真凶：
-//    NavigationStack 的 containerBackground 默认是**不透明** systemBackground，
-//    我只给三个**子页**写了 ClearNavigationBackground，**根页漏了** →
-//    系统玻璃被这层不透明底整个遮死，后面插画透不出来，面板是块米黄色板子。
-//    对照证据：目录面板没有 NavigationStack，所以它是透明的。
-// 主面板**没有** NavigationStack 了（它会吃满全屏 → 面板变全屏、内容居中），
-// 三个子页各自用系统 .sheet，各带一个 ClearNavigationBackground。
-ok((web.match(/ClearNavigationBackground\(\)/g) || []).length === 3,
-   'ClearNavigationBackground 出现 3 次：三个子页各一个');
-ok(!/private var settingsContent[\s\S]{0,400}NavigationStack/.test(web),
-   '主面板不含 NavigationStack（它会吃满全屏，面板变全屏、内容居中）');
-ok(/\.sheet\(isPresented: \$showDisplaySettings\)/.test(web) &&
-   /\.sheet\(isPresented: \$showLayoutSettings\)/.test(web) &&
-   /\.sheet\(isPresented: \$showMoreSettings\)/.test(web),
-   '三个子页各自用系统 .sheet');
-// 磁贴：一层统一淡底 + 两行文字
+// ── ② ⭐⭐⭐ 面板是 sheet（不是栖阅的底部 overlay），且强制外观跟主题走 ──
 {
-  // 规格：按钮背景 rgba(0,0,0,.05)（不是 --fill 的冷灰 12%）
-  ok(/background\(theme\.controlFill/.test(ft),
-     '8 格磁贴底色**随主题自适应**（深色主题上不再是一块黑）');
-  ok(!/Color\.white\.opacity\(ready \?/.test(ft), '磁贴不叠第二层白底');
-}
-// 「小 / 大」的圆用 ZStack + Circle().fill() **直接画出来** ——
-// 圆在 ZStack 里是 flexible view，会填满 34×34，保证完整正圆，
-// 不用跟背景裁剪 / 布局挤压较劲。
-ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(web), '「小/大」的圆是直接画出来的（ZStack + Circle.fill）');
-ok(/Circle\(\)\.fill\(theme\.controlFill\)/.test(web),
-   '「小 / 大」是圆形底（**随主题自适应**）');
-// 幕布（scrim）：面板弹出时后面内容要压暗。
-// iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
-// 所以手动加一层，放在 ZStack 最底层、正文之下。
-ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,200}allowsHitTesting\(false\)/.test(web),
-   '有幕布（黑色 20%）');
-ok(/opacity\(showSettings \? 1 : 0\)/.test(web), '幕布跟着面板显隐淡入淡出');
-ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(web),
-   '幕布不可命中（不能吃掉面板的下拉关闭手势）');
-// 面板必须是 overlay 不是 .sheet —— sheet 在独立窗口里贴不了边，
-// 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
-ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
-   '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
-ok(/Circle\(\)\.fill\(theme\.controlFill\)/.test(web),
-   '「小 / 大」是圆形底（**随主题自适应**）');
-// 幕布（scrim）：面板弹出时后面内容要压暗。
-// iOS 26 对 `.height()` detent 的自带 scrim 很淡/不显示，真机上完全看不到 ——
-// 所以手动加一层，放在 ZStack 最底层、正文之下。
-ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,200}allowsHitTesting\(false\)/.test(web),
-   '有幕布（黑色 20%）');
-ok(/opacity\(showSettings \? 1 : 0\)/.test(web), '幕布跟着面板显隐淡入淡出');
-ok(/Color\.black\.opacity\(0\.20\)[\s\S]{0,120}allowsHitTesting\(false\)/.test(web),
-   '幕布不可命中（不能吃掉面板的下拉关闭手势）');
-// 面板必须是 overlay 不是 .sheet —— sheet 在独立窗口里贴不了边，
-// 而且 BackdropFilter 模糊不到后面的正文，那不是玻璃。
-ok(!/\.sheet\(isPresented: \$showSettings\)/.test(web),
-   '面板**不用 .sheet**（sheet 贴不了边、也模糊不到后面正文）');
-ok(/ZStack\(alignment: \.bottom\)/.test(web), '根容器是 bottom 对齐的 ZStack');
-// ⚠️⚠️ build93 真机炸过：外层 ZStack 的 alignment 写成了 **.top**，
-//    外层把整个内容块（含内层 ZStack）当成一个子视图顶到屏幕上方 ——
-//    真机表现：面板跑到顶部、内容被裁掉一半。
-//    门禁必须盯死**所有** ZStack 都是 .bottom。
-{
-  // 根 ZStack 必须 .bottom（面板贴底）；开关那个 .leading 是局部的，允许。
-  const zs = web.match(/ZStack\(alignment: \.[a-z]+\)/g) || [];
-  ok(zs.filter(z => /\.top/.test(z)).length === 0,
-     '没有 ZStack(alignment: .top)（会把面板顶到屏幕上方）');
-  ok(zs.filter(z => /\.bottom/.test(z)).length >= 1, '根容器是 .bottom 对齐');
-}
-// ⚠️⚠️ 另一个坑：`.fixedSize` 和测高 GeometryReader 挂在**平级子元素**上时，
-//    只作用于紧挨着的那一个（featureGrid），量到的不是整个面板高度。
-//    必须用 VStack 把 panelContent + featureGrid 包起来再挂。
-{
-  const sc = web.slice(web.indexOf('private var settingsContent'),
-                        web.indexOf('private var panelContent'));
-  // ⚠️ VStack 和 .fixedSize 之间可能隔着 .frame(maxWidth:)，
-  //    所以这里只要求 VStack 之后**不远处**出现 fixedSize。
-  // settingsContent 里现在是「VStack { panelContent }」——
-  // featureGrid 已经在 panelContent 内部了（build113 加 top-card 时挪进去的）。
-  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,200}\.fixedSize/.test(sc),
-     'fixedSize 挂在**包住全部内容**的 VStack 上（不是只挂 featureGrid）');
-  ok(/VStack\(spacing: 0\) \{[\s\S]{0,120}panelContent[\s\S]{0,700}SheetContentHeightKey/.test(sc),
-     '测高 GeometryReader 同样挂在包住全部内容的 VStack 上');
-}
-ok(/settingsSheet/.test(web.slice(web.indexOf('ZStack(alignment: .bottom)'))),
-   '面板挂在 ZStack 里（等价于 Positioned(bottom:0)）');
-// 「上下滚动」被截 → 我绕了**四轮**弯路，每轮都改错了地方：
-//   ① fillsWidth 强制平分装不下 → 缩字号 13→12        ← 治字号，错
-//   ② 改 Wrap / LazyVGrid 换行   → 真机断成「无动\n画」 ← 治换行，仍错
-//   ③ 死磕等分（fillsWidth）      → build86，还是装不下
-//   ④ **正解：不等分 + 横向滚动**（.pill flex-shrink:0 + overflow-x:auto）
-//      没人跟它抢宽度，「上下滚动」字号 14 也完整
-ok(!/fillsWidth: true/.test(pageTurn), 'pills 不等分（第 5 版正解）');
-ok(/ScrollView\(\.horizontal, showsIndicators: false\)/.test(pageTurn),
-   '翻页方式横向滚动（放不下就滚，不截字）');
-ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
-
-// ★ iOS 26 的系统玻璃必须是 partial-height sheet。
-//   只给 presentationSizing(.fitted) 而不给 detent → sheet 走默认全屏
-//   → 全屏不透明 → 玻璃出不来、面板还撑满整屏（build 43 实机就是这么翻车的）。
-// 面板背景 = **液态玻璃**（用户明确要：栖阅风格液态玻璃）。
-// build102 我拿「折射会扭掉边缘控件」把它换成磨砂白，那是**误解**诉求 ——
-// 折射不是成因，成因是**内容区高度不够、控件被裁**。
-// 面板背景 = **液态玻璃** .glassEffect(.regular) + 白 tint。
-//
-// ⚠️ 之前在「结构还没对」时来回换过这个背景（.82 磨砂白 ↔ .glassEffect），
-//    两边都不对 —— 那是**结构问题**不是材质问题。结构对了（build120）才比得了材质。
-// ⚠️ 面板的白度现在由**自绘的白纱层**控制（玻璃下面垫一层），
-//    不用 Glass.tint() —— tint 是色彩映射，系统会自己反向调节 → 滑块等于没接。
-ok(/\.glassEffect\(Glass\.regular,/.test(panel),
-   '面板是**液态玻璃** .glassEffect(.regular)');
-ok(/theme\.panelVeil\(white: max\(glassTint, 0\.12\)\)/.test(panel),
-   '面板白纱层可调（有下限 0.12）且**随主题反**（深色底用黑纱 ⇒ 不是乳白板）');
-// ⚠️ 白 tint 别调回 0.35 —— 玻璃会白得一点都不通透，后面的正文看不见
-//    （用户：「液态玻璃透明度调整一下，一点都不透明」）。
-ok(!/glassEffect\(\.clear/.test(panel),
-   '面板不用 .clear（太透，正文糊在面板上看不清）；用 .regular + 可调 tint');
-ok(/\.background\(\s*Color\.clear\s*\n?\s*\.glassEffect/.test(panel),
-   '面板玻璃用 background(_:in:) 重载（.background { Shape } 会撑成全屏）');
-// 判定要看**代码**，不能看注释（注释里会写这些名字做说明）
-// 目录 sheet 本来就该有 detent（.medium/.large）；
-// 只判定**设置面板**那一段没有 detent。
-ok(!/presentationDetents/.test(panel),
-   '设置面板不使用 presentationDetents（走 overlay，不是 sheet）');
-// 推入的子页要透明，否则玻璃被盖
-ok((web.match(/modifier\(ClearNavigationBackground\(\)\)/g) || []).length >= 3,
-   '三个子页都用了 ClearNavigationBackground');
-ok(/private struct ClearNavigationBackground: ViewModifier/.test(web), '有 ClearNavigationBackground 修饰符');
-// 部署目标已经是 iOS 26（用户要求「给我走 26」），
-// .navigation placement（iOS 18 引入）不需要 #available 分派了。
-ok(/containerBackground\(\.clear, for: \.navigation\)/.test(web),
-   '用 containerBackground(.clear, for: .navigation) 清导航背景');
-ok(!/private struct ClearNavigationBackground[\s\S]{0,200}#available\(iOS 18/.test(web),
-   'iOS 26 目标下不再需要 #available(iOS 18) 分派');
-// containerBackground(.clear, for: .navigation) 只能活在 #available(iOS 18) 分支里
-const navMod = web.slice(web.indexOf('private struct ClearNavigationBackground'));
-ok(navMod.indexOf('containerBackground(.clear, for: .navigation)') >= 0,
-   'ClearNavigationBackground 里用了 containerBackground(.clear)');
-
-console.log('\n── 高度贴合内容 ──');
-const mainSheet = web.slice(web.indexOf('private var settingsContent'),
-                            web.indexOf('private var hairLine'));
-ok(/VStack/.test(mainSheet), '主面板用 VStack（内容行数固定，高度确定）');
-ok(/panelContent/.test(mainSheet), '主面板用 panelContent（内含 top-card 白块 + 8 个宫格）');
-ok(!/private var (displayCard|pageTurnCard|upperPanelCard)/.test(web),
-   '旧卡片视图名全部退役（displayCard / pageTurnCard / upperPanelCard）');
-ok(!/\.background\(\s*Color\.white/.test(featureGrid),
-   '磁贴区不垫独立白底（只有一层统一淡底）');
-
-console.log('\n── 第 5 版面板结构 ──');
-
-// ⚠️⚠️ 「中间有一块阴影」= **面板玻璃容器自己投的 box-shadow**，
-//    不是容器里再套一层白色块。
-//    我 build82~89 一直加着那层白卡（white@.35 / radius 22）—— 从一开始就错了。
-ok(!/upperPanelCard/.test(web), '不再有内层白卡（那层是我误加的）');
-ok(/upperPanelCard/.test(web) === false, '没有额外的内层白卡（top-card 那层是规格要的）');
-ok(/panelContent/.test(web), '内容装在 panelContent 里');
-ok(/sizeRow[\s\S]{0,40}hairLine[\s\S]{0,40}paletteGrid/.test(pc),
-   '分割线有**两条**：字号下面 + 跟随系统下面（我之前错删成一条）');
-{
-  // ⚠️ 两个 hairLine 用 indexOf 找会拿到**同一个位置**（都是第一次出现），
-  //    所以必须带着游标递增地找，不能各算各的 indexOf。
-  let cur = -1;
-  const seq = ['sizeRow','hairLine','paletteGrid','followSystemRow','hairLine','pageTurnRow'];
-  const found = seq.map(k => { cur = pc.indexOf(k, cur + 1); return cur; });
-  ok(found.every((v,i) => v >= 0 && (i === 0 || v > found[i-1])),
-     '顺序 = 字号/线/配色/跟随/线/翻页（两条分割线都在）');
+  ok(/presentationDetents\(\[\.height\(548\)\]\)/.test(panel),
+     '② 面板是 sheet，高 548（柴阅规格）');
+  ok(/presentationDragIndicator\(\.visible\)/.test(panel), '② 有拖拽指示条（柴阅）');
+  ok(/preferredColorScheme\(theme\.isDarkTheme \? \.dark : \.light\)/.test(panel),
+     '②⭐⭐⭐ 面板强制外观跟阅读主题走（深色阅读 ⇒ 深色 sheet，不许乳白板）');
+  ok(/UIScreen\.main\.brightness = CGFloat\(v\)/.test(panel),
+     '② 亮度滑块真接到屏幕亮度（柴阅 brightnessRow）');
+  ok(/Image\(systemName: "sun\.min"\)/.test(panel) && /Image\(systemName: "sun\.max"\)/.test(panel),
+     '② 亮度行两头是 sun.min / sun.max（柴阅）');
 }
 
-// 面板容器按 ui.txt 一比一：left/right/bottom 14、radius 22、padding 12/14/16
-// ⚠️⚠️ ui.txt 的 .panel 有**两个层级**的留白：
-//     left/right/bottom 14  = ① 定位（玻璃**外面**）
-//     padding 12/14/16      = ② 内部（玻璃**里面**）
-// 写成重复的 .padding(.horizontal, 14) 会累加成左右各 28
-// → 玻璃撑宽 → 内容溢出屏幕被裁（真机：色块第8个、宫格「高亮」被切）。
+// ── ③ ⭐⭐⭐ 组件规格照柴阅 ──
 {
-  // 玻璃层 = 第一个 `.background(... in: RoundedRectangle(cornerRadius: 22)`
-  const glassAt = panel.indexOf('in: RoundedRectangle(cornerRadius: 22');
-  const innerPad = panel.indexOf('.padding(.horizontal, 14)');
-  const innerTop = panel.indexOf('.padding(.top, 12)');
-  const innerBot = panel.indexOf('.padding(.bottom, 16)');
-  const outerPad = panel.lastIndexOf('.padding(.horizontal, 14)');
-  const outerBot = panel.lastIndexOf('.padding(.bottom, Self.bottomSafeInset + 14)');
-  // 顶部 12 → 30（用户要「内容整体往下挪」；栖阅真机约 40pt）
-  // 顶部 12 → 30 → 42 → 50：用户连续要「按钮整体下移一点」。
-  ok(innerTop >= 0 && innerBot >= 0, '有内部 padding（top 12 / bottom 16，规格表）');
-  // 顶部 12 → 30 → 42：用户连续要「里面整体往下挪」，
-  // 栖阅真机面板顶到「小」那行的距离约 42pt（截图量）。
-  // 顶部 12 → 30 → 42 → 56：栖阅那块是**磨砂白**（没有玻璃边缘折射），
-// 面板顶到「小」那行约 42pt；我们用**真液态玻璃**，边缘有折射区，
-// 控件离边缘太近会被"啃"掉一块（用户：「那缺口在上面啊」）。
-// 顶部总留白 = 面板内 34 + 字号行 8 = 42，对齐栖阅真机。
-ok(/\.padding\(\.top, 12\)/.test(panel), '面板内部顶部留白 12（规格表：上12/左右14/下16）');
-  ok(innerPad >= 0 && innerPad < glassAt,
-     '内部 padding 在 玻璃**之前**（玻璃里面）');
-  ok(innerBot < glassAt, '内部底 padding 在玻璃之前');
-  ok(outerPad > glassAt && outerPad !== innerPad,
-     '定位 padding 在玻璃**之后**（玻璃外面），且不与内部那个重复');
-  ok(outerBot > glassAt, '定位底 padding 在玻璃之后');
-  // ⚠️ 面板底部必须**让开 home indicator**（栖阅是收在指示条上方的）。
-  //    写死 14 会让面板压在指示条上、整体显得往上偏。
-  ok(/\.padding\(\.bottom, Self\.bottomSafeInset \+ 14\)/.test(panel),
-     '面板底部让开 home indicator（bottomSafeInset + 14）');
-  ok(/private static var bottomSafeInset/.test(web), '有底部安全区取值');
-  // 左右 padding 在玻璃前后各出现一次，且**不能**都在玻璃前
-  const hP = [...panel.matchAll(/\.padding\(\.horizontal, 14\)/g)].map(m => m.index);
-  ok(hP.length === 2 && hP[0] < glassAt && hP[1] > glassAt,
-     '左右 padding 恰好两次：一次在玻璃前、一次在玻璃后');
-}
-ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
-// 面板 = 磨砂玻璃 white@0.82 + .ultraThinMaterial（规格表）。
-// 之前用 .glassEffect(.regular)：面板太通透，**内层白块 white@.55 叠上去
-// 几乎看不出层次**，而参考实现里那块白卡是明显比面板亮的。
-ok(/\.glassEffect\(Glass\.regular,/.test(panel), '面板是液态玻璃 .regular');
-ok(/theme\.panelVeil\(white:/.test(panel),
-   '面板有自绘纱层（随主题反）');
-ok(/theme\.panelInnerFill/.test(web),
-   '面板内层白块也随主题（深色底上不再是一块乳白）');
-ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
-ok(!/\.background\(\s*Color\.white\.opacity\(0\.82\)/.test(panel), '不再用纯磨砂白（换成真液态玻璃）');
-ok(/cornerRadius: 22/.test(panel), '面板圆角 22');
-//    build103 我把 fixedSize 放在 **NavigationStack 外面** ——
-//    NavigationStack 的 ideal height 算出来接近 **0**，面板只剩 padding 撑起来
-//    的 86pt，真机表现：**面板卡在屏幕底，只露薄薄一条**。
-// 内容高度由 **NavigationStack 内部**的 .fixedSize 自然撑开（外面用会塌成 0）。
-ok(/VStack\(spacing: 0\) \{\s*panelContent[\s\S]{0,200}\.fixedSize\(horizontal: false, vertical: true\)/.test(web),
-   '内容用 fixedSize 自然撑开（在 NavigationStack **内部**，外面会塌成 0）');
-ok(!/\.frame\(height: max\(sheetHeight/.test(panel), '不用 frame(height:) 硬压内容区');
-ok(/hardCap = screenH \* 0\.80/.test(web), '高度有屏幕 80% 硬上限');
-
-// 字号行
-ok(/frame\(width: 34, height: 34\)/.test(web), '小/大 圆形 34×34');
-// ⚠️ 必须 fixedSize —— QRSlider 内部是 GeometryReader（贪婪），
-//    在 HStack 里会抢宽度，把这两个圆压成缺角的椭圆
-//    （用户：「把大、小字体的圆圈补全」）。
-{
-  const knob = web.slice(web.indexOf('private func sizeKnob'));
-  ok(/frame\(width: 34, height: 34\)/.test(knob), '「小/大」圆形 34×34（规格表）');
-  ok(/font\(\.system\(size: 14\)/.test(knob), '「小/大」字号 14（规格表）');
-  ok(/ZStack \{\s*Circle\(\)\.fill\(/s.test(knob),
-     '「小/大」用 ZStack + Circle.fill 直接画圆（保证完整正圆）');
-  // ⭐ 必须 `.aspectRatio(1, .fit)` —— **锁死宽高比**。
-  //    `.frame(width:34,height:34)` + `.fixedSize()` 只锁"理想尺寸"，
-  //    锁不住"实际分配比例"：HStack 里被压时圆照样会变成椭圆。
-  //    `.aspectRatio(1,.fit)` 保证宽高永远相等 → 圆不可能变形。
-
-}
-ok(/14\.\.\.28/.test(web), '字号滑块 14...28（ui.txt min:14 max:28）');
-// ⚠️ SwiftUI 的 Slider 在 iOS 26 新样式下**滑轨会画到自己 frame 之外**。
-//    HStack 的 spacing 只管视图框、管不住绘制外延 →
-//    「小」按钮的圆形底会盖住滑轨左端一小截（用户反馈「滑块被挡了一点」）。
-//    所以 Slider 必须有水平 padding 给绘制外延留位置。
-// ⚠️ 用**自绘**的 QRSlider，不用系统 Slider。
-//    连续两次真机反馈「滑块被挡了一点」「上面被挡」：
-//    iOS 26 的系统 Slider frame 高度比 thumb 直径小（thumb 上下溢出自己
-//    frame 画的），跟相邻控件打架、还会被裁。
-// ⚠️ 「小」按钮和滑轨之间必须有间距 —— 我为了塞 thumb 把 spacing 收到 2，
-//    结果两者只差 2pt，视觉上就是「滑块被小按钮压住」（用户连续三次反馈）。
-//    自绘 QRSlider 之后 thumb 两端正位，**不需要收窄 spacing**。
-ok(/HStack\(spacing: 10\)/.test(sizeRow), '字号行 spacing 10（规格表）');
-ok(!/HStack\(spacing: 2\)/.test(sizeRow), '不用 spacing 2（会让滑块看着被小按钮压住）');
-ok(/QRSlider\(value: \$fontSize, range: 14\.\.\.28, step: 1\)/.test(web),
-   '字号滑块用自绘 QRSlider（不用系统 Slider）');
-ok(!/(?<![A-Za-z])Slider\(value: \$fontSize/.test(web), '不用系统 Slider');
-ok(/private let thumb: CGFloat = 26/.test(slider) && /private let track: CGFloat = 6/.test(slider),
-   '自绘滑块：thumb 26 / 轨道 6（照 ui.txt 的 input[type=range]）');
-ok(/\.shadow\(color: Color\.black\.opacity\(0\.25\), radius: 8, y: 2\)/.test(slider),
-   'thumb 带阴影（ui.txt box-shadow:0 2px 8px rgba(0,0,0,.25)）');
-ok(/thumb \/ 2 \+ usable \* ratio/.test(slider), 'thumb 位置两端各留半个 thumb，不会出 frame');
-ok(/Capsule\(\)\.fill\(Color\.black\.opacity\(0\.12\)\)/.test(slider) &&
-   /Capsule\(\)\.fill\(accent\)/.test(slider), '轨道：未填充灰 + 已填充蓝');
-// ⚠️⚠️ 垂直方向也必须留！SwiftUI 的 Slider **frame 高度比 thumb 直径小**，
-//    thumb 是**上下都溢出**自己 frame 画的。
-//    内容区高度 = 内容自然高（sheetHeight - 4）时，thumb 溢出那几 pt
-//    直接被裁掉 → 真机「滑块上面被挡」（用户反馈）。
-ok(/\.frame\(height: thumb\)/.test(slider), '自绘滑块高度 = thumb 直径（上下不裁）');
-ok(/padding\(\.horizontal, 13\)/.test(fontMenu), '字体下拉 水平内边距 13（ui.txt .font-select）');
-ok(/padding\(\.vertical, 7\)/.test(fontMenu), '字体下拉 垂直内边距 7');
-ok(/cornerRadius: 18/.test(chip) && /font\(\.system\(size: 14\)/.test(chip),
-   'chip 圆角 18 / 字号 14（规格表 .pill）');
-
-// pills：**不等分** + 横向滚动（正解，不是等分也不是换行）
-ok(/ScrollView\(\.horizontal, showsIndicators: false\)/.test(pageTurn),
-   '翻页方式横向滚动（放不下就滚，不截字）');
-ok(!/fillsWidth: true/.test(pageTurn), 'pills 不等分 —— 等分是我 build86~88 走的三轮弯路');
-ok(/fixedSize\(\)/.test(chip), 'pill 按内容宽度 fixedSize');
-
-// 色块
-// ⚠️ 色块**不能**用固定 width —— 8×42 + 间距 + 图标槽 = 428pt，
-//    超出可用宽 412pt → 整个内容被撑宽、两边溢出被裁（真机验证过）。
-//    改成自适应均分（栖阅真机就是 8 个均分贴边），高度仍固定 42。
-ok(/frame\(maxWidth: \.infinity\)[\s\S]{0,80}frame\(height: 42\)/.test(web),
-   '色块宽度自适应均分（固定 42 会撑爆行宽导致内容溢出）');
-ok(!/frame\(width: 42, height: 42\)/.test(web), '不用固定 width 42 的色块');
-ok(/cornerRadius: 9/.test(web), '色块圆角 9');
-ok(/font\(\.system\(size: 13\)\)/.test(web), '色块文字 13');
-ok(/frame\(width: 28\)/.test(web), '色块行图标槽 28（参考实现 .mode-icon width:28）');
-
-// 宫格：**两行文字、没有图标行、不需要固定高度**
-ok(/Text\(name\)\.font\(\.system\(size: 18, weight: \.semibold\)\)/.test(ft),
-   '宫格第一行 18pt（参考实现 .ic 18）');
-ok(/Text\(subtitle \?\? ""\)\.font\(\.system\(size: 13\)\)/.test(ft),
-   '宫格第二行 13pt（参考实现 .t1 13）');
-// ui.txt 的 .cell 只有**两行**：.ic(占图标位,放大字18) + .t1(13)。
-// 之前多画了一行 SF Symbol 图标 → 三行 81pt（规格是 52pt），
-// 8 个按钮因此显得太大。
-ok(!/Image\(systemName: icon\)/.test(ft), '宫格**没有** SF Symbol 图标行（ui.txt .ic 位放大字）');
-ok(/Text\(name\)\.font\(\.system\(size: 18, weight: \.semibold\)\)[\s\S]{0,120}Text\(subtitle \?\? ""\)\.font\(\.system\(size: 13\)\)/.test(ft),
-   '宫格两行：.ic 位放大字 18 + .t1 副标题 13');
-ok(!/frame\(height: 76\)/.test(ft), '宫格不设固定高度（两行文字自然等高）');
-ok(/\.padding\(\.top, 9\)[\s\S]{0,60}padding\(\.horizontal, 4\)[\s\S]{0,60}padding\(\.bottom, 8\)/.test(ft),
-   '宫格内边距 9/4/8（规格表 .cell padding:9px 4px 8px）');
-ok(/cornerRadius: 12/.test(ft), '宫格圆角 12（参考实现 .cell）');
-ok(/VStack\(spacing: 8\) \{\s*tileRow\(0\)/.test(web), '宫格间距 8（参考实现 gap:8px）');
-// ⚠️ 用户要的「下移」是**这 8 个宫格按钮**，不是整个面板内容。
-//    之前我理解成「整体下移」，把面板内部 top padding 一路加到 56 —— 方向错了。
-ok(web.slice(web.indexOf('private var panelContent: some View {'),
-             web.indexOf('private var hairLine')).includes('.padding(.bottom, 12)'),
-   '白块和宫格之间有 12 间距（ui.txt margin-bottom:12，在 top-card 之后）');
-ok(/padding\(\.top, 12\)/.test(panel),
-   '面板内部顶留白 12（规格表）');
-// ⚠️ 字号行是面板内容的第一行，它上面就是玻璃边缘 —— 三个控件
-//    （小/大/楷体）同处这一行，所以一起被"啃"掉上沿。
-ok(!/private var sizeRow[\s\S]{0,900}padding\(\.top, 8\)/.test(web),
-   '字号行不再自己下移（top-card 白块已隔开玻璃边缘）');
-ok(/padding\(\.top, 12\)/.test(panel),
-   '面板内部顶留白 12（规格表）');
-
-// ⚠️ 参考实现建议「去掉置灰（enabled:false）」让它看着正常 —— **不采纳**。
-//    未实现的功能（朗读 / 高亮 / 气泡 / 格式 / 页眉页脚）置灰是用户明确要的：
-//    宁可看起来淡，也不能让用户以为点得动。撤置灰 = 伪装成已完成。
-ok(/foregroundStyle\(ready \? theme\.chromeInk : theme\.chromeSubInk\.opacity\(0\.7\)\)/.test(web),
-   '未实现功能仍置灰（不采纳参考实现「去掉置灰」的建议）**且配色随主题**');
-ok(/\.disabled\(!ready\)/.test(web), '未实现功能仍 disabled，不弹虚假完成提示');
-
-// ── 版本号可见 ──
-// 这一轮最大的坑是「用户装的到底是哪一版」：build 107 之后又出了 108/109，
-// 拿旧版截图对栖阅会白改好几轮。设置页显示 build 号，一眼可确认。
-{
-  const fs2 = require('fs');
-  const sv = fs2.readFileSync(path.join(ROOT, 'Features/Settings/SettingsView.swift'), 'utf8');
-  ok(sv.includes('build \\(AppBuildInfo.number)'), '设置页显示 build 号');
-  ok(/CFBundleVersion/.test(sv), 'build 号从 Info.plist 读');
+  ok(/range: ClosedRange<Double> = 14\.\.\.30/.test(panel), '③ 字号范围 14…30（柴阅）');
+  ok(/\.system\(size: 14, weight: \.medium\)/.test(panel), '③ 小号 A 是 14pt（柴阅）');
+  ok(/\.system\(size: 21, weight: \.medium\)/.test(panel), '③ 大号 A 是 21pt（柴阅）');
+  ok(/\.frame\(width: 36\)/.test(panel), '③ 数字宽 36（柴阅）');
+  ok(/\.frame\(height: 46\)/.test(panel), '③ 控件高 46（柴阅）');
+  ok(/cornerRadius: 16, style: \.continuous/.test(panel), '③ 圆角 16（柴阅）');
+  ok(/matchedGeometryEffect\(id: "reader-spacing"/.test(panel), '③ 行距选中态有形变动画（柴阅）');
+  ok(/let gaps: \[CGFloat\] = \[3\.2, 4\.6, 6\.2\]/.test(panel), '③ 行距图标三档间距照柴阅');
+  ok(/frame\(width: 62, height: 80\)/.test(panel), '③ 主题小页纸 62×80（柴阅）');
+  ok(/proxy\.scrollTo\(current, anchor: \.center\)/.test(panel), '③ 主题条滚到当前项（居中，柴阅）');
+  ok(/proxy\.scrollTo\(selection, anchor: \.center\)/.test(panel), '③ 字体分段滚到当前项（柴阅）');
 }
 
-// ── 上半白块（top-card）──
-// 照 ui.txt 的 .top-card：
-//     background: rgba(255,255,255,.55); border-radius: 16px;
-//     padding: 14px 12px 2px;  margin-bottom: 12px;
-//     box-shadow: 0 1px 6px rgba(0,0,0,.04);
-//
-// ⚠️ CSS 的 padding 在 background **之内**（背景盖住 padding 区），
-//    所以 SwiftUI 必须是 `.padding(...)` **在** `.background(...)` **之前**。
-//    写反了会把白块推远（内容离白块边没有内边距）。
+// ── ④ ⭐⭐⭐ 行距 = 档位（柴阅），不是绝对值 ──
 {
-  const pc2 = web.slice(web.indexOf('private var panelContent: some View {'),
-                         web.indexOf('private var hairLine'));
-  ok(/padding\(EdgeInsets\(top: 14, leading: 12, bottom: 2, trailing: 12\)\)[\s\S]{0,140}background\(\s*theme\.panelInnerFill/.test(pc2),
-     'top-card：padding 在 background 之前（CSS 的 padding 在 background 之内）');
-  ok(/theme\.panelInnerFill/.test(pc2), 'top-card 底色**随主题自适应**（深色底上不是乳白块）');
-  ok(/cornerRadius: 16/.test(pc2), 'top-card 圆角 16');
-  ok(/shadow\(color: Color\.black\.opacity\(0\.04\), radius: 6, x: 0, y: 1\)/.test(pc2),
-     'top-card 阴影 0 1px 6px rgba(0,0,0,.04)');
-  ok(/\.padding\(\.bottom, 12\)/.test(pc2), 'top-card margin-bottom 12');
-  ok(/sizeRow[\s\S]{0,200}hairLine[\s\S]{0,200}paletteGrid[\s\S]{0,200}followSystemRow[\s\S]{0,200}hairLine[\s\S]{0,200}pageTurnRow/.test(pc2),
-     '白块里含：字号/线/色块/跟随/线/翻页（不含 8 个宫格）');
+  ok(/enum ReaderSpacingLevel: Int, CaseIterable, Identifiable/.test(panel),
+     '④ 行距是三档枚举（柴阅 spacing）');
+  ok(/case compact = 0/.test(panel) && /case normal  = 1/.test(panel) && /case relaxed = 2/.test(panel),
+     '④ 三档 = 紧凑/标准/宽松');
+  ok(/return 0\.55/.test(panel), '④ 标准档行距系数 0.55（柴阅）');
+  ok(/return 0\.70/.test(panel), '④ 标准档段距系数 0.70（柴阅）');
+  ok(/static func nearest\(lineSpacing: Double, fontSize: Double\)/.test(panel),
+     '④ 能从旧的绝对行距反推档位（一次性迁移用）');
+  ok(/@AppStorage\("reader\.spacingLevel"\)/.test(web), '④ 档位有独立存储键');
+  ok(/@AppStorage\("reader\.spacingLevelMigrated"\)/.test(web), '④ 有一次性迁移标记');
+  ok(/if !spacingLevelMigrated \{/.test(web), '④ 迁移只做一次');
+  ok(/private func applySpacingLevel\(_ level: Int, fontSize: Double\)/.test(web),
+     '④ 档位会写回行距/段距');
+  ok(/applySpacingLevel\(spacingLevel, fontSize: newSize\)/.test(web),
+     '④⭐⭐⭐ 改字号时行距按新字号重算（柴阅行为）');
 }
 
-// ── featureGrid 只能出现一次 ──
-// build113 我把 featureGrid 挪进 panelContent（加 top-card 白块），
-// 外层那个忘了删 → 真机 **8 个宫格渲染成 16 个**（重复两遍）。
+// ── ⑤ ⭐⭐⭐ 栖阅那版面板**彻底没了** ──
 {
-  const sc2 = web.slice(web.indexOf('private var settingsContent: some View {'),
-                         web.indexOf('private var panelContent: some View {'));
-  const calls = (sc2.match(/^\s*featureGrid\s*$/gm) || []).length;
-  ok(calls === 0, 'settingsContent 里不再单独挂 featureGrid（它已在 panelContent 内）');
-  const pc3 = web.slice(web.indexOf('private var panelContent: some View {'),
-                         web.indexOf('private var hairLine'));
-  ok((pc3.match(/^\s*featureGrid\s*$/gm) || []).length === 1,
-     'featureGrid 在 panelContent 里只出现一次');
+  for (const [label, re] of [
+    ['底部 overlay 面板', /private var settingsSheet: some View/],
+    ['字号方块行',       /private var sizeRow: some View/],
+    ['灰底方块',         /private func sizeKnob/],
+    ['字体下拉',         /private var fontMenu: some View/],
+    ['配色格子网格',     /private var paletteGrid: some View/],
+    ['配色格子行',       /private func paletteRow/],
+    ['功能磁贴',         /private var featureGrid: some View/],
+    ['磁贴数据表',       /private static let tiles/],
+    ['小胶囊按钮',       /private struct ChipButton: View/],
+    ['显示设置子页',     /private var displaySettingsPage: some View/],
+    ['间距设置子页',     /private var layoutSettingsPage: some View/],
+    ['更多设置子页',     /private var moreSettingsPage: some View/],
+  ]) ok(!re.test(web), `⑤ 栖阅那版的${label}已经删掉`);
+  ok(!/严格按 ui\.txt/.test(web), '⑤ 栖阅 ui.txt 规格的注释也没了');
 }
 
-// ── 发丝线 ──
-// @3x 下 1pt = 3 物理像素，系统分隔线是 1 物理像素 = 1/scale pt。
-ok(/frame\(height: 1\.0 \/ UIScreen\.main\.scale\)/.test(web),
-   '分隔线是发丝线 1/scale pt（@3x 下 1 物理像素）');
-
-// ⭐⭐⭐ 2026-11-19：老引擎的 JS 桥接（`RuleSandbox.swift` 里的 `JSON.stringify` 兜底）
-//   已随老引擎退役 ⇒ 这段断言随之删除（新引擎的桥在 `LegadoEngine/…/JS/`）⭐⭐⭐
-// ── 换阅读背景要**立刻**生效 ──
-// 真机症状：「换背景只有状态栏生效，要重进正文才变过来」。
-// 根因：layoutConfig 是 computed（主题色在里面），但只有 syncPager 重新求值
-// 才会赋给 pager.config —— 而 syncPager 之前**只在尺寸变化时**被调用；
-// WebView 滚动模式的 settingsPayload 也只在 session.start() 时发一次。
+// ── ⑥ ⭐⭐⭐ 排版细项迁到 App 设置的独立子页（柴阅的位置）──
 {
-  const fs3 = require('fs');
-  const rv = fs3.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
-  // ⚠️ 统一成一个签名监听（覆盖 themeKey / followSystemAppearance / darkScheme
-  //    以及字号/行距/段距/字体/对齐/基线）—— 分开挂会漏项，
-  //    漏掉的那些就是「改了不生效」的来源。
-  ok(/onChange\(of: readerLayoutSig\)[\s\S]{0,60}applyThemeChange\(\)/.test(rv),
-     '统一签名变化 → applyThemeChange（所有设置都要立刻生效）');
-  ok(/private func applyThemeChange\(\)[\s\S]{0,600}syncPager\(size: pagerViewport\)/.test(rv),
-     'applyThemeChange 走 syncPager（原生分页：config 重新求值 + 重排）');
-  ok(/applyThemeChange\(\)[\s\S]{0,900}host\.setSettings\(settingsPayload/.test(rv),
-     'applyThemeChange 重新下发 settings（WebView 滚动模式）');
-}
-
-// ── 阅读渲染层迁到 Swift ──
-// reader.html + ReaderHost 那套 WebView 渲染**不再使用**（换背景要重进正文才生效）。
-// 注意：engine.js（书源规则引擎）**仍在 WebView 里跑** —— 站方规则要求 JS，
-// 那个跟阅读渲染是两回事。
-{
-  const fs4 = require('fs');
-  const rv = fs4.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
-  ok(/SwiftScrollReaderView\(/.test(rv), '滚动模式用 SwiftScrollReaderView');
-  ok(!/ReaderWebContainer\(\s*\n?\s*host: session\.host/.test(rv),
-     '滚动模式不再用 ReaderWebContainer（WebView 渲染）');
-  ok(/private var scrollLoadedTexts/.test(rv), '有已加载正文集合（当前章 + 预取邻章）');
-  ok(/onRequestChapter: \{ idx in[\s\S]{0,120}session\.prefetch/.test(rv),
-     '窗口里缺的章 → 后台预取');
-  ok(/onVisibleChapter: \{ ch in[\s\S]{0,160}session\.followIndex/.test(rv),
-     '滚到别的章 → followIndex 跟着走');
-
-  const core = fs4.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderScrollCore.swift'), 'utf8');
-  ok(/enum ReaderScrollCore/.test(core), '有 ReaderScrollCore（scroll-core.js 的 Swift 翻译）');
-  ok(/func trimChapterWindow/.test(core) && /func shouldReportProgress/.test(core)
-     && /func viewportAnchorAdjustment/.test(core) && /func chooseTrimRemovalSide/.test(core)
-     && /func normalizedTitleHeight/.test(core),
-     'ReaderScrollCore 覆盖 JS 版导出的 5 个函数');
-  const sv = fs4.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
-  ok(/ReaderScrollCore\.shouldReportProgress/.test(sv), '进度上报用 ReaderScrollCore 节流');
-  ok(/normalizedParagraphs/.test(sv), '段落拆分对齐 reader.js 的 normalizedParagraphs');
-  // CI 必须跑 Swift↔JS 对拍
-  const wf = fs4.readFileSync(path.join(ROOT, '../.github/workflows/build-ipa.yml'), 'utf8');
-  ok(/scroll-core-parity/.test(wf), 'CI 跑 Swift↔JS 对拍');
-}
-
-// ── 顶栏 / 底栏对齐栖阅 ──
-{
-  const fs5 = require('fs');
-  const rv = fs5.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
-  const top = rv.slice(rv.indexOf('private var topBar'),
-                       rv.indexOf('private var bottomBar'));
-  const bot = rv.slice(rv.indexOf('private var bottomBar'));
-  // ① ⭐⭐⭐ 顶栏：**柴阅是【一整条玻璃胶囊】+ 居中衬线书名**（2026-11-25 换了参照对象）⭐⭐⭐
-  ok(/Text\(book\.name\)[\s\S]{0,300}design: \.serif/.test(top),
-     '顶栏书名用**衬线体**（柴阅那样）');
-  ok(/liquidGlass\(cornerRadius: 28/.test(top) && /frame\(height: 56\)/.test(top),
-     '顶栏是【一整条玻璃胶囊】（柴阅那样：高 56 / 圆角 28）');
-  ok(/VStack\(spacing: 1\)[\s\S]{0,1200}frame\(maxWidth: \.infinity\)/.test(top),
-     '顶栏书名**居中**（前后等分）');
-  ok(!/frame\(maxWidth: 340\)/.test(top),
-     '不再有「限宽 340 的小胶囊」（柴阅是整条胶囊）');
-  // ② 底栏：‹ 在最左、› 在最右，滑块夹中间
-  const arrowRow = bot.slice(bot.indexOf('HStack(spacing: 4) {'),
-                             bot.indexOf('HStack(spacing: 0) {'));
-  ok(arrowRow.indexOf('backward.fill') < arrowRow.indexOf('Slider(')
-     && arrowRow.indexOf('Slider(') < arrowRow.indexOf('forward.fill'),
-     '底栏 上一章在最左、下一章在最右，滑块在中间（柴阅那样）');
-  ok(/liquidGlassUneven\(top: 32, bottom: 45/.test(bot),
-     '⭐⭐⭐ 底栏是**异形玻璃**（上窄 32 / 下宽 45 —— 柴阅那样）');
-  ok(/toggleDayNight\(\)/.test(bot),
-     '⭐⭐⭐ 底栏有**日/夜一键切换**（柴阅那样）');
-}
-
-// ── 用户一次提的 5 个问题 ──
-{
-  const fs6 = require('fs');
-  // ⚠️ 剥注释再匹配：断言窗口量的是代码之间的距离，
-  //    中间堆了注释就会把真代码挤出窗口（报红但代码是对的）。
-  const rv = stripComments(fs6.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
-  const sv = stripComments(fs6.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8'));
-  // ⚠️ top / bot 必须在本 block 里自己声明一份。
-  //    build133 往这个 block 加断言时用了上面那个 block 的 `top`，
-  //    但那是块级作用域 → ReferenceError: top is not defined，
-  //    整个 reader-settings 门禁从 build133 起一路崩到 build142（假绿）。
-  const top = rv.slice(rv.indexOf('private var topBar'),
-                       rv.indexOf('private var bottomBar'));
-  const bot = rv.slice(rv.indexOf('private var bottomBar'));
-
-  // ① 滚动模式章节高度自算（之前 Auto Layout 算错 → 下面留一大片空白）
-  ok(/func updateHeights\(width: CGFloat\)/.test(sv), '章节高度自己算');
-  ok(/bodyHeight = bodyView\.heightAnchor\.constraint/.test(sv),
-     'bodyView 高度用可更新约束（不靠 bottom 约束撑）');
-  ok(!/bodyView\.bottomAnchor\.constraint\(equalTo: bottomAnchor/.test(sv),
-     'bodyView 不约束到底（会跟自算高度打架）');
-
-  // ②③ 排版/主题任何一项变了都要立刻重排 → 统一签名
-  ok(/private var readerLayoutSig: String/.test(rv), '有排版统一签名');
-  ok(/onChange\(of: readerLayoutSig\)/.test(rv), '监听统一签名（一次覆盖全部设置项）');
-  for (const k of ['fontSize','lineSpacing','paraSpacing','themeKey','fontKey',
-                   'paraAlign','verticalJustify','showBaseline','baselineScope',
-                   'baselineColorHex']) {
-    ok(rv.includes(k), '排版签名含 ' + k);
+  ok(/struct ReadingSettingsScreen: View/.test(screens), '⑥ 有「阅读设置」独立子页');
+  ok(/struct ReaderThemesScreen: View/.test(screens), '⑥ 有「阅读主题」独立子页');
+  ok(/struct FontsScreen: View/.test(screens), '⑥ 有「字体」独立子页');
+  ok(/struct CacheScreen: View/.test(screens), '⑥ 有「缓存」独立子页');
+  ok(/struct AboutScreen: View/.test(screens), '⑥ 有「关于」独立子页');
+  ok(/struct BackupScreen: View/.test(screens), '⑥ 有「备份」独立子页（灰态）');
+  for (const [label, re] of [
+    ['垂直两端对齐',   /垂直两端对齐/],
+    ['行底线',         /行底线/],
+    ['底线颜色',       /底线颜色/],
+    ['段落对齐',       /段落对齐/],
+    ['点击翻页',       /点击页面任意位置翻页/],
+    ['上滑退出',       /上滑退出阅读/],
+    ['跟随系统深浅色', /跟随系统深浅色/],
+  ]) ok(re.test(screens), `⑥ 「阅读设置」页有${label}`);
+  // 入口页要把这些子页都列出来
+  const settings = readIf('Features/Settings/SettingsView.swift');
+  for (const s of ['ReadingSettingsScreen', 'ReaderThemesScreen', 'FontsScreen',
+                   'CacheScreen', 'BackupScreen', 'AboutScreen']) {
+    ok(settings.includes(s), `⑥ 设置入口页有「${s}」入口`);
   }
-  // ⚠️ 签名里只能列**真实存在**的 @AppStorage。
-  //    之前写了 horizontalMargin（它是 layoutConfig 里写死的 20，不是 @AppStorage）
-  //    → 编译报 "cannot find 'horizontalMargin' in scope"。
-  ok(!/readerLayoutSig[\s\S]{0,400}horizontalMargin/.test(rv),
-     '排版签名里不引用不存在的 horizontalMargin（它是写死的 20，不是 @AppStorage）');
-
-  // ④ 设置面板按住下拖关闭（跟目录一样）
-  ok(/panelDragOffset/.test(rv), '设置面板有拖拽位移状态');
-  ok(/DragGesture\(minimumDistance: 6\)[\s\S]{0,400}panelDragOffset = min/.test(rv),
-     '设置面板可按住往下拖（面板跟着手指走）');
-  ok(/value: panelDragOffset/.test(rv), '拖拽有回弹动画');
-
-  // ⑤ 上滑退出阅读
-  ok(/onSwipeUp/.test(sv) && /swipeUpExitEnabled/.test(sv), '滚动层支持上滑退出');
-  ok(/handleSwipeUp/.test(sv) && /v\.y < -90/.test(sv), '上滑判定：明显向上才退出');
-  // ⚠️ 只有**从底部起手**才算上滑退出（正文中间往上滑 = 正常滚动）
-  ok(/swipeStartY = g\.location\(in: self\)\.y/.test(sv), '记录上滑手势起点');
-  // 「下半部分的下半部分」= 底部 25%
-  ok(/swipeStartY > bounds\.height \* 0\.75/.test(sv), '只有底部 25% 起手才触发退出');
-  // ③ 设置面板整块都能往下拖 → 必须 simultaneousGesture（gesture 会被子视图吃掉）
-  ok(/\.simultaneousGesture\(\s*DragGesture\(minimumDistance: 6\)/.test(rv),
-     '设置面板用 simultaneousGesture（gesture 会让上半拖不动）');
-  // ④ ⭐⭐⭐ 顶栏：**柴阅是【整条胶囊】+ 居中衬线书名**（2026-11-25 参照对象换了）⭐⭐⭐
-  ok(/VStack\(spacing: 1\)[\s\S]{0,1200}frame\(maxWidth: \.infinity\)/.test(top),
-     '顶栏书名**居中**（柴阅：frame(maxWidth: .infinity)）');
-  ok(/liquidGlass\(cornerRadius: 28/.test(top) && /frame\(height: 56\)/.test(top),
-     '顶栏是【一整条玻璃胶囊】（柴阅：高 56 / 圆角 28）');
-  ok(!/frame\(maxWidth: 340\)/.test(top),
-     '不再有「限宽 340 的小胶囊」（柴阅是整条胶囊）');
-  ok(/if swipeUpExit \{ dismiss\(\) \}/.test(rv), '上滑退出接 dismiss');
-  ok(!/上滑退出阅读[\s\S]{0,200}\.disabled\(true\)/.test(rv), '「上滑退出阅读」开关不再置灰');
 }
 
-// ── 分页模式字号/行距切换要立刻生效 ──
-// 根因：`renders[c]` 是**按章缓存**的页，config 换了但缓存不清 →
-// 改字号完全没反应。真机反馈「所有翻页模式下字体大小切换不生效」。
+// ── ⑦ ⭐⭐⭐ 栖阅那套 WebView 阅读器彻底没了 ──
 {
-  const fs7 = require('fs');
-  const pg = fs7.readFileSync(path.join(ROOT, 'Features/Reader/Paging/PagedChapterPager.swift'), 'utf8');
-  const cf = fs7.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderLayoutConfig.swift'), 'utf8');
-  ok(/didSet \{[\s\S]{0,300}invalidateLayout\(\)/.test(pg),
-     'config 变更 → invalidateLayout（清章级缓存 + 重排）');
-  ok(/private func invalidateLayout\(\)[\s\S]{0,300}renders\.removeAll\(\)/.test(pg),
-     'invalidateLayout 清掉 renders（按章缓存的页是旧 config 排的）');
-  ok(/invalidateLayout\(\)[\s\S]{0,200}rebuildSpine/.test(pg) &&
-     /invalidateLayout\(\)[\s\S]{0,300}show\(cursor: cursor/.test(pg),
-     'invalidateLayout 重建 spine 并跳回当前页');
-  ok(/var layoutFingerprint: String/.test(cf), 'ReaderLayoutConfig 有排版指纹（判重）');
+  ok(!fs.existsSync(path.join(ROOT, 'Core/ReaderHost.swift')),
+     '⑦ Core/ReaderHost.swift（栖阅 WebView 阅读器）已删');
+  ok(!fs.existsSync(path.join(ROOT, 'Resources/reader')),
+     '⑦ Resources/reader/（48KB 的 reader.html/js/css）已删');
+  ok(!/host\.setSettings|host\.apply|host\.update|host\.fail/.test(web),
+     '⑦ 阅读页不再往 WebView 下发 settings / 喂章节');
+  ok(!/WKWebView/.test(web), '⑦ 阅读页不再引用 WKWebView');
 }
 
-// ── 滚动模式要主动预取邻章 ──
-// 之前定义了 onRequestChapter 回调但**从没调过** → 邻章永远「加载中…」，
-// 一进滚动模式显示不对，切一次翻页（原生分页的 onNeedChapter 会预取）才正常。
+// ── ⑧ ⭐⭐⭐ 左右边距：正文不许顶到屏幕左边缘 ──
 {
-  const fs8 = require('fs');
-  const sv = fs8.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
-  ok(/requestMissingChapters\(in: desired\)/.test(sv), '窗口变化时会请求缺正文的章');
-  ok(/private func requestMissingChapters/.test(sv) && /pendingOnRequest\?\(idx\)/.test(sv),
-     'requestMissingChapters 真的调了 onRequestChapter');
-  ok(/requestedChapters: Set<Int>/.test(sv), '已请求的章去重（不反复刷）');
+  ok(/var horizontalMargin: CGFloat = 22/.test(readIf('Features/Reader/ReaderSkin.swift')),
+     '⑧ chrome 带左右边距（柴阅左右各 26，轻阅 22）');
+  ok(/textOrigin = CGPoint\(x: chrome\.horizontalMargin, y: chrome\.headerHeight\)/.test(
+       readIf('Features/Reader/Paging/ReaderPageVC.swift')),
+     '⑧⭐⭐⭐ 正文绘制原点的 x = 左右边距（以前 x=0 ⇒ 文字顶到屏幕左边缘）');
+  const vc = readIf('Features/Reader/Paging/ReaderPageVC.swift');
+  ok(/drawChapterNumber\(number, in: CGRect\(x: m,/.test(vc),
+     '⑧ 章节号装饰也缩进到文字区（跟正文对齐）');
+  ok(/at: CGPoint\(x: max\(0, w - m - size\.width\), y: footerY\)/.test(vc),
+     '⑧ 页脚右侧值也缩进（左右对称）');
 }
 
-// ── 长字符串拼接会让 Swift 编译器 type-check 超时 ──
-// CI 报过：ReaderLayoutConfig.swift: "the compiler is unable to type-check
-// this expression in reasonable time"。所以指纹类字符串必须拆成短 let。
-{
-  const fs9 = require('fs');
-  // ⚠️ 剥注释：注释里举例写的 `let a = "..."` 会被当成真 let 数插值 → 误判超限。
-  const cf = stripComments(fs9.readFileSync(path.join(ROOT, 'Features/Reader/Paging/ReaderLayoutConfig.swift'), 'utf8'));
-  const rv = stripComments(fs9.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
-  const fpBlock = cf.slice(cf.indexOf('var layoutFingerprint'),
-                           cf.indexOf('func pageSize'));
-  const sigBlock = rv.slice(rv.indexOf('private var readerLayoutSig'),
-                            rv.indexOf('private func applyThemeChange'));
-  // 每一段拼接的 let 不超过 4 个插值
-  const lets = (fpBlock + sigBlock).match(/let [a-z] = "[^"]*"/g) || [];
-  ok(lets.length >= 4, '指纹拆成了多个短 let');
-  ok(lets.every(l => (l.match(/\\\(/g) || []).length <= 4),
-     '每个 let 最多 4 个插值（太长会 type-check 超时）');
-}
-
-// ── 滚动模式：加载转圈 / 点中间 toggle / 打开设置藏底栏 ──
-{
-  const fsA = require('fs');
-  // ⚠️ 必须 stripComments 再匹配。
-  //    断言窗口按「{0,200} 字符内」算，而 build133/134 往这几处加了大量解释性注释，
-  //    把真正的代码推出了窗口 → 断言报红但代码其实是对的。
-  //    剥掉注释后，窗口量的是**代码之间的距离**，才是这条断言本来要表达的意思。
-  const sv = stripComments(fsA.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8'));
-  const rv = stripComments(fsA.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
-
-  // ① 加载中显示转圈（失败才出文字）
-  ok(/let spinner = UIActivityIndicatorView/.test(sv), '有 UIActivityIndicatorView');
-  ok(/box\.spinner\.startAnimating\(\)/.test(sv), '加载中 → 转圈');
-  ok(/box\.spinner\.stopAnimating\(\)/.test(sv), '加载完/失败 → 停转圈');
-  ok(/pendingFailed\.contains\(idx\)[\s\S]{0,400}加载失败/.test(sv), '失败才显示文字');
-
-  // ② 打开设置面板时藏 chrome（底栏「目录/大小/自检」不该跟面板叠着）
-  ok(/onChange\(of: showSettings\)/.test(rv), '监听 showSettings');
-  ok(/onChange\(of: showSettings\)[\s\S]{0,300}showChrome = !on/.test(rv),
-     '打开设置 → 藏 chrome（面板不再被底栏顶着，自然下移）');
-
-  // ③ 滚动模式点中间 → toggle（原来只会 show，底栏永远消不掉）
-  ok(/onTapCenter: \{[\s\S]{0,300}showChrome\.toggle\(\)/.test(rv),
-     '滚动模式点中间 → toggle 顶栏/底栏');
-  ok(!/onTapCenter: \{[\s\S]{0,300}showChrome = true/.test(rv),
-     '不再只 show 不 toggle');
-}
-
-// ── 滚动模式进入时：首章正文没到 → 整屏只显示居中大转圈 ──
-// 用户原话：「加载的时候应该是中间加载圈圈，其他都不显示的，加载完成出正文」
-{
-  const fsB = require('fs');
-  const sv = fsB.readFileSync(path.join(ROOT, 'Features/Reader/Paging/SwiftScrollReaderView.swift'), 'utf8');
-  ok(/centerSpinner = UIActivityIndicatorView\(style: \.large\)/.test(sv),
-     '有整屏居中的大转圈（.large）');
-  ok(/centerSpinner\.centerXAnchor\.constraint\(equalTo: centerXAnchor\)/.test(sv) &&
-     /centerSpinner\.centerYAnchor\.constraint\(equalTo: centerYAnchor\)/.test(sv),
-     '转圈居中');
-  ok(/private func updateLoadingState\(\)/.test(sv), '有加载态切换');
-  ok(/currentHasText[\s\S]{0,400}centerSpinner\.startAnimating\(\)/.test(sv),
-     '首章没正文 → 转圈转起来');
-  ok(/centerSpinner\.startAnimating\(\)[\s\S]{0,200}stack\.isHidden = true/.test(sv),
-     '首章没正文 → 章节内容（标题/加载中文字）全藏');
-  ok(/currentHasText[\s\S]{0,300}stack\.isHidden = false/.test(sv),
-     '首章正文到了 → 正常显示内容');
-}
-
-// ── 全局液态玻璃透明度 ──
-// 用户：「我说的是全局的液态玻璃透明度」——
-// 顶栏/底栏/胶囊按钮/返回键，全都走 App/LiquidGlass.swift 的 LiquidGlass。
-// iOS 26 的 Glass 分档：.ultraThin < .thin < .regular < .thick。
-// **.regular 自带不透明材质色** → 玻璃看着一点都不通透。
-{
-  const fsC = require('fs');
-  const lg = fsC.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8');
-  // ⚠️ 必须 stripComments 再匹配。
-  //    LiquidGlass.swift 的注释里写着「这里直接 glassEffect(.clear) 就调不动了」——
-  //    不剥注释的话，下面的「全局不用 .clear」断言会被**注释**匹配上 → 假红。
-  const all = stripComments(lg) + stripComments(fsC.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
-  // ⚠️ iOS 26 的 `Glass` **只有三个**静态成员：
-  //        .regular  — 默认，中等透明
-  //        .clear    — 高透明
-  //        .identity — 无效果
-  //    **没有 .thin**（我编过一次，CI 报 "type 'Glass' has no member 'thin'"）。
-  // iOS 26 的 `Glass` **只有三个**静态成员：
-  //        .regular  — 默认，中等透明
-  //        .clear    — 高透明（太透，正文糊在面板上）
-  //        .identity — 无效果
-  //    **没有 .thin**（我编过一次，CI 报 "type 'Glass' has no member 'thin'"）。
-  //
-  // 现在统一用 **.regular + 可调的白色 tint**：
-  //   · .clear 太透（用户：「阅读那里太透明了」）
-  //   · .regular 不加 tint 又太实
-  //   · tint 连续可调 → 用户自己在「更多设置 → 玻璃通透度」里找那个点
-  ok(!/glassEffect\(\.thin/.test(all),
-     '不许用 .thin（Glass 根本没这个成员，编译不过）');
-  ok(!/glassEffect\(\.clear/.test(all),
-     '不许绕过档位直接 glassEffect(.clear)（档位统一由 GlassVariant 决定）');
-  ok((all.match(/Glass\.regular/g) || []).length >= 1,
-     '玻璃用系统的 Glass.regular');
-  ok((all.match(/Color\.white\.opacity\(/g) || []).length >= 1,
-     '白度由自绘白纱层控制（不用 tint 控不透明度）');
-  ok(/@Environment\(\\\.glassTint\)/.test(lg),
-     'LiquidGlass 从 environment 读可调浓度');
-  ok(/let veil = Color\.white\.opacity\(max\(glassTint, minVeil\)\)/.test(lg),
-     'LiquidGlass 的白纱浓度跟着 environment 走');
-
-  // 可调功能本身
-  const fsD = require('fs');
-  const app = fsD.readFileSync(path.join(ROOT, 'App/QiReaderLiteApp.swift'), 'utf8');
-  const gt = fsD.readFileSync(path.join(ROOT, 'App/GlassTint.swift'), 'utf8');
-  const rv = fsD.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
-  ok(/environment\(\\\.glassTint/.test(app), 'App 根把玻璃浓度注入 environment');
-  ok(/GlassTintStore/.test(gt), '有 GlassTintStore（存 UserDefaults）');
-  ok(/玻璃通透度/.test(rv) && /Slider\(value: \$glassTintPercent/.test(rv),
-     '「更多设置」里有玻璃通透度滑块');
-  ok(/@AppStorage\(GlassTintStore\.key\)/.test(rv) && /@AppStorage\(GlassTintStore\.key\)/.test(app),
-     '两端用同一个 key 存玻璃浓度');
-}
-// ── 玻璃档位 + 白纱层：大卡片通透(.clear) / 阅读器面板磨砂(.regular) ──
-//
-// 用户连着提了两次：
-//   ①「整块玻璃透明度不够」→ 卡片也用 .regular（磨砂底）= 一块乳白板子
-//   ②「这个透明度，调了跟没调一样」→ 拿 `Glass.tint()` 的 alpha 当不透明度旋钮，
-//      但 Apple 的 tint 是「按内容亮度生成色调」的**色彩映射**，而且系统还会
-//      为了保证可读性自己反向调节 tint 量 → 设定被稀释，滑块等于没接。
-//
-// 现在的做法（Apple 给 .clear 的官方药方）：
-//   · 档位管「透不透」：.clear = 纯折射（透背景）/ .regular = 磨砂（字清楚）
-//   · **白纱层**管「实不实」：我们自己画的 dimming layer，垫在玻璃**下面**，
-//     alpha 就是我们说了算 → 滑块终于有反应
-{
-  const fsE = require('fs');
-  const lg = stripComments(fsE.readFileSync(path.join(ROOT, 'App/LiquidGlass.swift'), 'utf8'));
-  const comp = stripComments(fsE.readFileSync(path.join(ROOT, 'App/Components.swift'), 'utf8'));
-  const rvw = stripComments(fsE.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8'));
-  const appv = stripComments(fsE.readFileSync(path.join(ROOT, 'App/QiReaderLiteApp.swift'), 'utf8'));
-  const gtv = stripComments(fsE.readFileSync(path.join(ROOT, 'App/GlassTint.swift'), 'utf8'));
-
-  ok(/enum GlassVariant/.test(lg) && /case regular/.test(lg) && /case clear/.test(lg),
-     '有 GlassVariant 档位（.regular 磨砂 / .clear 通透）');
-  ok(/var variant: GlassVariant = \.regular/.test(lg),
-     'LiquidGlass 有 variant 参数（默认 .regular）');
-  ok(/variant == \.clear \? Glass\.clear : Glass\.regular/.test(lg),
-     '档位直接选系统的 Glass.clear / Glass.regular');
-
-  // ⚠️ 核心：不再拿 tint 的 alpha 当不透明度
-  ok(!/Glass\.regular\.tint\(/.test(lg) && !/Glass\.clear\.tint\(/.test(lg),
-     '不用 Glass.tint() 控不透明度（tint 是色彩映射，系统会自己调 → 调了跟没调一样）');
-  ok(!/Glass\.regular\.tint\(/.test(rvw),
-     '阅读器面板也不用 tint 控白度');
-
-  // 白纱层：垫在玻璃下面，alpha 跟 environment 走
-  ok(/glassEffect\(g, in: \.rect\(cornerRadius: cornerRadius\)\)[\s\S]{0,120}background\(veil, in: RoundedRectangle/.test(lg),
-     '玻璃下面垫了白纱层（dimming layer，Apple 给 .clear 的官方药方）');
-  ok(/let veil = Color\.white\.opacity\(max\(glassTint, minVeil\)\)/.test(lg),
-     '白纱浓度跟着 environment 走（并受 minVeil 兜底）');
-  ok(/var minVeil: Double = 0/.test(lg),
-     'LiquidGlass 有白纱下限参数 minVeil');
-
-  // 量程：0 = 纯玻璃，0.85 = 乳白（≈ 栖阅 rgba(255,255,255,.82)）
-  ok(/static let maxVeil: Double = 0\.85/.test(gtv),
-     '白纱上限 0.85（对上栖阅的 rgba(255,255,255,.82)）');
-  ok(/glassTintPercent \/ 100 \* GlassTintStore\.maxVeil/.test(appv),
-     'App 根注入的白纱量程是 0~0.85（不是旧的 0.45）');
-
-  // 设置页也要能调玻璃浓度：站在发现页想调不用先进一本书
-  const setv = stripComments(fsE.readFileSync(path.join(ROOT, 'Features/Settings/SettingsView.swift'), 'utf8'));
-  ok(/@AppStorage\(GlassTintStore\.key\)/.test(setv),
-     '设置页也用同一个 key 存玻璃浓度');
-  ok(/玻璃通透度/.test(setv) && /Slider\(value: \$glassTintPercent, in: 0\.\.\.100, step: 5\)/.test(setv),
-     '设置页有玻璃通透度滑块（发现页直接能调）');
-
-  // 分档：大卡片 .clear + 白纱下限 0（全程可调）；阅读器面板 .regular + 下限 0.35
-  ok(/var variant: GlassVariant = \.clear/.test(comp),
-     '大卡片 GlassCard 默认走 .clear（能透出底下的彩色光斑）');
-  ok(/func glassCard\([^)]*variant: GlassVariant = \.clear/.test(comp),
-     'glassCard 入口默认 .clear');
-  ok(/minVeil: 0/.test(comp),
-     '大卡片白纱下限 0（滑块能一路透到底）');
-  ok(/glassEffect\(Glass\.regular,[\s\S]{0,200}theme\.panelVeil\(white: max\(glassTint, 0\.12\)\)/.test(rvw),
-     '阅读器面板是 .regular + 纱层下限 0.12（盖在正文上，不能透到字打架）且随主题反');
-
-  // 「最透明那档」要真的透：下限压到底
-  ok(/minVeil: Double = 0\.10/.test(lg),
-     '控件类白纱下限 0.10（最透明那档几乎全透）');
-  ok((lg.match(/minVeil: 0\.10/g) || []).length >= 5,
-     '胶囊/圆键/形状都走 0.10 下限');
-
-  // 卡片在 0 档本来就是纯玻璃（一点白都没有）→ 要让「透」被看见，
-  // 底下得有颜色可折射，否则就是一片浅蓝白
-  // ⭐⭐⭐ 2026-11-24：页底实现换成了「星澜终端」深空背景（`App/TerminalTheme.swift`）
-  //   ⇒ 这三条断言的**意图不变**（守护真机死机那个坑），只是**改看新实现** ⭐⭐⭐
-  const backd = stripComments(fsE.readFileSync(path.join(ROOT, 'App/Components.swift'), 'utf8'));
-  const termBg = stripComments(fsE.readFileSync(path.join(ROOT, 'App/TerminalTheme.swift'), 'utf8'));
-  const bgAll = backd + '\n' + termBg;
-  // ⭐⭐⭐ 2026-10-24 真机崩溃日志：光斑原来是 `Circle + .blur(radius: 42)`（6 次全屏高斯模糊）
-  //   ⇒ 玻璃还要**采样**这个背景 ⇒ **页面弹出的那一瞬间**就算背景 ⇒ iOS 27 Beta 上超 10 秒
-  //   ⇒ `scene-update watchdog` 杀进程（app 死机）⇒ 设备还 Thermal serious
-  // ⇒ 现在：**径向渐变**（零模糊成本，视觉几乎一样）⭐⭐⭐
-  ok(/RadialGradient\(/.test(bgAll) && !/\.blur\(radius: 42\)/.test(bgAll),
-     '页底光斑改用径向渐变（不再有 6 次全屏高斯模糊 ⇒ 弹出即卡）⭐');
-  ok(!/\.blur\(/.test(bgAll),
-     '⭐⭐⭐ 页底**一处 blur 都没有**（2026-11-24 换深空背景时最容易顺手加 blur ⇒ 必须盯住）⭐⭐⭐');
-  ok(/c\.opacity\(0\.5[0-9]?\)/.test(bgAll) || /opacity\(0\.42\)/.test(bgAll),
-     '光斑颜色不透明度还在 0.4x~0.5x（玻璃得有东西可折射）');
-  ok((bgAll.match(/orb\(w \* /g) || []).length + (bgAll.match(/glow\(w \* /g) || []).length >= 3,
-     '页底有多块光斑（含中间那块 ⇒ 卡片落在页面中部才有颜色透出来）');
-}
-
-// ⚠️ 汇总行 —— 以前这个文件**不打印汇总**，后果是：
-//    CI/脚本只 grep「通过 N / 失败 M」→ 这个文件空输出 → 被当成「没问题」，
-//    实际上它崩了 10 个 build（build133~142）都没人发现。
-//    凡是「崩了就没输出」的门禁，必须有汇总行，且读汇总前先判崩溃。
-console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}`);
-process.exit(fail ? 1 : 0);
+console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
+process.exit(fail === 0 ? 0 : 1);

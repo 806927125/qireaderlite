@@ -249,7 +249,10 @@ final class ReaderPageCanvasView: UIView {
         // NSLayoutManager 用 UIKit 坐标（左上角原点）→ **不要翻转**。
         // CoreText 那套 translate+scale 在这里是反的，会上下颠倒。
         // ⭐⭐⭐ 正文要**下移一条页眉带**（柴阅：页眉在上、页脚在下）⭐⭐⭐
-        let textOrigin = CGPoint(x: 0, y: chrome.headerHeight)
+        // ⭐⭐⭐⭐⭐ **x 必须是左右边距**（2026-11-25 修）⭐⭐⭐⭐⭐
+        //   以前 x=0 ⇒ **文字顶到屏幕左边缘**、右边却空 44pt ⇒ 整块偏左 22pt
+        //   （用户截图：第二行「子。」从 x=0 开始，整页看着歪）⭐⭐⭐
+        let textOrigin = CGPoint(x: chrome.horizontalMargin, y: chrome.headerHeight)
         if baseline { drawBaselines(p, ctx, origin: textOrigin) }
         p.drawPage(pageIndex, in: ctx, origin: textOrigin)
         // ⭐⭐⭐ 页眉 / 页脚 / 章节号装饰 ⭐⭐⭐
@@ -262,13 +265,21 @@ final class ReaderPageCanvasView: UIView {
         let w = bounds.width
         let skin = chrome.skin
         let secondary = chrome.secondary
+        let m = chrome.horizontalMargin
         let headerY: CGFloat = 2
         let footerY = bounds.height - chrome.footerHeight - 2
+        // 文字区（页眉页脚也跟着缩进来 ⇒ 柴阅的页 = 左右各留一段）
+        let textWidth = max(0, w - m * 2)
 
         // ① 章首页 ⇒ 页眉带画**章节号装饰**；否则画章名/书名 ⭐⭐⭐
         if chrome.isChapterFirstPage, let number = chrome.chapterNumber {
-            drawChapterNumber(number, in: CGRect(x: 0, y: headerY, width: w, height: chrome.headerHeight),
-                              skin: skin, ctx: ctx)
+            // ⭐⭐⭐ **标题行的 rect**（装饰要贴着标题，柴阅就是这么画的）
+            var titleRect: CGRect?
+            if let p = paginator, let r = p.lineRects(at: pageIndex).first {
+                titleRect = r.offsetBy(dx: m, dy: chrome.headerHeight)
+            }
+            drawChapterNumber(number, in: CGRect(x: m, y: headerY, width: textWidth, height: chrome.headerHeight),
+                              skin: skin, ctx: ctx, titleRect: titleRect)
         } else if !chrome.header.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 11),
@@ -276,7 +287,7 @@ final class ReaderPageCanvasView: UIView {
                 .kern: 0.5,
             ]
             (chrome.header as NSString).draw(
-                in: CGRect(x: 0, y: headerY, width: w, height: max(12, chrome.headerHeight - 4)),
+                in: CGRect(x: m, y: headerY, width: textWidth, height: max(12, chrome.headerHeight - 4)),
                 withAttributes: attrs)
         }
 
@@ -288,13 +299,13 @@ final class ReaderPageCanvasView: UIView {
         ]
         if !chrome.footerLeft.isEmpty {
             (chrome.footerLeft as NSString).draw(
-                in: CGRect(x: 0, y: footerY, width: w * 0.5, height: max(12, chrome.footerHeight - 4)),
+                in: CGRect(x: m, y: footerY, width: textWidth * 0.5, height: max(12, chrome.footerHeight - 4)),
                 withAttributes: footAttrs)
         }
         if !chrome.footerRight.isEmpty {
             let size = (chrome.footerRight as NSString).size(withAttributes: footAttrs)
             (chrome.footerRight as NSString).draw(
-                at: CGPoint(x: max(0, w - size.width), y: footerY),
+                at: CGPoint(x: max(0, w - m - size.width), y: footerY),
                 withAttributes: footAttrs)
         }
     }
@@ -303,44 +314,88 @@ final class ReaderPageCanvasView: UIView {
     ///   · 宣纸 = **右上角朱印**（方框 + 红字「第N章」）⭐⭐⭐
     ///   · 晴窗 = **左上角描边大号**章号（64pt ultraLight）⭐⭐⭐
     ///   · 星夜 / 烛灯 = **居中大号**章号 ⭐⭐⭐
-    private func drawChapterNumber(_ number: Int, in box: CGRect, skin: ReaderSkin, ctx: CGContext) {
-        let text = "第\(number)章"
+    private func drawChapterNumber(_ number: Int, in box: CGRect, skin: ReaderSkin, ctx: CGContext,
+                                   titleRect: CGRect? = nil) {
         switch skin.chapterNumberStyle {
         case .seal:
-            // 宣纸：右上角一枚朱印 ⭐⭐⭐
-            let font = UIFont.systemFont(ofSize: 13, weight: .bold)
-            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: skin.chapterNumberColor]
-            let size = (text as NSString).size(withAttributes: attrs)
-            let seal = CGRect(x: box.maxX - size.width - 14, y: box.minY, width: size.width + 12, height: size.height + 6)
-            ctx.setStrokeColor(skin.chapterNumberColor.cgColor)
-            ctx.setLineWidth(1.4)
-            ctx.stroke(seal)
-            (text as NSString).draw(at: CGPoint(x: seal.minX + 6, y: seal.minY + 3), withAttributes: attrs)
+            // ⭐⭐⭐⭐⭐ **宣纸 = 右上角一枚朱印**（柴阅 `drawSeal` 的精确几何）⭐⭐⭐⭐⭐
+            //   · 40×40 **实心朱红**圆角方块（圆角 5）+ 内框描边（米色 35%）
+            //   · 文字两行「第N / 章」居中，**旋转 -4°**
+            //   · 位置 = 文字区右缘 - 22、标题行顶 + 20（⇒ 压在标题右上角）
+            let cx = box.maxX - 22
+            let cy = (titleRect?.minY ?? box.minY) + 20
+            ctx.saveGState()
+            ctx.translateBy(x: cx, y: cy)
+            ctx.rotate(by: -4 * .pi / 180)
+            let sealBox = CGRect(x: -20, y: -20, width: 40, height: 40)
+            skin.chapterNumberColor.withAlphaComponent(0.92).setFill()
+            UIBezierPath(roundedRect: sealBox, cornerRadius: 5).fill()
+            UIColor(hex: 0xF6E6DA).withAlphaComponent(0.35).setStroke()
+            let inner = UIBezierPath(roundedRect: sealBox.insetBy(dx: 2, dy: 2), cornerRadius: 3.5)
+            inner.lineWidth = 1
+            inner.stroke()
+            let para = NSMutableParagraphStyle()
+            para.alignment = .center
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: UIColor(hex: 0xF6E6DA),
+                .paragraphStyle: para,
+            ]
+            ("第\(number)\n章" as NSString).draw(
+                in: CGRect(x: -20, y: -15, width: 40, height: 32), withAttributes: attrs)
+            ctx.restoreGState()
+            // 柴阅：朱印下方一条 44×1 的短横线
+            if let t = titleRect {
+                skin.secondaryColor(base: .black).withAlphaComponent(0.22).setFill()
+                ctx.fill(CGRect(x: t.minX, y: t.maxY + 12, width: 44, height: 1))
+            }
         case .outlineBig:
-            // 晴窗：左上角描边大号章号 ⭐⭐⭐
+            // ⭐⭐⭐⭐⭐ **晴窗 = 左上角描边大号「01」**（柴阅 `qing`）⭐⭐⭐⭐⭐
+            //   · 64pt ultraLight、**只描边不填充**（32% 正文色）、字距 -2
+            //   · 位置 = 文字区左缘 - 3、正文起点 - 6（⇒ 压在标题左侧，当背景）
+            let text = String(format: "%02d", number) as NSString
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 34, weight: .ultraLight),
-                .foregroundColor: skin.chapterNumberColor,
-                .kern: -1,
+                .font: UIFont.systemFont(ofSize: 64, weight: .ultraLight),
                 .strokeColor: skin.chapterNumberColor,
-                .strokeWidth: 1.2,
+                .strokeWidth: 2.4,
+                .kern: -2,
             ]
-            (text as NSString).draw(at: CGPoint(x: 0, y: box.minY - 6), withAttributes: attrs)
-        case .centeredBig:
-            // 星夜 / 烛灯：居中大号章号 ⭐⭐⭐
-            // ⚠️⚠️ **`UIFont.systemFont` 没有 `design:` 参数**（那是 SwiftUI 的 `Font`）⭐⭐⭐
-            //   ⇒ 要衬线体得走 **fontDescriptor.withDesign(.serif)** ⭐⭐⭐
-            let base = UIFont.systemFont(ofSize: 30, weight: .ultraLight)
-            let desc = base.fontDescriptor.withDesign(.serif) ?? base.fontDescriptor
+            let size = text.size(withAttributes: attrs)
+            text.draw(at: CGPoint(x: box.minX - 3,
+                                  y: (titleRect?.minY ?? box.maxY) - size.height + 6),
+                      withAttributes: attrs)
+        case .centeredSmall:
+            // ⭐⭐⭐⭐⭐ **星夜 = 标题上方居中小字「第 N 章」**（柴阅 `xing`）⭐⭐⭐⭐⭐
+            //   · 11pt medium、字距 5、强调色 80%
+            let text = "第 \(number) 章" as NSString
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont(descriptor: desc, size: 30),
-                .foregroundColor: skin.chapterNumberColor,
-                .kern: 2,
+                .font: UIFont.systemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: skin.chapterNumberColor.withAlphaComponent(0.8),
+                .kern: 5,
             ]
-            let size = (text as NSString).size(withAttributes: attrs)
-            (text as NSString).draw(
-                at: CGPoint(x: box.midX - size.width / 2, y: box.minY - 2),
-                withAttributes: attrs)
+            let size = text.size(withAttributes: attrs)
+            text.draw(at: CGPoint(x: box.midX - size.width / 2, y: box.minY), withAttributes: attrs)
+        case .ornament:
+            // ⭐⭐⭐⭐⭐ **烛灯 = 标题下方的装饰纹样**（柴阅 `zhu` 的 `drawOrnament`）⭐⭐⭐⭐⭐
+            //   · 两段横线 + 两个小圆点 + 中间一个菱形
+            guard let t = titleRect else { return }
+            let center = CGPoint(x: t.midX, y: t.maxY + 18)
+            let line = skin.secondaryColor(base: .black).withAlphaComponent(0.28)
+            line.setFill()
+            ctx.fill(CGRect(x: center.x - 71, y: center.y - 0.4, width: 54, height: 0.8))
+            ctx.fill(CGRect(x: center.x + 17, y: center.y - 0.4, width: 54, height: 0.8))
+            skin.secondaryColor(base: .black).withAlphaComponent(0.4).setFill()
+            ctx.fillEllipse(in: CGRect(x: center.x - 13.2, y: center.y - 1.2, width: 2.4, height: 2.4))
+            ctx.fillEllipse(in: CGRect(x: center.x + 10.8, y: center.y - 1.2, width: 2.4, height: 2.4))
+            let diamond = UIBezierPath()
+            diamond.move(to: CGPoint(x: center.x, y: center.y - 5.5))
+            diamond.addLine(to: CGPoint(x: center.x + 5, y: center.y))
+            diamond.addLine(to: CGPoint(x: center.x, y: center.y + 5.5))
+            diamond.addLine(to: CGPoint(x: center.x - 5, y: center.y))
+            diamond.close()
+            diamond.lineWidth = 1
+            skin.chapterNumberColor.withAlphaComponent(0.8).setStroke()
+            diamond.stroke()
         }
     }
 

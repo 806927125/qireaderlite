@@ -60,7 +60,9 @@ const pageVC   = stripComments(fs.readFileSync(path.join(P, 'ReaderPageVC.swift'
 const readerUI = stripComments(fs.readFileSync(path.join(P, 'PagedReaderUI.swift'), 'utf8'));
 const webRaw   = fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderWebView.swift'), 'utf8');
 const web      = stripComments(webRaw);
-const host     = fs.readFileSync(path.join(ROOT, 'Core/ReaderHost.swift'), 'utf8');
+// ⚠️ 2026-11-25：栖阅那套 WebView 阅读器（ReaderHost.swift）**已经删掉**
+//    ⇒ 不再读它；改成断言「它真的没了」⭐⭐⭐
+const hostGone = !fs.existsSync(path.join(ROOT, 'Core/ReaderHost.swift'));
 const sess     = fs.readFileSync(path.join(ROOT, 'Core/ReaderSession.swift'), 'utf8');
 const store    = stripComments(fs.readFileSync(path.join(ROOT, 'Core/Store.swift'), 'utf8'));
 const catalog  = stripComments(fs.readFileSync(path.join(ROOT, 'Features/BookDetail/BookDetailView.swift'), 'utf8'));
@@ -182,10 +184,12 @@ ok(/UIPageViewControllerDataSource, UIPageViewControllerDelegate/.test(pager),
 ok(/session\.chapterText/.test(web), '正文来源是 session.chapterText');
 
 console.log('\n── CSS 多列那套要彻底没了 ──');
-ok(!fs.existsSync(path.join(ROOT, 'Resources/reader/reader-paginate.js')), 'reader-paginate.js 已删');
-ok(!/paginateReady|onPaginatePage|onPaginateEdge|onPaginateFail/.test(host), 'ReaderHost 不再有 CSS 分页的桥');
-ok(!/paginateReady|repaginate/.test(web), 'ReaderWebView 不再有 CSS 分页的接线');
-ok(!/installPaginate|callPaginateJS/.test(host), '没有残留的注入/调用');
+ok(!fs.existsSync(path.join(ROOT, 'Resources/reader')), 'Resources/reader/ 整套（含 CSS 分页桥）已删');
+ok(hostGone, 'ReaderHost（栖阅 WebView 阅读器）已删');
+ok(!/paginateReady|onPaginatePage|onPaginateEdge|onPaginateFail/.test(web),
+   'ReaderWebView 不再有 CSS 分页的接线');
+ok(!/installPaginate|callPaginateJS|__qrTapPos/.test(web + sess),
+   '没有残留的 JS 注入 / 调用');
 
 console.log('\n── 用户报的问题 ①：第一章最后一页划不到第二章第一页 ──');
 ok(/func show\(cursor idx: Int/.test(pager), '能切到全书序列的任意位置');
@@ -281,36 +285,38 @@ ok(/fontSize \* 1\.18/.test(layout), '标题字号 = 正文 × 1.18（照栖阅 
 ok(/head\.paragraphSpacing = 28/.test(layout), '标题下边距 28（照栖阅 reader.css）');
 ok(/title: session\.chapterTitle/.test(web), '标题来源是章节标题');
 
-console.log('\n── 用户报的问题 ②：设置面板照栖阅 ──');
+console.log('\n── ⭐⭐⭐ 用户报的问题 ②：排版细项按**柴阅的位置**搬到 App 设置的「阅读设置」页 ──');
+// ⚠️⚠️⚠️ 2026-11-25：这些细项原来在**栖阅那版底部 overlay 面板**里，
+//   柴阅的面板只放高频项 ⇒ 细项去 App 设置的「阅读设置」子页 ⭐⭐⭐
+//   ⇒ **断言必须跟着产物走**：查 SettingsScreens.swift，不是 ReaderWebView ⭐⭐⭐
+const settingsScreens = fs.existsSync(path.join(ROOT, 'Features/Settings/SettingsScreens.swift'))
+  ? fs.readFileSync(path.join(ROOT, 'Features/Settings/SettingsScreens.swift'), 'utf8') : '';
 for (const [label, re] of [
   ['垂直两端对齐',        /垂直两端对齐/],
-  ['「每页文字自动调整行间距填满页面」说明', /开启后每页文字会自动调整行间距以填满页面，使底部对齐整齐/],
-  ['段落间空行',          /段落间空行/],
+  ['「每页文字自动调整行间距填满页面」说明', /每页文字自动调整行间距填满页面/],
   ['行底线',              /行底线/],
-  ['「每一行底部绘制整行横线」说明', /开启后会在正文每一行底部绘制整行横线/],
-  ['独立底线颜色',        /独立底线颜色/],
+  ['独立底线颜色',        /底线颜色/],
   ['整行 / 按文字',       /整行|按文字/],
   ['跟随系统深浅色',      /跟随系统深浅色/],
   ['上滑退出阅读',        /上滑退出阅读/],
-  ['点击任意位置翻到下一页', /点击页面任意位置翻到下一页/],
-  ['iPad 同屏显示左右两页', /iPad 或宽屏横屏时自动同屏显示左右两页/],
-  ['内容限制在页眉页脚之间', /内容限制在页眉页脚之间，不遮挡/],
+  ['点击页面任意位置翻页', /点击页面任意位置翻页/],
+  ['iPad 同屏显示左右两页', /宽屏同屏显示左右两页/],
+  ['内容限制在页眉页脚之间', /内容限制在页眉页脚之间/],
   ['段落对齐 左/居中/右/两端', /段落对齐/],
-]) ok(re.test(webRaw), label);
-ok(/private func sizeKnob/.test(web), '小/大 是灰底圆角方块（参考截图就是这样，不是 SF Symbol）');
-ok(/Circle\(\)\.fill\(theme\.controlFill\)/.test(web),
-   '小/大方块是**圆形** + 随主题自适应的底（深色主题上不再是一块黑）');
-ok(/circle\.lefthalf\.filled/.test(web), '跟随系统用 circle.lefthalf.filled');
-for (const [raw, hint] of [
-  ['flip','模拟真实翻书效果，页面卷曲翻转'],
-  ['slide','类似 Apple Books 的左右滑动翻页'],
-  ['flat','左右平移动画翻页'],
-  ['none','无翻页动画，立即切换'],
-  ['scroll','上下滚动浏览，连续阅读体验']]) {
-  ok(webRaw.includes(hint), `栖阅原文说明：${hint}`);
-}
+]) ok(re.test(settingsScreens), label);
+ok(/struct ReadingSettingsScreen: View/.test(settingsScreens),
+   '「阅读设置」是独立子页（柴阅 ReadingSettingsScreen）');
+ok(/struct ReaderThemesScreen: View/.test(settingsScreens), '「阅读主题」是独立子页');
+ok(/struct FontsScreen: View/.test(settingsScreens), '「字体」是独立子页');
+ok(/struct CacheScreen: View/.test(settingsScreens), '「缓存」是独立子页');
+ok(/struct AboutScreen: View/.test(settingsScreens), '「关于」是独立子页');
+ok(/struct BackupScreen: View/.test(settingsScreens), '「备份」是独立子页（灰态）');
 
-console.log('\n── 这些项要真接上，不能只是摆位 ──');
+// ⭐⭐⭐ 面板里的字号控件 = 柴阅的**步进器**（不是栖阅那两个灰底圆钮）
+const stylePanel = fs.existsSync(path.join(ROOT, 'Features/Reader/ReaderStylePanel.swift'))
+  ? fs.readFileSync(path.join(ROOT, 'Features/Reader/ReaderStylePanel.swift'), 'utf8') : '';
+ok(/struct ReaderFontSizeStepper: View/.test(stylePanel), '字号用柴阅的步进器（A小/数字/A大）');
+ok(!/private func sizeKnob/.test(web), '栖阅那版「灰底圆角方块」字号钮已经删掉');
 ok(/paginateJustified/.test(pager), '垂直两端对齐真接进分页器');
 ok(/showBaseline/.test(pager + pageVC) && /drawBaselines/.test(pageVC + paginator), '行底线真画了');
 ok(/lineFragmentRect\(forGlyphAt:/.test(paginator), '「按文字」范围用了行 fragment 边界');
@@ -319,55 +325,48 @@ ok(/paraAlign\.textAlignment/.test(layout), '段落对齐真进排版');
 ok(!/tapAnywhereTurnsPage/.test(pager), '不再手写 tap 翻页');
 ok(/paragraphSpacing: CGFloat\(paraSpacing\)/.test(web), '段落间空行真进排版');
 
-console.log('\n── 踩过的坑不能再踩 ──');
-// 整个 HStack 塞一个表达式里 → 编译器类型检查超时
-ok(/private var paraAlignRow: some View/.test(web), '段落对齐行拆成独立子视图');
-ok(/private var baselineScopeRow: some View/.test(web), '底线范围行拆成独立子视图');
-ok(/private var pageTurnRow: some View/.test(web), '翻页方式在独立视图里（底并进 upperPanelCard）');
-// 光拆成子视图还不够 —— 按钮本体（Button + label + 嵌套 background + 三元）
-// 也必须抽成独立 View，否则类型检查器照样超时
-ok(/private struct ChipButton: View/.test(web), '小胶囊按钮抽成独立 View（防类型检查超时）');
-// ⭐⭐⭐ **用字符串查找**（ChipButton 后来加了 theme 参数 ⇒ 正则会漏判）⭐⭐⭐
-ok(web.includes('ChipButton(title: a.name, selected: paraAlign == a.raw'),
-   '段落对齐用 ChipButton');
-ok(web.includes('ChipButton(title: sc.name, selected: baselineScope == sc.raw'),
-   '底线范围用 ChipButton');
-ok(!/Button \{ paraAlign = a\.raw \} label: \{[\s\S]{0,200}?RoundedRectangle/.test(web),
-   '段落对齐那一行里没有内联的复杂按钮');
-// ForEach 集合重载挑不中 → 编译器只剩 Binding<C> 可选
-// 根因是类型：enum 靠 raw value 隐式带来的 Hashable，
-// 会让 Identifiable 的 `where Self: Hashable` 扩展多出一个 id 候选 → ID 推导歧义
-ok(/struct ReaderParaAlign: Identifiable, Hashable/.test(layout),
-   'ReaderParaAlign 做成 struct + 显式 Hashable（跟能编译的 ReaderFont 一致）');
-ok(!/enum ReaderParaAlign/.test(layout), 'ReaderParaAlign 别做成 enum');
-ok(/struct ReaderBaselineScope: Identifiable, Hashable/.test(layout), 'ReaderBaselineScope 也是 struct');
-ok(/ForEach\(ReaderParaAlign\.all\) \{ a in/.test(web), '段落对齐用 ReaderParaAlign.all');
-ok(/ForEach\(ReaderBaselineScope\.all\) \{ sc in/.test(web), '底线范围用 ReaderBaselineScope.all');
-ok(!/ReaderParaAlign\.allCases/.test(web), '别用 allCases（只是 Collection，ForEach 挑不中）');
-ok(!/ReaderParaAlign\.cases/.test(web), '别用 .cases（改成 .all 对齐其它枚举）');
+console.log('\n── 踩过的坑不能再踩（**指向新面板**）──');
+// ⭐⭐⭐ 2026-11-25：栖阅那版面板（磁贴 + ChipButton + 三行内联 HStack）**全删了**
+//   ⇒ 「类型检查超时」这个坑要靠**新的组件拆分**来躲 ⇒ 断言跟着新实现走 ⭐⭐⭐
+const settingsCode = stripComments(settingsScreens);
+const panelCode = stripComments(stylePanel);
+ok(/private var alignRow: some View/.test(settingsCode), '段落对齐行拆成独立子视图');
+ok(/private var scopeRow: some View/.test(settingsCode), '底线范围行拆成独立子视图');
+ok(/private var modeRow: some View/.test(panelCode), '翻页方式在独立视图里（柴阅面板）');
+// 光拆成子视图还不够 —— 按钮本体也必须抽成独立 View，否则类型检查器照样超时
+ok(/struct ReaderSpacingPicker: View/.test(panelCode), '行距三档抽成独立 View（防类型检查超时）');
+ok(/struct ReaderFontPicker: View/.test(panelCode), '字体分段抽成独立 View');
+ok(/struct ReaderThemeStrip: View/.test(panelCode), '主题条抽成独立 View');
+ok(/struct ReaderFontSizeStepper: View/.test(panelCode), '字号步进抽成独立 View');
+ok(/struct ReaderGlassSlider: View/.test(panelCode), '细轨滑块抽成独立 View');
+ok(/ForEach\(ReaderParaAlign\.all, id: \\.raw\)/.test(settingsCode), '段落对齐用 ReaderParaAlign.all');
+ok(/ForEach\(ReaderBaselineScope\.all, id: \\.raw\)/.test(settingsCode), '底线范围用 ReaderBaselineScope.all');
+ok(!/ReaderParaAlign\.allCases/.test(settingsCode + panelCode), '别用 allCases（只是 Collection，ForEach 挑不中）');
+ok(!/ReaderParaAlign\.cases/.test(settingsCode + panelCode), '别用 .cases（改成 .all 对齐其它枚举）');
 // 所有 ForEach 都得是「Identifiable struct 数组 + 无 id:」这个已验证模式
-const foreachLines = web.split('\n').filter(l => /ForEach\(/.test(l) && !/^\s*\/\//.test(l));
+const foreachAll = (settingsCode + '\n' + panelCode).split('\n').filter(l => /ForEach\(/.test(l));
 {
-  // 规则要分清：**Identifiable 元素**的 ForEach 不写 id:（已验证过的模式）；
-  // **元组 / 切片**不是 Identifiable，必须显式给 id:。
-  // 这条门禁原来一刀切，把合法的元组 ForEach 也判红了。
-  const needsId = foreachLines.filter(l => /id:/.test(l));
-  ok(needsId.every(l => /Array\(Self\.tiles\[/.test(l)),
-     '带 id: 的 ForEach 只有磁贴那个（Self.tiles 是元组数组，元组不是 Identifiable）',
+  const needsId = foreachAll.filter(l => /id:/.test(l));
+  // 带 id: 的合法写法只有三种：
+  //   ① 枚举按 raw 取（enum 不是 Identifiable）
+  //   ② Array(x.enumerated()) + id: \.element.id（**enumerated() 必须配 element.id 才成立**）
+  //   ③ 0..<n + id: \.self
+  ok(needsId.every(l => /id: \\.raw/.test(l)
+                       || /id: \\.element\.id/.test(l)
+                       || /id: \\.self/.test(l)),
+     '带 id: 的 ForEach 只有「枚举按 raw / enumerated+element.id / 0..<n+self」三种合法写法',
      needsId.join(' | '));
-  ok(foreachLines.filter(l => !/id:/.test(l)).every(l => !/Array\(/.test(l)),
+  ok(foreachAll.filter(l => !/id:/.test(l)).every(l => !/Array\(/.test(l)),
      'Identifiable 数组的 ForEach 仍然不写 id:');
+  const enumLines = (settingsCode + '\n' + panelCode).split('\n').filter(l => /enumerated\(\)/.test(l));
+  ok(enumLines.every(l => /id: \\.element\.id/.test(l)),
+     'enumerated() 一定配 id: \\.element.id（单独用会推不出 ID）',
+     enumLines.join(' | '));
 }
-// ⚠️ 注释会被 stripComments 剥掉，所以只能断言**代码本身**：
-//    磁贴那行确实是 Array(Self.tiles[...]) + id: \.name 这个组合。
-ok(/ForEach\(Array\(Self\.tiles\[from\.\.<min\(from \+ 4, Self\.tiles\.count\)\]\), id: \\\.name\)/.test(web),
-   '磁贴 ForEach 是「元组切片 + 显式 id:」这个组合（源码注释已说明原因）');
-ok(!/enumerated\(\)/.test(web), '没有 enumerated() 元组（做不了 key path）');
-ok(/private static let tiles: \[\(name: String, subtitle: String, icon: String, ready: Bool\)\]/.test(web),
-   '磁贴是一张 8 格的数据表（文案照栖阅截图逐格抄的）');
-ok(/private func tileRow\(_ from: Int\)/.test(web) &&
-   /Self\.tiles\[from\.\.<min\(from \+ 4/.test(web), '按 4 + 4 两行渲染');
-ok(/ForEach\(Array\(tiles\.enumerated\(\)\)/.test(web) === false, '没有 enumerated() 元组 ForEach');
+// ⭐⭐⭐ **栖阅那 8 个磁贴必须没了**（用户原话：「跟柴阅一模一样」）⭐⭐⭐
+ok(!/private static let tiles/.test(web), '栖阅那 8 格磁贴表已经删掉');
+ok(!/featureGrid|tileRow|featureTileLabel/.test(web), '磁贴渲染代码已经删掉');
+ok(!/private struct ChipButton: View/.test(web), '磁贴用的小胶囊按钮（栖阅规格）已经删掉');
 
 // iOS SDK 里没有 CTLineGetOffsetForIndex
 // 只查**调用**（注释里提一嘴名字不算）
@@ -515,21 +514,17 @@ ok(/preloaded: Set\(pageCtl\.pager\.preloadedChapters\(\)\)/.test(web),
 // 把章号**回声**给 session，而 wire() 里那两个回调直接写 self.index。
 // WebView 的 postMessage 是**异步**的，所以把 index = i 挪到
 // host.apply 之后也挡不住 —— 只能让原生分页接管时禁掉回声。
-ok(/var pagingOwnsIndex: Bool/.test(sess), 'session 有 pagingOwnsIndex（章号归属标记）');
-ok(/guard !self\.pagingOwnsIndex else \{ return \}/.test(sess),
-   'pagingOwnsIndex 时 host 的 progress/visibleChapter 回声被丢弃');
-ok(/guard !self\.pagingOwnsIndex else \{ return \}/.test(sess),
-   '两个 host 回声回调都加了守卫（onProgress + onVisibleChapter）');
-{
-  const onProg = sess.slice(sess.indexOf('host.onProgress'));
-  const onVis  = sess.slice(sess.indexOf('host.onVisibleChapter'));
-  const cutP = onProg.slice(0, onProg.indexOf('host.onRequestChapter'));
-  ok(/pagingOwnsIndex/.test(cutP), 'onProgress 里有守卫');
-  ok(/pagingOwnsIndex/.test(onVis.slice(0, 400)), 'onVisibleChapter 里有守卫');
-}
-ok(/func syncPagingOwnership\(\)/.test(web), '视图有 syncPagingOwnership');
-ok(/session\.pagingOwnsIndex = want/.test(web) && /let want = useNativePaging/.test(web),
-   '章号归属跟着翻页模式走（滚动模式要把控制权还给 WebView，否则滑块会把章号冻住）');
+// ⭐⭐⭐⭐⭐ **2026-11-25：WebView 阅读器删了 ⇒ 「回声」这个病根整个不存在了** ⭐⭐⭐⭐⭐
+//   原来：ReaderHost 在后台自己跑章节逻辑，往回发章号 ⇒ 把 session.index 覆盖掉
+//        （症状：底栏永远停在第一章）
+//   现在：**没有第二个写者** ⇒ 章号只有 Swift 侧 ⇒ 那个 bug 从根上没了
+ok(/var pagingOwnsIndex: Bool = true/.test(sess),
+   '章号归属恒为 true（没有第二个写者了）');
+const sessCode = stripComments(sess);
+ok(!/host\.onProgress|host\.onVisibleChapter|host\.onRequestChapter/.test(sessCode),
+   'session 不再挂任何 WebView 回声回调');
+ok(!/host\.apply\(|host\.update\(|host\.fail\(/.test(sessCode),
+   'session 不再往 WebView 喂章节 / 报错');
 ok(/private func saveProgressNow\(\)/.test(sess), '分页模式下自己存阅读进度');
 {
   const fp = sess.slice(sess.indexOf('func followIndex'));
@@ -551,7 +546,7 @@ ok(/import SwiftUI/.test(paginator), 'ReaderPaginator.swift 要 import SwiftUI�
 ok(!/Color\(uiColor: config\.backgroundColor\)/.test(web + pager + pageVC),
    '页面已是 UIViewController，不需要把 UIColor 包成 Color');
 ok(!/\.font\(config\.resolvedFont\)/.test(web + pager + pageVC), '.font() 不再直接吃 UIFont');
-ok(!/window\.QiReader\.enable/.test(host), '别再把分页方法打到 window.QiReader 上');
+ok(!/window\.QiReader\.enable/.test(web + sess + pager), '别再把分页方法打到 window.QiReader 上');
 ok(/addTextContainer/.test(paginator), '分页靠连续 addTextContainer（UIKit 自动接着往下排）');
 ok(/lineFragmentPadding = 0/.test(paginator),
    '清掉 lineFragmentPadding（默认左右各 5pt，不清每页都会少排几个字）');

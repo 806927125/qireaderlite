@@ -3,11 +3,10 @@ import Foundation
 /// 阅读会话：把「界面 ↔ 引擎 ↔ 阅读进度」三件事的接线收在一处。
 ///
 /// 为什么要单独一个类：SwiftUI 的 View 是 struct，**不能被 [weak self] 捕获**
-/// （C 里就是在这儿编译失败的）。而且闭包被 ReaderHost（类）长期持有，
+/// （C 里就是在这儿编译失败的）。而且闭包会被长期持有，
 /// 直接捕获 View 会连带把 @State 绑定一起拖住 —— 收进类里最干净。
 @MainActor
 final class ReaderSession: ObservableObject {
-    let host = ReaderHost()
     let book: Book
     /// 章节表。**可替换** —— 目录面板那个「刷新目录」按钮要能换掉整张表。
     private(set) var flat: [Chapter]
@@ -22,8 +21,7 @@ final class ReaderSession: ObservableObject {
     var onPageEdge: ((String) -> Void)?
 
     /// 把封面抓成 data URL 喂给界面当背景图。
-    /// 栖阅阅读页那个「封面虚化铺底」就是 --reader-background-image，
-    /// 走的是原生下载再转 base64（WebView 里直接 fetch 会被 CORS 挡）。
+    /// ⚠️ 栖阅那套 WebView 阅读器拆掉后，这条路只剩「原生滚动模式的封面铺底」在用。
     func coverDataURL(_ urlString: String) async -> String? {
         let raw = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return nil }
@@ -55,27 +53,16 @@ final class ReaderSession: ObservableObject {
     private(set) var followReceived: Int = 0
     private(set) var lastFollowIndex: Int = -1
 
-    /// 原生分页是否已经接管章号。
+    /// 章号是否由 Swift 侧独占。
     ///
-    /// ## 这是「底栏永远停在第一章」的根因
-    ///
-    /// `ReaderHost` 是栖阅那套 WebView 阅读器，它在后台**自己也在跑章节逻辑**，
-    /// 会通过 `progress` / `visibleChapter` 消息把章号**回声**给 session。
-    /// 而 `wire()` 里那两个回调是直接写 `self.index` 的：
-    ///
-    ///     host.onProgress = { self.index = i }        // ← 回声
-    ///     host.onVisibleChapter = { self.index = i }  // ← 回声
-    ///
-    /// 原生分页模式下 WebView 只是个**影子**（真机自检实测：
-    /// `followIndex 收到 10 次、最后收到第 8 章`，但 `session.index == 0`）——
-    /// 每设好一次就被回声覆盖一次。WebView 消息是**异步** postMessage，
-    /// 所以把 `index = i` 挪到 `host.apply` 之后也挡不住。
-    ///
-    /// 修法：**原生分页一旦接管，章号就只有 Swift 侧一个写者**，
-    /// host 的回声直接丢弃（进度改由 `followIndex` / `jump` 自己存）。
-    var pagingOwnsIndex: Bool = false
-    @Published var hostReady = false
-    /// 当前章正文（原生分页模式自己排版用；webview 模式不用）
+    /// ## 历史（保留当教训）
+    /// 原来栖阅那套 WebView 阅读器（`ReaderHost`）在后台**自己也在跑章节逻辑**，
+    /// 会通过 `progress` / `visibleChapter` 消息把章号**回声**给 session，
+    /// 把 `self.index` 覆盖掉 —— 症状是「底栏永远停在第一章」。
+    /// 现在 `ReaderHost` 整套（reader.html/js/css + WKWebView）**已经拆掉** ⇒
+    /// ⇒ 再没有第二个写者 ⇒ 章号只有 Swift 侧一个写者。
+    var pagingOwnsIndex: Bool = true
+    /// 当前章正文（原生分页自己排版用）
     @Published var chapterText: String = ""
     /// 当前章标题
     @Published var chapterTitle: String = ""
@@ -86,63 +73,16 @@ final class ReaderSession: ObservableObject {
 
         let startIdx = self.flat.firstIndex(where: { $0.url == start.url }) ?? 0
         self.index = max(0, min(startIdx, max(self.flat.count - 1, 0)))
-
-        wire()
     }
 
     var current: Chapter? {
         flat.indices.contains(index) ? flat[index] : flat.first
     }
 
-    private func wire() {
-        host.onReady = { [weak self] in self?.hostReady = true }
-
-        host.onRequestChapter = { [weak self] i in
-            await self?.load(index: i)
-        }
-
-        host.onProgress = { [weak self] i, ratio in
-            guard let self, self.flat.indices.contains(i) else { return }
-            // 原生分页接管后，WebView 的回声不再有权改章号
-            guard !self.pagingOwnsIndex else { return }
-            self.index = i
-            self.library?.saveProgress(bookID: self.book.id,
-                                      chapterIndex: i,
-                                      ratio: ratio,
-                                      chapterTitle: self.flat[i].title)
-        }
-
-        host.onVisibleChapter = { [weak self] i in
-            guard let self, self.flat.indices.contains(i) else { return }
-            guard !self.pagingOwnsIndex else { return }
-            self.index = i
-        }
-
-        host.onTap = { [weak self] in
-            guard let self, let cb = self.onTap else { return }
-            cb()
-        }
-
-        host.onDebugLog = { [weak self] ev, payload in
-            guard let self, self.errorText.isEmpty else { return }
-            if ev.contains("error") || ev.contains("fail") {
-                self.errorText = String(describing: payload["error"] ?? ev)
-            }
-        }
-    }
-
-    /// 界面 ready 之后：喂设置 + 初始章节，然后拉当前章
-    func attach(sources: SourceStore, library: LibraryStore) {
-        self.sources = sources
-        self.library = library
-    }
-
-    func start(settings: [String: Any]) async {
-        for _ in 0..<60 where !hostReady {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
-        host.setSettings(settings)
-        host.apply(chapters: flat, at: index, progress: library?.progress(bookID: book.id))
+    /// 界面 ready 之后：拉当前章。
+    /// ⚠️ 原来这里会等 `hostReady`（最多 6 秒）并把 settings 喂给栖阅的 WebView ——
+    ///   那套 WebView 阅读器**已经拆掉** ⇒ 不再有开场等待，也不再有幽灵回声。
+    func start() async {
         await load(index: index)
     }
 
@@ -163,7 +103,6 @@ final class ReaderSession: ObservableObject {
         guard flat.indices.contains(i) else { return }
         index = i
         saveProgressNow()
-        host.apply(chapters: flat, at: i, progress: nil)
         Task { await load(index: i) }
     }
 
@@ -178,12 +117,11 @@ final class ReaderSession: ObservableObject {
         guard flat.indices.contains(i) else { return }
         index = i
         saveProgressNow()
-        host.apply(chapters: flat, at: i, progress: nil)
         Task { await load(index: i) }
     }
 
-    /// 原生分页自己存进度 —— 原来这一份挂在 host.onProgress 里，
-    /// 现在那条路在分页模式下被跳过了，不补上就完全不记阅读进度。
+    /// 原生分页自己存进度 —— 原来这一份挂在 `host.onProgress`（WebView 回声）里，
+    /// WebView 拆掉后不补上就完全不记阅读进度。
     private func saveProgressNow() {
         guard flat.indices.contains(index) else { return }
         library?.saveProgress(bookID: book.id,
@@ -241,7 +179,6 @@ final class ReaderSession: ObservableObject {
         }
         flat = usable
         index = max(0, min(index, flat.count - 1))
-        host.apply(chapters: flat, at: index, progress: nil)
         return true
     }
 
@@ -268,15 +205,12 @@ final class ReaderSession: ObservableObject {
             let dto = try await SourceService.shared.content(source: s, chapter: ch, book: book)
             // 用户已经翻到别的章了，这份结果作废
             guard self.index == i else { return }
-            host.update(index: i, text: dto.content,
-                        title: dto.title.isEmpty ? ch.title : dto.title)
             // 原生分页模式要用纯文本自己排版
             chapterText = dto.content
             chapterTitle = dto.title.isEmpty ? ch.title : dto.title
             errorText = ""
         } catch {
             guard self.index == i else { return }
-            host.fail(index: i, message: error.localizedDescription)
             errorText = error.localizedDescription
             // 换章失败必须让用户看见。不给正文就是「静默停在上一章」，
             // 跟「翻页坏了」在用户眼里一模一样。

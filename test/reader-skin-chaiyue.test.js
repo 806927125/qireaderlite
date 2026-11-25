@@ -42,8 +42,8 @@ function stripComments(src) {
     for (const hex of ['0xB23A2C', '0x1F2430', '0xE9D9A6', '0xE8A35C']) {
       ok(s.includes(hex), `① 强调色含柴阅原值 ${hex}`);
     }
-    // 章节号装饰的三种样式
-    for (const k of ['case seal', 'case outlineBig', 'case centeredBig']) {
+    // 章节号装饰的四种样式（柴阅：宣纸=朱印 / 晴窗=描边大号 / 星夜=居中小字 / 烛灯=标题下纹样）
+    for (const k of ['case seal', 'case outlineBig', 'case centeredSmall', 'case ornament']) {
       ok(s.includes(k), `① 章节号装饰有 ${k}`);
     }
     // 进度装饰
@@ -56,7 +56,8 @@ function stripComments(src) {
 
 // ── ② ⭐⭐⭐ 16 套配色**每套都要有皮肤**（两层分开：颜色 vs 版式）⭐⭐⭐
 {
-  const s = read('Features/Reader/ReaderView.swift');
+  // ⚠️ 2026-11-25：`ReaderView.swift`（没人用的旧阅读器）已删 ⇒ 配色搬到 ReaderTheme.swift
+  const s = read('Features/Reader/ReaderTheme.swift');
   const themes = s.match(/static let \w+ = ReaderTheme\(/g) || [];
   ok(themes.length >= 16, `② 共 ${themes.length} 套配色`);
   const skins = s.match(/skin: \.\w+/g) || [];
@@ -88,8 +89,10 @@ function stripComments(src) {
   ok(/chrome\.header/.test(vc) && /chrome\.footerLeft/.test(vc) && /chrome\.footerRight/.test(vc),
      '③ 页眉 + 页脚左右两段都画');
   ok(/drawChapterNumber/.test(vc), '③ 画布会画章节号装饰');
-  ok(/textOrigin = CGPoint\(x: 0, y: chrome\.headerHeight\)/.test(vc),
+  ok(/textOrigin = CGPoint\(x: chrome\.horizontalMargin, y: chrome\.headerHeight\)/.test(vc),
      '③ 正文整体下移一条页眉带（给页眉让位）');
+  ok(/chrome\.horizontalMargin/.test(vc),
+     '③⭐⭐⭐ 正文**左边距生效**（以前 x=0 ⇒ 文字顶到屏幕左边缘、整块偏左 22pt）');
 }
 
 // ── ④ ⭐⭐⭐ 排版默认值对齐柴阅 ⭐⭐⭐

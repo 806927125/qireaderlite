@@ -58,19 +58,22 @@ enum ReaderSkin: String, CaseIterable, Identifiable, Sendable {
 
     /// ⭐⭐⭐ 章节号装饰的样式 ⭐⭐⭐
     enum ChapterNumberStyle {
-        /// 宣纸：右上角朱印（方框 + 红字）
+        /// 宣纸：右上角**朱印**（40×40 实心朱红方块 + 内框 + 两行「第N章」+ 旋转 -4°）
         case seal
-        /// 晴窗：左上角描边大号章号（64pt ultraLight）
+        /// 晴窗：左上角**描边大号**章号（64pt ultraLight 的「01」）
         case outlineBig
-        /// 星夜 / 烛灯：居中大号章号
-        case centeredBig
+        /// 星夜：标题上方**居中小字**「第 N 章」（11pt medium，字距 5）
+        case centeredSmall
+        /// 烛灯：标题**下方**的装饰纹样（柴阅 zhu 的做法）
+        case ornament
     }
 
     var chapterNumberStyle: ChapterNumberStyle {
         switch self {
         case .xuan: return .seal
         case .qing: return .outlineBig
-        case .xing, .zhu: return .centeredBig
+        case .xing: return .centeredSmall
+        case .zhu:  return .ornament
         }
     }
 
@@ -170,4 +173,8 @@ struct ReaderPageChrome {
     var headerHeight: CGFloat = 18
     /// 页脚带高度 ⭐⭐⭐
     var footerHeight: CGFloat = 16
+    /// ⭐⭐⭐ **左右边距**（柴阅的页 = 左右各留 26 ⇒ 页眉页脚也跟着缩进来）
+    ///   ⚠️ 以前**正文左边距根本没生效**：页容器宽度是对的（viewport-44），
+    ///   但绘制原点 x=0 ⇒ 文字**顶到屏幕左边缘**、右边却空 44pt ⇒ 整块偏左 22pt ⭐⭐⭐
+    var horizontalMargin: CGFloat = 22
 }
