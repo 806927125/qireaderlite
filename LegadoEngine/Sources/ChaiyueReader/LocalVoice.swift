@@ -19,6 +19,7 @@
 //   · 行为差异：**音质从「神经网络」降为「系统合成」**；**不再需要下载/加载 ONNX 模型**（⇒ 也就不会崩）⭐⭐⭐
 //
 // ⚠️ **许可**：柴阅（github.com/Lincb522/Chaiyue）= **GPL-3.0** ⇒ 本文件是柴阅源码的改造版 ⭐⭐⭐
+#if canImport(SwiftUI)
 import AVFoundation
 import Foundation
 import Observation
