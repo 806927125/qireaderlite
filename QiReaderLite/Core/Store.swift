@@ -156,16 +156,6 @@ final class LibraryStore: ObservableObject {
         return it
     }
 
-    /// ⭐⭐⭐ **清空全部缓存**（柴阅的 CacheScreen 有这按钮，轻阅补上）
-    func clearAll() {
-        io.async { [dir] in
-            let files = (try? FileManager.default.contentsOfDirectory(at: dir,
-                                                                     includingPropertiesForKeys: nil)) ?? []
-            for f in files { try? FileManager.default.removeItem(at: f) }
-            self.lock.lock(); self.index.removeAll(); self.lock.unlock()
-        }
-    }
-
     func remove(_ bookId: String) {
         items.removeAll { $0.book.id == bookId }
         ContentCache.shared.remove(bookId)
@@ -221,6 +211,16 @@ final class ContentCache {
             guard let d = text.data(using: .utf8) else { return }
             try? d.write(to: p, options: .atomic)
             self.lock.lock(); self.index[url] = p.path; self.lock.unlock()
+        }
+    }
+
+    /// ⭐⭐⭐ **清空全部缓存**（柴阅的 CacheScreen 有这按钮，轻阅补上）
+    func clearAll() {
+        io.async { [dir] in
+            let files = (try? FileManager.default.contentsOfDirectory(at: dir,
+                                                                     includingPropertiesForKeys: nil)) ?? []
+            for f in files { try? FileManager.default.removeItem(at: f) }
+            self.lock.lock(); self.index.removeAll(); self.lock.unlock()
         }
     }
 

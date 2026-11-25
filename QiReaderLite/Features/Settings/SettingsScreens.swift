@@ -300,8 +300,9 @@ struct ReaderThemesScreen: View {
         SettingsScreenScaffold(title: "阅读主题",
                                subtitle: "配色管颜色，皮肤管字体与章节号装饰 —— 每套配色自带一个皮肤") {
             VStack(spacing: 0) {
-                ForEach(Array(ReaderTheme.all.enumerated()), id: \.element.id) { idx, t in
-                    if idx > 0 {
+                // ⚠️ 别用 `enumerated()`：元素类型变成元组 ⇒ `id:` 推不出 ID ⇒ 编译错 ⭐⭐⭐
+                ForEach(ReaderTheme.all) { t in
+                    if t.key != ReaderTheme.all.first?.key {
                         Rectangle()
                             .fill(Theme.ink.opacity(0.07))
                             .frame(height: 1)
@@ -354,8 +355,8 @@ struct FontsScreen: View {
     var body: some View {
         SettingsScreenScaffold(title: "字体") {
             VStack(spacing: 0) {
-                ForEach(Array(ReaderFont.all.enumerated()), id: \.element.id) { idx, f in
-                    if idx > 0 {
+                ForEach(ReaderFont.all) { f in
+                    if f.raw != ReaderFont.all.first?.raw {
                         Rectangle()
                             .fill(Theme.ink.opacity(0.07))
                             .frame(height: 1)
@@ -372,13 +373,13 @@ struct FontsScreen: View {
     private func fontRow(_ f: ReaderFont) -> some View {
         HStack(spacing: 12) {
             Text("永")
-                .font(ReaderStylePanel.fontFor(f, size: 20))
+                .font(ReaderFontPicker.fontFor(f, size: 20))
                 .foregroundStyle(Theme.ink)
                 .frame(width: 34, height: 42)
                 .background(Theme.ink.opacity(0.06),
                             in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(f.name)
-                .font(ReaderStylePanel.fontFor(f, size: 15))
+                .font(ReaderFontPicker.fontFor(f, size: 15))
                 .foregroundStyle(Theme.ink)
             Spacer()
             if fontKey == f.raw {
