@@ -79,6 +79,12 @@ final class ReaderSession: ObservableObject {
         flat.indices.contains(index) ? flat[index] : flat.first
     }
 
+    /// 把 store 挂进来（SwiftUI 的 EnvironmentObject 在 init 里拿不到 ⇒ .task 里再挂）
+    func attach(sources: SourceStore, library: LibraryStore) {
+        self.sources = sources
+        self.library = library
+    }
+
     /// 界面 ready 之后：拉当前章。
     /// ⚠️ 原来这里会等 `hostReady`（最多 6 秒）并把 settings 喂给栖阅的 WebView ——
     ///   那套 WebView 阅读器**已经拆掉** ⇒ 不再有开场等待，也不再有幽灵回声。

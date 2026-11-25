@@ -124,6 +124,7 @@ declare -a GATES=(
   "explore-paging-glass:test/explore-paging-glass.test.js"
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"
+  "reader-api-surface:test/reader-api-surface.test.js"
   "reader-native-paging:test/reader-native-paging.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
   "paging-algorithm:test/paging-algorithm.test.js"
