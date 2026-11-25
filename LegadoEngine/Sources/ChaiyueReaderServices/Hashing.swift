@@ -1,4 +1,11 @@
+// ⭐⭐⭐⭐⭐ **平台条件编译补丁**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
+//   · Linux 沙盒没有 CryptoKit ⇒ 改用 swift-crypto 的 `Crypto`（同名 API）⭐⭐⭐
+//   · 沿用本仓库 `ChaiyueEngine/Crypto/Digests.swift` 的既有做法 ⭐⭐⭐
+#if canImport(Crypto)
+import Crypto
+#elseif canImport(CryptoKit)
 import CryptoKit
+#endif
 import Foundation
 
 enum Hashing {
