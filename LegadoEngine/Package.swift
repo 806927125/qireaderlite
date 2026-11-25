@@ -94,7 +94,14 @@ let package = Package(
             name: "ChaiyueReaderKit",
             dependencies: ["ChaiyueModels"],
             path: "Sources/ChaiyueReaderKit",
-            swiftSettings: [.swiftLanguageMode(.v6)],
+            // ⭐⭐⭐⭐⭐ **照搬柴阅 App target 的编译设置**（`App/project.yml`）：
+            //   SWIFT_VERSION 6.0 + SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+            //   + SWIFT_APPROACHABLE_CONCURRENCY: YES ⭐⭐⭐
+            //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
+            //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
+            swiftSettings: [.swiftLanguageMode(.v6),
+                          .enableUpcomingFeature("DefaultActorIsolation"),
+                          .enableUpcomingFeature("ApproachableConcurrency")],
         ),
         // ⭐⭐⭐⭐⭐ ⑤ 柴阅的【阅读服务子集】（ReaderServices 的 Reading/Content/Library/Sources/Speech/Support）⭐⭐⭐
         .target(
@@ -106,7 +113,14 @@ let package = Package(
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
             path: "Sources/ChaiyueReaderServices",
-            swiftSettings: [.swiftLanguageMode(.v6)],
+            // ⭐⭐⭐⭐⭐ **照搬柴阅 App target 的编译设置**（`App/project.yml`）：
+            //   SWIFT_VERSION 6.0 + SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+            //   + SWIFT_APPROACHABLE_CONCURRENCY: YES ⭐⭐⭐
+            //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
+            //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
+            swiftSettings: [.swiftLanguageMode(.v6),
+                          .enableUpcomingFeature("DefaultActorIsolation"),
+                          .enableUpcomingFeature("ApproachableConcurrency")],
         ),
         // ⭐⭐⭐⭐⭐ ⑥ 柴阅的【阅读界面本体】（App/Sources/Reader）⭐⭐⭐
         .target(
@@ -119,7 +133,14 @@ let package = Package(
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],
             path: "Sources/ChaiyueReader",
-            swiftSettings: [.swiftLanguageMode(.v6)],
+            // ⭐⭐⭐⭐⭐ **照搬柴阅 App target 的编译设置**（`App/project.yml`）：
+            //   SWIFT_VERSION 6.0 + SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+            //   + SWIFT_APPROACHABLE_CONCURRENCY: YES ⭐⭐⭐
+            //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
+            //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
+            swiftSettings: [.swiftLanguageMode(.v6),
+                          .enableUpcomingFeature("DefaultActorIsolation"),
+                          .enableUpcomingFeature("ApproachableConcurrency")],
         ),
         // ⚠️⚠️ **旧的 `LegadoEngineTests` 已删**（2026-11-21 移植柴阅）⭐⭐⭐
         //   它测的是**我们自己那套已被替换掉的引擎** ⇒ 符号全没了 ⇒ 测不了 ⭐⭐⭐
