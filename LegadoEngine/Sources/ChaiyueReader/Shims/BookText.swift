@@ -61,3 +61,27 @@ private extension Character {
         }
     }
 }
+
+enum SourceName {
+    /// 完整书源名，只去掉 emoji（列表、详情等需要区分版本的地方）
+    static func full(_ name: String) -> String {
+        let text = name.withoutEmoji
+        return text.isEmpty ? name : text
+    }
+
+    static func display(_ name: String) -> String {
+        var text = name.withoutEmoji
+        for (open, close) in [("(", ")"), ("（", "）"), ("[", "]"), ("【", "】"), ("《", "》"), ("<", ">")] {
+            while let start = text.range(of: open),
+                  let end = text.range(of: close, range: start.upperBound..<text.endIndex) {
+                text.removeSubrange(start.lowerBound..<end.upperBound)
+            }
+        }
+        text = text.replacingOccurrences(of: #"[vV]?\d+(\.\d+)+"#, with: "", options: .regularExpression)
+        text = String(text.unicodeScalars.filter { scalar in
+            !(scalar.properties.isEmojiPresentation || scalar.properties.generalCategory == .otherSymbol)
+        }.map(Character.init))
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return text.isEmpty ? name : text
+    }
+}

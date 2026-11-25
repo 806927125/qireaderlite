@@ -126,4 +126,127 @@ final class SourcePresenter: SourceInteractionPresenter {
         return top
     }
 }
+
+private final class BrowserCompletion: NSObject, UIAdaptivePresentationControllerDelegate {
+    nonisolated(unsafe) static var key: UInt8 = 0
+    private var completion: (@MainActor (BrowserResult?) -> Void)?
+
+    init(_ completion: @escaping @MainActor (BrowserResult?) -> Void) {
+        self.completion = completion
+    }
+
+    func call(_ result: BrowserResult?) {
+        let pending = completion
+        completion = nil
+        pending?(result)
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        call(nil)
+    }
+}
+
+private struct BrowserScreen: View {
+    let request: BrowserRequest
+    let onClose: (BrowserResult?) -> Void
+    @State private var page = WebPageModel()
+    @State private var closing = false
+
+    var body: some View {
+        NavigationStack {
+            WebViewContainer(webView: page.webView)
+                .ignoresSafeArea(edges: .bottom)
+                .overlay(alignment: .top) {
+                    if page.progress < 1 {
+                        ProgressView(value: page.progress)
+                            .progressViewStyle(.linear)
+                            .tint(Tok.accent)
+                            .frame(height: 2)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .navigationTitle(page.title.isEmpty ? request.title : page.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { close() }.disabled(closing)
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Menu {
+                            Button("刷新", icon: "arrow.clockwise") { page.webView.reload() }
+                            Button("后退", icon: "chevron.backward") { page.webView.goBack() }
+                            if let current = page.webView.url {
+                                Button("复制链接", icon: "link") { UIPasteboard.general.url = current }
+                                Button("在 Safari 中打开", icon: "safari") { UIApplication.shared.open(current) }
+                            }
+                        } label: {
+                            Image(icon: "ellipsis")
+                        }
+                    }
+                }
+        }
+        .task { page.load(request) }
+    }
+
+    private func close() {
+        closing = true
+        Task {
+            let body = (try? await page.webView.evaluateJavaScript("document.documentElement.outerHTML")) as? String ?? ""
+            onClose(BrowserResult(url: page.webView.url?.absoluteString ?? request.url, body: body))
+        }
+    }
+}
+
+private struct CaptchaScreen: View {
+    let imageURL: String
+    let loadImage: (String) async -> UIImage?
+    let onFinish: (String?) -> Void
+    @State private var code = ""
+    @State private var image: UIImage?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("输入验证码").font(.serif(22)).padding(.top, 24)
+            Group {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFit()
+                } else {
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: 220, maxHeight: 80)
+            .onTapGesture { Task { await reload() } }
+            TextField("验证码", text: $code)
+                .font(.ui(18))
+                .multilineTextAlignment(.center)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($focused)
+                .frame(height: 48)
+                .background(Tok.fill, in: Capsule())
+                .padding(.horizontal, 40)
+                .onSubmit { onFinish(code) }
+            HStack(spacing: 12) {
+                Button("取消") { onFinish(nil) }
+                    .font(.ui(16, .medium))
+                    .foregroundStyle(Tok.fg2)
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(Tok.fill, in: Capsule())
+                AccentButton(title: "确定", icon: nil, wide: true) { onFinish(code) }
+                    .disabled(code.isEmpty)
+            }
+            .padding(.horizontal, 24)
+            Spacer()
+        }
+        .task {
+            focused = true
+            await reload()
+        }
+    }
+
+    private func reload() async {
+        image = await loadImage(imageURL)
+    }
+}
 #endif

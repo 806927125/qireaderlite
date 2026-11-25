@@ -88,4 +88,9 @@ struct Hairline: View {
         .frame(height: height)
     }
 }
+
+extension EnvironmentValues {
+    /// 内容位于玻璃弹层上：卡片、行与图标改用玻璃色调
+    @Entry var onGlass = false
+}
 #endif

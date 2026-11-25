@@ -144,6 +144,11 @@ final class ImagePipeline {
     }()
 }
 
+private final class PaletteBox {
+    let colors: [Color]
+    init(colors: [Color]) { self.colors = colors }
+}
+
 struct GrainOverlay: View {
     var opacity: Double = 0.28
     var blend: BlendMode = .overlay

@@ -283,4 +283,21 @@ struct TxtSplitSheet: View {
         }
     }
 }
+
+private struct DecodedText {
+    var charset: String
+    var text: String
+}
+
+private struct PreviewKey: Hashable {
+    var mode: TxtTocMode?
+    var charset: String
+}
+
+private struct SplitPreview: Equatable, Sendable {
+    var count = 0
+    var titles: [String] = []
+    var pattern = ""
+    var error: String?
+}
 #endif
