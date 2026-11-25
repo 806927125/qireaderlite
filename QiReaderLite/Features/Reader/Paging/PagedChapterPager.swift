@@ -64,6 +64,10 @@ final class PagedChapterPager: NSObject {
 
     /// 章总数
     var chapterCount: Int = 0
+    /// ⭐⭐⭐ **书名**（柴阅：页眉首屏显示书名，之后显示章名）⭐⭐⭐
+    var bookTitle: String = ""
+    /// ⭐⭐⭐ **皮肤**（决定章节号装饰与页眉页脚样式）⭐⭐⭐
+    var skin: ReaderSkin = .xuan
     /// 当前章
     private(set) var chapter: Int = 0
 
@@ -348,9 +352,23 @@ final class PagedChapterPager: NSObject {
         //    重新造就等于换了一个排版基准，页边界会和 pageCount 对不上
         //    （以前 oneOffFrame 就是这么错的：算页时带标题、
         //    取页时不带标题，两边差一整个标题的高度）。
+        // ⭐⭐⭐⭐⭐ **页眉页脚 + 章节号装饰**（柴阅同款；进度算法照抄柴阅 `chrome(for:)`）⭐⭐⭐⭐⭐
+        let total = max(1, chapterCount)
+        let pageCount = max(1, r.pageCount)
+        let fraction = (Double(gp.chapter) + Double(gp.page + 1) / Double(pageCount)) / Double(total)
+        let chrome = ReaderPageChrome(
+            header: gp.page == 0 ? bookTitle : r.title,
+            footerLeft: "\(gp.page + 1) / \(pageCount)",
+            footerRight: String(format: "%.1f%%", min(100, fraction * 100)),
+            chapterNumber: gp.chapter + 1,
+            isChapterFirstPage: gp.page == 0,
+            skin: skin,
+            secondary: skin.secondaryColor(base: config.textColor),
+            headerHeight: config.headerHeight,
+            footerHeight: config.footerHeight)
         v.setPage(paginator: r.paginator, page: gp.page, bg: background,
                   baseline: config.showBaseline, baselineColor: config.baselineColor,
-                  scope: config.baselineScope)
+                  scope: config.baselineScope, chrome: chrome)
         return v
     }
 }

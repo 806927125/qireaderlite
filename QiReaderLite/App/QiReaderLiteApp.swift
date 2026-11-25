@@ -34,6 +34,14 @@ struct QiReaderLiteApp: App {
         //   ⇒ 旧默认 45 = 浅色底上的「乳白玻璃」⇒ 换深色底后 38% 白纱会把玻璃糊成一片白 ⭐⭐⭐
         //   ⇒ **只改「等于旧默认」的那一档**（用户自己调过的不动）⇒ 零打扰 ⭐⭐⭐
         if GlassTintStore.percent == 45 { GlassTintStore.percent = 8 }
+        // ⭐⭐⭐⭐⭐ **阅读排版默认值对齐柴阅**（2026-11-25）⭐⭐⭐⭐⭐
+        //   · 字号 18→20 · 行距 8→11（0.55×）· 段距 10→14（0.7×）· 对齐 左→两端
+        //   ⇒ **只改「等于旧默认」的那一档** ⇒ 用户自己调过的不动 ⇒ 零打扰 ⭐⭐⭐
+        let d = UserDefaults.standard
+        if d.object(forKey: "reader.fontSize") == nil || d.double(forKey: "reader.fontSize") == 18 { d.set(20.0, forKey: "reader.fontSize") }
+        if d.object(forKey: "reader.lineSpacing") == nil || d.double(forKey: "reader.lineSpacing") == 8 { d.set(11.0, forKey: "reader.lineSpacing") }
+        if d.object(forKey: "reader.paraSpacing") == nil || d.double(forKey: "reader.paraSpacing") == 10 { d.set(14.0, forKey: "reader.paraSpacing") }
+        if d.object(forKey: "reader.paraAlign") == nil || d.string(forKey: "reader.paraAlign") == "left" { d.set("justify", forKey: "reader.paraAlign") }
         // ⭐⭐⭐ **日志出口挂上**（诊断要能进「引擎日志」面板 ⇒ 用户直接看到）⭐⭐⭐
         //   ⚠️⚠️ 之前这里又赋了一次 sink ⇒ **覆盖掉** `EngineLogBootstrap.install()` 里
         //   那个 `Task { @MainActor in … }` 的版本 ⇒ 后台线程直接改 @Published 状态

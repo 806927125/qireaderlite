@@ -15,8 +15,10 @@ struct ReaderWebView: View {
     @State private var isRefreshingCatalog = false
     let start: Chapter
 
-    @AppStorage("reader.fontSize") private var fontSize: Double = 18
-    @AppStorage("reader.lineSpacing") private var lineSpacing: Double = 8
+    // ⭐⭐⭐⭐⭐ **默认 20（柴阅）** ⭐⭐⭐⭐⭐
+    @AppStorage("reader.fontSize") private var fontSize: Double = 20
+    // ⭐⭐⭐⭐⭐ **默认 11（柴阅 0.55×字号）** ⭐⭐⭐⭐⭐
+    @AppStorage("reader.lineSpacing") private var lineSpacing: Double = 11
     @AppStorage("reader.theme") private var themeKey: String = "paper"
     /// 翻页模式：点正文左/右半边翻章、左右滑动翻章；关掉就是原来的
     /// "点一下出菜单" 行为。默认开（用户明确要的）。
@@ -26,8 +28,10 @@ struct ReaderWebView: View {
     @AppStorage("reader.fontKey") private var fontKey: String = "system"
     @AppStorage("reader.followSystem") private var followSystemAppearance: Bool = false
     // ── 栖阅 ReaderLayoutSettingsView 的那几项 ──
-    @AppStorage("reader.paraAlign") private var paraAlign: String = "left"
-    @AppStorage("reader.paraSpacing") private var paraSpacing: Double = 10
+    // ⭐⭐⭐⭐⭐ **默认两端对齐（柴阅 justified=true）** ⭐⭐⭐⭐⭐
+    @AppStorage("reader.paraAlign") private var paraAlign: String = "justify"
+    // ⭐⭐⭐⭐⭐ **默认 14（柴阅 0.7×字号）** ⭐⭐⭐⭐⭐
+    @AppStorage("reader.paraSpacing") private var paraSpacing: Double = 14
     @AppStorage("reader.showBaseline") private var showBaseline: Bool = false
     @AppStorage("reader.baselineScope") private var baselineScope: String = "full"
     @AppStorage("reader.verticalJustify") private var verticalJustify: Bool = false
@@ -181,9 +185,10 @@ struct ReaderWebView: View {
             fontSize: CGFloat(fontSize),
             lineSpacing: CGFloat(lineSpacing),
             paragraphSpacing: CGFloat(paraSpacing),
-            horizontalMargin: 20,
-            topMargin: 20,
-            bottomMargin: 28,
+            // ⭐⭐⭐ 柴阅的边距：左右 22；上下只留 4（**页眉页脚各占一条带**）⭐⭐⭐
+            horizontalMargin: 22,
+            topMargin: 4,
+            bottomMargin: 4,
             firstLineIndent: CGFloat(fontSize) * 2,
             fontFamily: ReaderFont.family(for: fontKey),
             textColor: UIColor(theme.ink),
@@ -290,6 +295,9 @@ struct ReaderWebView: View {
         let sig = "\(c.fontSize)|\(c.lineSpacing)|\(c.paragraphSpacing)|\(c.horizontalMargin)|\(c.topMargin)|\(c.verticalJustify)|\(c.baselineScope.raw)|\(themeKey)|\(darkScheme == .dark)"
         let pager = pageCtl.pager
         pager.config = c
+        // ⭐⭐⭐⭐⭐ **页眉要书名 + 皮肤要跟着配色走**（柴阅同款）⭐⭐⭐⭐⭐
+        pager.bookTitle = book.name
+        pager.skin = theme.skin
         // ⭐⭐⭐⭐⭐ **分页画布改成透明**（2026-11-25）⭐⭐⭐⭐⭐
         //   ⇒ 以前刷成 `theme.bg`（**一整块纯色**）⇒ **会把混色背景整个盖住** ⭐⭐⭐
         //   ⇒ 改透明 ⇒ 玻璃页浮在「混色背景」上 ⇒ 与栖阅一致（页面是浮层、底是混色）⭐⭐⭐

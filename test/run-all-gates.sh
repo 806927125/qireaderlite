@@ -53,6 +53,9 @@ declare -a GATES=(
   #      （筛选键 = 切平台/性别/模式的唯一入口 ⇒ 弄没了用户又会遇到「切了没反应」）⭐⭐⭐
   #   ⇒ ③ 玻璃白纱默认必须是「通透」而不是「乳白」（深色底上 38% 白纱会糊成一片白）⭐⭐⭐
   "terminal-theme:test/terminal-theme.test.js"
+  # ⭐⭐⭐⭐⭐ **正文阅读页的「柴阅皮肤」**（2026-11-25 用户：「我要全搬柴阅的」）⭐⭐⭐⭐⭐
+  #   ⇒ 四套皮肤（宣纸/晴窗/星夜/烛灯）+ 一页的页眉页脚 + 章节号装饰 + 排版默认值 ⭐⭐⭐
+  "reader-skin-chaiyue:test/reader-skin-chaiyue.test.js"
   # ⭐⭐⭐⭐⭐ **站方 exploreUrl 的分类归一化：旧引擎 JS ⇔ 新 Swift 双实现对拍**
   #   （2026-11-19 真机 build296 实证：换装新引擎丢了「先求值 @js: 的 exploreUrl」⇒ 分类 url 为空
   #     ⇒ `url 解析失败: ` ⇒ LegadoError 错误 1 ⇒ **发现页整个用不了**⭐⭐⭐）

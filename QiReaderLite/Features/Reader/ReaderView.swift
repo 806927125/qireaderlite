@@ -192,68 +192,71 @@ struct ReaderTheme: Identifiable {
     let name: String
     let bg: Color
     let ink: Color
+    /// ⭐⭐⭐⭐⭐ **皮肤**（柴阅的四套：宣纸/晴窗/星夜/烛灯）⭐⭐⭐⭐⭐
+    ///   ⇒ 皮肤决定**版式与装饰**（字体 / 章节号装饰 / 进度装饰），配色决定**颜色** ⇒ 两层分开 ⭐⭐⭐
+    var skin: ReaderSkin = .xuan
     var id: String { key }
 
     // 必须定义成静态成员：`all.first(where:) ?? .paper` 里的 .paper
     // 要能从 ReaderTheme 上解析到，只在 all 数组里写 .init 是不够的。
     static let paper = ReaderTheme(key: "paper", name: "纸白",
                                    bg: Color(red: 0.949, green: 0.941, blue: 0.914),
-                                   ink: Color(red: 0.16, green: 0.15, blue: 0.13))
+                                   ink: Color(red: 0.16, green: 0.15, blue: 0.13, skin: .xuan)
     static let green = ReaderTheme(key: "green", name: "护眼",
                                    bg: Color(red: 0.847, green: 0.906, blue: 0.816),
-                                   ink: Color(red: 0.13, green: 0.18, blue: 0.12))
+                                   ink: Color(red: 0.13, green: 0.18, blue: 0.12, skin: .xuan)
     static let gray = ReaderTheme(key: "gray", name: "米灰",
                                   bg: Color(red: 0.90, green: 0.90, blue: 0.90),
-                                  ink: Color(red: 0.18, green: 0.18, blue: 0.18))
+                                  ink: Color(red: 0.18, green: 0.18, blue: 0.18, skin: .qing)
     static let dark = ReaderTheme(key: "dark", name: "夜间",
                                   bg: Color(red: 0.10, green: 0.10, blue: 0.11),
-                                  ink: Color(red: 0.82, green: 0.82, blue: 0.84))
+                                  ink: Color(red: 0.82, green: 0.82, blue: 0.84, skin: .xing)
 
     // 浅色一排（对应设置面板第一行「文」格子）
     static let paper2 = ReaderTheme(key: "paper2", name: "米黄",
                                     bg: Color(red: 0.976, green: 0.961, blue: 0.925),
-                                    ink: Color(red: 0.20, green: 0.18, blue: 0.14))
+                                    ink: Color(red: 0.20, green: 0.18, blue: 0.14, skin: .xuan)
     static let wheat = ReaderTheme(key: "wheat", name: "麦黄",
                                    bg: Color(red: 0.949, green: 0.906, blue: 0.796),
-                                   ink: Color(red: 0.22, green: 0.18, blue: 0.12))
+                                   ink: Color(red: 0.22, green: 0.18, blue: 0.12, skin: .zhu)
     static let rose = ReaderTheme(key: "rose", name: "藕粉",
                                   bg: Color(red: 0.965, green: 0.914, blue: 0.918),
-                                  ink: Color(red: 0.24, green: 0.16, blue: 0.17))
+                                  ink: Color(red: 0.24, green: 0.16, blue: 0.17, skin: .zhu)
     static let sky = ReaderTheme(key: "sky", name: "天青",
                                  bg: Color(red: 0.898, green: 0.933, blue: 0.949),
-                                 ink: Color(red: 0.14, green: 0.18, blue: 0.24))
+                                 ink: Color(red: 0.14, green: 0.18, blue: 0.24, skin: .qing)
     static let blue = ReaderTheme(key: "blue", name: "湖蓝",
                                   bg: Color(red: 0.855, green: 0.906, blue: 0.941),
-                                  ink: Color(red: 0.12, green: 0.17, blue: 0.24))
+                                  ink: Color(red: 0.12, green: 0.17, blue: 0.24, skin: .qing)
     static let teal = ReaderTheme(key: "teal", name: "青碧",
                                   bg: Color(red: 0.855, green: 0.929, blue: 0.902),
-                                  ink: Color(red: 0.12, green: 0.20, blue: 0.18))
+                                  ink: Color(red: 0.12, green: 0.20, blue: 0.18, skin: .qing)
     static let green2 = ReaderTheme(key: "green2", name: "豆绿",
                                     bg: Color(red: 0.898, green: 0.933, blue: 0.859),
-                                    ink: Color(red: 0.15, green: 0.21, blue: 0.13))
+                                    ink: Color(red: 0.15, green: 0.21, blue: 0.13, skin: .xuan)
 
     // 深色一排（对应第二行「文」格子）
     static let dChar = ReaderTheme(key: "dChar", name: "炭黑",
                                    bg: Color(red: 0.13, green: 0.13, blue: 0.14),
-                                   ink: Color(red: 0.80, green: 0.80, blue: 0.82))
+                                   ink: Color(red: 0.80, green: 0.80, blue: 0.82, skin: .xing)
     static let dOlive = ReaderTheme(key: "dOlive", name: "橄榄",
                                     bg: Color(red: 0.16, green: 0.17, blue: 0.14),
-                                    ink: Color(red: 0.78, green: 0.80, blue: 0.72))
+                                    ink: Color(red: 0.78, green: 0.80, blue: 0.72, skin: .xing)
     static let dNavy = ReaderTheme(key: "dNavy", name: "藏青",
                                    bg: Color(red: 0.12, green: 0.14, blue: 0.20),
-                                   ink: Color(red: 0.76, green: 0.80, blue: 0.88))
+                                   ink: Color(red: 0.76, green: 0.80, blue: 0.88, skin: .xing)
     static let dPurple = ReaderTheme(key: "dPurple", name: "紫檀",
                                      bg: Color(red: 0.17, green: 0.13, blue: 0.19),
-                                     ink: Color(red: 0.82, green: 0.78, blue: 0.86))
+                                     ink: Color(red: 0.82, green: 0.78, blue: 0.86, skin: .xing)
     static let dBrown = ReaderTheme(key: "dBrown", name: "深棕",
                                     bg: Color(red: 0.19, green: 0.16, blue: 0.13),
-                                    ink: Color(red: 0.84, green: 0.80, blue: 0.74))
+                                    ink: Color(red: 0.84, green: 0.80, blue: 0.74, skin: .xing)
     static let dGreen = ReaderTheme(key: "dGreen", name: "墨绿",
                                     bg: Color(red: 0.12, green: 0.17, blue: 0.15),
-                                    ink: Color(red: 0.76, green: 0.84, blue: 0.80))
+                                    ink: Color(red: 0.76, green: 0.84, blue: 0.80, skin: .xing)
     static let dBlue = ReaderTheme(key: "dBlue", name: "深蓝",
                                    bg: Color(red: 0.12, green: 0.16, blue: 0.22),
-                                   ink: Color(red: 0.78, green: 0.84, blue: 0.90))
+                                   ink: Color(red: 0.78, green: 0.84, blue: 0.90, skin: .xing)
 
     /// 浅色一排
     static let light: [ReaderTheme] = [.paper, .paper2, .wheat, .rose, .sky, .blue, .green2, .gray]

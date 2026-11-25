@@ -58,14 +58,22 @@ struct ReaderBaselineScope: Identifiable, Hashable {
 ///    （fontSize / lineSpacing / leftMargin / rightMargin），
 ///    改一处要记得改另一处，不然上下滚动和分页两种模式字会不一样大。
 struct ReaderLayoutConfig {
-    var fontSize: CGFloat = 18
-    var lineSpacing: CGFloat = 8
-    var paragraphSpacing: CGFloat = 10
-    var horizontalMargin: CGFloat = 20
-    var topMargin: CGFloat = 20
-    var bottomMargin: CGFloat = 28
-    /// 首行缩进，默认 2 个字（中文排版惯例）
-    var firstLineIndent: CGFloat = 36
+    // ⭐⭐⭐⭐⭐ **默认值对齐柴阅**（2026-11-25 照柴阅 `ReaderTypography` 的默认值）⭐⭐⭐⭐⭐
+    //   · 字号 20（柴阅）· 行距 0.55×字号 = 11 · 段距 0.7×字号 = 14
+    //   · 首行缩进 **2 个字** = 40 · 两端对齐 · 左右边距 22
+    //   · 上下边距只留 4（**页眉页脚各占一条带** ⇒ 见下面的 headerHeight / footerHeight）⭐⭐⭐
+    var fontSize: CGFloat = 20
+    var lineSpacing: CGFloat = 11
+    var paragraphSpacing: CGFloat = 14
+    var horizontalMargin: CGFloat = 22
+    var topMargin: CGFloat = 4
+    var bottomMargin: CGFloat = 4
+    /// 首行缩进，默认 2 个字（中文排版惯例；柴阅是「随字号」，这里固定成 20×2）
+    var firstLineIndent: CGFloat = 40
+    // ⭐⭐⭐ **页眉高度**（柴阅：一页 = 纸色底 + **页眉** + 正文 + **页脚**）⭐⭐⭐
+    var headerHeight: CGFloat = 18
+    /// ⭐⭐⭐ **页脚高度**（页码 + 全书进度）⭐⭐⭐
+    var footerHeight: CGFloat = 16
     var fontFamily: String = "System"
     var isBold: Bool = false
     var textColor: UIColor = UIColor(red: 0.16, green: 0.15, blue: 0.13, alpha: 1)
@@ -73,8 +81,8 @@ struct ReaderLayoutConfig {
 
     // MARK: 栖阅 ReaderLayoutSettingsView 里的那几项
 
-    /// 段落对齐
-    var paraAlign: ReaderParaAlign = .left
+    /// 段落对齐（⭐⭐⭐ 柴阅默认**两端对齐**）⭐⭐⭐
+    var paraAlign: ReaderParaAlign = .justify
     /// 垂直两端对齐：每页文字自动调整行间距填满页面，底部对齐整齐
     var verticalJustify: Bool = false
     /// 行底线：正文每一行底部画横线
@@ -98,7 +106,7 @@ struct ReaderLayoutConfig {
         //    原来 b 是 5 个（topMargin/bottomMargin/firstLineIndent/fontFamily/isBold），
         //    被门禁 reader-settings 的「每个 let 最多 4 个插值」抓出来 → 拆成 b1/b2。
         let b1 = "\(topMargin)|\(bottomMargin)|\(firstLineIndent)|"
-        let b2 = "\(fontFamily)|\(isBold)"
+        let b2 = "\(fontFamily)|\(isBold)|\(headerHeight)|\(footerHeight)"
         // ⚠️ ReaderParaAlign / ReaderBaselineScope 是 **struct 不是 enum**，
         //    没有 rawValue（编译报 "has no member 'rawValue'"）→ 用 String(describing:)。
         let c = "\(textColor)|\(backgroundColor)|\(String(describing: paraAlign))|\(verticalJustify)"
@@ -108,8 +116,10 @@ struct ReaderLayoutConfig {
 
     /// 一页的内容区尺寸（视口扣掉四周边距）
     func pageSize(in viewport: CGSize) -> CGSize {
+        // ⭐⭐⭐ **页眉页脚各占一条带**（柴阅：一页 = 页眉 + 正文 + 页脚）⭐⭐⭐
+        //   ⇒ 正文区要把这两条带**扣掉** ⇒ 否则文字会压到页眉/页脚上 ⭐⭐⭐
         CGSize(width: max(80, viewport.width - horizontalMargin * 2),
-               height: max(80, viewport.height - topMargin - bottomMargin))
+               height: max(80, viewport.height - topMargin - bottomMargin - headerHeight - footerHeight))
     }
 
     /// 字体。系统字体以外的族名取不到就退回系统字体，绝不返回 nil。
