@@ -25,6 +25,12 @@ let package = Package(
     platforms: [.iOS(.v16), .macOS(.v13)],
     products: [
         .library(name: "LegadoEngine", targets: ["LegadoEngine"]),
+        // ⭐⭐⭐⭐⭐ **柴阅的【阅读器】整包 vendor**（2026-11-25 用户要求：「阅读正文界面的老代码全部删掉，全部用柴阅的」）⭐⭐⭐
+        //   · `ChaiyueReaderKit` = 柴阅 `Packages/ReaderCore/Sources/ReaderKit`（排版分页 / CSS / 主题脚本）⭐⭐⭐
+        //   · `ChaiyueReaderServices` = 柴阅 `ReaderServices` 的阅读子集（ReaderSession / 内容服务 / 书架仓）⭐⭐⭐
+        //   · `ChaiyueReader` = 柴阅 `App/Sources/Reader`（阅读界面本体）⭐⭐⭐
+        //   ⇒ 宿主（App）只需要 import 柴阅的这些类型 ⇒ **我们手写的那套原生阅读器全部作废** ⭐⭐⭐
+        .library(name: "ChaiyueReader", targets: ["ChaiyueReader"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.14.3"),
@@ -36,6 +42,8 @@ let package = Package(
         //   ⇒ **Apple 平台 = CryptoKit 的再导出**（符号一致）／**Linux = 纯 Swift 实现** ⇒ 一个模块名两边通用 ⭐⭐⭐
         //   ⚠️ **必须在 Package.swift 声明** ⇒ 否则 Apple 上报「Unable to find module dependency: 'Crypto'」⭐⭐⭐
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+        // ⭐⭐⭐ **ZIPFoundation**（柴阅的阅读服务用它解 EPUB/zip）⇒ 阅读器 vendor 需要 ⭐⭐⭐
+        .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.20"),
     ],
     targets: [
         // ① 柴阅的模型层（原样，target 名改成 ChaiyueModels）
@@ -67,6 +75,35 @@ let package = Package(
             name: "LegadoEngine",
             dependencies: ["ChaiyueEngine", "ChaiyueModels"],
             path: "Sources/LegadoEngine"
+        ),
+        // ⭐⭐⭐⭐⭐ ④ 柴阅的【排版与分页内核】（ReaderKit；只依赖 ChaiyueModels ⇒ 干净）⭐⭐⭐
+        .target(
+            name: "ChaiyueReaderKit",
+            dependencies: ["ChaiyueModels"],
+            path: "Sources/ChaiyueReaderKit"
+        ),
+        // ⭐⭐⭐⭐⭐ ⑤ 柴阅的【阅读服务子集】（ReaderServices 的 Reading/Content/Library/Sources/Speech/Support）⭐⭐⭐
+        .target(
+            name: "ChaiyueReaderServices",
+            dependencies: [
+                "ChaiyueModels",
+                "ChaiyueEngine",
+                .product(name: "SwiftSoup", package: "SwiftSoup"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+            ],
+            path: "Sources/ChaiyueReaderServices"
+        ),
+        // ⭐⭐⭐⭐⭐ ⑥ 柴阅的【阅读界面本体】（App/Sources/Reader）⭐⭐⭐
+        .target(
+            name: "ChaiyueReader",
+            dependencies: [
+                "ChaiyueModels",
+                "ChaiyueEngine",
+                "ChaiyueReaderKit",
+                "ChaiyueReaderServices",
+                .product(name: "SwiftSoup", package: "SwiftSoup"),
+            ],
+            path: "Sources/ChaiyueReader"
         ),
         // ⚠️⚠️ **旧的 `LegadoEngineTests` 已删**（2026-11-21 移植柴阅）⭐⭐⭐
         //   它测的是**我们自己那套已被替换掉的引擎** ⇒ 符号全没了 ⇒ 测不了 ⭐⭐⭐

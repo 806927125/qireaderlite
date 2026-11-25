@@ -24,19 +24,14 @@ jobs:
           echo "SDK  : $(xcrun --sdk iphoneos --show-sdk-version)"
           xcodebuild -showsdks | grep -i "iphoneos" || true
 
-      - name: 滚动内核 Swift↔JS 对拍
+      - name: 滚动内核对拍（JS 原版 ↔ Swift 版）
         run: |
-          # 读渲染层从 WebView 迁到 Swift，滚动内核（章节窗口裁剪 / 进度节流 /
-          # 视口锚点）也一并翻成了 Swift。
-          # 这里做**真对拍**：JS 原版跑一批用例生成期望值 → Swift 版跑同一批 → 比。
-          set -e
-          mkdir -p test/fixtures
-          node test/scroll-core-cases.js --emit > test/fixtures/scroll-core-cases.json
-          node test/scroll-core-cases.js
-          swiftc -O test/scroll-core-parity.swift \
-                 QiReaderLite/Features/Reader/Paging/ReaderScrollCore.swift \
-                 -o /tmp/scroll-core-parity
-          /tmp/scroll-core-parity .
+          # ⚠️⚠️⚠️ **2026-11-25 撤掉这一步**（用户要求「阅读正文界面全部用柴阅的」）⭐⭐⭐
+          #   原来的对拍对象 = **我们自己手写的**原生滚动内核（ReaderScrollCore.swift）⭐⭐⭐
+          #   ⇒ 那个文件已随「老阅读器」一起删除 ⇒ 这条对拍的对象不存在了 ⭐⭐⭐
+          #   ⇒ **权威基准换成柴阅本体**（vendor 进来的 ChaiyueReader）⇒ 不再需要我们对拍 ⭐⭐⭐
+          #   ⚠️ 若要恢复对拍，必须先恢复原生滚动内核 ⇒ 与「全用柴阅的」冲突 ⭐⭐⭐
+          echo "跳过：滚动内核已换成柴阅实现（见 docs/柴阅阅读器移植-分工与地图.md）"
 
       - name: ⭐⭐⭐⭐⭐ 柴阅引擎的【权威测试】（macOS ⇒ 有 JSC ⇒ 全量可跑）
         run: |

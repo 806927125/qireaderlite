@@ -73,6 +73,7 @@
 			name = "轻阅";
 			packageProductDependencies = (
 				FE0000000000000000000021 /* XCSwiftPackageProductDependency "LegadoEngine" */,
+				FE0000000000000000000031 /* XCSwiftPackageProductDependency "ChaiyueReader" */,
 			);
 			productName = "轻阅";
 			productReference = FE0000000000000000000003 /* 轻阅.app */;
@@ -140,6 +141,10 @@
 		FE0000000000000000000021 /* XCSwiftPackageProductDependency "LegadoEngine" */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LegadoEngine;
+		};
+		FE0000000000000000000031 /* XCSwiftPackageProductDependency "ChaiyueReader" */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ChaiyueReader;
 		};
 /* End XCSwiftPackageProductDependency section */
 
