@@ -1,0 +1,386 @@
+name: 出 IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  build:
+    # ⬆️ macos-26 = Xcode 26.x（26.0.1 / 26.1.1 / 26.2 默认 / 26.3 / 26.4），SDK 含 iOS 26.0~26.2
+    #    之前是 macos-15 = Xcode 16.4 / iOS 18.5 SDK —— 所以 LiquidGlass 只能用「手搓版」，
+    #    系统的 glassEffect() / GlassEffectContainer 直接编译不过（unknown modifier / no member）
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      # 钉死 Xcode 版本，别跟着 runner 的默认漂
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 确认工具链
+        run: |
+          echo "Xcode: $(xcodebuild -version | head -1)"
+          echo "SDK  : $(xcrun --sdk iphoneos --show-sdk-version)"
+          xcodebuild -showsdks | grep -i "iphoneos" || true
+
+      - name: 滚动内核 Swift↔JS 对拍
+        run: |
+          # 读渲染层从 WebView 迁到 Swift，滚动内核（章节窗口裁剪 / 进度节流 /
+          # 视口锚点）也一并翻成了 Swift。
+          # 这里做**真对拍**：JS 原版跑一批用例生成期望值 → Swift 版跑同一批 → 比。
+          set -e
+          mkdir -p test/fixtures
+          node test/scroll-core-cases.js --emit > test/fixtures/scroll-core-cases.json
+          node test/scroll-core-cases.js
+          swiftc -O test/scroll-core-parity.swift \
+                 QiReaderLite/Features/Reader/Paging/ReaderScrollCore.swift \
+                 -o /tmp/scroll-core-parity
+          /tmp/scroll-core-parity .
+
+      - name: ⭐⭐⭐⭐⭐ 柴阅引擎的【权威测试】（macOS ⇒ 有 JSC ⇒ 全量可跑）
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-21 移植柴阅实证）：
+          #   柴阅的 `RuleEngineTests` / `ReaderModelsTests` = **行为规格** ⭐⭐⭐
+          #   ⇒ 移植后引擎**就是柴阅** ⇒ 跑它的测试 = 验证引擎行为没跑偏 ⭐⭐⭐
+          #   ⇒ ⚠️ **Linux 沙盒跑不了**（没有 JSC ⇒ JS 用例必然失败 ⇒ 是平台差异不是移植错）⭐⭐⭐
+          #   ⇒ 所以这一步放在 **CI（macOS/Xcode 26）** ⇒ 那里有 JSC ⇒ 全绿才说明引擎真的对 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          rm -f .build/*.yaml
+          swift test 2>&1 | tail -25
+          cd ..
+
+      - name: "⭐⭐⭐⭐⭐ 登录表单探针：@js: 的 loginUi ⇒ 柴阅能解析出按钮"
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-21 真机「登录界面没按钮」实证）：
+          #   站方的 `loginUi` 常常是 `@js:` / `<js>` 薄壳（正文在 jsLib 里）⭐⭐⭐
+          #   ⇒ 轻阅自己解析只能吃**静态 JSON** ⇒ 解析失败 ⇒ **面板空白、一个按钮都没有** ⭐⭐⭐
+          #   ⇒ 柴阅的 `resolveLoginRows` 会**求值** loginUi ⇒ 行拿得到 ⭐⭐⭐
+          #   ⇒ **Linux 沙盒没有 JSC ⇒ 只能在这里（macOS）真跑** ⭐⭐⭐
+          #   ⇒ 这个探针失败 ⇒ 换装就没解决「没按钮」⇒ 必须拦住 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe
+          cd ..
+
+      - name: ⭐⭐⭐⭐⭐ 禁漫天堂登录面板探针：viewName 求值 + action 能真跑
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-21 真机「登录面板没有小说/漫画/视频这些按钮」实证）：
+          #   ⇒ 按钮的行在 loginUi 里，但【显示名在 viewName（表达式）】+【action 的函数在 loginUrl 里】⭐⭐⭐
+          #   ⇒ 宿主执行 action / 求值 viewName 时**不会先跑 loginUrl** ⇒ 函数不在作用域 ⇒ **静默失败** ⭐⭐⭐
+          #   ⇒ 源侧解法：把函数库搬进 jsLib 顶层 ⇒ 本探针用**真引擎 + 真源**验证它真的通了 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe2
+          cd ..
+
+      - name: ⭐⭐⭐⭐⭐ 书山聚合 v6 全链探针：真引擎 + 真源 + 真网络
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-23 实证）：
+          #   沙盒（Linux）**没有 JavaScriptCore** ⇒ `@js:` / `<js>` 求值跑不了 ⭐⭐⭐
+          #   ⇒ 「书山聚合 v6 在轻阅里到底能不能跑」**只能靠 macOS 真引擎真跑** ⇒ ⭐⭐⭐
+          #   ⇒ 而且这个源的 `exploreUrl` 有 10240 字符、`jsLib` 有 84KB ⇒ **必须真跑才知道** ⭐⭐⭐
+          #   ⇒ 探针还要验 **改名后的 `ssh_*` 符号在全局可用**（证明隔离化没打断作用域）⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe3
+          cd ..
+
+      - name: ⭐⭐⭐⭐⭐ token 管道探针：登录头 → 站方签名 → 真站方判定
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-24 真机「Token 格式错误」实证）：
+          #   站方对 token 的判定表（沙盒直连实测）：
+          #     空/缺 → 「非法请求，请先登录」/ **带引号或非 base64 → 「Token 格式错误」**
+          #     长度不对 → 「Token 长度不正确」/ 其它 → 「Token 无效或已失效」⭐⭐⭐
+          #   ⇒ 「Token 格式错误」**只可能是我们发出去的 token 被弄坏了**（带引号/非 base64）⭐⭐⭐
+          #   ⇒ 而「上游的权威测试只断言了 Swift 侧的 loginHeader，**没断言 JS 侧**」⭐⭐⭐
+          #      ⇒ JS 侧 `String(source.getLoginHeader())` 是不是原样字符串 ⇒ **没被任何测试覆盖** ⭐⭐⭐
+          #   ⇒ 本探针用**真引擎 + 真源 + 真站方**逐环取证（含「重启往返」）⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe4
+          cd ..
+
+      - name: ⭐⭐⭐⭐⭐ 发现页筛选探针：切平台 action 真跑 ⇒ 站方变量真变了
+        run: |
+          # ⚠️⚠️⚠️ **为什么必须有这一步**（2026-11-24 真机「切平台无效」实证）：
+          #   站方的**筛选 action 是一段字符串** ⇒ 「顶层符号隔离化」**按 AST 改名 ⇒ 漏改** ⭐⭐⭐
+          #   ⇒ 引擎里 `setConfig` 未定义 ⇒ **ReferenceError** ⇒ **筛选静默失效**（零报错）⭐⭐⭐
+          #   ⇒ 「大灰狼能切、书山不能切」= 大灰狼的 action **自包含**，书山的 action **依赖 jsLib 符号** ⭐⭐⭐
+          #   ⇒ 本探针**真跑一次 action** ⇒ 断言「站方变量真的变了」⇒ 这类回归必红 ⭐⭐⭐
+          set -e
+          cd LegadoEngine
+          swift run ChaiyueProbe5
+          cd ..
+
+      - name: 编译
+        run: |
+          # || true 只为让脚本能往下走到打印错误那步
+          # ⚠️ ENABLE_BITCODE 在 Xcode 16 起已被彻底移除，别再传（传了也是未知 setting）
+          # ⭐⭐⭐ **注入引擎的真实 revision**（2026-10-25 真机教训）
+          #   之前 App 界面里的引擎 revision 是**手写**的 ⇒ 显示的跟真在跑的不一致
+          #   ⇒ 自证是假的 ⇒ 把排查带偏了 ⇒ 现在从 checkout 日志里**抓真值**注入 ⭐⭐⭐
+          # ⭐⭐⭐ **只解析依赖，不编译**（2026-10-25 build254 实证踩过）
+          #   ⚠️ 之前是「先编一次 ⇒ 生成文件 ⇒ 再编一次」
+          #   ⇒ **第二次增量编译没重编那个文件** ⇒ 二进制里还是第一次的 "unknown" ⭐⭐⭐
+          #   ⇒ 正解：**先 `-resolvePackageDependencies`**（只拉依赖，不编译 ⇒ 快）
+          #   ⇒ 拿到 SPM checkout 出来的引擎目录 ⇒ 生成文件 ⇒ **然后只编译一次** ⭐⭐⭐
+          # ⚠️⚠️ **必须用同一个 `-derivedDataPath`** ⇒ 否则 checkout 落在**另一个目录**
+          #   ⇒ 后面 `git -C build/dd/SourcePackages/checkouts/legado-engine` 就找不到 ⭐⭐⭐
+          xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
+            -configuration Release -sdk iphoneos -derivedDataPath build/dd \
+            -resolvePackageDependencies \
+            > resolve.log 2>&1 || true
+          # ⚠️ resolve 失败也要看得见（否则后面 revision 抓不到 ⇒ 显示 unknown）
+          grep -E "error:|Checking out main|Fetching|Cloning" resolve.log | head -10 || true
+          # ⭐⭐⭐ **2026-11-19：本地包也要解析它的远程依赖**（SwiftSoup / Kanna）
+          #   ⚠️ 这两个依赖必须从 GitHub 拉 ⇒ runner 网络抖 ⇒ 失败要**看得见**（不许假绿）⭐⭐⭐
+          echo "--- 本地包的依赖 checkout ---"
+          ls build/dd/SourcePackages/checkouts/ 2>/dev/null | head -10 || echo "(无 SPM checkout 目录)"
+          # ⭐⭐⭐ 抓引擎真实 revision（**直接读 SPM checkout 出来的引擎目录的 git HEAD**）
+          #   ⚠️⚠️ **别去 grep `b.log`**（那句 `Checking out main (...)` 在 **SPM resolve 的输出**里
+          #   ⇒ 不在 b.log ⇒ 抓不到 ⇒ 注入成了空值 ⇒ 二进制里显示 unknown）⭐⭐⭐
+          # ⭐⭐⭐⭐⭐ **2026-11-19：引擎已整体替换 ⇒ 不再有「SPM checkout 出来的引擎目录」**
+          #   老引擎是**远程 SPM 包**（`legado-engine`）⇒ revision 取它 checkout 目录的 git HEAD；
+          #   现在引擎 = **仓库内本地包**（`LegadoEngine/`）⇒ 它的 revision 就是**本仓库的 HEAD** ⭐⭐⭐
+          #   ⇒ 引擎代码与 App 代码同仓 ⇒ 同一个 sha 既是 App 修订也是引擎修订（更准）⭐⭐⭐
+          # ⚠️ **用完整 40 位 sha**（不是 short=12）
+          #   ⚠️ **12 位会被 Swift 内联成 SmallString** ⇒ 二进制里**不连续** ⇒ **搜不到** ⇒
+          #   ⇒ 验包时以为「没注入」，其实是**注入成功了但搜不到** ⇒ 白查一轮 ⭐⭐⭐
+          #   ⇒ 40 位（40 字节）⇒ 不内联 ⇒ 连续存放 ⇒ **可搜、可验** ⭐⭐⭐
+          LEGADO_REV="$(git rev-parse HEAD 2>/dev/null || true)"
+          # （老路径兜底：万一哪天又换回远程 SPM 包）
+          if [ -z "$LEGADO_REV" ]; then
+            LEGADO_REV="$(git -C build/dd/SourcePackages/checkouts/legado-engine rev-parse HEAD 2>/dev/null || true)"
+          fi
+          if [ -z "$LEGADO_REV" ]; then LEGADO_REV="unknown"; fi
+          echo "注入的引擎 revision = $LEGADO_REV"
+          # ⭐⭐⭐⭐⭐ **生成 revision 文件**（2026-10-25 真机教训 ⇒ 不用 `-D` 宏）
+          #   ⚠️⚠️ **为什么不用 `-D`**：Swift 的条件编译标志**不带值**
+          #     （`-DLEGADO_REVISION=xxx` ⇒ 告警 `flags do not have values in Swift`）⭐⭐⭐
+          #   ⇒ 而且 `LegadoCore` 是 SPM 依赖 target ⇒ App 的 `OTHER_SWIFT_FLAGS` 传不进去 ⭐⭐⭐
+          #   ⇒ **生成一个 Swift 文件**才是可靠通道（pbxproj 是同步 root group ⇒ 新文件自动进 target）⭐⭐⭐
+          # ⭐⭐⭐ **用 python 生成**（不用 heredoc ⇒ 绕开 YAML 缩进/tab 的坑）⭐⭐⭐
+          #   ⚠️ YAML 的 run 块里 heredoc 的缩进极难控制（tab 会被 yaml 处理）⇒ 别用 ⭐⭐⭐
+          LEGADO_REV="$LEGADO_REV" python3 - <<'PYGEN'
+          import os, pathlib
+          rev = os.environ.get("LEGADO_REV", "unknown")
+          p = pathlib.Path("QiReaderLite/Core/EngineRevision.generated.swift")
+          p.write_text(
+              "// ⭐⭐⭐⭐⭐ **引擎 revision（CI 生成 ⇒ 真值）** —— **不许手改**\n"
+              "// ⚠️ 自动生成：CI 用「本地引擎包 LegadoEngine/ 的 git HEAD」覆写 ⭐⭐⭐\n"
+              "// ⚠️ 引擎代码 = 柴阅/Chaiyue（vendor 在 LegadoEngine/Sources/Chaiyue*）⭐⭐⭐\n"
+              "//   ⇒ 语义 = Legado 3.0；模块名/类型名保留 LegadoEngine（宿主 import 不变 ⇒ UI 零改动）⭐⭐⭐\n"
+              "enum EngineRevision {\n"
+              "    /// ⭐ 真实 revision（CI 注入）\n"
+              f"    static let generated: String = \"{rev}\"\n"
+              "}\n",
+              encoding="utf-8")
+          print("--- 生成的内容 ---")
+          print(p.read_text(encoding="utf-8"))
+          PYGEN
+          # ⭐⭐⭐ **只编译一次**（生成的文件在编译**之前**就位 ⇒ 一定会进二进制）⭐⭐⭐
+          xcodebuild -project QiReaderLite.xcodeproj -scheme QiReaderLite \
+            -configuration Release -sdk iphoneos -derivedDataPath build/dd \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build > b.log 2>&1 || true
+          echo "===== 编译错误 ====="
+          grep "error:" b.log | sort -u | head -40
+          echo "===== 错误结束 ====="
+
+      - name: ⭐⭐⭐⭐⭐ 发现页端到端：真实 NovelHub 源 ⇒ 求值 JS 形式的 exploreUrl ⇒ 出分类
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-19 真机 build296 实证）：
+          #   真机报「发现页：未能完成操作。（LegadoEngine.LegadoError 错误 1。）」
+          #   引擎日志：`url 解析失败:`（**冒号后为空**）
+          #   ⇒ 根因 = 换装新引擎丢了「先求值 @js: 的 exploreUrl」这条能力 ⭐⭐⭐
+          #   ⇒ **静态门禁证明「语义对」不够** ⇒ 必须**真跑一次** ⇒ 证明「真能出分类」⭐⭐⭐
+          #   ⇒ 这一步跑的是**产物里的真实 jsLib + 真实 exploreUrl**（不是 fixture）⭐⭐⭐
+          set -e
+          # ⚠️ CI 上没有本地产物 ⇒ **显式 SKIP**（这组**没验到**，不等于通过）⭐⭐⭐
+          #   （CI 的 job 是 checkout 出来的 ⇒ 没有 /workspace/output）⭐⭐⭐
+          #   ⇒ 真跑这一步在【本地/真机】做（沙盒已跑通：50 分类 + 7 筛选栏）⭐⭐⭐
+          SRC="${NH_LIVE_SOURCE:-}"
+          if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then
+            echo "⚠️ 没有书源产物（NH_LIVE_SOURCE 未设）⇒ 跳过（这组**没验到**，不等于通过）"
+            exit 0
+          fi
+          # ⚠️⚠️ **2026-11-21**：引擎换成柴阅后，旧的 `explore-kinds-live.js`（宿主自建 bridge 的真跑）
+          #   **前提已消失**（宿主不再自建 bridge ⇒ 走柴阅的 `WebBook.exploreKinds()`）⇒ 已删 ⭐⭐⭐
+          #   ⇒ 现在的覆盖：① 本 workflow 上面的「柴阅引擎的权威测试」（含 exploreKinds 用例）⭐⭐⭐
+          #      ② `test/chaiyue-port-contract.test.js`（钉宿主接线契约）⭐⭐⭐
+          node test/chaiyue-port-contract.test.js
+
+      - name: ⭐⭐⭐⭐⭐ 自省 Apple 平台符号（**不许再猜 SDK 的名字**）
+        run: |
+          # ⚠️⚠️⚠️ **为什么加这一步**（2026-11-19 CI build296 实证）：
+          #   引擎里有几段代码**只在 Apple 平台编译**（`#if canImport(JavaScriptCore) && !os(Linux)`）
+          #   ⇒ ⇒ **沙盒 Linux 门禁永远绿** ⇒ 这些符号名错了**只有 CI 能发现** ⭐⭐⭐
+          #   ⇒ 而「报错信息」只说「不在作用域」，**不告诉你真实名字** ⇒ 只能一轮轮猜 ⇒ 每轮 5 分钟 ⭐⭐⭐
+          #   ⇒ **正解：直接读 SDK 头文件 + 用 swiftc 探针，一次问清楚** ⭐⭐⭐
+          # ⭐⭐⭐⭐⭐ **2026-11-19 第二轮加强：探针要「主动把真身逼出来」**
+          #   技巧：`let _: Int = <真身>` ⇒ **故意类型错** ⇒ 编译器的报错里会**打印真实类型/完整签名** ⭐⭐⭐
+          #   ⇒ 一轮 CI 就能问清楚所有类型/签名 ⇒ 不用再猜第四轮 ⭐⭐⭐
+          # ⚠️⚠️⚠️ **读探针输出要看全**（2026-11-19 教训）：
+          #   上一轮探针有 4 行报错，只看了前 3 行就断言「ccNoPadding 不存在」
+          #   ⇒ 其实第 4 行 `CCPadding(ccNoPadding)` **根本没报错** ⇒ 名字一直都在 ⇒ 害得白改三轮 ⭐⭐⭐
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "===== compression.h 的枚举 + typedef（⭐ 枚举底层类型 ⇒ rawValue 是 UInt32 还是 Int32）====="
+          grep -nE "COMPRESSION_(ENCODE|DECODE|ZLIB|STATUS|STREAM)" "$SDK/usr/include/compression.h" | head -20 || true
+          grep -nE "typedef|compression_stream_operation|compression_algorithm|compression_status|compression_stream_flags" "$SDK/usr/include/compression.h" | head -30 || true
+          echo "===== compression_stream_init 的【真实签名】（⭐ 之前一直猜这个 ⇒ 猜错三次）====="
+          grep -n -A10 "compression_stream_init" "$SDK/usr/include/compression.h" | head -30 || true
+          echo "--- compression_stream 的结构体定义（⭐ Swift 导入成 5 参成员构造器）---"
+          grep -n -A14 "typedef struct compression_stream" "$SDK/usr/include/compression.h" | head -20 || true
+          echo "===== ⭐ CommonCryptor.h 的 CCCryptorCreateWithMode 声明（⭐⭐⭐ 权威签名 ⇒ 参数个数/顺序）====="
+          grep -n -A16 "CCCryptorStatus CCCryptorCreateWithMode" "$SDK/usr/include/CommonCrypto/CommonCryptor.h" | head -22 || true
+          echo "===== ⭐ CommonCryptor.h 的 padding 枚举（⭐ ccPKCS7Padding / ccNoPadding）====="
+          grep -n -B4 -A6 "ccPKCS7Padding" "$SDK/usr/include/CommonCrypto/CommonCryptor.h" | head -24 || true
+          echo "===== CommonCrypto 的 Swift overlay（⭐ 泛型真相：UnsafePointer<ContentType> 从哪来）====="
+          find "$SDK" -name "CommonCrypto*.swiftinterface" 2>/dev/null | head -3 || true
+          for f in $(find "$SDK" -name "CommonCrypto*.swiftinterface" 2>/dev/null | head -2); do
+            echo "--- $f ---"
+            grep -nE "CCPadding|CCCryptorCreateWithMode|typealias CCPadding|struct UnsafePointer" "$f" | head -20 || true
+          done
+          echo "===== Swift 侧探针（typecheck ⇒ 打印真实可用名 / 真实类型 / 真实签名）====="
+          cat > /tmp/probe.swift <<'PROBE'
+          import Foundation
+          import Compression
+          import CommonCrypto
+          import Security
+
+          // ── 探针 A：Compression 的枚举通道（这四个已实证可用）──
+          let _ = compression_stream_operation(rawValue: 0)
+          let _ = compression_algorithm(rawValue: 0x205)
+          let _ = compression_status(rawValue: 0)
+          let _ = compression_stream_flags(rawValue: 1)
+
+          // ── 探针 B：⭐⭐⭐ 故意类型错 ⇒ 编译器在报错里打印【真身】⭐⭐⭐ ──
+          let _: Int = compression_stream_operation(rawValue: 0).rawValue
+          let _: Int = compression_algorithm(rawValue: 0x205).rawValue
+          let _: Int = compression_status(rawValue: 0).rawValue
+          let _: Int = compression_stream_flags(rawValue: 1).rawValue
+          let _: Int = compression_stream(dst_ptr: nil, dst_size: 0, src_ptr: nil, src_size: 0, state: nil)
+          let _: Int = compression_stream_init
+          let _: Int = compression_stream_process
+          let _: Int = CCCryptorCreateWithMode
+          let _: Int = CCPadding.self
+          let _: Int = ccPKCS7Padding
+          let _: Int = ccNoPadding
+          let _: Int = kCCModeOptionCTR_BE
+          let _: Int = UnsafeRawPointer.self
+          let _: Int = UnsafeRawBufferPointer.self
+
+          // ── 探针 C：CommonCrypto 的 padding 常量真名 ──
+          //   ⭐ Apple 头文件：enum { ccNoPadding = 0, ccPKCS7Padding = 1 };
+          //   ⇒ 下面【有报错】= 不存在；【无报错】= 存在 ⇒ 就是「哪些名字真的存在」的清单 ⭐⭐⭐
+          let _ = CCPadding(ccPKCS7Padding)
+          let _ = CCPadding(ccNoPadding)
+          let _ = CCPadding(kCCPaddingPKCS7)      // ❌ 不存在（故意）⇒ 报 not in scope
+          let _ = CCPadding(kCCPaddingNoPadding)  // ❌ 不存在（故意）
+          let _ = CCPadding(kCCPKCS7Padding)      // ❌ 不存在（故意）
+
+          // ── 探针 D：Security 的 OAEP 成员（SDK 里没有 .rsaEncryptionOAEP）──
+          let _: SecKeyAlgorithm? = .rsaEncryptionOAEPSHA1
+          let _: SecKeyAlgorithm? = .rsaEncryptionOAEPSHA256
+          let _: SecKeyAlgorithm? = .rsaEncryptionOAEPSHA512
+          let _: SecKeyAlgorithm? = .rsaEncryptionRaw
+          let _: SecKeyAlgorithm? = .rsaEncryptionPKCS1
+
+          // ── 探针 E：withUnsafeBytes 的两个重载（不标注 ⇒ 编译器推不出 ContentType）──
+          let sample = Data([1, 2, 3])
+          sample.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
+              let _: Int = b.baseAddress
+          }
+          PROBE
+          xcrun swiftc -typecheck /tmp/probe.swift 2>&1 | head -140 || true
+          echo "===== 探针结束 ====="
+
+      - name: 归档编译日志（排查用）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: b.log
+          if-no-files-found: ignore
+
+      - name: 打包
+        run: |
+          set -e
+          APP=$(find build/dd/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP" || { echo "找不到 .app"; exit 1; }
+          # 防呆：编译失败时 Xcode 会留下只有资源的空壳 .app，
+          # 别再把它打成没有可执行文件的废 ipa
+          if [ ! -f "$APP/QingYue" ]; then
+            echo "!!! 构建产物不完整：缺可执行文件 QingYue !!!"
+            tail -40 b.log
+            exit 1
+          fi
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          cat > build/ipa/Payload/QingYue.app/embedded.mobileprovision <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>Entitlements</key><dict/>
+          <key>application-identifier</key><string>*</string>
+          <key>com.apple.developer.team-identifier</key><string>*</string>
+          <key>get-task-allow</key><false/>
+          <key>keychain-access-groups</key><array><string>*</string></array>
+          </dict></plist>
+          PLIST
+          ( cd build/ipa && zip -qry QingYue.ipa Payload )
+          ls -la build/ipa/QingYue.ipa
+
+          # ⭐⭐ 额外打一个【不含伪造描述文件】的包（给「全能签」）
+          #   伪造的**通配符**描述文件（application-identifier = *）⇒ iOS 认它
+          #   ⇒ 但「全能签」要拿用户证书去匹配 appid ⇒ 看到 * ⇒ 匹配不上
+          #      ⇒ 报「未匹配到有效证书，请先导入证书」⭐
+          #   ⇒ 这个版本**去掉**它 ⇒ 让签工具自己生成匹配真证书的描述文件
+          #   （「证书全能签」两个版本都能用 ⇒ 保留原包，零回归）
+          cp build/ipa/Payload/QingYue.app/embedded.mobileprovision /tmp/fake-provision.plist 2>/dev/null || true
+          rm -f build/ipa/Payload/QingYue.app/embedded.mobileprovision
+          ( cd build/ipa && zip -qry QingYue-noprov.ipa Payload )
+          # 装回（后面还要用它）
+          [ -f /tmp/fake-provision.plist ] && cp /tmp/fake-provision.plist build/ipa/Payload/QingYue.app/embedded.mobileprovision
+          ls -la build/ipa/QingYue-noprov.ipa
+
+      - name: 提交进仓库
+        # Artifacts 在手机上下不动，改成把 ipa 直接 push 进仓库，
+        # 从仓库页面就能下载，手机浏览器完全没问题。
+        #
+        # ⚠️ 强制从 main 取源码：之前在 ipa-build 分支上触发过一次，
+        # 结果 checkout 到旧代码 → 编出旧 ipa → 推回 ipa-build，
+        # 形成死循环，跑一百次还是旧包。这里钉死。
+        if: always()
+        run: |
+          set +e
+          git fetch origin main --depth=1 2>&1 | tail -2
+          git checkout -B ipa-out origin/main 2>&1 | tail -2
+          mkdir -p out
+          if [ -f build/ipa/QingYue.ipa ]; then
+            cp build/ipa/QingYue.ipa out/QingYue.ipa
+          elif [ -f build/out.ipa ]; then
+            cp build/out.ipa out/QingYue.ipa
+          else
+            echo "没有 ipa 可提交"; exit 0
+          fi
+          git config user.email "ci@local"
+          git config user.name "ci"
+          [ -f build/ipa/QingYue-noprov.ipa ] && cp build/ipa/QingYue-noprov.ipa out/QingYue-noprov.ipa
+          git add -f out/QingYue.ipa out/QingYue-noprov.ipa
+          git commit -q -m "ipa build ${{ github.run_number }}" || echo "(无变化)"
+          # 推到独立分支 ipa-build，不碰 main ——
+          # 否则用户本地仓库每次推送都要先 pull，白折腾
+          git push -q origin HEAD:refs/heads/ipa-build --force 2>&1 | tail -3
+          echo "下载地址: https://github.com/806927125/qireaderlite/blob/ipa-build/out/QingYue.ipa"
+          echo "（全能签请用这个）: https://github.com/806927125/qireaderlite/blob/ipa-build/out/QingYue-noprov.ipa"
+
+      - name: 上传
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QingYue-ipa
+          path: build/ipa/*.ipa
+          retention-days: 7
