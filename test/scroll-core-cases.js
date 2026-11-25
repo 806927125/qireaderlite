@@ -3,7 +3,8 @@
 //
 // 目的：Swift 翻译版必须跟 JS 原版**行为一致**。
 //
-// ⚠️ reader-scroll-core.js 是「与栖阅逐字节一致」的四件套之一，**不能改**。
+// ⚠️ reader-scroll-core.js 是「与栖阅逐字节一致」的原版，**不能改**
+//    （它现在是 test/fixtures/ 里的对照基准，不是运行时资源）⭐⭐⭐
 //    所以这里只用它**导出的 5 个函数**；内部那几个
 //    （finiteNumber / oppositeSide / directionPreferredRemovalSide /
 //      distancePreferredRemovalSide）通过 chooseTrim 的行为**间接覆盖**。
@@ -14,7 +15,10 @@
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
-const CORE = require(path.join(ROOT, 'QiReaderLite/Resources/reader/reader-scroll-core.js'));
+// ⚠️ 2026-11-25：栖阅那套 WebView 阅读器整套删掉了（reader.html/js/css 都不在了）
+//    ⇒ `reader-scroll-core.js` **不再是运行时资源**，而是「Swift 翻译版」的**对照基准（oracle）**
+//    ⇒ 搬到 test/fixtures/ 当测试夹具 ⭐⭐⭐
+const CORE = require(path.join(__dirname, 'fixtures/reader-scroll-core.js'));
 
 // ── 用例集（两边共用同一份输入）──
 const CASES = [
