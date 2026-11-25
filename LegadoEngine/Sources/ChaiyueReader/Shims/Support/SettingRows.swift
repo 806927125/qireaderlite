@@ -1,4 +1,4 @@
-#if canImport(SwiftUI)
+#if os(iOS)
 // ⭐⭐⭐⭐⭐ **自柴阅 App/Sources/Screens/Common/SettingRows.swift 搬运**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
 //
 // ⚠️ **许可**：柴阅（github.com/Lincb522/Chaiyue）= **GPL-3.0** ⇒ 本文件是柴阅源码 ⭐⭐⭐

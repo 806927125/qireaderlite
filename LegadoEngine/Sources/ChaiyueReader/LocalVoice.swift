@@ -19,7 +19,7 @@
 //   · 行为差异：**音质从「神经网络」降为「系统合成」**；**不再需要下载/加载 ONNX 模型**（⇒ 也就不会崩）⭐⭐⭐
 //
 // ⚠️ **许可**：柴阅（github.com/Lincb522/Chaiyue）= **GPL-3.0** ⇒ 本文件是柴阅源码的改造版 ⭐⭐⭐
-#if canImport(SwiftUI)
+#if os(iOS)
 import AVFoundation
 import Foundation
 import Observation
@@ -182,7 +182,7 @@ final class SystemVoiceEngine: @unchecked Sendable {
                 return
             }
             collector.append(buffer)
-            if buffer.audioLength == 0 { semaphore.signal() }
+            if buffer.frameLength == 0 { semaphore.signal() }
         }
         // `write` 的回调在内部串行队列上触发；最多等 30 秒，超时按已有数据返回
         let deadline = DispatchTime.now() + .seconds(30)

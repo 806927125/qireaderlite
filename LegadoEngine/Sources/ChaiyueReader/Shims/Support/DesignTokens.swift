@@ -1,12 +1,43 @@
-#if canImport(SwiftUI)
-// ⭐⭐⭐⭐⭐ **自柴阅 App/Sources/Design/Tokens.swift 搬运**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
-//
-// ⚠️ **许可**：柴阅（github.com/Lincb522/Chaiyue）= **GPL-3.0** ⇒ 本文件是柴阅源码 ⭐⭐⭐
-// 原文件：App/Sources/Design/Tokens.swift
+// ⭐⭐⭐ **直接搬自柴阅 `App/Sources/Design/Tokens.swift`**（原样 ⇒ 令牌齐全：Tok.press / Tok.large / …）
+//   之前我们手写的残缺 Tok ⇒ 柴阅阅读器里的 `Tok.press` / `Tok.large` 全部编译不过 ⭐⭐⭐
+#if os(iOS)
 
 import SwiftUI
 import UIKit
+import UIKit
 
+extension UIColor {
+    convenience init(hex: UInt32, alpha: CGFloat = 1) {
+        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255,
+                  alpha: alpha)
+    }
+
+    /// 随外观切换的颜色；SwiftUI 会在后台渲染线程取色，闭包不能带主线程隔离
+    nonisolated static func dynamic(light: UIColor, dark: UIColor) -> UIColor {
+        UIColor { @Sendable traits in traits.userInterfaceStyle == .dark ? dark : light }
+    }
+}
+
+extension Color {
+    init(hex: UInt32, alpha: Double = 1) {
+        self.init(uiColor: UIColor(hex: hex, alpha: alpha))
+    }
+
+    init(light: UIColor, dark: UIColor) {
+        self.init(uiColor: .dynamic(light: light, dark: dark))
+    }
+
+    /// 解析 `#RRGGBB`
+    init(hexString: String) {
+        var text = hexString.trimmingCharacters(in: .whitespaces)
+        if text.hasPrefix("#") { text.removeFirst() }
+        self.init(hex: UInt32(text, radix: 16) ?? 0)
+    }
+}
+
+/// 设计令牌：取自 App 图标——墨蓝描边、柴犬杏色、书页明黄
 enum Tok {
     static let bg = Color(light: UIColor(hex: 0xF7F4EF), dark: UIColor(hex: 0x0D0E18))
     static let bg1 = Color(light: UIColor(hex: 0xEFEBE4), dark: UIColor(hex: 0x151624))
@@ -48,6 +79,23 @@ enum Tok {
     // 阴影色
     static let shadowWarm = Color(light: UIColor(hex: 0x3A2C18), dark: UIColor.black)
 }
+
+/// 统一的弹簧曲线（原型 `--spring-soft / snappy / bouncy`）
+extension Animation {
+    static let soft = Animation.spring(duration: 0.52, bounce: 0.06)
+    static let snappy = Animation.spring(duration: 0.38, bounce: 0.08)
+    static let bouncy = Animation.spring(duration: 0.5, bounce: 0.32)
+    static let out = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.45)
+    static let ios = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.5)
+}
+
+enum Metrics {
+    static let coverRatio: CGFloat = 172.0 / 120.0
+    static let coverRadius: CGFloat = 6
+    static let cardRadius: CGFloat = 22
+}
+
+// MARK: - 阴影
 
 struct CoverShadow: ViewModifier {
     @Environment(\.colorScheme) private var scheme
@@ -92,4 +140,11 @@ struct RaisedSurface<S: InsettableShape>: ViewModifier {
             .shadow(color: scheme == .dark ? .clear : Color(hex: 0x3A2C18).opacity(0.1), radius: 7, y: 4)
     }
 }
-#endif
+
+extension View {
+    func coverShadow(lifted: Bool = false) -> some View { modifier(CoverShadow(lifted: lifted)) }
+    func cardSurface(radius: CGFloat = Metrics.cardRadius) -> some View { modifier(CardSurface(radius: radius)) }
+    func raisedSurface<S: InsettableShape>(_ shape: S) -> some View { modifier(RaisedSurface(shape: shape)) }
+}
+
+#endif  // #if os(iOS)
