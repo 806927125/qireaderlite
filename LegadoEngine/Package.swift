@@ -100,7 +100,11 @@ let package = Package(
             //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
             //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
             swiftSettings: [.swiftLanguageMode(.v6),
-                          .enableUpcomingFeature("DefaultActorIsolation"),
+                          // ⭐⭐⭐ **柴阅 `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor` 的编译器等价物** ⭐⭐⭐
+                          //   （不是 upcoming feature！upcoming feature 那个名字**不生效** ⇒ 表现为
+                          //    「main actor-isolated property 'chapters' can not be referenced from a
+                          //     nonisolated context」⇒ 顶层默认 @MainActor 才与柴阅一致）⭐⭐⭐
+                          .unsafeFlags(["-default-isolation", "MainActor"]),
                           .enableUpcomingFeature("ApproachableConcurrency")],
         ),
         // ⭐⭐⭐⭐⭐ ⑤ 柴阅的【阅读服务子集】（ReaderServices 的 Reading/Content/Library/Sources/Speech/Support）⭐⭐⭐
@@ -119,7 +123,11 @@ let package = Package(
             //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
             //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
             swiftSettings: [.swiftLanguageMode(.v6),
-                          .enableUpcomingFeature("DefaultActorIsolation"),
+                          // ⭐⭐⭐ **柴阅 `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor` 的编译器等价物** ⭐⭐⭐
+                          //   （不是 upcoming feature！upcoming feature 那个名字**不生效** ⇒ 表现为
+                          //    「main actor-isolated property 'chapters' can not be referenced from a
+                          //     nonisolated context」⇒ 顶层默认 @MainActor 才与柴阅一致）⭐⭐⭐
+                          .unsafeFlags(["-default-isolation", "MainActor"]),
                           .enableUpcomingFeature("ApproachableConcurrency")],
         ),
         // ⭐⭐⭐⭐⭐ ⑥ 柴阅的【阅读界面本体】（App/Sources/Reader）⭐⭐⭐
@@ -139,7 +147,11 @@ let package = Package(
             //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
             //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
             swiftSettings: [.swiftLanguageMode(.v6),
-                          .enableUpcomingFeature("DefaultActorIsolation"),
+                          // ⭐⭐⭐ **柴阅 `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor` 的编译器等价物** ⭐⭐⭐
+                          //   （不是 upcoming feature！upcoming feature 那个名字**不生效** ⇒ 表现为
+                          //    「main actor-isolated property 'chapters' can not be referenced from a
+                          //     nonisolated context」⇒ 顶层默认 @MainActor 才与柴阅一致）⭐⭐⭐
+                          .unsafeFlags(["-default-isolation", "MainActor"]),
                           .enableUpcomingFeature("ApproachableConcurrency")],
         ),
         // ⚠️⚠️ **旧的 `LegadoEngineTests` 已删**（2026-11-21 移植柴阅）⭐⭐⭐
