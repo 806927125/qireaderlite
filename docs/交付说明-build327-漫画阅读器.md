@@ -155,3 +155,51 @@ let sources = ChapterText(...).imageSources    // ← 从正文里抽图片地�
 - CI **45843182667**（main，commit `22002ae`）✅ success
 - 二进制体检：`CFBundleVersion = 328` ✔；漫画符号 3 个全在 ✔；老阅读器符号全 0 ✔；主题包 7 个 ✔
 - 产物：`QingYue-build328.zip`（+ `-noprov`）
+
+
+---
+
+# 附：build329 —— 修「正文服务漏传 images:」（真机「图片出不来」）
+
+> 真机（build328）：漫画页打开了、页码显示「1 / 2」（⇒ **目录/正文/抽地址这条链是通的**），
+> 但**图一直转圈** ⇒ 卡在**取图**。
+
+## 根因（只有一个）
+
+柴阅的 `BookContentService.imageData(_:book:chapter:)`：
+```swift
+let url = imageURL(src, book: book, chapter: chapter)          // 相对地址拼接 ✔
+if LocalBookStore.handles(url) { … }
+guard let images else { throw URLError(.resourceUnavailable) } // ⭐⭐⭐ 就是这里
+return try await images.data(for: url, source: source, isContent: true)
+```
+
+⇒ `images` 是 `ImageCache?`、**默认 nil** ⇒ **宿主不传就必然抛 `.resourceUnavailable`** ⭐⭐⭐
+⇒ **为什么漏**：柴阅上游 `LibraryServices.contentService(for:)` 是**传了** `images: images` 的
+⇒ 我们把 `LibraryServices` 拆成宿主门面协议（`ChaiyueReaderLibrary`）时**把这个依赖丢了** ⭐⭐⭐
+
+## 影响面（已逐条核实，不是猜的）
+
+| 路径 | 取图方式 | 329 前 |
+|---|---|---|
+| 漫画页的图 | `ComicModel` → `MediaSession.imageData` → **`service.imageData`** | ❌ 必抛错 |
+| 文字阅读器的**正文插图** | `ReaderSession.downloadImages` → **`service.imageData`** | ❌ 必抛错 |
+| 封面 / 缩略图 | `ImagePipeline` → **门面 `library.imageData`**（我们自己实现，带 images 实例） | ✅ 一直正常 |
+
+## 修
+
+① 宿主两处 `BookContentService(...)`（文字会话 + 漫画会话）**都传 `images: images`**（复用已有的 `ImageCache`）⭐⭐⭐
+② 门禁第⑨条：钉住「每一处正文服务都必须传 `images:`」+ 变异对照 ⇒ 漫画门禁 **40/40 绿** ⭐⭐⭐
+③ build 号 328 → 329
+
+## 顺带排除的三个怀疑（都不是问题）
+
+- `imageDecode`（正文图解密脚本）⇒ 两边结构一致（都在 `ruleContent` 里）⇒ 适配器的整体 JSON 编解码能带过去 ✔
+- 图片相对地址 ⇒ 柴阅 `imageURL(src:book:chapter:)` 用 `chapter.url` 作 base 拼接 ✔
+- 站方 `url,{"headers":…}` 写法 ⇒ `InlineImageSource(src).requestURL` 处理 ✔
+
+## 验证
+
+- CI **45845998214**（main，commit `8b225e7`）✅ success
+- 二进制体检：`CFBundleVersion = 329` ✔；漫画符号 3 个全在 ✔；老阅读器符号全 0 ✔；图标 ✔；主题包 7 个 ✔
+- 产物：`QingYue-build329.zip`（+ `-noprov`）
