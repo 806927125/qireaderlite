@@ -18,7 +18,7 @@ import Observation
 
 /// 宿主注入的「书源 + 书架 + 阅读会话」门面。
 /// ⭐⭐ **宿主 App 侧实现它** ⇒ 轻阅自己的书架/书源/章节缓存直接接进柴阅阅读器 ⭐⭐
-public protocol ChaiyueReaderLibrary {
+protocol ChaiyueReaderLibrary {
     /// 书架（书签、章节进度）
     var shelf: BookshelfRepository { get }
     /// 书源仓
@@ -34,19 +34,19 @@ public protocol ChaiyueReaderLibrary {
 }
 
 /// 朗读时打断宿主音频播放的最小接口（柴阅用的是 `AudioBookPlayer`，那是媒体层，不在阅读器范围）
-public protocol ReaderAudioPausing: AnyObject {
+protocol ReaderAudioPausing: AnyObject {
     func pause()
 }
 
 /// 默认实现：没有音频播放器时什么都不做
-public final class ReaderAudioPauser: ReaderAudioPausing {
-    public init() {}
+final class ReaderAudioPauser: ReaderAudioPausing {
+    init() {}
     func pause() {}
 }
 
 /// 阅读器的根状态对象（宿主用 `.environment(app)` 注入）
 @Observable
-public final class AppModel {
+final class AppModel {
     // MARK: - 依赖
 
     let library: ChaiyueReaderLibrary
@@ -71,11 +71,11 @@ public final class AppModel {
     /// 书源要求刷新登录界面（`java.reLoginView` / `java.upLoginData`）
     var loginSignal: SourceSignal?
     /// 可见封面在窗口中的位置（开书动画的起点），不参与界面刷新
-    @ObservationIgnored public var coverFrames: [String: CGRect] = [:]
+    @ObservationIgnored var coverFrames: [String: CGRect] = [:]
     /// 阅读器在打开期间接管「朗读读完一章」的处理
-    @ObservationIgnored public var speechChapterFinished: (() -> Void)?
+    @ObservationIgnored var speechChapterFinished: (() -> Void)?
 
-    public init(library: ChaiyueReaderLibrary,
+    init(library: ChaiyueReaderLibrary,
                 settings: ReaderSettings = ReaderSettings(),
                 speech: SpeechController = SpeechController(),
                 appearance: AppearanceStore = AppearanceStore(),
