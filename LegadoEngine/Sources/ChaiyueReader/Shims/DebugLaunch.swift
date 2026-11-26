@@ -126,8 +126,25 @@ enum DebugLaunch {
 
 extension AppModel {
     /// 标签栏（轻阅阅读器用不到 ⇒ 固定「发现」）⭐⭐⭐
-    var tab: MainTab { .explore }
+    var tab: MainTab = .shelf
 
     /// 导入本地文件（轻阅阅读器不接 ⇒ 空实现）⭐⭐⭐
     func importFile(_ url: URL) {}
+}
+
+
+// MARK: - 搜索路由（轻阅阅读器不接搜索 ⇒ 最小面）⭐⭐⭐
+
+/// 搜索结果打开的路由（轻阅：空实现）
+enum Route: Hashable {
+    case reader(Book)
+    case source(String)
+}
+
+/// 触发搜索（轻阅阅读器不接 ⇒ 空实现）
+func startSearch(_ keyword: String) {}
+
+extension ChaiyueReaderLibrary {
+    /// 搜索（轻阅阅读器不接 ⇒ 空实现）
+    func search(_ keyword: String) -> [SearchBook] { [] }
 }

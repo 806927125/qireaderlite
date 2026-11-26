@@ -19,8 +19,8 @@ import WebKit
 final class ContentImages {
     nonisolated(unsafe) static let shared = ContentImages()
 
-    private let decoded = NSCache<NSString, UIImage>()
-    private let placeholders = NSCache<NSString, UIImage>()
+    nonisolated(unsafe) private let decoded = NSCache<NSString, UIImage>()
+    nonisolated(unsafe) private let placeholders = NSCache<NSString, UIImage>()
 
     nonisolated init() {
         decoded.countLimit = 120
