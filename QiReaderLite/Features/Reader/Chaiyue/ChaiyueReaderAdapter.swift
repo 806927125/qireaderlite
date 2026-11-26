@@ -49,7 +49,7 @@ enum ChaiyueReaderAdapter {
     ///   - sourceName: 书源名（我们的 `Book.sourceName` 常常是空的 ⇒ 用源仓里的名字兜底）
     ///   - chapterIndex: 起始章号（-1 = 不知道 ⇒ 用 0）
     static func book(_ b: Book, sourceName: String = "", chapterIndex: Int = -1,
-                     sourceType: Int = 0) -> LegadoEngineHost.BookModel {
+                     sourceType: Int = 0, contentType: Int = 0) -> LegadoEngineHost.BookModel {
         // ⭐⭐⭐ **柴阅的 `Book` 没有无参 init**（它的 designated init 第一个参数是 `bookUrl`）
         //   ⇒ `BookModel()` 会报「missing argument for parameter 'bookUrl'」（CI28 实锤）⭐⭐⭐
         var book = LegadoEngineHost.BookModel(bookUrl: b.cleanBookUrl.isEmpty ? b.bookUrl : b.cleanBookUrl)
@@ -72,7 +72,11 @@ enum ChaiyueReaderAdapter {
         //   ⇒ 所以宿主这边也要**把书源类型搬进柴阅的 `Book.type`** ⇒
         //     `Book.mediaKind(sourceType:)` 才会判成 `.comic` ⇒ **判定只剩柴阅那一份真相** ⭐⭐⭐
         //   ⇒ ⚠️ 以前这个字段在宿主↔引擎的往返里被丢了 ⇒ 柴阅永远以为是文字书 ⇒ 漫画打不开 ⭐⭐⭐
-        book.type = sourceType
+        // ⭐⭐⭐⭐⭐ **形态三路取一**（2026-11-26 · 漫画 A 路 + B 路）⭐⭐⭐⭐⭐
+        //   ① `contentType` 站方**目录脚本**写的 `book.type`（聚合源按设备写形态的正规渠道）⭐⭐⭐
+        //   ② `sourceType`  **书源类型**（`BookSourceType`：0文字/1音频/**2图片**/3文件）⭐⭐⭐
+        //   ③ `b.mediaType` 宿主书里已有的形态（书架里存过的书 ⇒ 兜底）⭐⭐⭐
+        book.type = contentType != 0 ? contentType : (sourceType != 0 ? sourceType : b.mediaType)
         if chapterIndex >= 0 {
             book.durChapterIndex = chapterIndex
         }

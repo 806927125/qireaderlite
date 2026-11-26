@@ -112,19 +112,23 @@ console.log('\n── ⑤ type 断点（站方标的形态不能丢）──');
   const backend = codeOnly(read(path.join(ROOT, 'QiReaderLite/Core/LegadoEngineBackend.swift')));
   const host = codeOnly(read(path.join(ROOT, 'QiReaderLite/Features/Reader/Chaiyue/ChaiyueReaderHost.swift')));
   const service = codeOnly(read(path.join(ROOT, 'QiReaderLite/Core/SourceService.swift')));
+  const detail = codeOnly(read(path.join(ROOT, 'QiReaderLite/Features/BookDetail/BookDetailView.swift')));
 
   ok(/var mediaType: Int/.test(book),
      '⑤ 宿主 Book 有 mediaType（从 raw 现算 ⇒ **不动 Codable** ⇒ 旧书架数据不会解码失败）');
-  ok(/book\.type = sourceType/.test(adapter),
-     '⑤ 适配器把**书源类型**搬进柴阅的 Book.type（形态由书源类型决定：0文字/1音频/2图片/3文件）');
+  ok(/book\.type = contentType != 0 \? contentType : \(sourceType != 0 \? sourceType : b\.mediaType\)/.test(adapter),
+     '⑤ 适配器把形态搬进柴阅的 Book.type（**三路**：目录脚本写的 contentType → 书源类型 → 书里已有的 mediaType）');
+  ok(/var contentType: Int = 0/.test(detail), '⑤ 详情页独立 @State 接住站方目录脚本写的形态（改了 @State 才会重算 body）');
+  ok(/contentType: res\.bookType/.test(detail) || /res\.bookType/.test(detail),
+     '⑤ 详情页把目录返回的 bookType 收进 contentType');
   ok(/sourceType: source\?\.bookSourceType \?\? 0/.test(host),
      '⑤ 宿主把 source.bookSourceType 传给适配器（不传 ⇒ 永远判成文字书）');
   ok(/"type": b\.type/.test(backend), '⑤ bookPayload（引擎 → 宿主）带 type');
   ok(/fields\["bookSourceType"\] = String\(type\)/.test(service),
      '⑤ 详情页把 type 存成 bookSourceType（不污染站方自己的 type 字段）');
 
-  const mutated = adapter.replace(/book\.type = sourceType/, '');
-  ok(!/book\.type = sourceType/.test(mutated), '⑤ 变异⑤：适配器不搬类型后判据要能报（门禁有牙齿）');
+  const mutated = adapter.replace(/book\.type = contentType != 0 \? contentType : \(sourceType != 0 \? sourceType : b\.mediaType\)/, '');
+  ok(!/book\.type = contentType != 0/.test(mutated), '⑤ 变异⑤：适配器不搬类型后判据要能报（门禁有牙齿）');
 }
 
 console.log('\n── ⑥ 详情页按 mediaKind 分流到漫画屏 ──');

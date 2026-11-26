@@ -114,4 +114,12 @@ let sources = ChapterText(...).imageSources    // ← 从正文里抽图片地�
 - CI **45833353016**（main，commit `6f545a9`）：编译 + 5 个探针 + 柴阅引擎权威测试 全绿
 - 门禁：新门禁 24/24；全量 JS 门禁无回归
 - 产物：`QingYue-build327.zip`（+ `-noprov`）⇒ 解包验 **CFBundleVersion = 327** ✔
-- **二进制体检**：包内能找到 `ComicReaderScreen` / `ComicModel` / `ComicPagerController` 等漫画符号 ⭐⭐⭐
+- **二进制体检（实测）**：
+  | 项 | 结果 |
+  |---|---|
+  | `CFBundleVersion` | **327** ✔（`com.qireaderlite.app` / `CFBundleName QingYue`） |
+  | 漫画符号 | `ComicReaderScreen` / `ComicModel` / `ComicPagerController` / `ComicStripController` / `ComicChrome` / `ComicStage` **全部在包内** ⭐⭐⭐ |
+  | 老阅读器符号 | 8 个**全部 0 命中** ✔ |
+  | 图标资源 | `cy.list.bullet` / `cy.headphones` / `cy.sun.max` / `cy.textformat` / `Theme-xuan` **全部命中** ✔ |
+  | 主题包 | `ChaiyueThemes.bundle/Themes/` **7 个 `.chaiyuetheme` 全在** ✔ |
+  | 体积 | IPA 19.2 MB → **19.4 MB**（漫画阅读器本体） |

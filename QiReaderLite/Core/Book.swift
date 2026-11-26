@@ -42,7 +42,13 @@ struct Book: Codable, Identifiable, Hashable {
     ///   ⇒ `raw["bookSourceType"]` 是引擎回传的**书源类型**（权威）⭐⭐⭐
     ///   ⇒ `raw["type"]` 是**站方自己标的** type（iOS 2=图片 / Legado 64=图片）⇒ **后备** ⭐⭐⭐
     var mediaType: Int {
-        for key in ["bookSourceType", "type", "bookType", "mediaType"] {
+        // ⭐⭐⭐⭐⭐ **读顺序（形态有两条路，2026-11-26）**⭐⭐⭐⭐⭐
+        //   ① `contentType` —— **站方目录脚本写的 `book.type`**（iOS `2`=图片）
+        //      ⇒ 聚合站方按设备写形态的正规渠道（柴阅 `ChapterStore.saveBookType` 的注释原文）⭐⭐⭐
+        //   ② `bookSourceType` —— **书源类型**（0文字/1音频/**2图片**/3文件）
+        //      ⇒ 柴阅 `BookParsers` 里 `book.type = source.bookSourceType` ⇒ 「漫画源」走这条 ⭐⭐⭐
+        //   ③ `type` —— 站方自己标的原始 type（后备）⭐⭐⭐
+        for key in ["contentType", "bookSourceType", "type", "bookType", "mediaType"] {
             if let rawValue = raw[key], let value = Int(rawValue) { return value }
         }
         return 0

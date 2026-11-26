@@ -9,6 +9,11 @@ struct BookDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var book: Book
+    /// ⭐⭐⭐⭐⭐ **站方【目录脚本】写的书级形态**（2026-11-26 · 漫画 B 路）⭐⭐⭐⭐⭐
+    ///   聚合站方在目录脚本里按设备写 `book.type`（iOS `2`=图片）⇒ **这是漫画判定的正规渠道**⭐⭐⭐
+    ///   ⚠️ 必须是独立 `@State`（不能只改 `book.raw`）⇒ SwiftUI 只在 `@State` 变化时重算 body
+    ///   ⇒ 否则「目录回来了、但按钮还没变成『开始看漫画』」⭐⭐⭐
+    @State private var contentType: Int = 0
     @State private var chapters: [Chapter] = []
     @State private var tocDiag: String?
     @State private var tocDiagBusy = false
@@ -33,7 +38,8 @@ struct BookDetailView: View {
     ///   ⇒ 柴阅的 `BookParsers` 里也是 `book.type = source.bookSourceType` ⇒ 宿主必须照做 ⭐⭐⭐
     private var chaiyueBook: LegadoEngineHost.BookModel {
         ChaiyueReaderAdapter.book(book, sourceName: source?.name ?? book.sourceName,
-                                  sourceType: source?.bookSourceType ?? 0)
+                                  sourceType: source?.bookSourceType ?? 0,
+                                  contentType: contentType)
     }
 
     /// ⭐⭐⭐⭐⭐ **这本书是不是漫画** ⭐⭐⭐⭐⭐
@@ -421,6 +427,11 @@ struct BookDetailView: View {
                     source: s, tocUrl: tocURL, bookUrl: book.cleanBookUrl, book: book)
                 let list = res.chapters
                 chapters = list
+                // ⭐⭐⭐⭐⭐ **接住站方目录脚本写的形态**（漫画 B 路）⭐⭐⭐⭐⭐
+                //   ⇒ 目录脚本可能把这本书标成图片（漫画）⇒ 这一刻按钮就该变成「开始看漫画」⭐⭐⭐
+                //   ⚠️ 柴阅自己会把目录解析出的 type 写进章节缓存（`ChapterStore.saveBookType`）
+                //   ⇒ 缓存路径由柴阅负责还原；这里只管**宿主这一侧的分流判断** ⭐⭐⭐
+                if let t = res.bookType, t != 0 { contentType = t }
                 if list.isEmpty {
                     // ⚠️⚠️ **提示要说人话**（2026-10-22 真机「QQ 阅读目录出不来」）：
                     //   以前一律报「chapterList 规则没命中」⇒ **误导** ——

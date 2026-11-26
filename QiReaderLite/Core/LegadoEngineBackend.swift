@@ -216,8 +216,14 @@ final class LegadoEngineBackend {
                 item["tag"] = c.tag ?? ""
                 return item
             }
+            // ⭐⭐⭐⭐⭐ **【新增】目录脚本写的书级形态**（2026-11-26 · 漫画 B 路）⭐⭐⭐⭐⭐
+            //   柴阅的 `ChapterStore.saveBookType` 的注释写着：「**目录脚本写入的 `book.type`**
+            //   （听书、漫画、短剧），随目录缓存，目录走缓存时据此还原」⭐⭐⭐
+            //   ⇒ **形态还有第二路**：聚合站方在**目录脚本**里按设备写 `book.type`（iOS 2=图片）⭐⭐⭐
+            //   ⇒ 之前这个值在引擎→宿主这一层**被丢了** ⇒ 宿主判不出漫画 ⇒ 打不开 ⭐⭐⭐
+            //   ⇒ 这里把它带出来（`result.book.type` 在目录解析后就是最终值）⭐⭐⭐
             return ["chapters": list, "rawCount": result.chapters.count,
-                    "bookName": result.book.name]
+                    "bookName": result.book.name, "bookType": result.book.type]
 
         case "content":
             let ch = chapter(from: payload)

@@ -935,6 +935,10 @@ final class SourceService {
         /// 是否过滤掉了「书自己」那条占位（= 站方服务器没抓到这本书的章节）
         var placeholderFiltered: Bool? = nil
         var bookName: String? = nil
+        /// ⭐⭐⭐⭐⭐ **【新增】站方【目录脚本】写的书级形态**（2026-11-26 · 漫画 B 路）⭐⭐⭐⭐⭐
+        ///   聚合站方在目录脚本里按设备写 `book.type`（iOS `2`=图片）⇒ **这是漫画的第二条判据**⭐⭐⭐
+        ///   ⚠️ 之前引擎→宿主这一层把它丢了 ⇒ 宿主判不出漫画 ⭐⭐⭐
+        var bookType: Int? = nil
     }
 
     /// 目录结果 + 诊断信息
@@ -943,6 +947,8 @@ final class SourceService {
         var rawCount: Int = 0
         var placeholderFiltered: Bool = false
         var bookName: String = ""
+        /// ⭐⭐⭐ **站方目录脚本写的书级形态**（漫画 B 路；0/ nil = 没标）⭐⭐⭐
+        var bookType: Int? = nil
     }
     struct ContentDTO: Codable {
         var title: String = ""
@@ -1559,7 +1565,8 @@ final class SourceService {
             },
             rawCount: dto.rawCount ?? dto.chapters.count,
             placeholderFiltered: dto.placeholderFiltered ?? false,
-            bookName: dto.bookName ?? (book?.name ?? "")
+            bookName: dto.bookName ?? (book?.name ?? ""),
+            bookType: dto.bookType
         )
     }
 
