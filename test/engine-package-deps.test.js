@@ -3,7 +3,7 @@
 // 跑法：node test/engine-package-deps.test.js
 //
 // ⚠️ **为什么必须有这条门禁**（CI build296 真机实证）：
-//   `LegadoEngine/Sources/ChaiyueEngine/JS/JSNatives.swift` 里 `import Crypto`
+//   `LegadoEngine/Sources/ChaiyueEngine/Crypto/Digests.swift` 里 `import Crypto`
 //   ⇒ Apple 平台上 **`Crypto` 不是系统模块**（Apple 只有 `CryptoKit`）
 //   ⇒ 不在 Package.swift 里声明 swift-crypto ⇒ **iOS 编译必挂**：
 //      `error: Unable to find module dependency: 'Crypto'`
@@ -39,6 +39,14 @@ const SYSTEM_MODULES = new Set([
   'CoreFoundation', 'CoreGraphics', 'CoreText', 'CoreImage', 'QuartzCore',
   'Darwin', 'Glibc', 'Dispatch', 'os', 'CryptoKit', 'PackageDescription',
   'Accelerate', 'Metal', 'MetalKit', 'ARKit', 'AVFoundation', 'CoreLocation',
+  // ⭐⭐⭐ **2026-11-26 补齐**（柴阅阅读器搬进来后暴露的漏项）⭐⭐⭐
+  'AVKit',            // 柴阅的 SourcePresenter 用它播视频 ⭐⭐⭐
+  'ImageIO',          // 柴阅的 SVG 光栅化（ImagePipeline）⭐⭐⭐
+  'MediaPlayer',      // 柴阅的朗读/音频 ⭐⭐⭐
+  'Observation',      // 柴阅的 @Observable（iOS 17+）⭐⭐⭐
+  'UniformTypeIdentifiers', // 柴阅的主题包导入（UTType）⭐⭐⭐
+  'CoreData', 'CoreML', 'Vision', 'Photos', 'PhotosUI', 'AVFAudio', 'AudioToolbox',
+  'Speech', 'Network', 'GlibcDarwin', 'DarwinGlibc', 'ObjectiveC', 'sqlite3',
 ]);
 
 function walk(dir, out) {
@@ -72,7 +80,14 @@ for (const m of pkgText.matchAll(/\.package\(\s*url:\s*"[^"]*\/([^"/]+?)(?:\.git
 }
 // ②-B `.library(name: "X")` ⇒ 本包自己产的 product
 // ⭐⭐⭐ **本包内部的 target 名**（柴阅的模型层/引擎层 ⇒ 是同包引用，不是外部依赖）⭐⭐⭐
-const INTERNAL_TARGETS = new Set(['ChaiyueEngine', 'ChaiyueModels', 'LegadoEngine']);
+// ⭐⭐⭐⭐⭐ **本包内部的 target 名（自动收集，不用手写名单）**（2026-11-26）⭐⭐⭐⭐⭐
+//   ⚠️ 之前是**硬编码三个** ⇒ 柴阅阅读器搬进来后新增的 `ChaiyueReaderKit` / `ChaiyueReaderServices`
+//     被**误报成「外部模块没声明」**（7 个失败里有 2 个是这个）⭐⭐⭐
+//   ⇒ 正解：**从 Package.swift 的 `.target(name:)` 里自动收集全部** ⇒ 以后再加 target 也不会漏 ⭐⭐⭐
+const INTERNAL_TARGETS = new Set();
+for (const m of pkgText.matchAll(/\.target\(\s*\n?\s*name:\s*"([^"]+)"/g)) INTERNAL_TARGETS.add(m[1]);
+for (const m of pkgText.matchAll(/\.executableTarget\(\s*\n?\s*name:\s*"([^"]+)"/g)) INTERNAL_TARGETS.add(m[1]);
+for (const m of pkgText.matchAll(/\.testTarget\(\s*\n?\s*name:\s*"([^"]+)"/g)) INTERNAL_TARGETS.add(m[1]);
 const localProducts = new Set();
 for (const m of pkgText.matchAll(/\.library\(\s*name:\s*"([^"]+)"/g)) localProducts.add(m[1]);
 // ②-C 每个 target 的 dependencies 块

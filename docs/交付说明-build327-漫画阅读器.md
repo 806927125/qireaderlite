@@ -203,3 +203,62 @@ return try await images.data(for: url, source: source, isContent: true)
 - CI **45845998214**（main，commit `8b225e7`）✅ success
 - 二进制体检：`CFBundleVersion = 329` ✔；漫画符号 3 个全在 ✔；老阅读器符号全 0 ✔；图标 ✔；主题包 7 个 ✔
 - 产物：`QingYue-build329.zip`（+ `-noprov`）
+
+
+---
+
+# 附：build331 —— 引擎侧清理：老引擎的残留全删（只留柴阅）
+
+> 用户：「**你看下引擎侧是不是除了柴阅的引擎的，还有老的引擎代码，有的话全给我删了，只留柴阅的**」
+
+## 盘点结论：源码里已经没有老引擎了，但有**两处遗留物**
+
+历史上有两条引擎，都已退役：
+① **老 JS 引擎**（WKWebView + `Resources/engine/*.js`）⇒ 2026-10-25 物理删除
+② **自研 Swift 引擎**（从「六阅 LegadoR」二进制逆向重建，模块前缀 `LegadoR`）⇒ 已物理删除
+
+⭐⭐⭐ **全量盘点方法**（不是靠 grep 猜）：把 `LegadoEngine/Sources` 下**每一个 .swift**
+与上游柴阅（`Packages/ReaderCore/Sources` + `App/Sources`）**逐文件按内容行集相似度比对** ⇒
+「对不上」的 45 个文件逐一分类 ⇒ **全是**我们自己的 shim / 改造 / public 出口（合理、必须留）
+⇒ ⇒ **源码层没有老引擎残留** ⭐⭐⭐
+
+真正要删的是两处**遗留物**：
+
+| 删什么 | 为什么 |
+|---|---|
+| `LegadoEngine/Reference/`（7 个文件） | ② 的**逆向产物**：5 个 blob JS + `engine_api.txt`（`LegadoR.AnalyzeRule.*` 接口清单）+ `engine_properties.txt` + `node_bridge_test.js`（引用早就不存在的 `Sources/LegadoEngine/JS/Resources`）⭐⭐⭐ |
+| `LegadoEngine/README.md`（整份重写） | **整份是 ② 的说明书**：讲的目录（`Models/ Core/ Analyzers/ Net/ JS/`）、API（`JSBridge`/`JSHost`/`RuleVariables`/`JSNatives`）、测试（`Tests/RuleTests.swift`）**全都不存在了** ⇒ 留着会**误导**任何看它的人 ⭐⭐⭐ |
+
+## 明确**不删**的（名字像老引擎，但其实是当前链路）
+
+| 文件 | 为什么留 |
+|---|---|
+| `QiReaderLite/Core/LegadoCompat.swift` | **不是老引擎** ⇒ 是宿主给站方 JS 的原生能力实现（`java.timeFormat` 等）⇒ 当前链路的一部分 ⭐⭐⭐ |
+| `QiReaderLite/Core/LegadoEngineProbe.swift` | 是**柴阅的接入探针**（不是老引擎的）⭐⭐⭐ |
+| `Sources/LegadoEngine/`（模块名） | **宿主门面**（`LegadoEngineHost` 类型别名 + 键值仓）⇒ 宿主 App 全靠它 ⇒ 不能删 ⭐⭐⭐ |
+| `ChaiyueEngine/JS/*` | 柴阅**自己的** JS 运行时（`JavaBridge`/`JSPrelude`/`JSRuntime`…）+ 我们的 Linux 桩 ⇒ 柴阅的 ⭐⭐⭐ |
+| `ChaiyueEngine/Compat/LegadoPublicAPI.swift` | 我们自己的公开 API 层（宿主调它）⭐⭐⭐ |
+| `LegadoEngine/Tests/*` | 柴阅的**权威测试**（`ChaiyueModelsTests` / `ChaiyueRuleEngineTests`）⭐⭐⭐ |
+| `docs/` 下的历史交接文档 | **历史记录，不改** ⭐⭐⭐ |
+
+## 顺手修的门禁缺陷（基线红 ⇒ 全绿）
+
+`test/engine-package-deps.test.js`：**37/7 → 44/0** ⭐⭐⭐
+① `SYSTEM_MODULES` 白名单**缺** `AVKit`/`ImageIO`/`MediaPlayer`/`Observation`/`UniformTypeIdentifiers`
+   （柴阅阅读器搬进来后暴露的）⭐⭐⭐
+② `INTERNAL_TARGETS` 是**硬编码三个** ⇒ 新增的 `ChaiyueReaderKit`/`ChaiyueReaderServices`
+   被**误报成「外部模块没声明」** ⇒ 改成**从 Package.swift 自动收集全部 target 名** ⇒ 以后加 target 也不会漏 ⭐⭐⭐
+
+## 新门禁（让「删干净」可持续）
+
+`test/engine-no-legacy.test.js`（**7 项**）⇒ 四条判据：
+① `LegadoEngine/Reference/` **不许存在**
+② README **不许教人用**老引擎的 API/路径（`JSNatives`/`node_bridge_test`/`RuleTests.swift`/`JSBridge`/`JSHost`/`RuleVariables`/老目录名）
+   ⇒ ⚠️ 「六阅 / LegadoR **已物理删除**」这种**历史说明允许**（必要且有价值）⭐⭐⭐
+③ 源码里**不许出现** `LegadoR.` 前缀
+④ `Sources/LegadoEngine/`（门面模块）**只许有那两个门面文件** ⇒ 老引擎代码不许混进同名目录
+
+## 验证
+
+- CI：main（commit 见下）绿
+- 门禁：新门禁 7/7；`engine-package-deps` **44/0**；`engine-apple-api` 645/0；阅读器相关 42/47/54/39 全绿

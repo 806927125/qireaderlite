@@ -3,7 +3,7 @@
 // 跑法：node test/engine-apple-api.test.js
 //
 // ⚠️ **为什么必须有这条门禁**：
-//   `LegadoEngine/…/JS/JSNatives.swift` 里有一部分代码**只在 Apple 平台编译**
+//   柴阅的 `LegadoEngine/Sources/ChaiyueEngine/` 里有一部分代码**只在 Apple 平台编译**
 //   （`#if canImport(JavaScriptCore) && !os(Linux)`）
 //   ⇒ ⇒ **沙盒 Linux 门禁永远绿** ⇒ 这类错**只有 CI 能暴露** ⇒ 每次 4~5 分钟一轮 ⭐⭐⭐
 //   ⇒ 必须有静态门禁提前抓 ⭐⭐⭐

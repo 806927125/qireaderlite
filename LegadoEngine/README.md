@@ -1,127 +1,96 @@
-# LegadoEngine
+# LegadoEngine —— 柴阅（Chaiyue）引擎 + 阅读器
 
-从「六阅 LegadoR」iOS app（`io.legado.reader.ios` v1.0.7）逆向重建的 **Legado 3.0 书源规则引擎**，
-可直接集成进你自己的 iOS app。兼容网上绝大多数 Legado 书源 JSON（阅读 3.0）。
+> ⚠️⚠️ **本仓库现在只有【柴阅/Chaiyue】一套引擎** ⭐⭐⭐
+> 老引擎（2026-10-25 退役的老 JS 引擎、以及从「六阅 LegadoR」二进制逆向重建的自研 Swift 引擎）
+> **已物理删除**：代码、逆向产物（`Reference/`）、说明文档、老 API 说明，全部不再保留 ⭐⭐⭐
+> ⇒ 只看这一份文档即可；文档里提到的东西都还在，文档**没**提到的东西就是没了 ⭐⭐⭐
 
-## 来源与保真度（务必了解）
+---
+
+## 1. 引擎 = 柴阅（GPL-3.0）
 
 | 部分 | 来源 | 保真度 |
 |---|---|---|
-| 全部类型/属性/方法签名 | 原 app 二进制未剥离符号表（30.5 万符号，精确 demangle） | 精确 |
-| JS 扩展层（`Resources/*.js`，java/cookie/cache/jsoup/Rhino 兼容 shim） | 原 app 二进制内嵌明文 JS，1:1 提取 | 原样 |
-| 书源 JSON 字段名 | 原二进制 CodingKeys 字符串提取 | 精确 |
-| Swift 实现体 | 按符号签名 + 开源 gedoor/legado（Kotlin）引擎语义重建 | 高保真重建，非原始代码 |
+| 规则引擎 `ChaiyueEngine` | 柴阅 `Packages/ReaderCore/Sources/RuleEngine`（vendor 进本仓库） | **原版源码** |
+| 模型 `ChaiyueModels` | 柴阅 `Packages/ReaderCore/Sources/ReaderModels` | **原版源码** |
+| 阅读器 `ChaiyueReader` / `ReaderKit` / `ReaderServices` | 柴阅 `App/Sources/Reader` + `Packages/ReaderCore/Sources/{ReaderKit,ReaderServices}` | **原版源码** |
+| 宿主门面 `LegadoEngine` | 我们写的适配层（类型别名 + 宿主入口） | 我们写的 |
 
-原 app 本身是开源 Legado 的 iOS Swift 移植，规则语义与安卓版一致。
-`Reference/` 目录保留了从二进制提取的完整引擎接口清单，可自行核对。
+⇒ **语义 = Legado 3.0**（兼容网上绝大多数 Legado 书源 JSON）
+⇒ ⚠️ **模块名/类型名保留 `LegadoEngine`**（宿主 `import LegadoEngine` 一行不改 ⇒ UI 零改动）⭐⭐⭐
+⇒ ⚠️ **许可**：柴阅 = **GPL-3.0** ⇒ 本仓库内 `Chaiyue*` 目录是柴阅源码
+   ⇒ **自用、不分发** ⇒ 不触发 GPL 分发义务；**一旦分发/上架 ⇒ 必须整体 GPL-3.0 + 提供对应源码** ⭐⭐⭐
 
-## 集成（Swift Package Manager）
+---
 
-把 `LegadoEngine` 目录放进你的仓库，Xcode → File → Add Package Dependencies → Add Local，
-或在你的 `Package.swift` 中：
+## 2. 目录（当前真实内容）
 
-```swift
-.package(path: "LegadoEngine")
-// target 依赖: .product(name: "LegadoEngine", package: "LegadoEngine")
+```
+Sources/
+  ChaiyueEngine/        柴阅规则引擎（43 文件）—— 规则求值 / JS 运行时 / 网络 / 登录
+  ChaiyueModels/        柴阅模型（13 文件）—— 书源 / 书 / 章 / 规则模型（JSON 兼容）
+  ChaiyueReader/        柴阅阅读界面（69 文件）—— 文字阅读器 + 漫画阅读器 + App 层 shim
+  ChaiyueReaderKit/     柴阅排版内核（7 文件）—— 分页 / CSS / 主题脚本 / 偏移映射
+  ChaiyueReaderServices/柴阅阅读服务（21 文件）—— 正文 / 内容处理 / 书架仓 / 书源仓 / 朗读 / 缓存
+  ChaiyueProbe…5/       探针（5 个可执行）—— 真引擎 + 真源 + 真网络
+  LegadoEngine/         宿主门面（2 文件）—— `LegadoEngineHost` 类型别名 + 键值仓
+Tests/
+  ChaiyueModelsTests/   柴阅模型的权威测试
+  ChaiyueRuleEngineTests/ 柴阅规则引擎的权威测试（CI 上 `swift test` 跑）
 ```
 
-要求 iOS 16+。依赖 SwiftSoup（HTML 默认规则）与 Kanna（XPath），会自动拉取。
+⚠️ **没有** `Reference/`、**没有** `JS/Resources`、**没有** `Models/ Core/ Analyzers/ Net/` 这些老引擎目录
+⇒ 那些是老引擎（`LegadoR`）的东西，**已删** ⭐⭐⭐
 
-## 用法
+---
+
+## 3. 编译设置（⭐⭐⭐ 分层照抄柴阅，别再混）
+
+| 层 | 柴阅出处 | 本仓库 target | 设置 |
+|---|---|---|---|
+| 柴阅 SPM 包层 | `Packages/ReaderCore` | `ChaiyueEngine` / `ChaiyueModels` / `ChaiyueReaderKit` / `ChaiyueReaderServices` | tools 6.0 + `swiftLanguageMode(.v6)`，**无默认隔离** |
+| 柴阅 App 层 | `App/project.yml` | `ChaiyueReader`（阅读界面 + shim） | `.v6` + `.unsafeFlags(["-default-isolation","MainActor"])` + `ApproachableConcurrency` |
+| 引擎侧（按 Swift 5 写的） | — | `ChaiyueModels` / `ChaiyueEngine` / `LegadoEngine` | **钉死 `.v5`**（tools 6.0 会把它们默认拖进 v6 ⇒ 探针炸） |
+| 探针 / 测试 | — | 5 个探针 + 2 个 testTarget | **钉死 `.v5`** |
+
+⭐ 平台下限：**iOS 17 / macOS 14**（柴阅用 `@Observable`）
+
+---
+
+## 4. 宿主怎么用
 
 ```swift
 import LegadoEngine
 
-// 1. 导入书源（单个对象或数组都支持）
-let sources = try BookSource.parse(jsonData)
-let source = sources[0]
-
-// 2. 搜索
-let books = try await LegadoEngine.search(source: source, key: "斗破苍穹")
-
-// 3. 详情 + 目录
-let book = books[0].toBook()
-let info = try await LegadoEngine.bookInfo(source: source, book: book)
-let chapters = try await LegadoEngine.chapters(source: source, book: info)
-
-// 4. 正文
-let text = try await LegadoEngine.content(source: source, book: info, chapter: chapters[0])
-
-// 发现页
-let kinds = LegadoEngine.exploreKinds(source: source)
-let list = try await LegadoEngine.explore(source: source, kind: kinds[0])
+// 全部指向柴阅的模型 ⇒ 行为与柴阅逐字一致
+let source: LegadoEngineHost.Source = …          // = ChaiyueModels.BookSource
+let book:    LegadoEngineHost.BookModel = …      // = ChaiyueModels.Book
+let chapter: LegadoEngineHost.ChapterModel = …   // = ChaiyueModels.BookChapter
 ```
 
-也可以单独用规则引擎解析任意内容：
+⭐ **命名纪律**：宿主 App 侧还有自己的 `Book` / `Chapter` / `BookSource`
+⇒ `import ChaiyueEngine` 会把柴阅的同名类型也带进来 ⇒ **裸写类型名会 ambiguous**
+⇒ 一律用 `LegadoEngineHost.*` 别名（或宿主自己的 `QiBook` / `QiChapter`）⭐⭐⭐
 
-```swift
-let rule = AnalyzeRule(source: source)
-rule.setContent(htmlString, baseUrl: "https://example.com/list/")
-let title = try rule.getString("class.bookname.0@text")
-let links = try rule.getStringList("class.list@tag.a@href", isUrl: true)
-```
+---
 
-书源变量持久化：`BookSource.variable` / `Book.variable` 是 JSON 字符串，
-引擎运行中 JS `source.putVariable` 等会写入内存对象，宿主 app 负责落盘。
+## 5. 验证
 
-## 能力范围
+| 手段 | 位置 |
+|---|---|
+| 柴阅模型的权威测试 | `Tests/ChaiyueModelsTests` |
+| 柴阅规则引擎的权威测试 | `Tests/ChaiyueRuleEngineTests`（CI 上 `swift test` 跑）⭐⭐⭐ |
+| 5 个真探针（真引擎 + 真源 + 真网络） | `Sources/ChaiyueProbe…5`（CI 上跑）⭐⭐⭐ |
+| 静态门禁 | 仓库 `test/` 下：`engine-apple-api` / `engine-package-deps` / `chaiyue-port-contract` / `reader-*` 等 |
 
-- 规则语法：默认(JSoup) / `@json:` / `@XPath:` / `:regex` / `@js:` / `<js>`，
-  `{{...}}` 内嵌、`@put/@get`、`##正则##替换`、`||` `&&` `%%` 组合
-- AnalyzeUrl：GET/POST、options JSON、header 合并、charset（含 GBK）、data: URI、
-  webView 抓取（WKWebView + webJs + sourceRegex 嗅探）、loginCheckJs、并发限速
-- JS 扩展：java.ajax/加解密(AES/DES/RSA/签名)/base64/hex/md5/sha/gzip/时间格式化/
-  cookie/cache/文件/jsoup/编码转换，Rhino 语法兼容（原 app 同款 shim）
+⭐ **沙盒 Linux 编不到 SwiftUI/UIKit** ⇒ iOS 界面层只能靠 CI 验编译
+⇒ 改动 iOS 界面后**别指望本地 `swift build` 绿**，以 CI 为准 ⭐⭐⭐
 
-## 已知限制
+---
 
-- 图片解密（bitmap 原生）与 TTF 字体反爬：JS shim 已就位，原生侧为 stub（返回 null），
-  需要时按 `JS/` 中注释补齐 CoreGraphics/CoreText 实现。
-- 登录 UI（loginUi 表单）、书源调试 UI 不在引擎范围内，宿主 app 自行实现；
-  `JSHost` 协议可接收 JS 的 log/toast。
-- 引擎不做持久化、不做替换净化(ReplaceRule)管理；正文净化规则 `replaceRegex` 已支持。
-- JS 层依赖 JavaScriptCore，仅 Apple 平台可用；Linux 分支仅供 CI 编译核心解析逻辑。
+## 6. 许可提示
 
-## 目录
-
-```
-Sources/LegadoEngine/
-  Models/      书源/书籍/章节/规则模型（JSON 兼容）
-  Core/        AnalyzeRule / AnalyzeUrl / RuleSplitter
-  Analyzers/   ByDefault(SwiftSoup) / ByXPath(Kanna) / ByJSONPath / ByRegex
-  Net/         HTTPClient / ConcurrentRateLimiter / WebFetcher
-  JS/          JSBridge + 原生扩展 + Resources(原样提取的 JS shim)
-  LegadoEngine.swift  门面 API
-Reference/     原二进制提取的引擎符号清单与 JS 原始 blob
-Tests/         解析/规则/JS 单元测试
-```
-
-## 验证状态
-
-- 核心解析层（Models/Analyzers/Core/Net/门面）：Swift 6.0.3 Linux `swift build` 零警告通过，
-  `swift test` 20/20 通过（书源解析、默认/JSON/正则规则、@put/@get、##替换、||/&&/%%、URL 构造等）。
-- JS 契约：`Reference/node_bridge_test.js` 用 node 加载原样提取的 5 个 bootstrap，
-  按 `JSNatives.swift` 相同的参数约定模拟原生分发，32/32 断言通过
-  （base64/md5/AES-ECB/CBC/DES 往返、gzip/deflate 往返、cache、jsoup 包装、source/book 绑定、Rhino 改写）。
-  运行：`node --openssl-legacy-provider Reference/node_bridge_test.js`（需修改文件内资源路径）。
-- JS 原生实现（JSBridge/JSNatives 的 Apple 分支）：已通过语法检查与上述契约验证，
-  但 JavaScriptCore/CommonCrypto/Security 无法在 Linux 沙箱编译，**首次请在 Xcode 里 Build 一次**；
-  若有小的 API 出入，集中在 `JS/JSNatives.swift`，按编译提示微调即可。
-- `Tests/RuleTests.swift` 的 `testJSBridge` 在 Apple 平台会自动跑真 JS 断言。
-
-接收 JS 的 log/toast：
-
-```swift
-final class MyHost: JSHost {
-    func jsLog(_ msg: String) { print("[书源JS]", msg) }
-    func jsToast(_ msg: String) { /* 弹 toast */ }
-}
-let bridge = JSBridge(source: source, book: book, chapter: nil,
-                      variables: RuleVariables(), host: MyHost())
-let v = try bridge.eval("java.md5Encode('abc')")
-```
-
-## 许可提示
-
-原 app 为开源 Legado（GPL-3.0）的衍生移植；本重建参考了其开源引擎语义。
-若你的 app 闭源分发，请自行评估 GPL 合规风险（规则引擎语义本身来自 GPL 项目）。
+- 柴阅（github.com/Lincb522/Chaiyue）= **GPL-3.0** ⇒ 本仓库内 `Sources/Chaiyue*` 是柴阅源码 ⭐⭐⭐
+- 宿主门面 `Sources/LegadoEngine` 与宿主 App 是我们自己的代码
+- **自用、不分发** ⇒ 不触发 GPL 分发义务
+- ⚠️ **一旦把 App 的二进制分发给他人 / 上架 ⇒ 必须整体以 GPL-3.0 发布并提供对应源码** ⭐⭐⭐
