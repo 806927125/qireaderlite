@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 import ChaiyueModels
-import RuleEngine
+import ChaiyueEngine
 
 /// 换源候选：其他书源中书名一致、作者相符的搜索结果。`book.respondTime` 为该书源的搜索耗时（毫秒）
 public struct SourceCandidate: Identifiable, Hashable, Sendable {
