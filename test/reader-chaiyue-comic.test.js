@@ -163,5 +163,25 @@ console.log('\n── ⑦ 漫画用到的两个「柴阅 App 层成员」必须�
   ok(!/static var press: PressStyle/.test(mutated), '⑦ 变异⑦：去掉 .press 后判据要能报（门禁有牙齿）');
 }
 
+console.log('\n── ⑧ AppModel 不得有「编译器类型检查超时」的链式表达式 ──');
+{
+  // ⭐⭐⭐ **CI 45838661911 实证**：给 `AppModel` 加了 `MediaLaunch?` ⇒ `@Observable` 生成的代码变重
+  //   ⇒ `voiceName` 那条**链式可选表达式**的推断负担越过编译器阈值 ⇒
+  //   报 `the compiler is unable to type-check this expression in reasonable time`
+  //   ⇒ 并**级联**报出「cannot find 'LocalVoice' in scope」（假象！）⭐⭐⭐
+  //   ⇒ 修法：拆成显式分支 ⇒ 编译器不用推导 ⇒ 又快又稳 ⭐⭐⭐
+  const model = codeOnly(read(path.join(PKG, 'Shims/AppModel.swift')));
+  const voiceName = (model.match(/var voiceName: String \{[\s\S]*?\n    \}/) || [''])[0];
+  ok(voiceName.length > 0, '⑧ 找得到 voiceName');
+  ok(!/\?\?/.test(voiceName),
+     '⑧ voiceName 里没有 `??` 链（那是最容易顶爆类型检查的写法）');
+  ok(/if let/.test(voiceName), '⑧ voiceName 是显式分支（编译器不用推导）');
+
+  const mutated = model.replace(/var voiceName: String \{[\s\S]*?\n    \}/,
+    'var voiceName: String { onlineSpeech?.name ?? settings.speechVoice.flatMap { id in voices.voices.first { $0.id == id }?.name } ?? "系统语音" }');
+  const mutatedVoice = (mutated.match(/var voiceName: String \{[\s\S]*?\n    \}/) || [''])[0];
+  ok(/\?\?/.test(mutatedVoice), '⑧ 变异⑧：换回链式写法后判据要能报（门禁有牙齿）');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);

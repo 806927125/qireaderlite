@@ -228,8 +228,19 @@ public final class AppModel {
     }
 
     /// 当前声音的名称
+    ///
+    /// ⭐⭐⭐⭐⭐ **【改造】拆成显式 if**（2026-11-26 · CI 45838661911 实证）⭐⭐⭐⭐⭐
+    ///   **症状**：`error: the compiler is unable to type-check this expression in reasonable time`
+    ///   （同一行还级联报出「cannot find 'LocalVoice' in scope」⇒ 那是**编译器放弃类型检查后的假象**）⭐⭐⭐
+    ///   **触发点**：给 `AppModel` 加了 `MediaLaunch?`（含 `Book`）⇒ `@Observable` 生成的代码变重
+    ///   ⇒ 这条**链式可选表达式**的推断负担越过编译器阈值 ⇒ 整个文件编译失败 ⭐⭐⭐
+    ///   ⇒ 修法：**拆成显式分支 + 显式类型** ⇒ 编译器不用推导 ⇒ 又快又稳 ⭐⭐⭐
     var voiceName: String {
-        onlineSpeech?.name ?? settings.speechVoice.flatMap { id in voices.voices.first { $0.id == id }?.name } ?? "系统语音"
+        if let online = onlineSpeech, !online.name.isEmpty { return online.name }
+        if let id = settings.speechVoice, let voice = voices.voices.first(where: { $0.id == id }) {
+            return voice.name
+        }
+        return "系统语音"
     }
 
     /// 选中且启用的在线朗读源
