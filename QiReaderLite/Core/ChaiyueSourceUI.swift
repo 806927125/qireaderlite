@@ -57,7 +57,7 @@ final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost.InteractionP
 
     /// ⭐⭐⭐ **浏览器**（`java.startBrowser` / `startBrowserAwait` / `showBrowser`）⭐⭐⭐
     func presentBrowser(_ request: LegadoEngineHost.BrowserRequest,
-                        completion: @escaping @MainActor (LegadoEngineHost.BrowserResult?) -> Void) {
+                        completion: @escaping @MainActor @Sendable (LegadoEngineHost.BrowserResult?) -> Void) {
         // ⚠️⚠️ **html/js 场景 ⇒ 轻阅的 BrowserSheet 撑不住** ⇒ 交给**柴阅的后台渲染** ⭐⭐⭐
         //   （柴阅的 `WebViewRenderer` 支持 html/js ⇒ 返回渲染后的 HTML）⭐⭐⭐
         if let html = request.html, !html.isEmpty {
@@ -82,7 +82,7 @@ final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost.InteractionP
 
     /// ⭐⭐⭐ **验证码**（`java.getVerificationCode`）⭐⭐⭐
     func presentVerificationCode(imageURL: String, sourceKey: String,
-                                 completion: @escaping @MainActor (String?) -> Void) {
+                                 completion: @escaping @MainActor @Sendable (String?) -> Void) {
         // ⚠️ 用系统弹窗（不新增 UI 页面 ⇒ 改动最小）⭐⭐⭐
         guard let url = URL(string: imageURL) else { completion(nil); return }
         let alert = UIAlertController(title: "请输入验证码", message: nil, preferredStyle: .alert)

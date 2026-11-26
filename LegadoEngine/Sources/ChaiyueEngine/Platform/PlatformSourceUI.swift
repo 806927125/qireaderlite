@@ -24,12 +24,21 @@ public struct BrowserRequest: Sendable, Equatable {
 }
 
 /// 需要用户参与的交互，由界面层实现。回调必须且只调用一次
+///
+/// ⭐⭐⭐⭐⭐ **【改造】回调显式标 `@Sendable`**（2026-11-26 · 柴阅阅读器整包 vendor）⭐⭐⭐⭐⭐
+///   柴阅上游两个 target（`ReaderPlatform` 包 + `App` app target）**都是 Swift 6**
+///   ⇒ `@MainActor (…) -> Void` 在两边**推断一致** ⇒ 直接照搬就能编过。
+///   而我们这边：`ChaiyueEngine` 钉 **v5**（引擎侧按 Swift 5 写）、`ChaiyueReader` 是 **v6**
+///   ⇒ 同一个 `@MainActor (…) -> Void` 在 v5 里**不是 Sendable**、在 v6 里**是 Sendable**
+///   ⇒ 实现方与协议要求的「函数类型的 sendability」对不上 ⇒ 编译报
+///   `sendability of function types … does not match requirement`（本地已复现并验证修法）⭐⭐⭐
+///   ⇒ 修法：**两侧都显式写 `@Sendable`** ⇒ 两边的类型逐字相同 ⇒ 不再依赖语言模式的推断 ⭐⭐⭐
 @MainActor
 public protocol SourceInteractionPresenter: AnyObject {
     /// 打开浏览器页面；页面关闭时回调关闭时的地址与页面源码，取不到时传 nil
-    func presentBrowser(_ request: BrowserRequest, completion: @escaping @MainActor (BrowserResult?) -> Void)
+    func presentBrowser(_ request: BrowserRequest, completion: @escaping @MainActor @Sendable (BrowserResult?) -> Void)
     /// 显示验证码图片并等待输入，取消时传 nil
-    func presentVerificationCode(imageURL: String, sourceKey: String, completion: @escaping @MainActor (String?) -> Void)
+    func presentVerificationCode(imageURL: String, sourceKey: String, completion: @escaping @MainActor @Sendable (String?) -> Void)
     /// `java.copyText`
     func copyText(_ text: String)
     /// 非网页地址（如 `qdreader://`）交给系统打开，打不开时静默

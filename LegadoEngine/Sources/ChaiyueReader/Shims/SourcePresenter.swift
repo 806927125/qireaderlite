@@ -63,7 +63,7 @@ final class SourcePresenter: SourceInteractionPresenter {
         top.present(controller, animated: true)
     }
 
-    func presentBrowser(_ request: BrowserRequest, completion: @escaping @MainActor (BrowserResult?) -> Void) {
+    func presentBrowser(_ request: BrowserRequest, completion: @escaping @MainActor @Sendable (BrowserResult?) -> Void) {
         guard let top = Self.topController() else {
             completion(nil)
             return
@@ -100,7 +100,7 @@ final class SourcePresenter: SourceInteractionPresenter {
         return CGFloat(value)
     }
 
-    func presentVerificationCode(imageURL: String, sourceKey: String, completion: @escaping @MainActor (String?) -> Void) {
+    func presentVerificationCode(imageURL: String, sourceKey: String, completion: @escaping @MainActor @Sendable (String?) -> Void) {
         guard let top = Self.topController() else {
             completion(nil)
             return
@@ -129,9 +129,9 @@ final class SourcePresenter: SourceInteractionPresenter {
 
 private final class BrowserCompletion: NSObject, UIAdaptivePresentationControllerDelegate {
     nonisolated(unsafe) static var key: UInt8 = 0
-    private var completion: (@MainActor (BrowserResult?) -> Void)?
+    private var completion: (@MainActor @Sendable (BrowserResult?) -> Void)?
 
-    init(_ completion: @escaping @MainActor (BrowserResult?) -> Void) {
+    init(_ completion: @escaping @MainActor @Sendable (BrowserResult?) -> Void) {
         self.completion = completion
     }
 
@@ -193,6 +193,109 @@ private struct BrowserScreen: View {
         Task {
             let body = (try? await page.webView.evaluateJavaScript("document.documentElement.outerHTML")) as? String ?? ""
             onClose(BrowserResult(url: page.webView.url?.absoluteString ?? request.url, body: body))
+        }
+    }
+}
+
+// ⭐⭐⭐⭐⭐ **自柴阅 App/Sources/App/SourcePresenter.swift 搬运**（浏览器页的 WebView 封装）⭐⭐⭐⭐⭐
+//
+// ⚠️ **许可**：柴阅（github.com/Lincb522/Chaiyue）= **GPL-3.0** ⇒ 本文件是柴阅源码 ⭐⭐⭐
+// 原文件位置：App/Sources/App/SourcePresenter.swift（`WebPageModel` / `WebViewContainer` /
+//              `WebHostView` / `WebSheetTouches` 四块，**一字未改**）⭐⭐⭐
+//
+// ⚠️⚠️⚠️ **为什么必须搬**（不是「顺手补的」）：⭐⭐⭐
+//   上游的 `BrowserScreen` 直接用这四个类型（`page.webView` / `page.progress` / `page.title` /
+//   `page.load(request)`）⇒ 我们照搬 `BrowserScreen` 时**它们就是编译依赖** ⇒
+//   不搬 ⇒ `cannot find 'WebPageModel' in scope` ⇒ **浏览器页与验证码页都编不出来** ⭐⭐⭐
+//   ⇒ 与「换源面板」「TXT 分章」那类**功能面板**不同：这四个是**阅读器浏览器的实现件** ⇒ 必须搬 ⭐⭐⭐
+@Observable
+private final class WebPageModel: NSObject, WKNavigationDelegate {
+    @ObservationIgnored let webView: WKWebView
+    var title = ""
+    var progress: Double = 0
+    @ObservationIgnored private var observations: [NSKeyValueObservation] = []
+    @ObservationIgnored private var pendingJS: String?
+
+    override init() {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .default()
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        webView.navigationDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        // 立刻把触摸交给网页，否则按钮要点得很稳才有反应
+        webView.scrollView.delaysContentTouches = false
+        observations = [
+            webView.observe(\.estimatedProgress) { [weak self] view, _ in
+                let value = view.estimatedProgress
+                Task { @MainActor in self?.progress = value }
+            },
+            webView.observe(\.title) { [weak self] view, _ in
+                let value = view.title ?? ""
+                Task { @MainActor in self?.title = value }
+            },
+        ]
+    }
+
+    func load(_ request: BrowserRequest) {
+        webView.customUserAgent = request.userAgent
+        pendingJS = request.js
+        if let html = request.html, !html.isEmpty {
+            webView.loadHTMLString(html, baseURL: URL(string: request.url))
+        } else if let url = URL(string: request.url) {
+            webView.load(URLRequest(url: url))
+        }
+    }
+
+    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        Task { @MainActor in
+            guard let js = pendingJS, !js.isEmpty else { return }
+            pendingJS = nil
+            _ = try? await webView.evaluateJavaScript(js)
+        }
+    }
+}
+
+private struct WebViewContainer: UIViewRepresentable {
+    let webView: WKWebView
+    func makeUIView(context: Context) -> WebHostView { WebHostView(webView: webView) }
+    func updateUIView(_ uiView: WebHostView, context: Context) {}
+}
+
+/// 把 WKWebView 铺满容器，并放开外层抽屉的拖动手势。
+/// 抽屉默认会取消触摸，网页里的「获取验证码」因此收不到点击
+final class WebHostView: UIView {
+    let webView: WKWebView
+
+    init(webView: WKWebView) {
+        self.webView = webView
+        super.init(frame: .zero)
+        addSubview(webView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        webView.frame = bounds
+        WebSheetTouches.release(from: self, except: webView)
+    }
+}
+
+enum WebSheetTouches {
+    static func release(from root: UIView, except webView: WKWebView) {
+        let scroll = webView.scrollView
+        var view: UIView? = root
+        var depth = 0
+        while let current = view, depth < 8 {
+            for gesture in current.gestureRecognizers ?? [] {
+                let owner = gesture.view
+                if owner === webView || owner === scroll || owner?.isDescendant(of: webView) == true { continue }
+                gesture.cancelsTouchesInView = false
+            }
+            view = current.superview
+            depth += 1
         }
     }
 }

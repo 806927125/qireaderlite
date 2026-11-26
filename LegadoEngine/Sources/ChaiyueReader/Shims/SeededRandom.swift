@@ -4,10 +4,14 @@
 // 原文件：App/Sources/Design/CoverArt.swift
 
 import SwiftUI
-import UIKit
 import Foundation
 
 #if os(iOS)
+// ⭐⭐⭐⭐⭐ **【修】`import UIKit` 必须放进守卫里**（2026-11-26 · CI27 报错）⭐⭐⭐⭐⭐
+//   上一轮只把 `struct SeededRandom` 圈进 `#if os(iOS)`，**import 留在守卫外面**
+//   ⇒ macOS 编译 App target 时照样 `no such module 'UIKit'`（macOS 没有 UIKit）⭐⭐⭐
+//   ⇒ 教训：**条件编译要把 import 一起圈进去**，否则守卫形同虚设 ⭐⭐⭐
+import UIKit
 
 struct SeededRandom {
     private var state: UInt32

@@ -38,6 +38,9 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
     let chapterStore: ChapterStore
     /// 阅读记录：不在书架的书也记进度（下次打开接着读）
     let readingRecords: ReadingRecordStore
+    /// ⭐⭐⭐ **图片缓存（封面 / 正文插图）**：与柴阅 `LibraryServices.images` 同构 ⭐⭐⭐
+    /// （柴阅原版：`ImageCache(directory:environment:)`，放在 `Images` 目录下）⭐⭐⭐
+    private let images: ImageCache
 
     /// 向后预缓存的章数（跟柴阅 `ReaderSettings.preloadCount` 同源）
     var preloadCount = 3
@@ -60,6 +63,27 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
         speechLoader = SpeechAudioLoader(environment: ChaiyueRuntime.environment)
         chapterStore = ChapterStore(root: directory.appendingPathComponent("Chapters", isDirectory: true))
         readingRecords = ReadingRecordStore(fileURL: directory.appendingPathComponent("readingRecords.json"))
+        images = ImageCache(directory: directory.appendingPathComponent("Images", isDirectory: true),
+                            environment: ChaiyueRuntime.environment)
+    }
+
+    // MARK: - 图片（封面 / 正文插图）
+
+    /// ⭐⭐⭐⭐⭐ **图片数据：走书源的请求头 + 解密脚本** ⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️ **这就是柴阅 `LibraryServices.imageData(_:for:)` 的等价实现**：
+    ///   柴阅那份在 `Packages/ReaderCore/Sources/ReaderServices/LibraryServices.swift`：
+    ///   ```swift
+    ///   public func imageData(_ url: String, for book: Book? = nil) async throws -> Data {
+    ///       if LocalBookStore.handles(url) { …本地书… }
+    ///       return try await images.data(for: url, source: book.flatMap(source(for:)))
+    ///   }
+    ///   ```
+    ///   轻阅没有本地书（`LocalBookStore.handles` 恒 false）⇒ 只剩网络书那一支 ⭐⭐⭐
+    ///   ⇒ **行为一致，数据源不同**：柴阅用它自己的书源仓，轻阅用自己的 `sources` ⭐⭐⭐
+    func imageData(_ url: String, for book: LegadoEngineHost.BookModel?) async throws -> Data {
+        let source = book.flatMap { sources.source(for: $0.origin) }
+        return try await images.data(for: url, source: source)
     }
 
     // MARK: - 柴阅的阅读会话

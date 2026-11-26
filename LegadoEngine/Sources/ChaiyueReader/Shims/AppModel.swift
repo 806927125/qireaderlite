@@ -27,10 +27,19 @@ protocol ChaiyueReaderLibrary {
     var httpTTS: HttpTTSRepository { get }
     /// 朗读音频加载器（柴阅 `SpeechAudioLoader`，在 ReaderServices 里）⭐⭐⭐
     var speechLoader: SpeechAudioLoader { get }
+    /// ⭐⭐⭐ **章节缓存仓**（目录 + 正文缓存）⭐⭐⭐
+    /// 柴阅原版这里叫 `LibraryServices.chapterStore` ⇒ 阅读器的目录面板用它判断「这章缓存过」
+    /// ⇒ **不是装饰性成员**：缺了 ⇒ 目录面板列不出缓存状态（CI27 报 `has no member 'chapterStore'`）⭐⭐⭐
+    var chapterStore: ChapterStore { get }
     /// 为一本书造阅读会话（宿主自己拼 `BookContentService` + `ContentProcessor` + `BookshelfRepository`）
     func readerSession(for book: Book) -> ReaderSession
     /// 书源事件回调（`java.*` 的回传给宿主）
     func callBack(_ event: SourceCallBackEvent, book: Book, chapter: BookChapter?)
+    /// ⭐⭐⭐ **图片数据（封面 / 正文插图）**⭐⭐⭐
+    /// 柴阅原版是 `LibraryServices.imageData(_:for:)`：走**书籍所属书源的请求头 + 解密脚本**
+    /// ⇒ 阅读器的封面/插图加载器（`ImagePipeline`）直接调它 ⇒ 缺了 ⇒ **封面全空**
+    ///   （CI27 报 `has no member 'imageData'`）⭐⭐⭐
+    func imageData(_ url: String, for book: Book?) async throws -> Data
 }
 
 /// 朗读时打断宿主音频播放的最小接口（柴阅用的是 `AudioBookPlayer`，那是媒体层，不在阅读器范围）
