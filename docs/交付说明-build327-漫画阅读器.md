@@ -123,3 +123,35 @@ let sources = ChapterText(...).imageSources    // ← 从正文里抽图片地�
   | 图标资源 | `cy.list.bullet` / `cy.headphones` / `cy.sun.max` / `cy.textformat` / `Theme-xuan` **全部命中** ✔ |
   | 主题包 | `ChaiyueThemes.bundle/Themes/` **7 个 `.chaiyuetheme` 全在** ✔ |
   | 体积 | IPA 19.2 MB → **19.4 MB**（漫画阅读器本体） |
+
+
+---
+
+# 附：build328 —— 形态判据的第二条路（2026-11-26 追加）
+
+> 用户反馈可能：漫画源是**聚合站方按书标形态** ⇒ 327（只有「书源类型」那条路）判不出来。
+
+## 形态其实有两条路（这轮才找齐）
+
+| 路 | 来源 | 覆盖 | 出处 |
+|---|---|---|---|
+| **A** | **书源类型**（`BookSourceType`：0文字/1音频/**2图片**/3文件） | 「漫画源」这一类 | 柴阅 `BookParsers.swift`：`book.type = source.bookSourceType` |
+| **B** | **站方目录脚本写的 `book.type`**（iOS `2`=图片） | **聚合站方按书标形态**（大灰狼这类） | 柴阅 `ChapterStore.saveBookType` 注释原文：「**目录脚本写入的 `book.type`（听书、漫画、短剧）**」 |
+
+⇒ **B 路之前在引擎→宿主这一层被丢了** ⇒ 宿主判不出这类漫画 ⭐⭐⭐
+
+## build328 做了什么
+
+1. **引擎**：`toc` 的返回里带出 `bookType`（`result.book.type` 在目录解析后就是最终值）
+2. **宿主 DTO**：`TocDTO` / `TocResult` 加 `bookType`（Optional ⇒ 合成 Codable 走 `decodeIfPresent` ⇒ 缺键不会炸）⭐⭐⭐
+3. **详情页**：目录回来后把 `bookType` 收进**独立 `@State contentType`**
+   ⚠️ 不能只改 `book.raw` ⇒ SwiftUI 只在 `@State` 变化时重算 body ⇒ 否则「目录回来了、按钮还没变成『开始看漫画』」⭐⭐⭐
+   ⚠️ 时序上没问题：`resumeChapter` 依赖目录 ⇒ 目录没回来按钮点不动 ⇒ 能开时 `contentType` 必已到位 ⭐⭐⭐
+4. **适配器**：形态**三路取一** ⇒ 目录脚本写的 `contentType` → 书源类型 `sourceType` → 书里已有的 `b.mediaType`
+5. **门禁**：漫画门禁第⑤条同步改严（37 项绿）
+
+## 验证
+
+- CI **45843182667**（main，commit `22002ae`）✅ success
+- 二进制体检：`CFBundleVersion = 328` ✔；漫画符号 3 个全在 ✔；老阅读器符号全 0 ✔；主题包 7 个 ✔
+- 产物：`QingYue-build328.zip`（+ `-noprov`）
