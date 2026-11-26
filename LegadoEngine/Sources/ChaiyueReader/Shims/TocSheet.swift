@@ -49,7 +49,7 @@ struct TocSheet: View {
                             .foregroundStyle(reversed ? Tok.gAccent : Tok.gFg2)
                             .frame(width: 36, height: 36)
                     }
-                    .buttonStyle(.press)
+                    .buttonStyle(PressStyle())
                 }
             }
             .padding(.leading, bookmarks != nil ? 20 : 24)

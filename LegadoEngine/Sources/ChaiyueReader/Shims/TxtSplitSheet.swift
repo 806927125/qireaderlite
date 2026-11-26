@@ -66,7 +66,7 @@ struct TxtSplitSheet: View {
                     .frame(width: 36, height: 36)
                     .background(Tok.accent, in: Circle())
                 }
-                .buttonStyle(.press)
+                .buttonStyle(PressStyle())
                 .disabled(!canApply)
                 .opacity(canApply ? 1 : 0.4)
             }
@@ -219,7 +219,7 @@ struct TxtSplitSheet: View {
                     .frame(minHeight: 56)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.row)
+                .buttonStyle(RowPressStyle())
             }
         }
     }

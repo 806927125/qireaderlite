@@ -38,8 +38,8 @@ final class LocalVoice {
     @ObservationIgnored private var order: [String] = []
     private static let capacity = 6
     /// 降级后不再做多线程推理，保留这个开关只为兼容柴阅的调用方
-    static var threads = min(4, max(1, ProcessInfo.processInfo.activeProcessorCount))
-    static var provider = "cpu"
+    nonisolated(unsafe) static var threads = min(4, max(1, ProcessInfo.processInfo.activeProcessorCount))
+    nonisolated(unsafe) static var provider = "cpu"
 
     /// 默认音色：女声 1
     static let defaultSpeaker = SystemVoiceEngine.femaleVoices.lowerBound

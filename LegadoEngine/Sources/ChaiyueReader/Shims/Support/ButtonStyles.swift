@@ -3,7 +3,7 @@ import SwiftUI
 // =============================================================================
 // ⭐⭐⭐ **柴阅的按钮样式（照搬 `App/Sources/Design/Components.swift`）**（2026-11-25）⭐⭐⭐
 //
-// ⚠️ 柴阅阅读器里到处 `.buttonStyle(.press)` / `.row` / `.glassRow`
+// ⚠️ 柴阅阅读器里到处 `.buttonStyle(PressStyle())` / `.row` / `.glassRow`
 //   ⇒ 这些 `static var` 挂在 `ButtonStyle` 的 where 扩展上 ⇒ 属于柴阅 App 层 ⇒ 我们缺 ⭐⭐⭐
 // =============================================================================
 

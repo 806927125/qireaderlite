@@ -177,7 +177,7 @@ struct FontSizeStepper: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.press)
+            .buttonStyle(PressStyle())
             .disabled(value <= 14)
             Text("\(value)")
                 .font(.num(17, .semibold))
@@ -188,7 +188,7 @@ struct FontSizeStepper: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.press)
+            .buttonStyle(PressStyle())
             .disabled(value >= 30)
         }
         .foregroundStyle(Tok.gFg)
@@ -467,7 +467,7 @@ struct ThemeSwatch: View {
             }
             .animation(.bouncy, value: selected)
         }
-        .buttonStyle(.press)
+        .buttonStyle(PressStyle())
         .accessibilityLabel(theme.name)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .readFrame($frame)

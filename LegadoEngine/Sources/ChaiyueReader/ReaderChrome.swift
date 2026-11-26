@@ -130,7 +130,7 @@ struct ReaderChrome: View {
                     .padding(.trailing, 4)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.press)
+            .buttonStyle(PressStyle())
             .padding(.leading, -6)
             Text(model.book.name.withoutEmoji)
                 .font(.serif(16))
@@ -280,7 +280,7 @@ struct ReaderChrome: View {
             .frame(height: 66)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.press)
+        .buttonStyle(PressStyle())
         .offset(y: toolsShown ? 0 : 12)
         .opacity(toolsShown ? 1 : 0)
         .animation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.32).delay(0.07 + 0.034 * Double(index)), value: toolsShown)
@@ -362,7 +362,7 @@ struct ReaderIconButton: View {
                 .disabled(disabled)
         } else {
             Button(action: action) { icon }
-                .buttonStyle(.press)
+                .buttonStyle(PressStyle())
                 .disabled(disabled)
         }
     }
@@ -486,7 +486,7 @@ private struct SpeechBar: View {
                 .padding(.leading, 8)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.press)
+            .buttonStyle(PressStyle())
             small("person.wave.2", 15) { choosingVoice = true }
             small("backward.fill", 15) { speech.skip(-1) }
             Button { speech.toggle() } label: {
@@ -497,7 +497,7 @@ private struct SpeechBar: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Circle())
             }
-            .buttonStyle(.press)
+            .buttonStyle(PressStyle())
             small("forward.fill", 15) { speech.skip(1) }
             Menu {
                 Button("不开启") { speech.setSleep(minutes: nil) }
@@ -535,7 +535,7 @@ private struct SpeechBar: View {
                 .frame(width: 38, height: 38)
                 .contentShape(Circle())
         }
-        .buttonStyle(.press)
+        .buttonStyle(PressStyle())
     }
 }
 

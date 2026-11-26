@@ -63,7 +63,7 @@ struct VoicePackCard: View {
                 }
                 .frame(width: 34, height: 34)
             }
-            .buttonStyle(.press)
+            .buttonStyle(PressStyle())
             .accessibilityLabel("暂停下载")
         } else {
             Button {
@@ -77,7 +77,7 @@ struct VoicePackCard: View {
                     .frame(height: 34)
                     .background(Tok.accent, in: Capsule())
             }
-            .buttonStyle(.press)
+            .buttonStyle(PressStyle())
         }
     }
 }

@@ -31,7 +31,7 @@ struct ChangeSourceSheet: View {
                         .rotationEffect(.degrees(spin))
                         .frame(width: 36, height: 36)
                 }
-                .buttonStyle(.press)
+                .buttonStyle(PressStyle())
             }
             if let model {
                 ProgressLine(value: model.total > 0 ? Double(model.completed) / Double(model.total) : 0,

@@ -50,7 +50,7 @@ struct LocalVoiceGrid: View {
             .contentShape(shape)
             .animation(.snappy, value: isSelected)
         }
-        .buttonStyle(.press)
+        .buttonStyle(PressStyle())
         .accessibilityLabel(LocalVoice.name(of: speaker))
     }
 }

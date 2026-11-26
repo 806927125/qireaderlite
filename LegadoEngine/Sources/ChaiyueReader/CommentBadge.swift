@@ -10,7 +10,7 @@ import UIKit
 
 /// 段末评论气泡（参考 Legado / 番茄）：小圆角气泡带左下角小尾巴，数字与描边用次要文字色，底色随主题深浅微微着色
 enum CommentBadge {
-    private static let cache = NSCache<NSString, UIImage>()
+    nonisolated(unsafe) private static let cache = NSCache<NSString, UIImage>()
 
     static func image(for comment: ParagraphComment, fontSize: CGFloat, color: UIColor, isDark: Bool) -> UIImage {
         let label = comment.label

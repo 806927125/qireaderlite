@@ -367,7 +367,7 @@ private struct TocPlaceholder: View {
                     .padding(.horizontal, 40)
                 HStack(spacing: 12) {
                     Button("返回", action: close)
-                        .buttonStyle(.press)
+                        .buttonStyle(PressStyle())
                         .font(.ui(15, .medium))
                         .foregroundStyle(theme.fg)
                         .frame(width: 96, height: 44)
@@ -382,7 +382,7 @@ private struct TocPlaceholder: View {
                             .frame(width: 96, height: 44)
                             .background(Tok.accent, in: Capsule())
                     }
-                    .buttonStyle(.press)
+                    .buttonStyle(PressStyle())
                 }
             case .ready:
                 Text("没有章节").font(.ui(14)).foregroundStyle(theme.fg2)
@@ -391,7 +391,7 @@ private struct TocPlaceholder: View {
                     .foregroundStyle(theme.fg)
                     .frame(width: 96, height: 44)
                     .background(theme.fg.opacity(0.08), in: Capsule())
-                    .buttonStyle(.press)
+                    .buttonStyle(PressStyle())
             default:
                 ProgressView().tint(theme.fg2)
             }

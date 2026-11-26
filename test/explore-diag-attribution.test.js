@@ -72,6 +72,16 @@ console.log('\n=== 5. ★ 筛选栏为 0 时必须能【分辨：站方没给 vs
      '★ 组标题的判定**同时要求 type 是 url/空**（★ 否则会误吃筛选项）');
 }
 
+
+console.log('\n=== 3b. ★ 站方错误信封 ⇒ 必须报「站方接口报错」而不是「规则过时」 ===');
+{
+  ok(/JSONSerialization\.jsonObject/.test(api) && /\["code"\]/.test(api),
+     '★ 引擎解析站方 JSON 信封的 code');
+  ok(/站方接口报错/.test(api), '★ 引擎判定里有「站方接口报错」');
+  ok(/站方code/.test(api) && /站方msg/.test(api), '★ 诊断带站方 code/msg');
+  ok(/diag\["站方msg"\]/.test(svc), '★ 宿主 UI 读站方 msg 并说「不是书源规则问题」');
+}
+
 console.log('\n=== 6. 变异对照（改坏 ⇒ 必须红） ===');
 
 {
@@ -94,6 +104,10 @@ console.log('\n=== 6. 变异对照（改坏 ⇒ 必须红） ===');
   // ⑤ 适配层：组标题判定去掉 type 条件 ⇒ 会把「url 为空的 select」误当组标题 ⇒ 源没有筛选栏 ⭐⭐⭐
   const adapter = strip(read('QiReaderLite/Core/ChaiyueKindsAdapter.swift'));
   const m5 = adapter.replace('if url.isEmpty && (type == "url" || type.isEmpty) {', 'if url.isEmpty {');
+  const m6 = api.replace('if let code = stationCode, code != 0 {', 'if false {');
+  ok(!/if let code = stationCode, code != 0/.test(m6), '★ 变异⑥（不识别站方错误信封）⇒ 被抓住');
+  const m7 = svc.replace(/diag\["站方msg"\]/, 'diag["_x"]');
+  ok(!/diag\["站方msg"\]/.test(m7), '★ 变异⑦（UI 不报站方错误）⇒ 被抓住');
   ok(!/url\.isEmpty && \(type == "url"/.test(m5), '★ 变异⑤（组标题判定漏了 type 条件）⇒ 被抓住');
 }
 

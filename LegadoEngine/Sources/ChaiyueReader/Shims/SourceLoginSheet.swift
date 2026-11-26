@@ -301,7 +301,7 @@ struct LoginForm: View {
             .background(Tok.gFill, in: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.press)
+        .buttonStyle(PressStyle())
         .disabled(busy)
     }
 
@@ -571,7 +571,7 @@ struct LoginForm: View {
                 .frame(height: 34)
                 .background(Tok.gFill2, in: Capsule())
         }
-        .buttonStyle(.press)
+        .buttonStyle(PressStyle())
         .disabled(busy)
     }
 

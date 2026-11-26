@@ -43,7 +43,7 @@ struct VoiceOptionRow: View {
             .frame(minHeight: 54)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.row)
+        .buttonStyle(RowPressStyle())
     }
 }
 #endif
