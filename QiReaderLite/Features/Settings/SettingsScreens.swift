@@ -401,6 +401,13 @@ struct ReadingSettingsScreen: View {
 ///   那是我们照着柴阅**观感重画**的产物（build322）⇒ 现在正文界面**整体换成柴阅原版**
 ///   ⇒ 主题也用柴阅的（`ReaderThemeSpec.all` = 宣纸 / 晴窗 / 星夜 / 烛灯 / 纸张 / 素白 / 豆绿 / 雾灰 / 暮色 / 夜间）⭐⭐⭐
 ///   ⇒ 自定义主题（CSS/JS）由柴阅自己的**外观面板**管理（`StylePanel` → 主题小页纸）⭐⭐⭐
+///
+/// ⭐⭐⭐ **【改造】整个 View 标 `@MainActor`**（2026-11-26 · 内置主题包）⭐⭐⭐
+///   柴阅的 `ReaderThemeStore` / `ReaderThemePreset` 在包里是 **MainActor 隔离**的
+///   ⇒ 宿主访问 `ReaderThemeStore.shared` / `ChaiyuePresetThemes.all` 必须在 MainActor 上下文
+///   ⇒ SwiftUI 的 `View.body` 本来就是 @MainActor，但**自定义属性/方法默认不是**
+///   ⇒ 不标的话：访问包内 MainActor 成员 ⇒ 编译报「call to main actor-isolated … in a nonisolated context」⭐⭐⭐
+@MainActor
 struct ReaderThemesScreen: View {
     /// ⭐⭐⭐ 柴阅的浅色主题槽 ⭐⭐⭐
     @AppStorage("reader.lightTheme") private var lightTheme: String = "paper"
@@ -431,6 +438,13 @@ struct ReaderThemesScreen: View {
             .padding(.horizontal, 14)
             .glassCard(cornerRadius: 16, strong: true)
 
+            // ⭐⭐⭐⭐⭐ **柴阅的内置主题包**（2026-11-26 新增）⭐⭐⭐⭐⭐
+            //   柴阅自带 7 个主题包（celadon / eink / galaxy / native-sakura / shiba /
+            //   starter-web / sticker-journal，共 11 MB）⇒ **柴阅上游自己没给「一键装」的界面**
+            //   （它只在启动时同步「已装过」的）⇒ 这一栏是**新增功能**，数据与包全部来自柴阅 ⭐⭐⭐
+            //   ⚠️ 装进来后落在「自定义主题」区（CSS/JS 主题 ⇒ 柴阅的 `ThemeStore` 管）⭐⭐⭐
+            presetThemesSection
+
             // ⭐⭐⭐ **柴阅的自定义主题**（CSS/JS 主题 ⇒ `ThemeStore` 管）⭐⭐⭐
             //   自定义主题的编辑/导入在**柴阅自己的「外观」面板**里（`StylePanel` → 主题小页纸）⭐⭐⭐
             //   ⇒ 这里只负责**选用**（写 `reader.customTheme` ⇒ 盖过内置主题）⭐⭐⭐
@@ -455,6 +469,106 @@ struct ReaderThemesScreen: View {
 
     /// ⭐⭐⭐ 柴阅主题仓里的自定义主题（`@Observable` ⇒ 读了就会自动刷新）⭐⭐⭐
     private var customThemes: [CustomReaderTheme] { ReaderThemeStore.shared.themes }
+
+    // MARK: - 内置主题包（柴阅自带，2026-11-26 新增）⭐⭐⭐⭐⭐
+
+    /// 柴阅的主题包仓（装入后下面的「自定义主题」区会自动刷新）
+    private var themeStore: ReaderThemeStore { ReaderThemeStore.shared }
+
+    /// 可用的内置包数量（柴阅有 9 个预设，其中 2 个（海贼王 / 蜡笔小新）仓库里没放包 ⇒ 不可用）
+    private var availablePresetCount: Int { ChaiyuePresetThemes.all.filter { $0.isAvailable }.count }
+
+    /// ⭐⭐⭐ **内置主题包一栏**（横滑卡片）⭐⭐⭐
+    private var presetThemesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("内置主题包")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.sub)
+                Spacer()
+                Text("柴阅自带 \(availablePresetCount) 套")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.sub)
+            }
+            .padding(.top, 16)
+            .padding(.horizontal, 4)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(ChaiyuePresetThemes.all) { preset in
+                        presetCard(preset)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 2)
+            }
+            .padding(.horizontal, -14)
+        }
+    }
+
+    private func presetCard(_ preset: ChaiyuePresetTheme) -> some View {
+        let installed = preset.isInstalled(in: themeStore)
+        let usable = preset.isAvailable
+        return VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(rgb(preset.paper))
+                Text("文")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(rgb(preset.ink))
+            }
+            .frame(width: 104, height: 66)
+            .overlay(alignment: .topTrailing) {
+                if installed {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(rgb(preset.accent))
+                        .padding(5)
+                }
+            }
+
+            Text(preset.name)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+
+            Text(preset.summary)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.sub)
+                .lineLimit(2)
+                .frame(height: 24, alignment: .top)
+
+            Button {
+                install(preset)
+            } label: {
+                Text(usable ? (installed ? "已装入" : "装入") : "未内置")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(usable ? Theme.accent : Theme.sub)
+            .background((usable ? Theme.accent : Theme.sub).opacity(0.12), in: Capsule())
+            .disabled(!usable || installed)
+        }
+        .frame(width: 104)
+    }
+
+    /// 装入内置主题包 ⇒ 装好后**直接选用**（用户马上能看到效果）
+    private func install(_ preset: ChaiyuePresetTheme) {
+        guard let theme = preset.install(into: themeStore) else {
+            Toast.show("「\(preset.name)」装入失败")
+            return
+        }
+        customTheme = theme.id
+        Toast.show("已装入「\(preset.name)」")
+    }
+
+    /// 柴阅的预设配色是 UInt32（0xRRGGBB）⇒ 宿主没有 `Color(hex:)` ⇒ 这里自己换算 ⭐⭐⭐
+    private func rgb(_ hex: UInt32) -> Color {
+        Color(red: Double((hex >> 16) & 0xFF) / 255,
+              green: Double((hex >> 8) & 0xFF) / 255,
+              blue: Double(hex & 0xFF) / 255)
+    }
 
     private func sectionTitle(_ t: String) -> some View {
         HStack {

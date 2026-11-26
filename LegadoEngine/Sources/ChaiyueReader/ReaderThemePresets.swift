@@ -63,9 +63,18 @@ struct ReaderThemePreset: Identifiable {
     )
 
     /// 内置主题包的文件地址（Resources/Themes/<id>.chaiyuetheme）
+    ///
+    /// ⭐⭐⭐⭐⭐ **【改造】加 `.bundle` 兜底**（2026-11-26 · 内置主题包入 App）⭐⭐⭐⭐⭐
+    ///   柴阅把主题包放在 `App/Resources/Themes/` ⇒ 进 App 包时是**普通资源**。
+    ///   ⚠️ **`.chaiyuetheme` 是自定义扩展名** ⇒ Xcode 对「未知类型文件」的处理不稳
+    ///     （可能展平、可能忽略）⇒ 轻阅这边**额外打一个 `ChaiyueThemes.bundle`**（`.bundle` 一定是资源）
+    ///     ⇒ 三级兜底：① Bundle 根的 Themes/ 子目录 ② Bundle 根平铺 ③ ChaiyueThemes.bundle 里 ⭐⭐⭐
     var packageURL: URL? {
         Bundle.main.url(forResource: id, withExtension: "chaiyuetheme", subdirectory: "Themes")
             ?? Bundle.main.url(forResource: id, withExtension: "chaiyuetheme")
+            ?? Bundle.main.url(forResource: "ChaiyueThemes", withExtension: "bundle")
+                .flatMap { Bundle(url: $0) }?
+                .url(forResource: id, withExtension: "chaiyuetheme", subdirectory: "Themes")
     }
 
     /// 从这个预设导入的那份主题的 id

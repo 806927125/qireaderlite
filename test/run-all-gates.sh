@@ -135,6 +135,10 @@ declare -a GATES=(
   #   ② 日/夜切不动、③ 浅色主题切不动 ⇒ 根因同一个：轻阅根部强制深色 vs 柴阅的外观切换**打架**
   #      ⇒ 门禁钉「apply() 不改窗口」+「宿主阅读器施加 preferredColorScheme」
   "reader-chaiyue-assets-appearance:test/reader-chaiyue-assets-appearance.test.js"
+  # ⭐⭐⭐⭐⭐ **柴阅的【内置主题包】**（2026-11-26 用户拍板「要」）⭐⭐⭐⭐⭐
+  #   7 个 .chaiyuetheme（11 MB）⇒ 柴阅上游自己没给「一键装」的界面 ⇒ 轻阅新增这一栏
+  #   ⇒ 门禁钉「包在 / 找得到 / 装得进 / 点得着」四条，缺一条这功能就是坏的
+  "reader-chaiyue-preset-themes:test/reader-chaiyue-preset-themes.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
   # ⚠️⚠️ **reader-native-paging / paging-algorithm 已删**（2026-11-25）⭐⭐⭐
   #   ⇒ 它们钉的是**我们自己那套**分页器（`ReaderPaginator` / `PagedChapterPager`）⭐⭐⭐
