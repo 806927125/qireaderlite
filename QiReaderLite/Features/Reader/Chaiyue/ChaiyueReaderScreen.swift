@@ -82,7 +82,8 @@ struct ChaiyueReaderScreen: View {
                                   libraryItems: library.items,
                                   progressIndex: progress)
         // ⚠️ **先校验再挂上去**（挂上去就进 `if let host, let launch` 分支 ⇒ 兜底界面永远看不见）⭐⭐⭐
-        if h.launch.book.name.isEmpty {
+        // ⚠️ 用 `chaiyueBook`（两种模式都有）而不是 `launch`（漫画模式是 nil）⭐⭐⭐
+        if h.chaiyueBook.name.isEmpty {
             errorText = "这本书的信息不完整（书名是空的）"
             return
         }

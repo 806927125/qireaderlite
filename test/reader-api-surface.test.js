@@ -79,8 +79,10 @@ const readChaiyue = (rel) => {
   const host = readChaiyue('ChaiyueReaderHost.swift');
   for (const [needle, label] of [
     ['let app: AppModel', 'app（柴阅的 AppModel）'],
-    ['let launch: ReaderLaunch', 'launch（柴阅的打开请求）'],
-    ['let session: ReaderSession', 'session（共享的阅读会话）'],
+    // ⚠️ 2026-11-26 漫画阅读器：**文字/漫画两种模式** ⇒ launch 与 session 都变成 optional
+    //   （漫画走 `app.media` + `MediaSession`，不是 `app.reader` + `ReaderSession`）⭐⭐⭐
+    ['let launch: ReaderLaunch?', 'launch（柴阅的打开请求；漫画模式为 nil）'],
+    ['let session: ReaderSession?', 'session（共享的阅读会话；漫画模式为 nil）'],
     ['let library: ChaiyueHostLibrary', 'library（门面）'],
     ['func writeBackProgress(to', 'writeBackProgress（进度回写轻阅书库）'],
   ]) {
@@ -90,7 +92,7 @@ const readChaiyue = (rel) => {
   //   柴阅的 `ReaderModel` 是**包内 internal** ⇒ 宿主看不见 ⇒ `cannot find type 'ReaderModel' in scope` ⭐⭐⭐
   //   ⇒ 宿主改读**会话里的实时位置**（柴阅每次翻页都 `session.updatePosition(...)`）⭐⭐⭐
   ok(!/let model: ReaderModel/.test(host), '③ 宿主不再持有包内 internal 的 `ReaderModel`');
-  ok(/session\.position\.chapterIndex/.test(host), '③ 宿主从会话读实时位置（替代 model.session.position）');
+  ok(/session\??\.position\.chapterIndex/.test(host), '③ 宿主从会话读实时位置（替代 model.session.position）');
   // 镜像三件事：书源 / 目录 / 书架
   ok(/importSources\(/.test(host), '③ 轻阅的书源镜像进柴阅的书源仓');
   ok(/saveChapters\(/.test(host), '③ 轻阅的目录预写进柴阅的章节缓存');

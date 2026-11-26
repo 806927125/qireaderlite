@@ -137,6 +137,10 @@ console.log('\n── ⑥ 详情页按 mediaKind 分流到漫画屏 ──');
   ok(/ChaiyueComicScreen\(/.test(detail), '⑥ 详情页会开漫画屏');
   ok(comic.length > 0, '⑥ 宿主漫画屏在');
   ok(/ComicReaderScreen\(launch:/.test(comic), '⑥ 宿主漫画屏渲染的是柴阅的 ComicReaderScreen');
+  // ⚠️ **两种模式的会话不是一回事**（CI 45836279240 实锤：`launch` 变 optional ⇒ 取 `.book` 编译不过）⭐⭐⭐
+  const host = codeOnly(read(path.join(ROOT, 'QiReaderLite/Features/Reader/Chaiyue/ChaiyueReaderHost.swift')));
+  ok(/let session: ReaderSession\?/.test(host), '⑥ 宿主会话是 optional（漫画模式是 nil）');
+  ok(/case \.comic: session = nil/.test(host), '⑥ 漫画模式不造 ReaderSession（它用 MediaSession）');
 
   const mutated = detail.replace(/ChaiyueComicScreen\(/, 'UnusedComicScreen(');
   ok(!/ChaiyueComicScreen\(/.test(mutated), '⑥ 变异⑥：详情页不分流后判据要能报（门禁有牙齿）');

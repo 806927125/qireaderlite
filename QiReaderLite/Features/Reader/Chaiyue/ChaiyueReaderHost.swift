@@ -177,7 +177,10 @@ final class ChaiyueReaderHost {
     /// 柴阅的书（漫画的 `MediaLaunch` 也要用它）
     let chaiyueBook: LegadoEngineHost.BookModel
     /// ⭐⭐⭐ **柴阅的阅读会话**（界面与宿主共用这一份 ⇒ 进度不分叉）⭐⭐⭐
-    let session: ReaderSession
+    /// ⚠️ **漫画模式是 nil**（2026-11-26 · 漫画阅读器）⇒ 漫画用**另一个会话类型**
+    ///   （柴阅的 `MediaSession`，由 `ComicReaderScreen` 通过 `app.library.mediaSession(for:)` 拿）⭐⭐⭐
+    ///   ⇒ 两种模式的会话**不是一回事** ⇒ 不能共用一个非 optional 属性 ⭐⭐⭐
+    let session: ReaderSession?
     // ⭐⭐⭐ **不再单独持 `ReaderModel`**（2026-11-26 · CI28 实证）⭐⭐⭐
     //   柴阅的 `ReaderModel` 是**包内 internal 类型** ⇒ 宿主看不见 ⇒ 报
     //   `cannot find type 'ReaderModel' in scope` ⭐⭐⭐
@@ -308,7 +311,14 @@ final class ChaiyueReaderHost {
         //      ⇒ 柴阅的 `ReaderContainer` 随后调 `app.library.readerSession(for:)` 拿到的
         //        **就是这一份** ⇒ 界面与宿主共用一个会话 ⇒ 进度不分叉 ⭐⭐⭐
         //      ⇒ 宿主不再另造 `ReaderModel`（包内 internal ⇒ 宿主看不见；而且位置本来就在会话里）⭐⭐⭐
-        session = library.readerSession(for: launch.book)
+        // ⚠️⭐⭐⭐ **按模式造会话**（CI 45836279240 实锤：`launch` 是 optional ⇒ 漫画模式取不到）⭐⭐⭐
+        //   · 文字模式 ⇒ `ReaderSession`（柴阅的 `ReaderContainer` 会通过
+        //     `app.library.readerSession(for:)` 拿**同一份** ⇒ 进度不分叉）⭐⭐⭐
+        //   · 漫画模式 ⇒ **不造** ⇒ 漫画页自己走 `mediaSession(for:)`（柴阅原版就是那么做的）⭐⭐⭐
+        switch mode {
+        case .text: session = library.readerSession(for: chaiyueBook)
+        case .comic: session = nil
+        }
     }
 
     // MARK: - 回写
@@ -330,7 +340,7 @@ final class ChaiyueReaderHost {
         //   ⇒ 而且漫画的 `position` 是**图片序号**、不是章号 ⇒ 绝不能用它当章下标 ⭐⭐⭐
         let live: Int
         switch mode {
-        case .text: live = session.position.chapterIndex
+        case .text: live = session?.position.chapterIndex ?? -1
         case .comic: live = stored?.durChapterIndex ?? -1
         }
         let whole = live >= 0 ? live : (stored?.durChapterIndex ?? -1)
