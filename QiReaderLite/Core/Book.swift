@@ -37,9 +37,12 @@ struct Book: Codable, Identifiable, Hashable {
     ///   **现算即可，零持久化风险** ⭐⭐⭐
     ///
     /// ⚠️ **取值口径**（与柴阅 `Book.mediaKind(sourceType:)` 同一套规则）：
-    ///   iOS 约定：0 文字、1 音频、**2 图片**、3 视频；Legado 安卓是位标记（8 文字、32 音频、**64 图片**）⭐⭐⭐
+    ///   **书源类型**：0 文字、1 音频、**2 图片（漫画）**、3 文件（柴阅 `BookSourceType`）⭐⭐⭐
+    ///   ⇒ 形态**由书源类型决定**（柴阅 `BookParsers` 里 `book.type = source.bookSourceType`）
+    ///   ⇒ `raw["bookSourceType"]` 是引擎回传的**书源类型**（权威）⭐⭐⭐
+    ///   ⇒ `raw["type"]` 是**站方自己标的** type（iOS 2=图片 / Legado 64=图片）⇒ **后备** ⭐⭐⭐
     var mediaType: Int {
-        for key in ["type", "bookType", "mediaType"] {
+        for key in ["bookSourceType", "type", "bookType", "mediaType"] {
             if let rawValue = raw[key], let value = Int(rawValue) { return value }
         }
         return 0

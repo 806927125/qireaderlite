@@ -806,6 +806,11 @@ final class SourceService {
         ///      ⇒ 服务器回「illegal base64 data at input byte 9」⇒ 整本书崩 ⭐
         ///   ⇒ 这里把**原始 item 的所有键**留一份 ⇒ 往下传（见 Book.rawJSON）
         var raw: [String: String]? = nil
+        /// ⭐⭐⭐⭐⭐ **【新增】站方标的「内容形态」**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+        ///   柴阅靠 `book.type` 判形态（iOS `2`=图片 / Legado `64`=图片）⇒ 漫画打不开全靠它 ⭐⭐⭐
+        ///   ⚠️ **以前这个字段在 DTO 里根本没有 ⇒ 解码时直接丢掉** ⇒ 宿主永远拿不到 ⭐⭐⭐
+        ///   ⇒ 现在收下，并塞进 `raw["type"]`（`raw` 本来就是「站方原始字段」的容器）⭐⭐⭐
+        var type: Int = 0
 
         init() {}
 
@@ -822,9 +827,15 @@ final class SourceService {
             bookUrl = g(.bookUrl);     wordCount = g(.wordCount)
             tocUrl = g(.tocUrl)
             raw = (try? c.decodeIfPresent([String: String].self, forKey: .raw)) as? [String: String]
+            // ⚠️ 容错：站方可能给字符串（"2"）也可能给数字（2）⇒ 两种都收 ⭐⭐⭐
+            if let n = (try? c.decodeIfPresent(Int.self, forKey: .type)) ?? nil {
+                type = n
+            } else if let s = (try? c.decodeIfPresent(String.self, forKey: .type)) ?? nil {
+                type = Int(s) ?? 0
+            }
         }
         private enum K: String, CodingKey {
-            case name, author, intro, kind, group, lastChapter, coverUrl, bookUrl, wordCount, tocUrl, raw
+            case name, author, intro, kind, group, lastChapter, coverUrl, bookUrl, wordCount, tocUrl, raw, type
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: K.self)
@@ -835,6 +846,7 @@ final class SourceService {
             try c.encode(bookUrl, forKey: .bookUrl);   try c.encode(wordCount, forKey: .wordCount)
             try c.encode(tocUrl, forKey: .tocUrl)
             try c.encodeIfPresent(raw, forKey: .raw)
+            try c.encode(type, forKey: .type)
         }
     }
     struct BookListDTO: Codable {
@@ -1567,9 +1579,19 @@ final class SourceService {
 
 extension SourceService.BookDTO {
     func toBook(origin: String, sourceName: String) -> Book {
-        Book(origin: origin, bookUrl: bookUrl, name: name, author: author, intro: intro,
-             kind: kind, group: group, lastChapter: lastChapter, coverUrl: coverUrl, wordCount: wordCount,
-             tocUrl: tocUrl, sourceName: sourceName, raw: raw ?? [:], detailLoaded: false)
+        // ⭐⭐⭐⭐⭐ **站方的 `type` 也要进 `raw`**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+        //   ⚠️ **详情页这条路拿不到站方的原始字段**（引擎只回 13 个字段 ⇒ `raw` 是 nil）⭐⭐⭐
+        //   ⇒ 站方标的「这是漫画」就丢了 ⇒ 详情页判不出漫画 ⇒ 走文字阅读器 ⭐⭐⭐
+        //   ⇒ 而 `raw` 是宿主 Book **唯一持久化**的「站方原始字段」容器 ⇒ 塞进去零风险 ⭐⭐⭐
+        var fields = raw ?? [:]
+        // ⚠️ **存成 `bookSourceType` 而不是 `type`** ⭐⭐⭐
+        //   引擎回传的 `book.type` = **书源类型**（柴阅 `BookParsers`：`book.type = source.bookSourceType`）
+        //   ⇒ 而 `raw` 是**站方原始字段**的容器 ⇒ 用 `type` 这个键会**污染站方自己的字段** ⭐⭐⭐
+        //   ⇒ 所以另起一个键 `bookSourceType` ⇒ 语义清楚、不覆盖站方 ⭐⭐⭐
+        if type != 0 { fields["bookSourceType"] = String(type) }
+        return Book(origin: origin, bookUrl: bookUrl, name: name, author: author, intro: intro,
+                    kind: kind, group: group, lastChapter: lastChapter, coverUrl: coverUrl, wordCount: wordCount,
+                    tocUrl: tocUrl, sourceName: sourceName, raw: fields, detailLoaded: false)
     }
 }
 

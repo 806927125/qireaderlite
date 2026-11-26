@@ -48,7 +48,8 @@ enum ChaiyueReaderAdapter {
     ///   - b: 轻阅的书
     ///   - sourceName: 书源名（我们的 `Book.sourceName` 常常是空的 ⇒ 用源仓里的名字兜底）
     ///   - chapterIndex: 起始章号（-1 = 不知道 ⇒ 用 0）
-    static func book(_ b: Book, sourceName: String = "", chapterIndex: Int = -1) -> LegadoEngineHost.BookModel {
+    static func book(_ b: Book, sourceName: String = "", chapterIndex: Int = -1,
+                     sourceType: Int = 0) -> LegadoEngineHost.BookModel {
         // ⭐⭐⭐ **柴阅的 `Book` 没有无参 init**（它的 designated init 第一个参数是 `bookUrl`）
         //   ⇒ `BookModel()` 会报「missing argument for parameter 'bookUrl'」（CI28 实锤）⭐⭐⭐
         var book = LegadoEngineHost.BookModel(bookUrl: b.cleanBookUrl.isEmpty ? b.bookUrl : b.cleanBookUrl)
@@ -64,11 +65,14 @@ enum ChaiyueReaderAdapter {
         book.wordCount = empty(b.wordCount)
         book.latestChapterTitle = empty(b.lastChapter)
         // ⭐⭐⭐⭐⭐ **【新增】内容形态（漫画判定用）**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
-        //   站方的 `book.type`（iOS：2=图片；Legado：64=图片）⇒ 柴阅靠它分「文字/漫画/听书/短剧」⭐⭐⭐
-        //   ⚠️ **以前这个字段在宿主↔引擎的往返里被丢了** ⇒ 柴阅永远以为是文字书 ⇒ 漫画打不开 ⭐⭐⭐
-        //   ⇒ 宿主从 `raw` 现算（`Book.mediaType`）⇒ 这里搬进柴阅的 `Book.type` ⇒
-        //   ⇒ **判定只剩柴阅那一份真相**（宿主不再自己判一遍）⭐⭐⭐
-        book.type = b.mediaType
+        //   ⚠️ **形态由【书源类型】决定，不是站方标的 type** ⭐⭐⭐
+        //     柴阅的 `BookParsers.swift` 里明明白白写着 `book.type = source.bookSourceType`
+        //     （解析详情时就把 `type` 设成书源类型）⇒ 而 `BookSourceType` 是
+        //       **0 文字 / 1 音频 / 2 图片（漫画）/ 3 文件**（柴阅 `ChaiyueModels/BookSource.swift`）⭐⭐⭐
+        //   ⇒ 所以宿主这边也要**把书源类型搬进柴阅的 `Book.type`** ⇒
+        //     `Book.mediaKind(sourceType:)` 才会判成 `.comic` ⇒ **判定只剩柴阅那一份真相** ⭐⭐⭐
+        //   ⇒ ⚠️ 以前这个字段在宿主↔引擎的往返里被丢了 ⇒ 柴阅永远以为是文字书 ⇒ 漫画打不开 ⭐⭐⭐
+        book.type = sourceType
         if chapterIndex >= 0 {
             book.durChapterIndex = chapterIndex
         }

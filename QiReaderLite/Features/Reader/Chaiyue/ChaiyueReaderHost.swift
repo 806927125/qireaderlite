@@ -235,6 +235,7 @@ final class ChaiyueReaderHost {
         for item in libraryItems {
             // ⚠️ 轻阅的 `lastChapterIndex` 是**正章节下标** ⇒ 换算成柴阅的整表下标 ⭐⭐⭐
             let whole = plainToWhole[safe: item.lastChapterIndex] ?? item.lastChapterIndex
+            // ⚠️ 书架镜像只为了**进度**，形态用不上 ⇒ `sourceType` 传 0（拿不到那本书的书源对象）⭐⭐⭐
             var mirrored = ChaiyueReaderAdapter.book(item.book, sourceName: item.book.sourceName,
                                                       chapterIndex: whole)
             // ⚠️ **轻阅的 `Book` 模型没有「总章节数」字段**（CI28：`has no member 'totalChapterNum'`）
@@ -271,8 +272,11 @@ final class ChaiyueReaderHost {
 
         // ── ⑤ 书：轻阅的书 → 柴阅的书（带上进度）──────────────────────
         //    ⚠️ **必须是 `var`**：下面还要写 `totalChapterNum` / `durChapterTitle`（CI28 实锤）⭐⭐⭐
+        // ⚠️⭐⭐⭐ **形态（文字/漫画/听书/短剧）由【书源类型】决定**（柴阅 `BookParsers`：`book.type = source.bookSourceType`）
+        //   ⇒ 这里把**书源类型**一起搬进柴阅的书 ⇒ 柴阅的 `mediaKind(sourceType:)` 才判得出漫画 ⭐⭐⭐
         var chaiyueBook = ChaiyueReaderAdapter.book(book, sourceName: source?.bookSourceName ?? book.sourceName,
-                                                     chapterIndex: startIndex)
+                                                     chapterIndex: startIndex,
+                                                     sourceType: source?.bookSourceType ?? 0)
         chaiyueBook.totalChapterNum = chapters.filter { !$0.isVolume }.count
         if startIndex >= 0, startIndex < chapters.count {
             chaiyueBook.durChapterTitle = chapters[startIndex].title

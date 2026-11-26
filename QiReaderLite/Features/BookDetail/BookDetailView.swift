@@ -27,9 +27,13 @@ struct BookDetailView: View {
 
     // MARK: - 漫画判定（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
 
-    /// ⭐⭐⭐ **柴阅的书**（轻阅 → 柴阅的转换；`type` 也在这一步带过去）⭐⭐⭐
+    /// ⭐⭐⭐ **柴阅的书**（轻阅 → 柴阅的转换）⭐⭐⭐
+    /// ⚠️ **必须带书源类型**：形态（文字/漫画/听书/短剧）由**书源类型**决定
+    ///   （柴阅 `BookSourceType`：0 文字 / 1 音频 / **2 图片（漫画）** / 3 文件）⭐⭐⭐
+    ///   ⇒ 柴阅的 `BookParsers` 里也是 `book.type = source.bookSourceType` ⇒ 宿主必须照做 ⭐⭐⭐
     private var chaiyueBook: LegadoEngineHost.BookModel {
-        ChaiyueReaderAdapter.book(book, sourceName: source?.name ?? book.sourceName)
+        ChaiyueReaderAdapter.book(book, sourceName: source?.name ?? book.sourceName,
+                                  sourceType: source?.bookSourceType ?? 0)
     }
 
     /// ⭐⭐⭐⭐⭐ **这本书是不是漫画** ⭐⭐⭐⭐⭐
