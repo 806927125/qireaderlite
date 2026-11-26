@@ -43,7 +43,7 @@ final class AppearanceStore {
     func set(_ newMode: AppearanceMode, origin: CGPoint? = nil) {
         guard newMode != mode else { return }
         mode = newMode
-        UserDefaults.standard.set(newMode.rawValue, forKey: Self.key)
+        // ⚠️ 写盘挪到 `apply()`（见下）⇒ 这样 CircularReveal 的快照拍到的是**切换前**的样子 ⇒ 转场动画还在 ⭐⭐⭐
         guard let window = Self.keyWindow else {
             apply()
             return
@@ -73,12 +73,21 @@ final class AppearanceStore {
     }
 
     func apply() {
-        for scene in UIApplication.shared.connectedScenes {
-            guard let scene = scene as? UIWindowScene else { continue }
-            for window in scene.windows {
-                window.overrideUserInterfaceStyle = mode.style
-            }
-        }
+        // ⭐⭐⭐⭐⭐ **【改造】不再遍历窗口改 `overrideUserInterfaceStyle`**（2026-11-26 · 真机反馈）⭐⭐⭐⭐⭐
+        //   **症状**：阅读器底部悬浮栏的「日间 / 夜间」点了没反应 ⭐⭐⭐
+        //   **根因**：柴阅原版在这里改**所有窗口**的 `overrideUserInterfaceStyle`，
+        //     而轻阅**根部强制 `.preferredColorScheme(.dark)`**（2026-11-24 真机反馈：玻璃按钮乳白）⇒
+        //     ⇒ **两边打架**：SwiftUI 一直要 .dark、UIKit 这边要 .light ⇒ 切不动 ⭐⭐⭐
+        //     ⇒ 连带「选浅色主题」也切不动（柴阅 `select()` 会把浅色主题写进 `lightTheme` 槽，
+        //       而当前 scheme 恒为 .dark ⇒ `theme(for:)` 一直读 `darkTheme`）⭐⭐⭐
+        //   ⇒ **正解**：外观**只作用在阅读器这一层**，由宿主用 SwiftUI 的 `.preferredColorScheme` 施加
+        //     （`QiReaderLite/Features/Reader/Chaiyue/ChaiyueReaderScreen.swift`）⭐⭐⭐
+        //     ⇒ 轻阅其它界面永远深色（不受影响）⇒ 玻璃按钮仍不乳白 ⭐⭐⭐
+        //
+        // ⭐⭐⭐ **写盘挪到这里**（原来在 `set()` 开头就写）：
+        //   那样 CircularReveal 拍到的快照已经是浅色 ⇒ **转场动画失效**（瞬间跳色）⭐⭐⭐
+        //   ⇒ 现在：先拍快照（深色）→ 再写盘 → 宿主切浅色 → 揭开快照看到浅色 ⇒ **转场还在** ⭐⭐⭐
+        UserDefaults.standard.set(mode.rawValue, forKey: Self.key)
     }
 
     static var keyWindow: UIWindow? {

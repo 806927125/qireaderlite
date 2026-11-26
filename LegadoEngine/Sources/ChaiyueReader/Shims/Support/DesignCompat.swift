@@ -94,7 +94,7 @@ extension View {
     func qSheet(_ detents: Set<PresentationDetent> = [.large]) -> some View {
         presentationDetents(detents)
             .presentationDragIndicator(.visible)
-            .modifier(SheetBackground())
+            .modifier(QSheetBackground())
     }
 
     /// 把自己的 frame 写回绑定（照搬自柴阅 `App/Sources/App/Appearance.swift`）
@@ -104,7 +104,14 @@ extension View {
 }
 
 /// 弹层背景（iOS 26 用系统玻璃；更早用材质）
-private struct SheetBackground: ViewModifier {
+///
+/// ⚠️⚠️⚠️ **【改名】`SheetBackground` → `QSheetBackground`**（2026-11-26 · 真机反馈后清理）⭐⭐⭐
+///   ⚠️ 上游柴阅**只有一个** `SheetBackground`（在 `Screens/Common/Sheets.swift` ⇒ 我们搬在
+///     `Shims/Support/SheetHeader.swift`）⇒ **本文件这一份是我们自己补的**（上游 `Design/Compat.swift` 里没有）⭐⭐⭐
+///   ⇒ 两份**同名但实现不同**（本份：`.background(.ultraThinMaterial)`；上游那份：
+///     `.presentationBackground(.regularMaterial) + .presentationCornerRadius(38)`）⭐⭐⭐
+///   ⇒ 虽然两份都是 `private`（文件作用域 ⇒ 编译不冲突）⇒ 但**同名不同义**极易误导 ⇒ 改名 ⭐⭐⭐
+private struct QSheetBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
             content

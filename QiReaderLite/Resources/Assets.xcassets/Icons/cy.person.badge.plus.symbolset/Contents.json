@@ -1,0 +1,12 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "symbols": [
+    {
+      "filename": "cy.person.badge.plus.svg",
+      "idiom": "universal"
+    }
+  ]
+}

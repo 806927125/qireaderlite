@@ -22,6 +22,16 @@ struct ChaiyueReaderScreen: View {
     @EnvironmentObject private var sources: SourceStore
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
+    /// ⭐⭐⭐⭐⭐ **柴阅的外观档（system / light / dark）** ⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️ **为什么宿主要读这个键**（2026-11-26 真机「日间夜间切换不了」）⭐⭐⭐：
+    ///   柴阅的「日间 / 夜间」按钮调 `app.appearance.force(...)` ⇒ 包内 `AppearanceStore`
+    ///   ⇒ 它**以前**改整个窗口的 `overrideUserInterfaceStyle`，
+    ///   而轻阅**根部强制 `.preferredColorScheme(.dark)`** ⇒ 两边打架 ⇒ **切不动** ⭐⭐⭐
+    ///   ⇒ 现在 `AppearanceStore.apply()` 只把状态写进 UserDefaults（键 `appearance`），
+    ///     由**阅读器这一层**用 SwiftUI 的 `.preferredColorScheme` 施加 ⇒
+    ///     **只有阅读器变浅色，轻阅其它界面永远深色**（玻璃按钮不乳白）⭐⭐⭐
+    @AppStorage("appearance") private var appearance: String = "system"
 
     /// 宿主对象（造柴阅的 `AppModel` + 镜像书架/书源/目录）
     @State private var host: ChaiyueReaderHost?
@@ -51,6 +61,11 @@ struct ChaiyueReaderScreen: View {
         .onChange(of: host?.app.reader) { _, newValue in
             if newValue == nil, launch != nil { close() }
         }
+        // ⭐⭐⭐⭐⭐ **阅读器这一层的外观**（叶子优先 ⇒ 盖过根部的强制深色）⭐⭐⭐⭐⭐
+        //   · 「日间」⇒ 包内 AppearanceStore 写 `appearance=light` ⇒ 这里切成浅色 ⇒
+        //     纸面换成 `lightTheme` 槽、玻璃面板变浅 ⭐⭐⭐
+        //   · 「自动」档在轻阅里**按深色处理**（轻阅全局强制深色 ⇒ 跟随系统会打回原形）⭐⭐⭐
+        .preferredColorScheme(appearance == "light" ? .light : .dark)
     }
 
     // MARK: - 准备

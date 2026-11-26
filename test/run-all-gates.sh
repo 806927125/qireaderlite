@@ -129,6 +129,12 @@ declare -a GATES=(
   #   ⇒ 老阅读器（我们自研的原生分页 / 滚动 / WebView）**整套删掉** ⇒ 正文界面全部用柴阅的 ⭐⭐⭐
   #   ⇒ 这条门禁是**双向**的：① 老阅读器符号 0 命中 ② 柴阅阅读器必须在 ③ 门禁能红（变异对照）⭐⭐⭐
   "reader-chaiyue-host:test/reader-chaiyue-host.test.js"
+  # ⭐⭐⭐⭐⭐ **柴阅的【图标资源】与【外观切换】必须真的能用**（2026-11-26 真机反馈）⭐⭐⭐⭐⭐
+  #   ① 悬浮栏图标全没了 / 主题小页纸糊了 ⇒ 柴阅图标是**自绘资源**（`cy.*.symbolset` + `Theme-*`）
+  #      ⇒ 只搬 Swift 源码、没搬资源 ⇒ 那个图标就空白 ⇒ 门禁钉「资源与 IconNames 一一对应」
+  #   ② 日/夜切不动、③ 浅色主题切不动 ⇒ 根因同一个：轻阅根部强制深色 vs 柴阅的外观切换**打架**
+  #      ⇒ 门禁钉「apply() 不改窗口」+「宿主阅读器施加 preferredColorScheme」
+  "reader-chaiyue-assets-appearance:test/reader-chaiyue-assets-appearance.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
   # ⚠️⚠️ **reader-native-paging / paging-algorithm 已删**（2026-11-25）⭐⭐⭐
   #   ⇒ 它们钉的是**我们自己那套**分页器（`ReaderPaginator` / `PagedChapterPager`）⭐⭐⭐

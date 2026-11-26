@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3300" height="2200">
+ <!--glyph: "cy.backward.end.fill", point size: 100.0, template writer version: "chaiyue build_icons.py"-->
+ <g id="Notes">
+  <rect height="2200" id="artboard" style="fill:white;opacity:1" width="3300" x="0" y="0"/>
+  <text id="template-version" style="stroke:none;fill:black;font-family:sans-serif;font-size:13;text-anchor:end;" transform="matrix(1 0 0 1 3036 1933)">Template v.3.0</text>
+ </g>
+ <g id="Guides">
+  <line id="Baseline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="696" y2="696"/>
+  <line id="Capline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="625.541" y2="625.541"/>
+  <line id="Baseline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1126" y2="1126"/>
+  <line id="Capline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
+  <line id="Baseline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1556" y2="1556"/>
+  <line id="Capline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
+  <line id="left-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" x1="1400" x2="1400" y1="1030.79" y2="1150.12"/>
+  <line id="right-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" x1="1473.35" x2="1473.35" y1="1030.79" y2="1150.12"/>
+ </g>
+ <g id="Symbols">
+  <g id="Regular-M">
+   <path transform="matrix(1 0 0 1 1400 1126)" d="M68.02 -56.51L69.14 -56.1L69.52 -55.8L70.05 -55L70.34 -54.1L70.35 -53.08L70.09 -52.16L69.72 -51.55L69.23 -50.99L59.97 -43L54.93 -38.45L51.12 -35.26L50.81 -34.89L50.75 -34.68L50.9 -34.26L51.36 -33.7L53.07 -32.26L57.34 -28.34L58.88 -27.1L63.19 -23.26L65.19 -21.29L68.59 -18.35L69.64 -17.25L70.14 -16.43L70.33 -15.74L70.34 -14.73L70.04 -13.83L69.5 -13.03L68.92 -12.6L68.27 -12.32L67.07 -12.12L66.13 -12.31L65.46 -12.56L63.91 -13.77L60.96 -16.54L55.7 -21.18L51.06 -25.47L46.17 -29.74L45.29 -30.66L44.47 -32.12L44.19 -33.03L43.96 -34.47L44.2 -36.16L44.59 -37.28L45.46 -38.72L46.54 -39.8L64.65 -55.51L65.87 -56.29L66.54 -56.54L67.03 -56.59ZM42.97 -56.44L43.82 -56.02L44.34 -55.5L44.69 -54.88L44.91 -54.2L44.89 -52.93L44.69 -52.25L44.36 -51.61L43.31 -50.52L38.41 -46.26L34.97 -43.43L33.88 -42.35L29.53 -38.63L28.25 -37.38L25.58 -35.16L25.25 -34.8L25.19 -34.6L25.38 -34.22L27.01 -32.6L33.62 -26.91L39.43 -21.74L40.53 -20.67L43.56 -18.09L44.07 -17.54L44.68 -16.51L44.9 -15.84L44.91 -14.82L44.65 -13.91L44.3 -13.28L43.76 -12.78L42.89 -12.39L41.73 -12.13L40.14 -12.61L39.32 -13.11L38.36 -13.88L30.73 -20.84L26.2 -24.75L23.07 -27.71L20.98 -29.48L19.72 -30.75L18.96 -31.98L18.57 -33.1L18.39 -34.05L18.36 -34.8L18.44 -35.54L18.92 -37.13L19.51 -38.17L20.27 -39.13L25.39 -43.48L27.81 -45.7L30.48 -47.91L32.52 -49.78L35.19 -52L36.29 -53.06L39.33 -55.62L40.36 -56.23L41.26 -56.54L42.01 -56.59ZM7.23 -61.98L8.12 -61.65L8.68 -61.22L9.46 -60.03L9.7 -59.1L9.71 -11.74L9.45 -10.57L8.7 -9.35L7.91 -8.8L7.01 -8.49L6.53 -8.43L5.8 -8.51L4.68 -8.92L4.11 -9.33L3.56 -10.1L3.37 -10.53L3.17 -11.47L3.15 -14.54L3 -15.75L3.16 -17.22L3.16 -25.16L3.01 -26.12L3.01 -28.93L3.16 -30.15L3.16 -55.24L3.01 -56.46L3 -57.48L3.24 -59.68L3.49 -60.35L3.89 -60.94L4.84 -61.66L5.74 -61.98L6.49 -62.03Z"/>
+  </g>
+ </g>
+</svg>
