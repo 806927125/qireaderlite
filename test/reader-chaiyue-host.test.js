@@ -208,6 +208,80 @@ console.log('\n── ③b 进度：两套下标口径必须换算（否则书�
      '③b resumeChapter 按**正章节下标**取章（与轻阅存的进度同口径）');
 }
 
+console.log('\n── ⑤ 柴阅门面协议面必须齐全 + sendability 三处一致 ──');
+{
+  // ⭐⭐⭐⭐⭐ **为什么要有这段**（2026-11-26 CI27 实证）⭐⭐⭐⭐⭐：
+  //   ① 门面协议缺 `imageData` / `chapterStore` ⇒ 编译期才报 `has no member`（CI 才看得见）
+  //      ⇒ **封面全空**（ImagePipeline 拿不到数据）+ **目录面板没有缓存状态** ⇒ 都是「用户看得见的坏」⭐⭐⭐
+  //   ② `SourceInteractionPresenter` 的回调**必须显式 `@Sendable`**：
+  //      `ChaiyueEngine` 是 Swift 5、`ChaiyueReader` 是 Swift 6 ⇒ 同一个 `@MainActor (…) -> Void`
+  //      在两边**推断不同**（v6 是 Sendable、v5 不是）⇒ 编译报
+  //      `sendability of function types … does not match requirement`（本地已复现）⭐⭐⭐
+  //      ⇒ 协议 / 包侧实现 / App 侧实现**三处必须同时显式写** ⇒ 少一处就红 ⭐⭐⭐
+  const repoRoot = path.join(__dirname, '..');
+  const readRepo = (rel) => {
+    const p = path.join(repoRoot, rel);
+    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+  };
+
+  const FILES = {
+    引擎协议: readRepo('LegadoEngine/Sources/ChaiyueEngine/Platform/PlatformSourceUI.swift'),
+    包侧实现: readRepo('LegadoEngine/Sources/ChaiyueReader/Shims/SourcePresenter.swift'),
+    App侧实现: readRepo('QiReaderLite/Core/ChaiyueSourceUI.swift'),
+    门面协议: readRepo('LegadoEngine/Sources/ChaiyueReader/Shims/AppModel.swift'),
+    宿主门面: readRepo('QiReaderLite/Features/Reader/Chaiyue/ChaiyueReaderHost.swift'),
+  };
+
+  /** 门面协议缺成员 ⇒ 报出来 */
+  const libraryGaps = (files) => {
+    const gaps = [];
+    if (!/protocol\s+ChaiyueReaderLibrary/.test(files.门面协议)) gaps.push('协议没了');
+    if (!/func\s+imageData\(\s*_\s+url:\s*String,\s*for\s+book:\s*Book\?\s*\)\s*async\s+throws\s*->\s*Data/.test(files.门面协议)) {
+      gaps.push('协议缺 imageData');
+    }
+    if (!/var\s+chapterStore:\s*ChapterStore/.test(files.门面协议)) gaps.push('协议缺 chapterStore');
+    if (!/func\s+imageData\(\s*_\s+url:\s*String,\s*for\s+book:\s*LegadoEngineHost\.BookModel\?\s*\)\s*async\s+throws\s*->\s*Data/.test(files.宿主门面)) {
+      gaps.push('宿主没实现 imageData');
+    }
+    return gaps;
+  };
+
+  /** 回调没显式 @Sendable ⇒ 报出来 */
+  const sendableGaps = (files) => {
+    const gaps = [];
+    for (const key of ['引擎协议', '包侧实现', 'App侧实现']) {
+      const src = files[key] || '';
+      // ⚠️ 只查**协议要求 / 实现方法**那两行 ⇒ 内部私有 helper（`present(_:completion:)`）
+      //   不在协议上 ⇒ 不要求 @Sendable ⇒ 不能误报 ⭐⭐⭐
+      const lines = src.split('\n').filter(l =>
+        /presentBrowser\(|presentVerificationCode\(/.test(l) && /completion:\s*@escaping/.test(l));
+      for (const l of lines) {
+        if (/completion:\s*@escaping\s+@MainActor\s+(?!@Sendable)/.test(l)) gaps.push(`${key}`);
+      }
+    }
+    return gaps;
+  };
+
+  const libGaps = libraryGaps(FILES);
+  ok(libGaps.length === 0, '⑤ 门面协议面齐全（imageData + chapterStore，宿主也实现了）', libGaps.join(' / '));
+
+  const sendGaps = sendableGaps(FILES);
+  ok(sendGaps.length === 0, '⑤ 协议/包侧/App 侧三处回调都显式 @Sendable（v5↔v6 推断陷阱）', sendGaps.join(' / '));
+
+  // ── 变异对照：把两处「弄坏」后，同一套判据必须报出来 ──
+  const mutated = { ...FILES };
+  mutated.门面协议 = FILES.门面协议.replace(/func\s+imageData\([^)]*\)\s*async\s+throws\s*->\s*Data/, '');
+  const libMut = libraryGaps(mutated);
+  ok(libMut.length > 0 && libMut.some(g => g.includes('imageData')),
+     '⑤ 变异①：协议里删掉 imageData ⇒ 判据必须报出来（门禁有牙齿）', libMut.join(' / '));
+
+  const mutated2 = { ...FILES };
+  mutated2.引擎协议 = FILES.引擎协议.replace(/@MainActor\s+@Sendable/g, '@MainActor');
+  const sendMut = sendableGaps(mutated2);
+  ok(sendMut.length > 0 && sendMut.some(g => g.includes('引擎协议')),
+     '⑤ 变异②：协议里去掉 @Sendable ⇒ 判据必须报出来（门禁有牙齿）', sendMut.join(' / '));
+}
+
 console.log('\n── ④ 变异对照：门禁必须能红 ──');
 {
   // ⚠️ 把一个老符号注入临时副本 ⇒ 同一个扫描器必须报出来
