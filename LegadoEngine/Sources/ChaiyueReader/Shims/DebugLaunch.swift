@@ -8,6 +8,19 @@ import ChaiyueReaderKit
 import ChaiyueModels
 import ChaiyueReaderServices
 
+/// 柴阅的标签栏枚举（App 层；轻阅只有「发现」这一屏 ⇒ 保留类型面）⭐⭐⭐
+enum MainTab: Int, CaseIterable, Identifiable {
+    case shelf, explore, me
+    var id: Int { rawValue }
+    var title: String {
+        switch self {
+        case .shelf: "书架"
+        case .explore: "发现"
+        case .me: "我的"
+        }
+    }
+}
+
 enum DebugLaunch {
     static func run(_ app: AppModel) async {
         let args = ProcessInfo.processInfo.arguments
@@ -106,4 +119,15 @@ enum DebugLaunch {
         guard let index = args.firstIndex(of: "-" + key), index + 1 < args.count else { return nil }
         return args[index + 1]
     }
+}
+
+
+// MARK: - 阅读器宿主补的面（轻阅没有的 App 层能力 ⇒ 最小实现）⭐⭐⭐
+
+extension AppModel {
+    /// 标签栏（轻阅阅读器用不到 ⇒ 固定「发现」）⭐⭐⭐
+    var tab: MainTab { .explore }
+
+    /// 导入本地文件（轻阅阅读器不接 ⇒ 空实现）⭐⭐⭐
+    func importFile(_ url: URL) {}
 }

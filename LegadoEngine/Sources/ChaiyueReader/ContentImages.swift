@@ -17,13 +17,12 @@ import WebKit
 /// 正文插图解码：位图直接解码并缓存；SVG（UIImage 不能解码）交给 `SVGRasterizer` 按显示大小光栅化，
 /// 未完成时先返回同样大小的透明占位图，排版不会因为图片到达而跳动
 final class ContentImages {
-    nonisolated init() {}
     nonisolated(unsafe) static let shared = ContentImages()
 
     private let decoded = NSCache<NSString, UIImage>()
     private let placeholders = NSCache<NSString, UIImage>()
 
-    private init() {
+    nonisolated init() {
         decoded.countLimit = 120
         placeholders.countLimit = 60
     }
