@@ -1,0 +1,117 @@
+# 轻阅 Lite build327 —— 把柴阅的【漫画阅读器】搬过来
+
+日期：2026-11-26　｜　CFBundleVersion **327**　｜　包名 `com.qireaderlite.app`　｜　CI **45833353016**
+
+> 用户原话：「**是不是还没搬完全，柴阅不是可以看漫画的吗，你把漫画阅读器也搬过来啊**」
+
+---
+
+## 0. 先说清一件事：这个功能对轻阅**不是鸡肋**
+
+⭐⭐⭐ 柴阅的漫画阅读器 = `App/Sources/Media/Comic/`（**6 个文件 1941 行**）独立的一套翻页阅读器。
+
+⭐⭐⭐ **关键在数据链**：柴阅的漫画**没有单独的「漫画接口」** —— 它的图**就是章节正文里的 `<img>`**：
+
+```swift
+// 柴阅 MediaSession.images(at:)
+let raw = try await content(at: index)          // ← 正常拉章节正文
+let paragraphs = processor.paragraphs(content: raw, ...)
+let sources = ChapterText(...).imageSources    // ← 从正文里抽图片地址
+```
+
+⇒ **`MediaSession` + `ChapterText.imageSources` 我们包里早就有**（在 `ChaiyueReaderServices`）
+⇒ **只差界面层** ⭐⭐⭐
+
+⭐⭐⭐ 而且这正好是「老 WebView 阅读器时代能看、现在看不了」的根因：
+老阅读器把章节正文塞进 WebView ⇒ 正文里的 `<img>` 直接渲染出来（虽然只是图片滚动，不是翻页）；
+换成柴阅的原生排版后，那些图被当成**正文插图** ⇒ 站方漫画源**打不开** ⭐⭐⭐
+
+---
+
+## 1. 搬了什么（柴阅源码一字未改）
+
+| 内容 | 上游出处 | 体量 |
+|---|---|---|
+| 漫画阅读器 6 文件 | `App/Sources/Media/Comic/` | 1941 行 |
+| 形态角标/文案 | `App/Sources/Media/MediaKindStyle.swift` | 56 行 |
+| 媒体启动对象 | `App/Sources/App/AppModel.swift`（`MediaLaunch` / `app.media` / `closeMedia()`） | ~15 行 |
+
+与上游的 diff **只有三处**：
+① `import ReaderModels/ReaderServices` → `ChaiyueModels/ChaiyueReaderServices`（模块改名）
+② 整文件包进 `#if os(iOS)`（漫画用满 UIKit ⇒ macOS/Linux 编不到）
+③ 需要跨模块用的成员升 public（`ComicReaderScreen` / `MediaLaunch` / `app.media` / `closeMedia()` / `MediaKindStyle` 的三个成员）
+
+---
+
+## 2. ⭐⭐⭐ 真正的断点：站方的 `book.type` 在宿主↔引擎往返里被丢了
+
+柴阅靠 `book.type` 判形态（**iOS 约定 `2`=图片；Legado 安卓是位标记 `64`=图片**）
+⇒ **这个字段丢了 ⇒ 柴阅永远以为是文字书 ⇒ 漫画永远打不开** ⭐⭐⭐
+
+三处补齐：
+
+| 位置 | 补什么 |
+|---|---|
+| 宿主 `Core/Book.swift` | **computed** `mediaType`（从站方原始字段 `raw` 现算）⭐⭐⭐ |
+| `ChaiyueReaderAdapter.book()` | `book.type = b.mediaType`（搬进柴阅的 `Book`） |
+| `LegadoEngineBackend.bookPayload()` | `"type": b.type`（柴阅的书 → 站方；站方脚本要读 `book.type`） |
+
+⭐⭐⭐ **为什么 `mediaType` 是 computed 而不是存一个字段**：
+`Book` 是 `Codable`（合成）⇒ **Swift 不会用属性默认值兜底** ⇒ 加一个 `var type: Int = 0`
+⇒ **旧书架数据解码直接失败**（整库读不出来）⇒ 而站方的 `type` 本来就原样存在 `raw` 里 ⇒ **现算即可，零持久化风险** ⭐⭐⭐
+
+⭐⭐⭐ **判定只用柴阅那一份真相**：宿主不自己判一遍，而是
+`chaiyueBook.mediaKind(sourceType: source?.bookSourceType) == .comic` ⇒ **不会与柴阅的规则漂移** ⭐⭐⭐
+
+---
+
+## 3. 宿主怎么接的
+
+```
+详情页「开始阅读」
+   ├─ 不是漫画 ⇒ ChaiyueReaderScreen（柴阅的文字阅读器，build324 起）
+   └─ 是漫画   ⇒ ChaiyueComicScreen → 柴阅的 ComicReaderScreen ⭐⭐⭐
+```
+
+- `ChaiyueReaderHost` 新增 `mode: .text / .comic`：**共用同一套镜像逻辑**（书源/目录预写/书架进度）
+  ⇒ 目录已在详情页取过 ⇒ 漫画页**命中章节缓存 ⇒ 不重复请求站方**（站方目录 JS 很慢）⭐⭐⭐
+- 新增 `ChaiyueComicScreen`：造 `AppModel` → 置 `app.media = MediaLaunch(...)` → 渲染 `ComicReaderScreen`
+- **进度回写分模式**：漫画的进度由柴阅 `MediaSession.save()` 直接写进**柴阅的书架仓** ⇒ 宿主读它搬回轻阅书库
+  ⚠️ **漫画的 `position` 是「图片序号」、不是章号** ⇒ 绝不能当章下标用 ⭐⭐⭐
+- 按钮文案用柴阅的 `actionTitle(for:)` ⇒ 漫画书写「**开始看漫画 / 继续看漫画**」，图标 `photo`
+
+---
+
+## 4. 门禁（24 项 / 6 条变异对照）
+
+`test/reader-chaiyue-comic.test.js` ⇒ 六条判据，缺一条这功能就是坏的：
+
+| 判据 | 内容 |
+|---|---|
+| ① **文件在** | 6 个漫画文件都在，且都有 `#if os(iOS)` 守卫 |
+| ② **宿主能开** | `ComicReaderScreen` 是 public 且有 `public init` |
+| ③ **启动通道** | `MediaLaunch` / `app.media` / `closeMedia()` 都在（漫画走 media，不走 reader） |
+| ④ **会话能造** | 协议有 `mediaSession(for:)` **且宿主实现了** |
+| ⑤ **type 不丢** | `Book.mediaType` / 适配器搬 type / `bookPayload` 带 type |
+| ⑥ **详情页分流** | 按 `mediaKind` 判 ⇒ 开漫画屏 |
+
+---
+
+## 5. 已知边界（说清楚，别踩）
+
+⚠️ **本地漫画（CBZ / PDF 导入）没做** ⇒ 轻阅**没有本地书导入入口** ⇒ 柴阅那 7 个内置主题包之外
+「导入本地漫画」这条路在轻阅里不存在 ⭐⭐⭐
+
+⚠️ **漫画源要靠站方标 `book.type`** ⇒ 站方不给这个字段 ⇒ 这本书就还是走文字阅读器（不是 bug，是站方的事）
+
+⚠️ **听书 / 短剧没搬** ⇒ 柴阅的 `MediaLayer` 里还有那两支（`AudioPlayerScreen` / `DramaPlayerScreen`）
+⇒ 轻阅只搬了漫画 ⇒ `MediaLayer` 那一层轻阅**不引入** ⇒ 宿主自己按 `mode` 分流 ⭐⭐⭐
+
+---
+
+## 6. 验证
+
+- CI **45833353016**（main，commit `6f545a9`）：编译 + 5 个探针 + 柴阅引擎权威测试 全绿
+- 门禁：新门禁 24/24；全量 JS 门禁无回归
+- 产物：`QingYue-build327.zip`（+ `-noprov`）⇒ 解包验 **CFBundleVersion = 327** ✔
+- **二进制体检**：包内能找到 `ComicReaderScreen` / `ComicModel` / `ComicPagerController` 等漫画符号 ⭐⭐⭐
