@@ -94,18 +94,18 @@ let package = Package(
             name: "ChaiyueReaderKit",
             dependencies: ["ChaiyueModels"],
             path: "Sources/ChaiyueReaderKit",
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             // ⭐⭐⭐⭐⭐ **照搬柴阅 App target 的编译设置**（`App/project.yml`）：
             //   SWIFT_VERSION 6.0 + SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
             //   + SWIFT_APPROACHABLE_CONCURRENCY: YES ⭐⭐⭐
             //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
             //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
-            swiftSettings: [.swiftLanguageMode(.v6),
-                          // ⭐⭐⭐ **柴阅 `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor` 的编译器等价物** ⭐⭐⭐
-                          //   （不是 upcoming feature！upcoming feature 那个名字**不生效** ⇒ 表现为
-                          //    「main actor-isolated property 'chapters' can not be referenced from a
-                          //     nonisolated context」⇒ 顶层默认 @MainActor 才与柴阅一致）⭐⭐⭐
-                          .unsafeFlags(["-default-isolation", "MainActor"]),
-                          .enableUpcomingFeature("ApproachableConcurrency")],
+            // ⭐⭐⭐ **柴阅的【服务/内核层】在它自己的 SPM 包（ReaderCore）里** ⇒ 那边**没有**默认 actor 隔离
+            //   （`Packages/ReaderCore/Package.swift` 只有 tools 6.0 ⇒ 纯 Swift 6）⇒ 这里必须照抄 ⭐⭐⭐
+            //   ⚠️ 之前把 `-default-isolation MainActor` 也加到这一层 ⇒ 服务内部调用全变成
+            //     「main actor-isolated ... in a synchronous nonisolated context」⇒ 白改 ⭐⭐⭐
+            swiftSettings: [.swiftLanguageMode(.v6)],
         ),
         // ⭐⭐⭐⭐⭐ ⑤ 柴阅的【阅读服务子集】（ReaderServices 的 Reading/Content/Library/Sources/Speech/Support）⭐⭐⭐
         .target(
@@ -117,18 +117,18 @@ let package = Package(
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
             path: "Sources/ChaiyueReaderServices",
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             // ⭐⭐⭐⭐⭐ **照搬柴阅 App target 的编译设置**（`App/project.yml`）：
             //   SWIFT_VERSION 6.0 + SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
             //   + SWIFT_APPROACHABLE_CONCURRENCY: YES ⭐⭐⭐
             //   ⇒ DefaultActorIsolation：顶层默认 @MainActor（SwiftUI View 本来就是）⭐⭐⭐
             //   ⇒ ApproachableConcurrency：老代码的并发违规降级成警告（不报错）⭐⭐⭐
-            swiftSettings: [.swiftLanguageMode(.v6),
-                          // ⭐⭐⭐ **柴阅 `SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor` 的编译器等价物** ⭐⭐⭐
-                          //   （不是 upcoming feature！upcoming feature 那个名字**不生效** ⇒ 表现为
-                          //    「main actor-isolated property 'chapters' can not be referenced from a
-                          //     nonisolated context」⇒ 顶层默认 @MainActor 才与柴阅一致）⭐⭐⭐
-                          .unsafeFlags(["-default-isolation", "MainActor"]),
-                          .enableUpcomingFeature("ApproachableConcurrency")],
+            // ⭐⭐⭐ **柴阅的【服务/内核层】在它自己的 SPM 包（ReaderCore）里** ⇒ 那边**没有**默认 actor 隔离
+            //   （`Packages/ReaderCore/Package.swift` 只有 tools 6.0 ⇒ 纯 Swift 6）⇒ 这里必须照抄 ⭐⭐⭐
+            //   ⚠️ 之前把 `-default-isolation MainActor` 也加到这一层 ⇒ 服务内部调用全变成
+            //     「main actor-isolated ... in a synchronous nonisolated context」⇒ 白改 ⭐⭐⭐
+            swiftSettings: [.swiftLanguageMode(.v6)],
         ),
         // ⭐⭐⭐⭐⭐ ⑥ 柴阅的【阅读界面本体】（App/Sources/Reader）⭐⭐⭐
         .target(
@@ -141,6 +141,12 @@ let package = Package(
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],
             path: "Sources/ChaiyueReader",
+            swiftSettings: [.swiftLanguageMode(.v6),
+                          .unsafeFlags(["-default-isolation", "MainActor"]),
+                          .enableUpcomingFeature("ApproachableConcurrency")],
+            swiftSettings: [.swiftLanguageMode(.v6),
+                          .unsafeFlags(["-default-isolation", "MainActor"]),
+                          .enableUpcomingFeature("ApproachableConcurrency")],
             // ⭐⭐⭐⭐⭐ **照搬柴阅 App target 的编译设置**（`App/project.yml`）：
             //   SWIFT_VERSION 6.0 + SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
             //   + SWIFT_APPROACHABLE_CONCURRENCY: YES ⭐⭐⭐
