@@ -64,6 +64,13 @@ public struct Book: Hashable, Sendable, Identifiable {
 
     public var displayCover: String? { customCoverUrl.nilIfEmpty ?? coverUrl.nilIfEmpty }
 
+    /// ⭐⭐⭐⭐⭐ **【补】读过了没有**（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
+    ///   上游把它放在 **App 层**（`App/Sources/Screens/Shelf/HeroCard.swift`）⇒
+    ///   我们把 `MediaKindStyle.swift` 搬进包后 ⇒ 它的 `actionTitle(for:)` 用了 `book.hasStarted`
+    ///   ⇒ 但那个 extension 在 App 层、我们没搬 ⇒ 编译报「value of type 'Book' has no member 'hasStarted'」⭐⭐⭐
+    ///   ⇒ 这里把它挪到**模型层**（一行实现，一字不差）⇒ 包内与宿主都能用 ⭐⭐⭐
+    public var hasStarted: Bool { durChapterIndex > 0 || durChapterPos > 0 }
+
     public var displayIntro: String? { customIntro.nilIfEmpty ?? intro.nilIfEmpty }
 
     public var variable: String? {

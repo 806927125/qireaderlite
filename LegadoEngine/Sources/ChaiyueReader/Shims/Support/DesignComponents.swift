@@ -17,6 +17,22 @@ struct PressStyle: ButtonStyle {
     }
 }
 
+/// ⭐⭐⭐⭐⭐ **【补】`ButtonStyle` 的静态成员 `.press` / `.pressSoft`**（2026-11-26 · CI327 实证）⭐⭐⭐⭐⭐
+///   柴阅上游 `App/Sources/Design/Components.swift` 里，`PressStyle` 结构体**下面**跟着这个 extension：
+///   ```swift
+///   extension ButtonStyle where Self == PressStyle {
+///       static var press: PressStyle { PressStyle() }
+///       static var pressSoft: PressStyle { PressStyle(scale: 0.97) }
+///   }
+///   ```
+///   ⇒ 我们上一版**只搬了结构体、没搬这个 extension** ⇒ 文字阅读器没用 `.press` 所以没暴露
+///   ⇒ 搬漫画进来后它用了 `.buttonStyle(.press)` ⇒ CI 报
+///   「reference to member 'press' cannot be resolved without a contextual type」⭐⭐⭐
+extension ButtonStyle where Self == PressStyle {
+    static var press: PressStyle { PressStyle() }
+    static var pressSoft: PressStyle { PressStyle(scale: 0.97) }
+}
+
 struct RowPressStyle: ButtonStyle {
     var color: Color = Tok.press
 
@@ -26,6 +42,11 @@ struct RowPressStyle: ButtonStyle {
             .background(configuration.isPressed ? color : .clear)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
+}
+
+extension ButtonStyle where Self == RowPressStyle {
+    static var row: RowPressStyle { RowPressStyle() }
+    static var glassRow: RowPressStyle { RowPressStyle(color: Tok.gFill) }
 }
 
 // ⭐⭐⭐⭐⭐ **自柴阅 App/Sources/Design/Components.swift 搬运**（明黄主按钮）⭐⭐⭐⭐⭐

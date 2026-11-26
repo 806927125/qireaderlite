@@ -135,5 +135,22 @@ console.log('\n── ⑥ 详情页按 mediaKind 分流到漫画屏 ──');
   ok(!/ChaiyueComicScreen\(/.test(mutated), '⑥ 变异⑥：详情页不分流后判据要能报（门禁有牙齿）');
 }
 
+console.log('\n── ⑦ 漫画用到的两个「柴阅 App 层成员」必须在包里 ──');
+{
+  // ⭐⭐⭐ **CI327 实证**：这两个都**不在模型层**、而在柴阅的 **App 层文件**里 ⇒ 搬 App 层时漏了 ⇒
+//   ① `ButtonStyle.press`（`App/Sources/Design/Components.swift`）⇒ 漫画的 `.buttonStyle(.press)` 编不过 ⭐⭐⭐
+//   ② `Book.hasStarted`（`App/Sources/Screens/Shelf/HeroCard.swift`）⇒ `actionTitle(for:)` 编不过 ⭐⭐⭐
+  const components = codeOnly(read(path.join(PKG, 'Shims/Support/DesignComponents.swift')));
+  const bookExt = codeOnly(read(path.join(PKG, 'Shims/BookExtensions.swift')));
+  ok(/extension ButtonStyle where Self == PressStyle/.test(components) &&
+     /static var press: PressStyle/.test(components),
+     '⑦ 有 `ButtonStyle.press`（柴阅的静态 ButtonStyle 成员，漫画按钮要用）');
+  ok(/var hasStarted: Bool/.test(bookExt),
+     '⑦ 有 `Book.hasStarted`（柴阅写在 App 层书架文件里 ⇒ 搬 App 层时最容易漏）');
+
+  const mutated = components.replace(/static var press: PressStyle \{ PressStyle\(\) \}/, '');
+  ok(!/static var press: PressStyle/.test(mutated), '⑦ 变异⑦：去掉 .press 后判据要能报（门禁有牙齿）');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);
