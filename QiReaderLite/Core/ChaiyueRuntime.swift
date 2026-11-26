@@ -120,12 +120,23 @@ enum ChaiyueRuntime {
     }()
 
     /// ⭐⭐⭐ **当前能弹窗的顶层控制器**（验证码弹窗用）⭐⭐⭐
+    ///
+    /// ⚠️⚠️⚠️ **【改造】沿 `presentedViewController` 链往上找**（2026-11-27 真机）⭐⭐⭐⚠️：
+    ///   原来直接取 **rootViewController** ⇒ 而阅读器是 **`fullScreenCover`**（盖在根上）
+    ///   ⇒ ⇒ 验证码弹窗会被**压在阅读器下面** ⇒ 用户「点了没反应」⭐⭐⭐
+    ///   ⇒ 正解（同柴阅的 `SourcePresenter.topController()`）：**沿 presented 链找到最顶层** ⇒
+    ///   ⇒ 弹窗盖在阅读器之上 ⭐⭐⭐
     static var topPresenter: UIViewController? {
-        UIApplication.shared.connectedScenes
+        let window = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .rootViewController
+            .first { $0.isKeyWindow }
+        guard let root = window?.rootViewController else { return nil }
+        var top = root
+        while let presented = top.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        return top
     }
 
     /// ⭐⭐⭐ **后台渲染一段 HTML**（站方 `java.startBrowser(html)` 场景）⭐⭐⭐

@@ -54,6 +54,19 @@ struct ChaiyueComicScreen: View {
             }
         }
         .task { prepare() }
+        // ⭐⭐⭐⭐⭐ **浏览器浮在【漫画页】之上**（2026-11-27）⭐⭐⭐⭐⭐
+        //   与文字阅读器同一条规则：阅读器在场时浏览器由阅读器那层承载（不被盖住）⭐⭐⭐
+        .sheet(item: Binding(
+            get: { BrowserPresenter.shared.item?.onReader == true ? BrowserPresenter.shared.item : nil },
+            set: { BrowserPresenter.shared.item = $0 }
+        )) { item in
+            BrowserSheet(url: item.url, title: item.title, onFinish: item.onFinish)
+        }
+        .onAppear { BrowserPresenter.shared.readerPresented = true }
+        .onDisappear {
+            BrowserPresenter.shared.readerPresented = false
+            BrowserPresenter.shared.dismissIfReading()
+        }
         // ⭐⭐⭐ 柴阅的漫画页收起时会 `app.closeMedia()` ⇒ `app.media` 置 nil ⇒ 这里跟着收摊 ⭐⭐⭐
         .onChange(of: host?.app.media) { _, newValue in
             if newValue == nil, host != nil { close() }

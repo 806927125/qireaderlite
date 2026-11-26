@@ -132,6 +132,9 @@ declare -a GATES=(
   #   已删：`LegadoEngine/Reference/`（老引擎 LegadoR 的逆向产物）+ 老引擎的 README
   #   ⇒ 门禁钉住「删干净」这件事 ⇒ 下次谁把老东西拷回来，门禁立刻红 ⭐⭐⭐
   "engine-no-legacy:test/engine-no-legacy.test.js"
+  # ⭐⭐⭐⭐⭐ **浏览器/验证码必须浮在【阅读器】之上**（2026-11-27 真机「段评要先回详情页」）⭐⭐⭐⭐⭐
+  #   根 View 的 sheet 被 fullScreenCover（阅读器）压住 ⇒ 浏览器看不见 ⇒ 必须由阅读器那层承载
+  "browser-on-reader:test/browser-on-reader.test.js"
   "reader-chaiyue-host:test/reader-chaiyue-host.test.js"
   # ⭐⭐⭐⭐⭐ **柴阅的【图标资源】与【外观切换】必须真的能用**（2026-11-26 真机反馈）⭐⭐⭐⭐⭐
   #   ① 悬浮栏图标全没了 / 主题小页纸糊了 ⇒ 柴阅图标是**自绘资源**（`cy.*.symbolset` + `Theme-*`）

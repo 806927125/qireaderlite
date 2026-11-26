@@ -57,6 +57,22 @@ struct ChaiyueReaderScreen: View {
             }
         }
         .task { prepare() }
+        // ⭐⭐⭐⭐⭐ **浏览器浮在【阅读器】之上**（2026-11-27 真机「段评要先回详情页」）⭐⭐⭐⭐⭐
+        //   根 View 的 sheet 被 `fullScreenCover`（阅读器）压住 ⇒ 浏览器看不见 ⇒
+        //   ⇒ 阅读器在场时改由**这一层**承载浏览器 ⇒ 浮在阅读器之上 ⇒ 关掉浏览器就回到正文 ⭐⭐⭐
+        .sheet(item: Binding(
+            get: { BrowserPresenter.shared.item?.onReader == true ? BrowserPresenter.shared.item : nil },
+            set: { BrowserPresenter.shared.item = $0 }
+        )) { item in
+            BrowserSheet(url: item.url, title: item.title, onFinish: item.onFinish)
+        }
+        .onAppear { BrowserPresenter.shared.readerPresented = true }
+        .onDisappear {
+            BrowserPresenter.shared.readerPresented = false
+            // ⚠️ 用户直接关阅读器而浏览器还开着 ⇒ 收掉浏览器并**回调空结果**
+            //   （不回调 ⇒ 站方等的 `startBrowserAwait` 结果永远不来 ⇒ 卡死）⭐⭐⭐
+            BrowserPresenter.shared.dismissIfReading()
+        }
         // ⭐⭐⭐ 柴阅的阅读器关闭时会 `app.closeReader()` ⇒ `app.reader` 置 nil ⇒ 这里跟着收摊 ⭐⭐⭐
         .onChange(of: host?.app.reader) { _, newValue in
             if newValue == nil, launch != nil { close() }

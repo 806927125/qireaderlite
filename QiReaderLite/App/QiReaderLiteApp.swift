@@ -93,7 +93,14 @@ struct QiReaderLiteApp: App {
                 //   ⇒ 柴阅的引擎（站方 `java.startBrowser` / `startBrowserAwait`）要开浏览器 ⭐⭐⭐
                 //   ⇒ 它把请求交给 `ChaiyueInteractionPresenter` ⇒ 那里弹这个 sheet ⭐⭐⭐
                 //   ⇒ **轻阅的 `BrowserSheet` 早就写好了**（注释里就写着给这个用）⇒ 现在接上 ⭐⭐⭐
-                .sheet(item: $browserPresenter.item) { item in
+                // ⚠️⚠️⚠️ **【改造】根 View 只承载「没有阅读器在场」的浏览器**（2026-11-27）⭐⭐⭐
+                //   阅读器是 `fullScreenCover` ⇒ **它的层级高于根上的 sheet** ⇒
+                //   ⇒ 浏览器若挂在根上 ⇒ **被阅读器盖住** ⇒ 用户看到「点段评，浏览器不见了」⭐⭐⭐
+                //   ⇒ 阅读器在场时改由**阅读器那层**的 `.sheet` 承载（浮在阅读器之上，柴阅原版行为）⭐⭐⭐
+                .sheet(item: Binding(
+                    get: { browserPresenter.item?.onReader == false ? browserPresenter.item : nil },
+                    set: { browserPresenter.item = $0 }
+                )) { item in
                     BrowserSheet(url: item.url, title: item.title, onFinish: item.onFinish)
                 }
         }

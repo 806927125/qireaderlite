@@ -30,9 +30,28 @@ final class BrowserPresenter: ObservableObject {
     /// 当前要呈现的浏览器（`nil` = 没在呈现）
     @Published var item: BrowserItem?
 
+    /// ⭐⭐⭐⭐⭐ **阅读器在场吗**（2026-11-27 真机「段评的浏览器要先回详情页才看得到」）⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️⚠️⚠️ **为什么需要**（真机实证）⭐⭐⭐：
+    ///   浏览器原本用 `.sheet(item:)` 挂在 **App 根 View** 上 ⇒ 而阅读器是 **`fullScreenCover`**
+    ///   ⇒ ⇒ **fullScreenCover 的呈现层级高于根上的 sheet** ⇒ **浏览器被压在阅读器下面** ⭐⭐⭐
+    ///   ⇒ ⇒ 用户看到的现象：「点段评 → 浏览器不见了 → 得先关掉阅读器回详情页才看得到」⭐⭐⭐
+    ///   ⇒ 正解：**浏览器改挂在【阅读器那一层】**（柴阅原版就是「浏览器浮在阅读器之上」）⭐⭐⭐
+    ///   ⇒ 本标志用来决定「这次浏览器由根 View 还是由阅读器承载」⭐⭐⭐
+    @Published var readerPresented = false
+
     /// ⭐⭐⭐ 呈现一个浏览器页面；关闭时把 (html, url, cookie) 交回去 ⭐⭐⭐
     func present(url: String, title: String, onFinish: @escaping (String, String, String) -> Void) {
-        item = BrowserItem(url: url, title: title, onFinish: onFinish)
+        // ⚠️ **阅读器在场 ⇒ 由阅读器承载**（否则会被阅读器盖住 ⇒ 看不见）⭐⭐⭐
+        item = BrowserItem(url: url, title: title, onReader: readerPresented, onFinish: onFinish)
+    }
+
+    /// ⭐⭐⭐ **阅读器消失时**（用户直接关阅读器，浏览器还开着）⇒ 把浏览器收掉并**回调 nil** ⭐⭐⭐
+    ///   ⚠️ 不回调 ⇒ 站方那边等的 `startBrowserAwait` 结果**永远不来** ⇒ 卡死 ⭐⭐⭐
+    func dismissIfReading() {
+        guard let item, item.onReader else { return }
+        self.item = nil
+        item.onFinish("", "", "")   // 空内容 ⇒ 调用方按「没有结果」处理 ⭐⭐⭐
     }
 }
 
@@ -41,6 +60,10 @@ struct BrowserItem: Identifiable {
     let id = UUID()
     let url: String
     let title: String
+    /// ⭐⭐⭐⭐⭐ **这次浏览器该由【阅读器】承载吗**（2026-11-27）⭐⭐⭐⭐⭐
+    ///   · `true`  ⇒ 阅读器在场 ⇒ 由**阅读器那层**的 `.sheet` 呈现（浮在阅读器之上）⭐⭐⭐
+    ///   · `false` ⇒ 没有阅读器 ⇒ 由 **App 根 View** 的 `.sheet` 呈现（详情页/书架等场景）⭐⭐⭐
+    let onReader: Bool
     /// 关闭时回传：页面 HTML / 当前 URL / cookie 串
     let onFinish: (String, String, String) -> Void
 }
