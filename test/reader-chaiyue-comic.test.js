@@ -187,5 +187,30 @@ console.log('\n── ⑧ AppModel 不得有「编译器类型检查超时」的
   ok(/\?\?/.test(mutatedVoice), '⑧ 变异⑧：换回链式写法后判据要能报（门禁有牙齿）');
 }
 
+console.log('\n── ⑨ 宿主构造正文服务必须传 `images:`（否则取图直接抛错）──');
+{
+  // ⭐⭐⭐⭐⭐ **真机实证（build328）：漫画页一直转圈、图片全出不来** ⭐⭐⭐⭐⭐
+  //   柴阅的 `BookContentService.imageData(_:book:chapter:)`：
+  //   ```swift
+  //   guard let images else { throw URLError(.resourceUnavailable) }
+  //   ```
+  //   ⇒ `images` 是**可选参数、默认 nil** ⇒ 宿主不传 ⇒ **取图必然抛错** ⭐⭐⭐
+  //   ⇒ 柴阅上游 `LibraryServices.contentService(for:)` 是**传了** `images: images` 的
+  //   ⇒ 我们把 `LibraryServices` 拆成门面协议时**把这个依赖丢了** ⭐⭐⭐
+  //   ⇒ 影响面：**漫画页的图** + **文字阅读器的正文插图**（同一个 service）⭐⭐⭐
+  const hostSrc = codeOnly(read(path.join(ROOT, 'QiReaderLite/Features/Reader/Chaiyue/ChaiyueReaderHost.swift')));
+  const services = hostSrc.match(/BookContentService\([\s\S]*?\)/g) || [];
+  ok(services.length >= 2, `⑨ 宿主构造了 ${services.length} 处正文服务（文字 + 漫画）`);
+  const missing = services.filter(x => !/images:\s*images/.test(x));
+  ok(missing.length === 0,
+     '⑨ 每一处正文服务都传了 images:（漏一处 ⇒ 那条路的图全出不来）',
+     `缺 images 的有 ${missing.length} 处`);
+
+  const mutated = hostSrc.replace(/images:\s*images/g, '');
+  const mutatedServices = mutated.match(/BookContentService\([\s\S]*?\)/g) || [];
+  ok(mutatedServices.some(x => !/images:\s*images/.test(x)),
+     '⑨ 变异⑨：去掉 images 后判据要能报（门禁有牙齿）');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);

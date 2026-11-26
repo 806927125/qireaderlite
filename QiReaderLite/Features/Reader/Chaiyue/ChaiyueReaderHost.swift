@@ -104,9 +104,17 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
         if let existing = sessions[book.bookUrl] { return existing }
         // ① 正文服务：源（从柴阅的书源仓里取）+ 引擎环境（宿主与引擎共享的那一个）+ 章节缓存
         let source = sources.source(for: book.origin)
+        // ⭐⭐⭐⭐⭐ **必须传 `images:`**（2026-11-26 · 真机「漫画图片出不来」实证）⭐⭐⭐⭐⭐
+        //   柴阅的 `BookContentService.imageData(_:book:chapter:)` 第一句就是
+        //   `guard let images else { throw URLError(.resourceUnavailable) }` ⭐⭐⭐
+        //   ⇒ `images` 是**可选参数、默认 nil** ⇒ 宿主不传 ⇒ **取图直接抛错** ⇒
+        //     漫画页一直转圈、**文字阅读器的正文插图也一样出不来** ⭐⭐⭐⭐⭐
+        //   ⇒ 柴阅上游的 `LibraryServices.contentService(for:)` 是**传了** `images: images` 的
+        //     ⇒ 我们把 `LibraryServices` 拆成门面协议时**把这个依赖丢了** ⭐⭐⭐
         let service = BookContentService(source: source,
                                          environment: ChaiyueRuntime.environment,
-                                         store: chapterStore)
+                                         store: chapterStore,
+                                         images: images)
         // ② 正文处理器：替换规则 + 简繁转换（轻阅暂无替换规则 ⇒ 空；简繁转换走柴阅的 `ChineseConversion.none`）
         let processor = ContentProcessor(rules: replaceRules, conversion: .none)
         // ③ 会话
@@ -130,9 +138,11 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
         // ⭐⭐⭐ 同一本书 ⇒ 同一个会话（漫画页与宿主共享进度 ⇒ 不分叉）⭐⭐⭐
         if let existing = mediaSessions[book.bookUrl] { return existing }
         let source = sources.source(for: book.origin)
+        // ⚠️⭐⭐⭐ **同样必须传 `images:`**（漫画的图走这里取 ⇒ 不传就永远转圈）⭐⭐⭐⭐⭐
         let service = BookContentService(source: source,
                                          environment: ChaiyueRuntime.environment,
-                                         store: chapterStore)
+                                         store: chapterStore,
+                                         images: images)
         let processor = ContentProcessor(rules: replaceRules, conversion: .none)
         let session = MediaSession(book: book, shelf: shelf, service: service, processor: processor)
         session.readingRecords = readingRecords
