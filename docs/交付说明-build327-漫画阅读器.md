@@ -262,3 +262,35 @@ return try await images.data(for: url, source: source, isContent: true)
 
 - CI：main（commit 见下）绿
 - 门禁：新门禁 7/7；`engine-package-deps` **44/0**；`engine-apple-api` 645/0；阅读器相关 42/47/54/39 全绿
+
+
+---
+
+# 附：build332 —— 浏览器/验证码浮在【阅读器】之上（段评不必回详情页）
+
+> 真机：「**段评打开，浏览器应该在阅读界面打开，现在是先回详情页再打开的**」
+
+## 根因（两层，同一类「被 fullScreenCover 压住」）
+
+| # | 谁 | 原来挂在哪 | 结果 |
+|---|---|---|---|
+| ① | **浏览器** | `@Published item` + **App 根 View 上的 `.sheet(item:)`** | 阅读器是 `fullScreenCover` ⇒ **层级高于根上的 sheet** ⇒ 浏览器被压在下面 ⇒ 「浏览器不见了」⭐⭐⭐ |
+| ② | **验证码弹窗** | `ChaiyueRuntime.topPresenter` = **rootViewController** | 同上 ⇒ 弹窗被压住 ⇒ 「点了没反应」⭐⭐⭐ |
+
+## 确认命中的是这条链（不是猜）
+柴阅 `ParagraphComment.swift:60` ⇒ 段评气泡的 action 就是
+`java.showReadingBrowser('...','段评')` ⇒ `PlatformSourceUI.showBrowser` ⇒ `presenter.presentBrowser`
+⇒ 宿主 `ChaiyueInteractionPresenter.presentBrowser` ⇒ `BrowserPresenter.present` ⇒ **就是被压住的那一层** ⭐⭐⭐
+（柴阅原版是**在阅读器之上浮一层 WebView**；轻阅换成宿主 `BrowserSheet` 后挂在根上 ⇒ 才被盖住）
+
+## 改法
+- `BrowserItem` 加 `onReader`（这次浏览器由根 View 还是阅读器承载）
+- `BrowserPresenter` 加 `readerPresented` + `dismissIfReading()`
+  （阅读器被关 ⇒ 收掉浏览器并**回调空结果** ⇒ 否则站方等的 `startBrowserAwait` 结果永远不来 ⇒ 卡死）⭐⭐⭐
+- 根 View 的 sheet：**过滤掉** `onReader == true`（否则两层都 present）⭐⭐⭐
+- **文字阅读器 + 漫画页**各挂一个只接 `onReader == true` 的 sheet；onAppear/onDisappear 置位/复位标志 ⭐⭐⭐
+- `topPresenter` 改成**沿 `presentedViewController` 链找最顶层**（同柴阅 `topController()`）⭐⭐⭐
+
+## 门禁
+`test/browser-on-reader.test.js`（19 项）：根 View 过滤 / 两个阅读器都承载 / topPresenter 找顶层 /
+BrowserPresenter 知道阅读器在场 ⇒ 29/29…（漫画门禁 47/47 + 本门禁 19/19）⭐⭐⭐
