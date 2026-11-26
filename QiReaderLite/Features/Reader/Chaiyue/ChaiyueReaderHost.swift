@@ -32,6 +32,8 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
     let sources: SourceRepository
     /// 在线朗读源：轻阅没有 ⇒ 空仓（阅读页的「朗读」面板会读它）
     let httpTTS: HttpTTSRepository
+    /// 朗读音频加载器（柴阅的 `SpeechAudioLoader`）⭐⭐⭐
+    let speechLoader: SpeechAudioLoader
     /// 章节缓存（目录 + 正文）：轻阅复用柴阅的磁盘缓存 ⇒ 同一本书第二次打开**不重复下载** ⭐⭐⭐
     let chapterStore: ChapterStore
     /// 阅读记录：不在书架的书也记进度（下次打开接着读）
@@ -55,6 +57,7 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
         shelf = BookshelfRepository(fileURL: directory.appendingPathComponent("bookshelf.json"))
         sources = SourceRepository(fileURL: directory.appendingPathComponent("sources.json"))
         httpTTS = HttpTTSRepository(fileURL: directory.appendingPathComponent("httpTTS.json"))
+        speechLoader = SpeechAudioLoader(environment: ChaiyueRuntime.environment)
         chapterStore = ChapterStore(root: directory.appendingPathComponent("Chapters", isDirectory: true))
         readingRecords = ReadingRecordStore(fileURL: directory.appendingPathComponent("readingRecords.json"))
     }

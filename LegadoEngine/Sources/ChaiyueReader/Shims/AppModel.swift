@@ -25,6 +25,8 @@ public protocol ChaiyueReaderLibrary {
     var sources: SourceRepository { get }
     /// 在线朗读源
     var httpTTS: HttpTTSRepository { get }
+    /// 朗读音频加载器（柴阅 `SpeechAudioLoader`，在 ReaderServices 里）⭐⭐⭐
+    var speechLoader: SpeechAudioLoader { get }
     /// 为一本书造阅读会话（宿主自己拼 `BookContentService` + `ContentProcessor` + `BookshelfRepository`）
     func readerSession(for book: Book) -> ReaderSession
     /// 书源事件回调（`java.*` 的回传给宿主）
@@ -39,7 +41,7 @@ public protocol ReaderAudioPausing: AnyObject {
 /// 默认实现：没有音频播放器时什么都不做
 public final class ReaderAudioPauser: ReaderAudioPausing {
     public init() {}
-    public func pause() {}
+    func pause() {}
 }
 
 /// 阅读器的根状态对象（宿主用 `.environment(app)` 注入）
@@ -47,27 +49,27 @@ public final class ReaderAudioPauser: ReaderAudioPausing {
 public final class AppModel {
     // MARK: - 依赖
 
-    public let library: ChaiyueReaderLibrary
-    public let settings: ReaderSettings
-    public let speech: SpeechController
-    public let appearance: AppearanceStore
-    public let island: IslandCenter
-    public let stats: ReadingStats
-    public let voices: VoiceCatalog
-    public let voiceStore: LocalVoiceStore
-    public let localVoice: LocalVoice
-    public let audio: ReaderAudioPausing
+    let library: ChaiyueReaderLibrary
+    let settings: ReaderSettings
+    let speech: SpeechController
+    let appearance: AppearanceStore
+    let island: IslandCenter
+    let stats: ReadingStats
+    let voices: VoiceCatalog
+    let voiceStore: LocalVoiceStore
+    let localVoice: LocalVoice
+    let audio: ReaderAudioPausing
 
     // MARK: - 状态
 
     /// 打开阅读器的请求；宿主置位后呈现 `ReaderContainer`
-    public var reader: ReaderLaunch?
+    var reader: ReaderLaunch?
     /// 正在朗读的书（阅读器关闭后仍可回到阅读器）
-    public var speechBook: Book?
+    var speechBook: Book?
     /// 书源要求阅读器重新加载当前章节（`java.refreshContent`）
-    public var contentSignal: SourceSignal?
+    var contentSignal: SourceSignal?
     /// 书源要求刷新登录界面（`java.reLoginView` / `java.upLoginData`）
-    public var loginSignal: SourceSignal?
+    var loginSignal: SourceSignal?
     /// 可见封面在窗口中的位置（开书动画的起点），不参与界面刷新
     @ObservationIgnored public var coverFrames: [String: CGRect] = [:]
     /// 阅读器在打开期间接管「朗读读完一章」的处理
@@ -100,40 +102,40 @@ public final class AppModel {
 
     /// 打开阅读器（文字书）。
     /// ⚠️ **不做媒体分流**：包里没有媒体播放页（听书/漫画/短剧不在阅读器范围）⇒ 永远置位 `reader` ⭐⭐
-    public func openReader(_ book: Book, coverKey: String? = nil) {
+    func openReader(_ book: Book, coverKey: String? = nil) {
         let current = library.shelf.book(book.bookUrl) ?? book
         reader = ReaderLaunch(book: current, origin: coverKey.flatMap { coverFrames[$0] }, coverKey: coverKey)
     }
 
     /// 关闭阅读器（由 `ReaderContainer` 在合书动画结束时调用）
-    public func closeReader() {
+    func closeReader() {
         reader = nil
     }
 
     /// 书籍的内容形态（文字书 / 听书 / 漫画 / 短剧）
-    public func mediaKind(of book: Book) -> BookMediaKind {
+    func mediaKind(of book: Book) -> BookMediaKind {
         book.mediaKind(sourceType: library.sources.source(for: book.origin)?.bookSourceType)
     }
 
     /// 打开书籍详情（宿主可覆盖成自己的详情页）
-    public func openDetail(_ book: Book) {
+    func openDetail(_ book: Book) {
         island.show("info.circle", book.name)
     }
 
     // MARK: - 书架
 
     /// 书架上已有同名同作者的其它来源时先确认覆盖；`add` 收到被覆盖的书籍地址（没有冲突时为 nil）
-    public func confirmShelfAdd(_ book: Book, add commit: @escaping (_ replacing: String?) -> Void) {
+    func confirmShelfAdd(_ book: Book, add commit: @escaping (_ replacing: String?) -> Void) {
         commit(nil)
     }
 
     /// 该书能不能重新分章（本地 TXT 才需要重新切分）
-    public func canResplit(_ book: Book) -> Bool {
+    func canResplit(_ book: Book) -> Bool {
         book.isLocal
     }
 
     /// 书籍所属书源开启了自定义按钮
-    public func customButtonSource(for book: Book) -> BookSource? {
+    func customButtonSource(for book: Book) -> BookSource? {
         guard !book.isLocal, let source = library.sources.source(for: book.origin), source.customButton else { return nil }
         return source
     }
@@ -141,34 +143,34 @@ public final class AppModel {
     // MARK: - 朗读
 
     /// 朗读设置里选中的在线朗读源，其次是本地语音；都没有时为 nil（用系统语音）
-    public var onlineSpeech: SpeechController.Online? {
+    var onlineSpeech: SpeechController.Online? {
         if let tts = selectedEngine {
-            return .http(tts, speechRate: settings.speechRate, loader: library.httpTTS)
+            return .http(tts, speechRate: settings.speechRate, loader: library.speechLoader)
         }
         guard usesLocalVoice else { return nil }
         return .local(settings.localVoice, speechRate: settings.speechRate, voice: localVoice)
     }
 
     /// 朗读中换了声音：立即从当前句改用新声音
-    public func applyVoiceChange() {
+    func applyVoiceChange() {
         guard speech.isActive else { return }
         speech.switchVoice(voiceID: settings.speechVoice, online: onlineSpeech)
     }
 
     /// 当前声音的名称
-    public var voiceName: String {
+    var voiceName: String {
         onlineSpeech?.name ?? settings.speechVoice.flatMap { id in voices.voices.first { $0.id == id }?.name } ?? "系统语音"
     }
 
     /// 选中且启用的在线朗读源
-    public var selectedEngine: HttpTTS? {
+    var selectedEngine: HttpTTS? {
         guard let id = settings.speechEngine, let tts = library.httpTTS.engine(id: id), tts.enabled else { return nil }
         return tts
     }
 
-    public var usesLocalVoice: Bool { selectedEngine == nil && settings.localVoice >= 0 && localVoiceReady }
+    var usesLocalVoice: Bool { selectedEngine == nil && settings.localVoice >= 0 && localVoiceReady }
 
     /// 读语音包状态以便下载完成后界面刷新。
     /// ⚠️ **降级说明**：本地语音已降级为系统 TTS（见 `LocalVoice.swift`）⇒ **不再需要语音包** ⇒ 恒为 true ⭐⭐
-    public var localVoiceReady: Bool { LocalVoice.isAvailable }
+    var localVoiceReady: Bool { LocalVoice.isAvailable }
 }
