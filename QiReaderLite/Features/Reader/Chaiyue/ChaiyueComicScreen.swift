@@ -33,6 +33,10 @@ struct ChaiyueComicScreen: View {
     @State private var host: ChaiyueReaderHost?
     /// 起不来时的兜底提示
     @State private var errorText: String?
+    /// ⭐⭐⭐⭐⭐ **取图自检的结果**（2026-11-26 · 真机「图片出不来」）⭐⭐⭐⭐⭐
+    ///   柴阅的 `ComicImageStore` 是 `catch {}` ⇒ **取图失败连原因都被吞掉** ⇒ 用户只能看转圈 ⭐⭐⭐
+    ///   ⇒ 这里用 `ChaiyueComicProbe`（**与漫画页同一条链**）自检一次 ⇒ 把原因说成人话 ⭐⭐⭐
+    @State private var imageDiagnostic: String?
 
     var body: some View {
         ZStack {
@@ -53,6 +57,21 @@ struct ChaiyueComicScreen: View {
         // ⭐⭐⭐ 柴阅的漫画页收起时会 `app.closeMedia()` ⇒ `app.media` 置 nil ⇒ 这里跟着收摊 ⭐⭐⭐
         .onChange(of: host?.app.media) { _, newValue in
             if newValue == nil, host != nil { close() }
+        }
+        // ⭐⭐⭐⭐⭐ **取图自检的提示条**（一句话说清「为什么图出不来」）⭐⭐⭐⭐⭐
+        .overlay(alignment: .top) {
+            if let imageDiagnostic {
+                Text(imageDiagnostic)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.horizontal, 16)
+                    .padding(.top, 54)
+            }
         }
     }
 
@@ -76,6 +95,22 @@ struct ChaiyueComicScreen: View {
             return
         }
         host = h
+        Task { await probeImages() }
+    }
+
+    // MARK: - 取图自检
+
+    /// ⭐⭐⭐⭐⭐ **跑一次取图自检，把失败原因说成人话**（2026-11-26）⭐⭐⭐⭐⭐
+    /// ⚠️ 探针走的是**与漫画页完全同一条链**（同一个 `MediaSession`、同一个 `service.imageData`）
+    ///   ⇒ 探针失败 = 漫画页会失败 ⇒ 结论可信 ⭐⭐⭐
+    /// ⚠️ 不额外浪费请求：复用了会话里的目录缓存，取到的图也落进同一个磁盘缓存 ⇒ 漫画页随后直接命中 ⭐⭐⭐
+    @MainActor
+    private func probeImages() async {
+        guard let h = host else { return }
+        let result = await ChaiyueComicProbe.probe(library: h.library, book: h.chaiyueBook)
+        guard let failure = result.failure else { return }
+        imageDiagnostic = failure
+        Toast.show("漫画取图：\(failure)")
     }
 
     // MARK: - 关闭

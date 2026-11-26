@@ -212,5 +212,24 @@ console.log('\n── ⑨ 宿主构造正文服务必须传 `images:`（否则�
      '⑨ 变异⑨：去掉 images 后判据要能报（门禁有牙齿）');
 }
 
+console.log('\n── ⑩ 漫画取图必须有【自检探针】（否则用户只看到转圈）──');
+{
+  // ⭐⭐⭐⭐⭐ **真机实证**：柴阅的 `ComicImageStore.start(...)` 是 `catch {}`
+  //   ⇒ **取图失败连原因都被吞掉** ⇒ 用户只看到「一直转圈」⇒ 我只能靠猜 ⭐⭐⭐
+  //   ⇒ 必须有一个 public 探针，让 App 把失败原因说成人话 ⭐⭐⭐
+  const probe = codeOnly(read(path.join(PKG, 'PublicComicProbe.swift')));
+  const screen = codeOnly(read(path.join(ROOT, 'QiReaderLite/Features/Reader/Chaiyue/ChaiyueComicScreen.swift')));
+  ok(probe.length > 0, '⑩ 漫画自检探针在（包内 public 出口）');
+  ok(/public enum ChaiyueComicProbe/.test(probe), '⑩ 有 public 的 ChaiyueComicProbe');
+  ok(/public static func probe\(library: ChaiyueReaderLibrary, book: Book\)/.test(probe),
+     '⑩ 探针走的是门面协议（⇒ 与漫画页同一条链，结论可信）');
+  ok(/session\.imageData\(/.test(probe), '⑩ 探针真的去取图（不是只看有没有地址）');
+  ok(/ChaiyueComicProbe\.probe\(/.test(screen), '⑩ 宿主漫画屏会跑这个探针');
+  ok(/imageDiagnostic/.test(screen), '⑩ 宿主把失败原因显示出来（而不是只转圈）');
+
+  const mutated = screen.replace(/ChaiyueComicProbe\.probe\(/, 'UnusedProbe(');
+  ok(!/ChaiyueComicProbe\.probe\(/.test(mutated), '⑩ 变异⑩：不跑探针后判据要能报（门禁有牙齿）');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);
