@@ -97,4 +97,13 @@ extension Image {
 - CI **45800043404**（main，commit `ddc1eac`）：编译 + 5 个探针 + 柴阅引擎权威测试 全绿
 - 门禁：全量 JS 门禁无回归；新门禁 14/14；阅读器相关 42/34/39/54 全绿
 - 产物：`QingYue-build325.zip`（+ `-noprov`）⇒ 解包验 **CFBundleVersion = 325** ✔
-- 二进制体检：包内能找到 `cy.*` 图标资源与 `Theme-*` 皮肤图（asset catalog 已进包）⭐⭐⭐
+- **二进制体检（实测）**：
+  | 项 | 结果 |
+  |---|---|
+  | `CFBundleVersion` | **325** ✔（`com.qireaderlite.app` / `CFBundleShortVersionString 3.6` / 最低 iOS 26.0） |
+  | `Assets.car` | 2,156,888 B（build324 只有几百 KB ⇒ **图标与皮肤图真进包了**）⭐⭐⭐ |
+  | 悬浮栏四个图标 | `cy.list.bullet` / `cy.headphones` / `cy.sun.max` / `cy.textformat` **全部命中** ✔ |
+  | 四张皮肤图 | `Theme-xuan` / `Theme-qing` / `Theme-xing` / `Theme-zhu` **全部命中** ✔ |
+  | 外观切换 | 二进制里**查不到 `overrideUserInterfaceStyle`** ⇒ 确实不再用 UIKit 改窗口 ✔ |
+  | 老阅读器符号 | 9 个**全部 0 命中** ✔（柴阅符号 `ReaderContainer`/`ReaderChrome`/`ReaderSkin`/`StylePanel` 全在）|
+  | 产物体积 | IPA 7.6 MB（build324 是 6.1 MB ⇒ 差值就是图标+皮肤图）⭐⭐⭐ |
