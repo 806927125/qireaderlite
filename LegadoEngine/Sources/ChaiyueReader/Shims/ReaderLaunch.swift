@@ -10,12 +10,22 @@ import ChaiyueReaderServices
 import ChaiyueEngine
 import SwiftUI
 
-struct ReaderLaunch: Identifiable, Equatable {
-    let id = UUID()
-    var book: Book
-    var origin: CGRect?
+/// ⭐⭐⭐⭐⭐ **【改造】升 public**（2026-11-26 · CI28 实证）⭐⭐⭐⭐⭐
+///   宿主要 `ReaderContainer(launch:)` ⇒ `ReaderLaunch` 必须跨模块可见 ⭐⭐⭐
+public struct ReaderLaunch: Identifiable, Equatable {
+    public let id = UUID()
+    public var book: Book
+    public var origin: CGRect?
     /// 合书时按它取封面的最新位置（书架可能已重新排序）
-    var coverKey: String?
+    public var coverKey: String?
+
+    /// ⭐⭐⭐ **显式 public init**（2026-11-26 · CI28 实证）⭐⭐⭐
+    ///   `public struct` 的**默认 memberwise init 是 internal** ⇒ 宿主 `ReaderLaunch(book:…)` 编不过 ⭐⭐⭐
+    public init(book: Book, origin: CGRect? = nil, coverKey: String? = nil) {
+        self.book = book
+        self.origin = origin
+        self.coverKey = coverKey
+    }
 }
 
 struct SourceSignal: Equatable {

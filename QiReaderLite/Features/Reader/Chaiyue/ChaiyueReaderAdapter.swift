@@ -49,7 +49,9 @@ enum ChaiyueReaderAdapter {
     ///   - sourceName: 书源名（我们的 `Book.sourceName` 常常是空的 ⇒ 用源仓里的名字兜底）
     ///   - chapterIndex: 起始章号（-1 = 不知道 ⇒ 用 0）
     static func book(_ b: Book, sourceName: String = "", chapterIndex: Int = -1) -> LegadoEngineHost.BookModel {
-        var book = LegadoEngineHost.BookModel()
+        // ⭐⭐⭐ **柴阅的 `Book` 没有无参 init**（它的 designated init 第一个参数是 `bookUrl`）
+        //   ⇒ `BookModel()` 会报「missing argument for parameter 'bookUrl'」（CI28 实锤）⭐⭐⭐
+        var book = LegadoEngineHost.BookModel(bookUrl: b.cleanBookUrl.isEmpty ? b.bookUrl : b.cleanBookUrl)
         book.bookUrl = b.cleanBookUrl.isEmpty ? b.bookUrl : b.cleanBookUrl
         book.origin = b.origin
         book.originName = sourceName.isEmpty ? b.sourceName : sourceName

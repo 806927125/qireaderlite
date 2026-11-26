@@ -18,7 +18,11 @@ import Observation
 
 /// 宿主注入的「书源 + 书架 + 阅读会话」门面。
 /// ⭐⭐ **宿主 App 侧实现它** ⇒ 轻阅自己的书架/书源/章节缓存直接接进柴阅阅读器 ⭐⭐
-protocol ChaiyueReaderLibrary {
+///
+/// ⭐⭐⭐⭐⭐ **【改造】升 public**（2026-11-26 · CI28 实证）⭐⭐⭐⭐⭐
+///   宿主 App 要实现这个协议 ⇒ **跨模块 ⇒ 必须 public**（之前是 internal ⇒ App 侧
+///   `cannot find type 'ChaiyueReaderLibrary' in scope` ⇒ 整个宿主接线编不过）⭐⭐⭐
+public protocol ChaiyueReaderLibrary {
     /// 书架（书签、章节进度）
     var shelf: BookshelfRepository { get }
     /// 书源仓
@@ -54,8 +58,15 @@ final class ReaderAudioPauser: ReaderAudioPausing {
 }
 
 /// 阅读器的根状态对象（宿主用 `.environment(app)` 注入）
+///
+/// ⭐⭐⭐⭐⭐ **【改造】升 public + 只开「宿主真正要用的」那几面**（2026-11-26 · CI28 实证）⭐⭐⭐⭐⭐
+///   宿主 App 要 `.environment(app)` 注入它 ⇒ **跨模块 ⇒ 必须 public** ⭐⭐⭐
+///   ⇒ 但它的存储属性（`settings` / `appearance` / `island` / `stats` …）**仍是 internal**
+///   ⇒ **不用把整套 shim 都 public 化**（那会牵连 AppearanceStore / IslandCenter / LocalVoice
+///     一大串类型 ⇒ 每一个的公开成员的类型又得再 public ⇒ 雪崩）⭐⭐⭐
+///   ⇒ 只开三个面：`init(library:)` / `reader` / `openReader(_:)` ⭐⭐⭐
 @Observable
-final class AppModel {
+public final class AppModel {
     // MARK: - 依赖
 
     let library: ChaiyueReaderLibrary
@@ -72,7 +83,7 @@ final class AppModel {
     // MARK: - 状态
 
     /// 打开阅读器的请求；宿主置位后呈现 `ReaderContainer`
-    var reader: ReaderLaunch?
+    public var reader: ReaderLaunch?
     /// 正在朗读的书（阅读器关闭后仍可回到阅读器）
     var speechBook: Book?
     /// 书源要求阅读器重新加载当前章节（`java.refreshContent`）
@@ -109,9 +120,27 @@ final class AppModel {
 
     // MARK: - 导航
 
+    /// ⭐⭐⭐ **宿主用的公开入口**：只暴露门面协议，其余依赖全用柴阅的默认值 ⭐⭐⭐
+    ///
+    /// ⚠️ **为什么不能直接 `init(library:)`**（Swift 的坑）：
+    ///   宿主写 `AppModel(library: x)` 会**优先命中这个 convenience init** ⇒ 自我递归 ⚠️
+    ///   ⇒ 所以这里**把 designated init 的参数写全** ⇒ 编译器明确知道调的是 designated init ⭐⭐⭐
+    public convenience init(library: ChaiyueReaderLibrary) {
+        self.init(library: library,
+                  settings: ReaderSettings(),
+                  speech: SpeechController(),
+                  appearance: AppearanceStore(),
+                  island: IslandCenter(),
+                  stats: ReadingStats(),
+                  voices: VoiceCatalog(),
+                  voiceStore: LocalVoiceStore(),
+                  localVoice: LocalVoice(),
+                  audio: ReaderAudioPauser())
+    }
+
     /// 打开阅读器（文字书）。
     /// ⚠️ **不做媒体分流**：包里没有媒体播放页（听书/漫画/短剧不在阅读器范围）⇒ 永远置位 `reader` ⭐⭐
-    func openReader(_ book: Book, coverKey: String? = nil) {
+    public func openReader(_ book: Book, coverKey: String? = nil) {
         let current = library.shelf.book(book.bookUrl) ?? book
         reader = ReaderLaunch(book: current, origin: coverKey.flatMap { coverFrames[$0] }, coverKey: coverKey)
     }

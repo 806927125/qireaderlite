@@ -1,4 +1,4 @@
-#if canImport(SwiftUI)
+#if os(iOS)
 // ⭐⭐⭐⭐⭐ **自柴阅 App/Sources/Design/Compat.swift 搬运**（2026-11-25 · 柴阅阅读器整包 vendor · 子任务 A「编译闭环」）
 //
 // ⚠️ **许可**：柴阅（github.com/Lincb522/Chaiyue）= **GPL-3.0** ⇒ 本文件是柴阅源码 ⭐⭐⭐
@@ -38,12 +38,9 @@ private struct VariadicRows<Row: View>: _VariadicView_MultiViewRoot {
         }
     }
 }
-#endif
 
 // ═══════════════════════════════════════════════════════════════════
 // ↓↓↓ 本轮补：柴阅阅读器用到的 5 个 App 层设计修饰符（照搬柴阅 Design/Glass.swift、Compat.swift、Sheets.swift、Appearance.swift）
-
-import UIKit
 
 // =============================================================================
 // ⭐⭐⭐⭐⭐ **柴阅 App 层的设计修饰符（补齐 vendor 缺口）**（2026-11-25）⭐⭐⭐⭐⭐
@@ -59,8 +56,6 @@ import UIKit
 //   · iOS 26 用系统 `glassEffect`（**本 App deployment target = iOS 26 ⇒ 走的就是系统玻璃**）⭐⭐⭐
 //   · 更早的系统用材质叠加原型色调（降级路径）⭐⭐⭐
 // =============================================================================
-
-#if os(iOS)
 
 extension View {
     /// 毛玻璃表面：iOS 26 起用系统 Liquid Glass，更早的系统用材质叠加原型色调

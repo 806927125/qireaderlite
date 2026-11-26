@@ -14,7 +14,9 @@ import UniformTypeIdentifiers
 import ZIPFoundation
 
 /// 主题的渲染方式
-enum ReaderThemeMode: String, Codable, Hashable {
+/// ⭐⭐⭐⭐⭐ **【改造】升 public**（2026-11-26 · CI28 实证）⭐⭐⭐⭐⭐
+///   宿主 App 的「阅读主题」设置页要显示自定义主题（原生 / 网页）⇒ 跨模块 ⇒ 必须 public ⭐⭐⭐
+public enum ReaderThemeMode: String, Codable, Hashable {
     /// 原生排版（CSS 子集 + 脚本钩子），五种翻页动画、朗读高亮、长按选字都可用
     case native
     /// 网页渲染：整页交给 WebKit，完整的 CSS / JavaScript / HTML 装饰层
@@ -22,13 +24,15 @@ enum ReaderThemeMode: String, Codable, Hashable {
 }
 
 /// 用户自定义的阅读主题：一份样式表、一份脚本，外加样式表里 `url(文件名)` 引用的素材
-struct CustomReaderTheme: Codable, Identifiable, Hashable {
-    var id: String
-    var name: String
+///
+/// ⭐⭐⭐ **【改造】升 public（只开宿主要用的 `id` / `name` / `mode`）**（2026-11-26 · CI28）⭐⭐⭐
+public struct CustomReaderTheme: Codable, Identifiable, Hashable {
+    public var id: String
+    public var name: String
     var css: String
     var js: String
     var updated: Date
-    var mode: ReaderThemeMode = .native
+    public var mode: ReaderThemeMode = .native
     /// 网页模式的装饰层，插在纸面里、正文之下
     var html: String = ""
 
@@ -42,7 +46,7 @@ struct CustomReaderTheme: Codable, Identifiable, Hashable {
         self.html = html
     }
 
-    init(from decoder: any Decoder) throws {
+    public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
@@ -56,14 +60,14 @@ struct CustomReaderTheme: Codable, Identifiable, Hashable {
 
 /// 自定义主题库：Application Support/ReaderThemes 下 `index.json` 存主题，`<id>/` 放图片
 @Observable
-final class ReaderThemeStore {
-    static let shared = ReaderThemeStore()
+public final class ReaderThemeStore {
+    public static let shared = ReaderThemeStore()
 
     nonisolated static let fileExtension = "chaiyuetheme"
     static let importTypes: [UTType] = [.json, .plainText, .data, .zip, .html]
         + [fileExtension, "css"].compactMap { UTType(filenameExtension: $0) }
 
-    private(set) var themes: [CustomReaderTheme] = []
+    public private(set) var themes: [CustomReaderTheme] = []
     /// 主题内容变化后递增，阅读页据此重排
     private(set) var revision = 0
 

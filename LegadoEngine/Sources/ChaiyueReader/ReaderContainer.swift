@@ -11,10 +11,13 @@ import ChaiyueReaderServices
 import SwiftUI
 
 /// 阅读器：开书动画 → 翻页区 + 菜单 → 合书动画
-struct ReaderContainer: View {
+/// ⭐⭐⭐⭐⭐ **【改造】升 public**（2026-11-26 · CI28 实证）⭐⭐⭐⭐⭐
+///   宿主要 `ReaderContainer(launch:)` ⇒ **跨模块 ⇒ 必须 public** ⭐⭐⭐
+///   ⇒ 其余成员（`@State model` / 私有几何等）**仍 internal** ⇒ 不扩大暴露面 ⭐⭐⭐
+public struct ReaderContainer: View {
     @Environment(AppModel.self) private var app
     @Environment(\.colorScheme) private var scheme
-    let launch: ReaderLaunch
+    public let launch: ReaderLaunch
 
     @State private var model: ReaderModel?
     @State private var progress: CGFloat = 0
@@ -24,7 +27,7 @@ struct ReaderContainer: View {
 
     /// ⭐⭐⭐ **宿主要能 new 它** ⇒ 显式 public init
     /// （`public struct` 的默认 memberwise init 是 internal，宿主编不过）⭐⭐⭐
-    init(launch: ReaderLaunch) {
+    public init(launch: ReaderLaunch) {
         self.launch = launch
     }
 
@@ -34,7 +37,7 @@ struct ReaderContainer: View {
         return EdgeInsets(top: raw.top, leading: raw.left, bottom: raw.bottom, trailing: raw.right)
     }
 
-    var body: some View {
+    public var body: some View {
         GeometryReader { geo in
             let size = geo.size
             ZStack(alignment: .topLeading) {

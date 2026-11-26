@@ -11,14 +11,19 @@ import ChaiyueReaderServices
 import SwiftUI
 
 /// 阅读主题（原型 THEMES）：浅色四种、深色两种，每种外观各记一个当前主题
-struct ReaderThemeSpec: Identifiable, Hashable {
-    let id: String
-    let name: String
+///
+/// ⭐⭐⭐⭐⭐ **【改造】升 public（只开宿主要用的那几个成员）**（2026-11-26 · CI28 实证）⭐⭐⭐⭐⭐
+///   宿主 App 的「阅读主题」设置页要列柴阅的内置主题 ⇒ 跨模块 ⇒ 必须 public ⭐⭐⭐
+///   ⇒ 但 `skin` / `style` 的类型（`ReaderSkin` / `ReaderPageStyle`）**仍是 internal**
+///   ⇒ 宿主想显示皮肤名 ⇒ 走我们加的 **`skinName`（String）** ⇒ 不用把 `ReaderSkin` 也 public 化 ⭐⭐⭐
+public struct ReaderThemeSpec: Identifiable, Hashable {
+    public let id: String
+    public let name: String
     let background: UInt32
     let text: UInt32
     let secondaryAlpha: CGFloat
     let grain: Double
-    let isDark: Bool
+    public let isDark: Bool
     var skin: ReaderSkin?
     /// 自定义主题解析后的样式（内置主题为 nil）
     var style: ReaderPageStyle?
@@ -28,8 +33,8 @@ struct ReaderThemeSpec: Identifiable, Hashable {
     /// 自定义主题的修改时间，主题内容变了规格也跟着变
     var revision: Date?
 
-    var bg: Color { Color(hex: background) }
-    var fg: Color { Color(hex: text) }
+    public var bg: Color { Color(hex: background) }
+    public var fg: Color { Color(hex: text) }
     var fg2: Color { Color(hex: text, alpha: secondaryAlpha) }
     var uiText: UIColor { UIColor(hex: text) }
     var uiSecondary: UIColor { UIColor(hex: text, alpha: secondaryAlpha) }
@@ -37,7 +42,19 @@ struct ReaderThemeSpec: Identifiable, Hashable {
 
     var uiMark: UIColor { skin?.mark ?? UIColor(hex: 0xFFD508, alpha: 0.32) }
 
-    static let all: [ReaderThemeSpec] = [
+    /// ⭐⭐⭐ **皮肤的显示名**（宿主设置页要显示「皮肤 · 宣纸」这类文案）⭐⭐⭐
+    ///   ⇒ `ReaderSkin` 本身是 internal ⇒ 这里给宿主一个**纯 String** 的出口 ⭐⭐⭐
+    public var skinName: String? {
+        switch skin {
+        case .xuan: "宣纸"
+        case .qing: "晴窗"
+        case .xing: "星夜"
+        case .zhu: "烛灯"
+        case nil: nil
+        }
+    }
+
+    public static let all: [ReaderThemeSpec] = [
         .init(id: "xuan", name: "宣纸", background: 0xF3EDE1, text: 0x2A2622, secondaryAlpha: 0.45, grain: 0, isDark: false, skin: .xuan),
         .init(id: "qing", name: "晴窗", background: 0xF4F5F8, text: 0x1F2430, secondaryAlpha: 0.48, grain: 0, isDark: false, skin: .qing),
         .init(id: "xing", name: "星夜", background: 0x0E1120, text: 0xB9BDD0, secondaryAlpha: 0.42, grain: 0, isDark: true, skin: .xing),
@@ -50,15 +67,17 @@ struct ReaderThemeSpec: Identifiable, Hashable {
         .init(id: "night", name: "夜间", background: 0x0E0E0F, text: 0x8E8A84, secondaryAlpha: 0.42, grain: 0, isDark: true),
     ]
 
-    static func find(_ id: String) -> ReaderThemeSpec? { all.first { $0.id == id } }
+    public static func find(_ id: String) -> ReaderThemeSpec? { all.first { $0.id == id } }
 }
 
-enum ReaderFontChoice: Int, CaseIterable, Identifiable {
+/// ⭐⭐⭐⭐⭐ **【改造】升 public**（2026-11-26 · CI28 实证）⭐⭐⭐⭐⭐
+///   宿主 App 的「字体」设置页要列柴阅的三种字体 ⇒ 跨模块 ⇒ 必须 public ⭐⭐⭐
+public enum ReaderFontChoice: Int, CaseIterable, Identifiable {
     case song, ping, kai
 
-    var id: Int { rawValue }
+    public var id: Int { rawValue }
 
-    var name: String {
+    public var name: String {
         switch self {
         case .song: "宋体"
         case .ping: "苹方"

@@ -22,9 +22,6 @@ struct ChaiyueReaderScreen: View {
     @EnvironmentObject private var sources: SourceStore
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
-    /// ⭐⭐⭐ 当前外观（轻阅全局强制深色 ⇒ 这里恒为 `.dark`）
-    ///   ⇒ 柴阅的 `settings.theme(for: scheme)` 取的是 `darkTheme` ⇒ 主题页要写 `reader.darkTheme` ⭐⭐⭐
-    @Environment(\.colorScheme) private var scheme
 
     /// 宿主对象（造柴阅的 `AppModel` + 镜像书架/书源/目录）
     @State private var host: ChaiyueReaderHost?
@@ -68,8 +65,7 @@ struct ChaiyueReaderScreen: View {
                                   start: start,
                                   source: source,
                                   libraryItems: library.items,
-                                  progressIndex: progress,
-                                  scheme: scheme)
+                                  progressIndex: progress)
         // ⚠️ **先校验再挂上去**（挂上去就进 `if let host, let launch` 分支 ⇒ 兜底界面永远看不见）⭐⭐⭐
         if h.launch.book.name.isEmpty {
             errorText = "这本书的信息不完整（书名是空的）"

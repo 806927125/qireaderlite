@@ -514,7 +514,7 @@ struct ReaderThemesScreen: View {
                 Text(t.name)
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.ink)
-                Text(t.skin.map { "皮肤 · \($0.name)" } ?? (t.isDark ? "深色" : "浅色"))
+                Text(t.skinName.map { "皮肤 · \($0)" } ?? (t.isDark ? "深色" : "浅色"))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.sub)
             }

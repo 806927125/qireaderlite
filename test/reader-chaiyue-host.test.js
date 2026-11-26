@@ -282,6 +282,80 @@ console.log('\n── ⑤ 柴阅门面协议面必须齐全 + sendability 三处
      '⑤ 变异②：协议里去掉 @Sendable ⇒ 判据必须报出来（门禁有牙齿）', sendMut.join(' / '));
 }
 
+console.log('\n── ⑥ 宿主用到的包内类型必须 public（跨模块可见）──');
+{
+  // ⭐⭐⭐⭐⭐ **为什么要有这条**（2026-11-26 CI28 实证）⭐⭐⭐⭐⭐
+  //   包（`ChaiyueReader`）里的阅读器类型默认是 **internal** ⇒ **宿主 App 看不见**
+  //   ⇒ CI28 报了一整屏 `cannot find type 'AppModel' / 'ReaderLaunch' / 'ReaderContainer' /
+  //      'ReaderThemeSpec' / 'ReaderFontChoice' / 'CustomReaderTheme' / 'ReaderThemeStore'`
+  //      ⇒ 这些是**「宿主必须用到的面」** ⇒ 必须 public ⭐⭐⭐
+  //   ⇒ 但**不是全部 public**：只开宿主真正要用的那几个成员（其余仍是 internal）⭐⭐⭐
+  //
+  // ⚠️ **为什么用「白名单」而不是「扫 App 用到的所有包内类型」**：
+  //   扫全量会撞上 SwiftUI 同名类型（`State` / `Section`）与字符串里的字样（UA 里的 `Chrome`）
+  //   ⇒ 假阳性 ⇒ 门禁会变成「天天红但没道理」⇒ 白名单更准也更说明问题 ⭐⭐⭐
+  const repoRoot = path.join(__dirname, '..');
+
+  /** 宿主必须用到的包内类型（= 宿主可见性面） */
+  const HOST_FACING = [
+    'ChaiyueReaderLibrary',  // 宿主实现的面门协议
+    'AppModel',              // 阅读器的环境对象
+    'ReaderLaunch',          // 「打开阅读器」的请求
+    'ReaderContainer',       // 阅读界面本体
+    'ReaderThemeSpec',       // 设置页：内置主题
+    'ReaderThemeMode',       // 设置页：自定义主题的渲染模式
+    'CustomReaderTheme',     // 设置页：自定义主题
+    'ReaderThemeStore',      // 设置页：自定义主题仓
+    'ReaderFontChoice',      // 设置页：字体
+  ];
+
+  /** 扫包内定义的类型 → 名字 → 访问级别 */
+  const scanPackageTypes = (dir) => {
+    const map = new Map();
+    const walk = (d) => {
+      let entries;
+      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+      for (const e of entries) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) { walk(p); continue; }
+        if (!e.name.endsWith('.swift')) continue;
+        let src;
+        try { src = fs.readFileSync(p, 'utf8'); } catch (_) { continue; }
+        const re = /\b(?:(public|internal|private|fileprivate)\s+)?(?:final\s+)?(?:struct|class|enum|protocol|actor)\s+([A-Z][A-Za-z0-9_]*)/g;
+        let m;
+        while ((m = re.exec(src))) {
+          if (!map.has(m[2])) map.set(m[2], { access: m[1] || 'internal', file: path.relative(repoRoot, p) });
+        }
+      }
+    };
+    walk(dir);
+    return map;
+  };
+
+  const pkgTypes = scanPackageTypes(path.join(repoRoot, 'LegadoEngine/Sources/ChaiyueReader'));
+
+  const notPublic = [];
+  for (const name of HOST_FACING) {
+    const decl = pkgTypes.get(name);
+    if (!decl) { notPublic.push(`${name}(没找到定义)`); continue; }
+    if (decl.access !== 'public') notPublic.push(`${name}(${decl.access}) @ ${decl.file}`);
+  }
+  ok(notPublic.length === 0,
+     `⑥ 宿主要用的 ${HOST_FACING.length} 个包内类型全部 public（否则宿主看不见）`,
+     notPublic.join(' / '));
+
+  // 变异对照：把其中一个改回 internal ⇒ 判据必须报出来
+  const mutatedTypes = new Map(pkgTypes);
+  mutatedTypes.set('ReaderContainer', { access: 'internal', file: 'x' });
+  const mutatedGaps = HOST_FACING.filter(n => {
+    const d = mutatedTypes.get(n);
+    return d && d.access !== 'public';
+  });
+  ok(mutatedGaps.length > 0 && mutatedGaps.includes('ReaderContainer'),
+     '⑥ 变异：把 ReaderContainer 改回 internal ⇒ 判据必须报出来（门禁有牙齿）',
+     mutatedGaps.join(' / '));
+}
+
 console.log('\n── ④ 变异对照：门禁必须能红 ──');
 {
   // ⚠️ 把一个老符号注入临时副本 ⇒ 同一个扫描器必须报出来
