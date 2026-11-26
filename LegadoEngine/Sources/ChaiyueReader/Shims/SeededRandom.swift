@@ -7,6 +7,8 @@ import SwiftUI
 import UIKit
 import Foundation
 
+#if os(iOS)
+
 struct SeededRandom {
     private var state: UInt32
 
@@ -23,3 +25,4 @@ struct SeededRandom {
         return CGFloat(state) / 4_294_967_296
     }
 }
+#endif  // #if os(iOS)
