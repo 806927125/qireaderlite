@@ -19,7 +19,7 @@
       }
     },
     {
-      "identity" : "kanna",
+      "identity" : "kanna-4a88db86",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tid-kijyun/Kanna.git",
       "state" : {
@@ -46,12 +46,12 @@
       }
     },
     {
-      "identity" : "swift-asn1",
+      "identity" : "swift-asn1-7065ad2c",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "917b472dbe53ba699cbb0495f9a95a084bc6364d",
-        "version" : "1.7.4"
+        "revision" : "97fd57437fc94cfa6b62f2b8f84c50f433534e17",
+        "version" : "1.7.5"
       }
     },
     {
@@ -64,12 +64,21 @@
       }
     },
     {
-      "identity" : "swiftsoup",
+      "identity" : "swiftsoup-04d4e63a",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/scinfu/SwiftSoup.git",
       "state" : {
         "revision" : "8397a860c6955924b584c50c5265c6aac0970015",
         "version" : "2.14.4"
+      }
+    },
+    {
+      "identity" : "zipfoundation",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/weichsel/ZIPFoundation.git",
+      "state" : {
+        "revision" : "e7048f0569f0ba37df26f8357f560b9d25e9a284",
+        "version" : "0.9.21"
       }
     }
   ],

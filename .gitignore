@@ -25,3 +25,5 @@ ios-certificate/*.p8
 # ⭐⭐⭐ **SPM 构建产物**（本地引擎包的 .build 有 124MB ⇒ 绝不能进仓库）⭐⭐⭐
 LegadoEngine/.build/
 .build/
+.swiftpm/
+.build/

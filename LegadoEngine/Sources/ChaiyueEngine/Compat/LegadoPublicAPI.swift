@@ -94,9 +94,26 @@ extension WebBook {
             //   · 响应几乎为空 ⇒ 站方没给内容（站方/源站问题）⭐⭐⭐
             //   · 响应有内容但解析 0 条 ⇒ **规则没匹配上**（站方改版 ⇒ 书源规则过时）⭐⭐⭐
             let looksEmpty = body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            diag["判定"] = books.isEmpty
-                ? (looksEmpty ? "站方返回空内容（源站/站方问题）" : "站方有内容但规则未匹配（书源规则过时）")
-                : "正常"
+            // ⭐⭐⭐⭐⭐ **站方错误信封识别**（2026-11-26 真机「书源规则过时」误报实证）⭐⭐⭐⭐⭐
+            //   站方（大灰狼这类聚合源）失败时回的是 **JSON 错误信封**：
+            //     {"code":-1,"msg":"Get \"https://api-bc.wtzw.com/...\": EOF","data":null}
+            //   ⇒ 这**不是**「书源规则过时」，而是**站方自己连不上上游** ⇒ 必须分开报 ⭐⭐⭐
+            var stationCode: Int?
+            var stationMsg: String?
+            if let data = body.data(using: .utf8),
+               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                if let n = obj["code"] as? NSNumber { stationCode = n.intValue }
+                if let m = obj["msg"] as? String { stationMsg = m }
+            }
+            if let code = stationCode, code != 0 {
+                diag["站方code"] = String(code)
+                diag["站方msg"] = stationMsg ?? ""
+                diag["判定"] = "站方接口报错：\(stationMsg ?? "（无 msg）")"
+            } else {
+                diag["判定"] = books.isEmpty
+                    ? (looksEmpty ? "站方返回空内容（源站/站方问题）" : "站方有内容但规则未匹配（书源规则过时）")
+                    : "正常"
+            }
             return (books, diag)
         }
     }

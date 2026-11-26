@@ -21,6 +21,16 @@ enum AppPaths {
     /// 「3.6 (build 173)」这种一眼能看的写法
     static var appVersionLine: String { "\(appVersion) (build \(appBuild))" }
     static var libraryFile: URL { documents.appendingPathComponent("library.json") }
+    /// ⭐⭐⭐ **柴阅阅读器的数据目录**（2026-11-25 接柴阅阅读器）⭐⭐⭐
+    ///
+    /// ⚠️ 柴阅的阅读链路要落盘的东西（书架 / 书源副本 / 章节缓存 / 阅读记录 / 书签）
+    ///   ⇒ 轻阅侧给它一个**独立目录** ⇒ 跟轻阅自己的 `library.json` 互不干扰 ⭐⭐⭐
+    ///   ⇒ 「轻阅书库」仍是轻阅的主数据源 ⇒ 柴阅这份是**阅读期镜像**（见 `ChaiyueReaderHost`）⭐⭐⭐
+    static var chaiyueDir: URL {
+        let d = documents.appendingPathComponent("ChaiyueReader", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
     static var cacheDir: URL {
         let d = documents.appendingPathComponent("content_cache", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)

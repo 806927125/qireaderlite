@@ -120,39 +120,36 @@ ok(/applySourceFilter/.test(explore) && /infoMap/.test(explore),
 // ⭐ 而且筛选芯片不能被换肤改成「不可点」
 ok(/\.glassCapsule\(\)/.test(explore), '⭐⭐⭐ 筛选键仍是液态玻璃胶囊（可点）');
 
-// ── ④b ⭐⭐⭐⭐⭐ **阅读页 UI（照栖阅搬）** ⭐⭐⭐⭐⭐
-//   ① 混色背景（栖阅 `ColorMixedBackground`：渐变 + 三团辉光 + 一道高光）⭐⭐⭐
-//   ② chrome 配色**跟着阅读主题走**（栖阅 `appThemeTint` 的思路）⭐⭐⭐
-//      ⇒ 以前全是**写死的浅色版** ⇒ 夜间主题上深灰字 + 黑控件底 ⇒ **全看不见** ⭐⭐⭐⭐⭐
+// ── ④b ⭐⭐⭐⭐⭐ **阅读页 UI = 柴阅原版**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+//   以前这一段钉的是「我们自己重写版的阅读页」（混色背景 + 皮肤底 + 柴阅式 sheet 面板）
+//   ⇒ 现在**阅读正文界面整体换成柴阅的** ⇒ 这一段的判据也跟着换 ⭐⭐⭐
+//   · 皮肤 / 配色 / 页眉页脚 / 章节号装饰 / 外观面板 ⇒ **全是柴阅的**（我们不再自己画）⭐⭐⭐
+//   · 轻阅这边只剩**宿主适配**（模型转换 + 会话接线）⇒ 不许再有我们自己的皮肤/面板 ⭐⭐⭐
 const readerDir = path.join(APP, 'Features/Reader');
-const skinPath = path.join(readerDir, 'ReaderSkinBackground.swift');
-ok(fs.existsSync(skinPath), '⭐⭐⭐⭐⭐ 阅读页「皮肤底」在（ReaderSkinBackground.swift —— 柴阅的观感）');
-if (fs.existsSync(skinPath)) {
-  const mb = fs.readFileSync(skinPath, 'utf8');
-  ok(mb.includes('gradientColors'), '⭐⭐⭐ 皮肤底有渐变（不是一块纯色）');
-  const mbCode = mb.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
-  ok(!/primaryGlow|tertiaryGlow/.test(mbCode),
-     '⭐⭐⭐ 皮肤底**不做三团辉光**（那是栖阅的做法，柴阅是纯色底 + 章节号装饰）');
+const chaiyueDir = path.join(readerDir, 'Chaiyue');
+ok(fs.existsSync(chaiyueDir), '⭐⭐⭐⭐⭐ 宿主适配目录在（Features/Reader/Chaiyue/）');
+for (const gone of ['ReaderSkin.swift', 'ReaderSkinBackground.swift', 'ReaderStylePanel.swift',
+                    'ReaderTheme.swift', 'ReaderWebView.swift']) {
+  ok(!fs.existsSync(path.join(readerDir, gone)),
+     `⭐⭐⭐⭐⭐ 我们重写版的 ${gone} 已删（阅读页不再由我们自己画）`);
 }
-const rweb = fs.existsSync(path.join(readerDir, 'ReaderWebView.swift'))
-  ? fs.readFileSync(path.join(readerDir, 'ReaderWebView.swift'), 'utf8') : '';
-ok(rweb.includes('ReaderSkinBackground(theme:'),
-   '⭐⭐⭐⭐⭐ 阅读页用上了皮肤底（不是一块纯色）');
-ok(/toolbar\(\.hidden, for: \.navigationBar\)/.test(rweb),
-   '⭐⭐⭐⭐⭐ 阅读页隐藏系统导航栏（柴阅的阅读页是自带 chrome 的全屏页）');
-// ⭐⭐⭐⭐⭐ **2026-11-25 柴阅化**：栖阅那版「底部 overlay 面板 + 白纱」**已经删掉**，
-//   面板改成**柴阅式的 sheet** ⇒ 新的判据是「sheet 强制外观跟阅读主题走」
-//   （否则深色阅读时弹出来的是**浅色 sheet + 深色字** = 看不见）⭐⭐⭐
-const stylePanel = fs.existsSync(path.join(readerDir, 'ReaderStylePanel.swift'))
-  ? fs.readFileSync(path.join(readerDir, 'ReaderStylePanel.swift'), 'utf8') : '';
-ok(/preferredColorScheme\(theme\.isDarkTheme \? \.dark : \.light\)/.test(stylePanel),
-   '⭐⭐⭐⭐⭐ 外观面板强制外观跟阅读主题走（深色阅读 ⇒ 深色 sheet，不许乳白板）');
-ok(/presentationDetents\(\[\.height\(548\)\]\)/.test(stylePanel),
-   '⭐⭐⭐⭐⭐ 外观面板是柴阅式的 sheet（高 548），不是栖阅的底部 overlay');
-ok(!/theme\.panelVeil\(/.test(rweb),
-   '⭐⭐⭐⭐⭐ 栖阅那版「底部 overlay 面板 + 白纱」已经删掉（改柴阅 sheet）');
-ok(/pager\.background = UIColor\.clear/.test(rweb),
-   '⭐⭐⭐⭐⭐ 分页画布透明（不然纯色底会把混色背景整个盖住）');
+ok(!fs.existsSync(path.join(readerDir, 'Paging')),
+   '⭐⭐⭐⭐⭐ 我们自研的原生分页目录已删（分页交给柴阅的 ReaderKit）');
+
+const chaiyueScreen = fs.existsSync(path.join(chaiyueDir, 'ChaiyueReaderScreen.swift'))
+  ? fs.readFileSync(path.join(chaiyueDir, 'ChaiyueReaderScreen.swift'), 'utf8') : '';
+ok(/ReaderContainer\(launch:/.test(chaiyueScreen),
+   '⭐⭐⭐⭐⭐ 阅读正文界面用的是柴阅的 `ReaderContainer`');
+ok(/\.environment\(/.test(chaiyueScreen),
+   '⭐⭐⭐⭐⭐ 给柴阅的阅读界面注入了 `AppModel`（宿主侧接线）');
+
+// ⭐⭐⭐ 阅读页是**全屏页**（柴阅自带 chrome）⇒ 不能再叠一层系统导航栏 ⭐⭐⭐
+const detailCode = read('Features/BookDetail/BookDetailView.swift');
+ok(/fullScreenCover\(item: \$readerChapter\)/.test(detailCode),
+   '⭐⭐⭐⭐⭐ 阅读页用 fullScreenCover 打开（自带 chrome 的全屏页，不叠系统导航栏）');
+ok(/ChaiyueReaderScreen\(book:/.test(detailCode),
+   '⭐⭐⭐⭐⭐ 详情页打开的是柴阅阅读界面');
+
 // ⭐⭐⭐ **写死的灰阶文字**（`Color(white: 0x…`）⇒ 深色主题上不可读 ⇒ 一律不许 ⭐⭐⭐
 const greyHits = [];
 for (const f of swiftFiles(readerDir)) {
@@ -168,7 +165,6 @@ for (const f of swiftFiles(readerDir)) {
 ok(greyHits.length === 0,
    '⭐⭐⭐⭐⭐ 阅读页没有写死的灰阶文字（Color(white: 0x…）—— 深色主题上会看不见',
    greyHits.slice(0, 4).join(', '));
-
 // ── ⑤ 终端首页的结构件都在（原型 v-terminal 的标志性元素）──────────
 const shelf = read('Features/Bookshelf/BookshelfView.swift');
 for (const sym of ['TerminalTitle', 'ProgressRing', 'QuickBubble', 'RecentSpine', '继续阅读']) {

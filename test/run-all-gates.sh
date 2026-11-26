@@ -125,9 +125,15 @@ declare -a GATES=(
   "source-test:test/source-test.test.js"
   "reader-settings:test/reader-settings.test.js"
   "reader-api-surface:test/reader-api-surface.test.js"
-  "reader-native-paging:test/reader-native-paging.test.js"
+  # ⭐⭐⭐⭐⭐ **正文阅读界面 = 柴阅那套**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+  #   ⇒ 老阅读器（我们自研的原生分页 / 滚动 / WebView）**整套删掉** ⇒ 正文界面全部用柴阅的 ⭐⭐⭐
+  #   ⇒ 这条门禁是**双向**的：① 老阅读器符号 0 命中 ② 柴阅阅读器必须在 ③ 门禁能红（变异对照）⭐⭐⭐
+  "reader-chaiyue-host:test/reader-chaiyue-host.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
-  "paging-algorithm:test/paging-algorithm.test.js"
+  # ⚠️⚠️ **reader-native-paging / paging-algorithm 已删**（2026-11-25）⭐⭐⭐
+  #   ⇒ 它们钉的是**我们自己那套**分页器（`ReaderPaginator` / `PagedChapterPager`）⭐⭐⭐
+  #   ⇒ 那套实现整套删掉了 ⇒ 门禁的前提消失 ⇒ 删（不是放宽）⭐⭐⭐
+  #   ⇒ 翻页/排版的覆盖改由：① 柴阅包侧的权威实现 ② `reader-pageturn` + `reader-skin-chaiyue` 钉契约 ⭐⭐⭐
   # ⭐⭐⭐ **主线程门禁**（2026-10-25 真机闪退）：非 @MainActor 的函数碰 UIKit ⇒ 后台线程调到就崩
   "mainactor-ui-guard:test/mainactor-ui-guard.test.js"
   "real-timeout-guard:test/real-timeout-guard.test.js"

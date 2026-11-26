@@ -679,6 +679,9 @@ final class SourceService {
                     why += "（站方返回 HTTP \(c) ⇒ 站方接口问题）"
                 } else if verdict.contains("站方返回空") {
                     why += "（站方返回空内容，\(bytes) 字节 ⇒ 源站/站方问题）"
+                } else if let e = diag["站方msg"], !e.isEmpty {
+                    let c = diag["站方code"] ?? "?"
+                    why += "（站方接口报错 code=\(c)：\(e) ⇒ 站方/上游挂了，不是书源规则问题）"
                 } else if verdict.contains("规则未匹配") {
                     why += "（站方有内容 \(bytes) 字节，但书的解析规则没匹配上 ⇒ 书源规则过时）"
                 } else {

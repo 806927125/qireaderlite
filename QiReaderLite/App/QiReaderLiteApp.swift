@@ -34,14 +34,21 @@ struct QiReaderLiteApp: App {
         //   ⇒ 旧默认 45 = 浅色底上的「乳白玻璃」⇒ 换深色底后 38% 白纱会把玻璃糊成一片白 ⭐⭐⭐
         //   ⇒ **只改「等于旧默认」的那一档**（用户自己调过的不动）⇒ 零打扰 ⭐⭐⭐
         if GlassTintStore.percent == 45 { GlassTintStore.percent = 8 }
-        // ⭐⭐⭐⭐⭐ **阅读排版默认值对齐柴阅**（2026-11-25）⭐⭐⭐⭐⭐
-        //   · 字号 18→20 · 行距 8→11（0.55×）· 段距 10→14（0.7×）· 对齐 左→两端
-        //   ⇒ **只改「等于旧默认」的那一档** ⇒ 用户自己调过的不动 ⇒ 零打扰 ⭐⭐⭐
-        let d = UserDefaults.standard
-        if d.object(forKey: "reader.fontSize") == nil || d.double(forKey: "reader.fontSize") == 18 { d.set(20.0, forKey: "reader.fontSize") }
-        if d.object(forKey: "reader.lineSpacing") == nil || d.double(forKey: "reader.lineSpacing") == 8 { d.set(11.0, forKey: "reader.lineSpacing") }
-        if d.object(forKey: "reader.paraSpacing") == nil || d.double(forKey: "reader.paraSpacing") == 10 { d.set(14.0, forKey: "reader.paraSpacing") }
-        if d.object(forKey: "reader.paraAlign") == nil || d.string(forKey: "reader.paraAlign") == "left" { d.set("justify", forKey: "reader.paraAlign") }
+        // ⭐⭐⭐⭐⭐ **阅读排版的默认值归柴阅管**（2026-11-25 接柴阅阅读器）⭐⭐⭐⭐⭐
+        //   · 以前这里手写「字号 18→20 / 行距 8→11 / 段距 10→14 / 对齐 左→两端」
+        //     —— 那是**我们自己重写版阅读器**的排版参数 ⭐⭐⭐
+        //   · 现在正文界面**整体换成柴阅的** ⇒ 柴阅的 `ReaderSettings`
+        //     直接读写 `UserDefaults.standard`（键 `reader.fontSize` / `reader.spacing` / `reader.pageStyle` …）
+        //     ⇒ **轻阅不再自己造默认值** ⇒ 两边不会漂 ⭐⭐⭐
+        //   ⇒ 旧键（`reader.lineSpacing` / `reader.paraSpacing` / `reader.paraAlign`）**不再有任何消费者**
+        //     ⇒ 顺手清掉，别让它们冒充「还有效的设置」⭐⭐⭐
+        for dead in ["reader.lineSpacing", "reader.paraSpacing", "reader.paraAlign",
+                     "reader.theme", "reader.fontKey", "reader.showBaseline", "reader.baselineScope",
+                     "reader.baselineColor", "reader.verticalJustify", "reader.tapAnywhere",
+                     "reader.swipeUpExit", "reader.twoPageSpread", "reader.contentInHeaderFooter",
+                     "reader.pageTurn", "reader.followSystem"] {
+            UserDefaults.standard.removeObject(forKey: dead)
+        }
         // ⭐⭐⭐ **日志出口挂上**（诊断要能进「引擎日志」面板 ⇒ 用户直接看到）⭐⭐⭐
         //   ⚠️⚠️ 之前这里又赋了一次 sink ⇒ **覆盖掉** `EngineLogBootstrap.install()` 里
         //   那个 `Task { @MainActor in … }` 的版本 ⇒ 后台线程直接改 @Published 状态
