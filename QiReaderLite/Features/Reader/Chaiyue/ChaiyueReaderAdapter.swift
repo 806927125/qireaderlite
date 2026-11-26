@@ -63,6 +63,12 @@ enum ChaiyueReaderAdapter {
         book.tocUrl = b.tocUrl
         book.wordCount = empty(b.wordCount)
         book.latestChapterTitle = empty(b.lastChapter)
+        // ⭐⭐⭐⭐⭐ **【新增】内容形态（漫画判定用）**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+        //   站方的 `book.type`（iOS：2=图片；Legado：64=图片）⇒ 柴阅靠它分「文字/漫画/听书/短剧」⭐⭐⭐
+        //   ⚠️ **以前这个字段在宿主↔引擎的往返里被丢了** ⇒ 柴阅永远以为是文字书 ⇒ 漫画打不开 ⭐⭐⭐
+        //   ⇒ 宿主从 `raw` 现算（`Book.mediaType`）⇒ 这里搬进柴阅的 `Book.type` ⇒
+        //   ⇒ **判定只剩柴阅那一份真相**（宿主不再自己判一遍）⭐⭐⭐
+        book.type = b.mediaType
         if chapterIndex >= 0 {
             book.durChapterIndex = chapterIndex
         }

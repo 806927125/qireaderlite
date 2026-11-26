@@ -1,4 +1,7 @@
 import SwiftUI
+// ⭐⭐⭐ 漫画分流要用柴阅的 `Book.mediaKind(sourceType:)` ⇒ 需要 `LegadoEngineHost` 别名 ⭐⭐⭐
+//   ⚠️ `LegadoEngine` 模块**没有** `@_exported` ⇒ 不会把柴阅的 `Book`/`Chapter` 带进宿主命名空间 ⇒ 不撞名 ⭐⭐⭐
+import LegadoEngine
 
 struct BookDetailView: View {
     @EnvironmentObject private var library: LibraryStore
@@ -21,6 +24,27 @@ struct BookDetailView: View {
     init(book: Book) { _book = State(initialValue: book) }
 
     private var source: BookSource? { sources.source(id: book.origin) }
+
+    // MARK: - 漫画判定（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
+
+    /// ⭐⭐⭐ **柴阅的书**（轻阅 → 柴阅的转换；`type` 也在这一步带过去）⭐⭐⭐
+    private var chaiyueBook: LegadoEngineHost.BookModel {
+        ChaiyueReaderAdapter.book(book, sourceName: source?.name ?? book.sourceName)
+    }
+
+    /// ⭐⭐⭐⭐⭐ **这本书是不是漫画** ⭐⭐⭐⭐⭐
+    ///   ⇒ **判定只用柴阅那一份真相**（`Book.mediaKind(sourceType:)`：iOS `type=2` / Legado `type&64`）
+    ///   ⇒ 宿主**不再自己判一遍** ⇒ 不会与柴阅的规则漂移 ⭐⭐⭐
+    private var isComicBook: Bool {
+        chaiyueBook.mediaKind(sourceType: source?.bookSourceType) == .comic
+    }
+
+    /// 按钮文案（漫画书写「开始看漫画 / 继续看漫画」⇒ 也取柴阅的 `actionTitle(for:)`）⭐⭐⭐
+    private var comicActionTitle: String {
+        isComicBook
+            ? chaiyueBook.mediaKind(sourceType: source?.bookSourceType).actionTitle(for: chaiyueBook)
+            : "开始阅读"
+    }
     private var inShelf: Bool { library.contains(book) }
 
     /// ⭐⭐⭐ **接着上次读的那一章**（没有记录才从第一章开始）⭐⭐⭐
@@ -110,7 +134,15 @@ struct BookDetailView: View {
             //   以前这里开的是**我们自己手写**的那套阅读界面（WebView + 自研原生分页/滚动）⭐⭐⭐
             //   ⇒ 本轮**整套删掉**，正文界面全部用柴阅的 ⭐⭐⭐
             //   ⇒ 目录已经在详情页取好了 ⇒ 直接喂给柴阅 ⇒ 阅读器不重复请求站方 ⭐⭐⭐
-            ChaiyueReaderScreen(book: book, chapters: chapters, start: ch)
+            // ⭐⭐⭐⭐⭐ **漫画分流**（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
+            //   站方把 `book.type` 标成图片（iOS 2 / Legado 64）⇒ 这本书是**漫画**
+            //   ⇒ 开柴阅的**漫画阅读器**（`ComicReaderScreen`）⇒ 图片一页一张地翻 ⭐⭐⭐
+            //   ⇒ 判定**只用柴阅那一份真相**（`Book.mediaKind(sourceType:)`）⇒ 宿主不再自己判一遍 ⭐⭐⭐
+            if isComicBook {
+                ChaiyueComicScreen(book: book, chapters: chapters, start: ch)
+            } else {
+                ChaiyueReaderScreen(book: book, chapters: chapters, start: ch)
+            }
         }
         .alert("目录诊断", isPresented: Binding(
             get: { tocDiag != nil }, set: { if !$0 { tocDiag = nil } })) {
@@ -169,7 +201,8 @@ struct BookDetailView: View {
                 //   ⇒ 柴阅的阅读器是**记住进度**的 ⇒ 这里也改成跟着进度走 ⭐⭐⭐
                 readerChapter = resumeChapter
             } label: {
-                Label("开始阅读", systemImage: "book")
+                // ⭐⭐⭐ 漫画书的按钮写「开始看漫画」（文案取柴阅的 `actionTitle(for:)`）⭐⭐⭐
+                Label(comicActionTitle, systemImage: isComicBook ? "photo" : "book")
                     .font(.system(size: 17, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)

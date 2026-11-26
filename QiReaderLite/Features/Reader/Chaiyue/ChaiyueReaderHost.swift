@@ -55,6 +55,9 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
     ///   ⇒ 界面里翻到的位置写在 A 会话上，宿主回写进度时读的是 B 会话 ⇒ **进度永远是 0** ⭐⭐⭐
     ///   ⇒ 所以：**同一本书永远返回同一个会话** ⭐⭐⭐
     private var sessions: [String: ReaderSession] = [:]
+    /// ⭐⭐⭐ **漫画会话缓存**（2026-11-26 · 漫画阅读器）⭐⭐⭐
+    ///   与 `sessions` 同理：同一本书 ⇒ 同一个会话 ⇒ 漫画页与宿主共享进度 ⭐⭐⭐
+    private var mediaSessions: [String: MediaSession] = [:]
 
     init(directory: URL = AppPaths.chaiyueDir) {
         shelf = BookshelfRepository(fileURL: directory.appendingPathComponent("bookshelf.json"))
@@ -115,6 +118,29 @@ final class ChaiyueHostLibrary: ChaiyueReaderLibrary {
         return session
     }
 
+    /// ⭐⭐⭐⭐⭐ **给这本书造一个【漫画会话】**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️ **柴阅的 `ComicReaderScreen` 就是这么拿数据的**：
+    ///   `ComicModel(session: app.library.mediaSession(for: launch.book))` ⇒
+    ///   **这个成员缺了 ⇒ 漫画阅读器连编都编不过** ⭐⭐⭐
+    ///
+    /// ⚠️ **与 `readerSession(for:)` 的差别只有一个**：会话类型不同（`MediaSession` vs `ReaderSession`）
+    ///   ⇒ service / processor / shelf 全部复用 ⇒ **正文与目录走同一条链**（不重复请求站方）⭐⭐⭐
+    func mediaSession(for book: LegadoEngineHost.BookModel) -> MediaSession {
+        // ⭐⭐⭐ 同一本书 ⇒ 同一个会话（漫画页与宿主共享进度 ⇒ 不分叉）⭐⭐⭐
+        if let existing = mediaSessions[book.bookUrl] { return existing }
+        let source = sources.source(for: book.origin)
+        let service = BookContentService(source: source,
+                                         environment: ChaiyueRuntime.environment,
+                                         store: chapterStore)
+        let processor = ContentProcessor(rules: replaceRules, conversion: .none)
+        let session = MediaSession(book: book, shelf: shelf, service: service, processor: processor)
+        session.readingRecords = readingRecords
+        session.autoAddToShelf = { true }
+        mediaSessions[book.bookUrl] = session
+        return session
+    }
+
     /// 书源事件回调（`startRead` / `endRead` / 点击自定义按钮…）
     ///
     /// ⚠️ 柴阅里只有开了 `eventListener` 的源才会走到这里；
@@ -139,8 +165,17 @@ final class ChaiyueReaderHost {
     let library: ChaiyueHostLibrary
     /// 柴阅的 `AppModel`（阅读器的环境对象）
     let app: AppModel
-    /// 柴阅的「打开阅读器」请求
-    let launch: ReaderLaunch
+    /// 柴阅的「打开阅读器」请求（**漫画模式没有它** ⇒ optional）⭐⭐⭐
+    let launch: ReaderLaunch?
+    /// ⭐⭐⭐⭐⭐ **这次开的是文字阅读器还是漫画阅读器**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+    ///   柴阅的两种页面走不同的 launch：文字走 `app.reader`、漫画走 `app.media` ⇒ 不能混 ⭐⭐⭐
+    enum Mode {
+        case text
+        case comic
+    }
+    let mode: Mode
+    /// 柴阅的书（漫画的 `MediaLaunch` 也要用它）
+    let chaiyueBook: LegadoEngineHost.BookModel
     /// ⭐⭐⭐ **柴阅的阅读会话**（界面与宿主共用这一份 ⇒ 进度不分叉）⭐⭐⭐
     let session: ReaderSession
     // ⭐⭐⭐ **不再单独持 `ReaderModel`**（2026-11-26 · CI28 实证）⭐⭐⭐
@@ -164,7 +199,9 @@ final class ChaiyueReaderHost {
          start: QiChapter?,
          source: QiBookSource?,
          libraryItems: [LibraryItem],
-         progressIndex: Int) {
+         progressIndex: Int,
+         mode: Mode = .text) {
+        self.mode = mode
         self.qiBook = book
         self.qiChapters = chapters
         self.library = ChaiyueHostLibrary()
@@ -245,12 +282,22 @@ final class ChaiyueReaderHost {
 
         // ── ⑥ 柴阅的 AppModel（阅读器的环境）────────────────────────────
         app = AppModel(library: library)
+        self.chaiyueBook = chaiyueBook
         // ⚠️ 用柴阅的 `openReader` 而不是自己造 `ReaderLaunch`：
         //   · 它会按**书架里的最新记录**取书（带进度）⇒ 不会丢掉「读到哪了」⭐⭐⭐
         //   · 它把 `app.reader` 置位 ⇒ 宿主靠 `app.reader == nil` 感知「阅读器被关掉了」
         //     （柴阅的 `ReaderContainer.close()` 调 `app.closeReader()` ⇒ 置 nil）⭐⭐⭐
-        app.openReader(chaiyueBook)
-        launch = app.reader ?? ReaderLaunch(book: chaiyueBook, origin: nil, coverKey: nil)
+        // ⚠️⭐⭐⭐ **漫画模式走另一条 launch**（`app.media`，不是 `app.reader`）⭐⭐⭐⭐⭐
+        //   柴阅的听书/漫画/短剧是**独立的媒体页**（`MediaLayer` 观察 `app.media`）⇒
+        //   ⇒ 漫画模式**不能**置 `app.reader`（那是文字阅读器的信号）⭐⭐⭐
+        switch mode {
+        case .text:
+            app.openReader(chaiyueBook)
+            launch = app.reader ?? ReaderLaunch(book: chaiyueBook, origin: nil, coverKey: nil)
+        case .comic:
+            app.media = MediaLaunch(book: chaiyueBook, kind: .comic, origin: nil)
+            launch = nil
+        }
 
         // ── ⑦ 会话 ───────────────────────────────────────────────────
         //    ⭐⭐⭐ **会话必须先由宿主建好**（`readerSession(for:)` 内部会缓存）
@@ -269,11 +316,19 @@ final class ChaiyueReaderHost {
     @discardableResult
     func writeBackProgress(to libraryStore: LibraryStore?) -> Int {
         guard let libraryStore else { return -1 }
+        let stored = library.shelf.book(qiBook.cleanBookUrl)
         // ⚠️ 位置以**会话里的实时位置**为准（界面翻到哪就是哪）
         //   ⇒ 柴阅的 `ReaderModel` 每次翻页都调 `session.updatePosition(...)` ⇒ 会话位置就是实时的 ⭐⭐⭐
         //   ⇒ 书架仓那份是 `ReaderSession.saveProgress()` 写的副本，做兜底 ⭐⭐⭐
-        let live = session.position.chapterIndex
-        let stored = library.shelf.book(qiBook.cleanBookUrl)
+        // ⚠️⭐⭐⭐ **漫画模式另算**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+        //   漫画的进度由柴阅的 **`MediaSession.save()`** 直接写进**书架仓**
+        //   （`shelf.saveProgress(bookUrl:chapterIndex:chapterPos:…)`）⇒ **读书架仓就是实时的** ⭐⭐⭐
+        //   ⇒ 而且漫画的 `position` 是**图片序号**、不是章号 ⇒ 绝不能用它当章下标 ⭐⭐⭐
+        let live: Int
+        switch mode {
+        case .text: live = session.position.chapterIndex
+        case .comic: live = stored?.durChapterIndex ?? -1
+        }
         let whole = live >= 0 ? live : (stored?.durChapterIndex ?? -1)
         guard whole >= 0 else { return whole }
         // ⚠️⚠️ **口径换算**：柴阅给的是「整表下标（含卷）」，轻阅的 `lastChapterIndex`

@@ -480,6 +480,10 @@ final class LegadoEngineBackend {
             "tocUrl": b.tocUrl,
             "wordCount": b.wordCount ?? "",
             "updateTime": String(b.latestChapterTime),
+            // ⭐⭐⭐⭐⭐ **【新增】内容形态**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+            //   站方的目录/正文脚本会读 `book.type`（iOS 2=图片 / Legado 64=图片）来判形态
+            //   ⇒ 这个 payload 是**柴阅的书 → 站方** ⇒ 少了 type ⇒ 站方脚本读不到 ⇒ 漫画判定失效 ⭐⭐⭐
+            "type": b.type,
         ]
     }
 

@@ -139,6 +139,10 @@ declare -a GATES=(
   #   7 个 .chaiyuetheme（11 MB）⇒ 柴阅上游自己没给「一键装」的界面 ⇒ 轻阅新增这一栏
   #   ⇒ 门禁钉「包在 / 找得到 / 装得进 / 点得着」四条，缺一条这功能就是坏的
   "reader-chaiyue-preset-themes:test/reader-chaiyue-preset-themes.test.js"
+  # ⭐⭐⭐⭐⭐ **柴阅的【漫画阅读器】**（2026-11-26 用户「把漫画阅读器也搬过来」）⭐⭐⭐⭐⭐
+  #   漫画的图 = 章节正文里的 <img> ⇒ 数据链本来就通；缺的是界面层 + 「站方 book.type 被丢掉」这个断点
+  #   ⇒ 门禁钉「文件在 / 宿主能开 / 启动通道 / 会话能造 / type 不丢 / 详情页分流」六条
+  "reader-chaiyue-comic:test/reader-chaiyue-comic.test.js"
   "reader-pageturn:test/reader-pageturn.test.js"
   # ⚠️⚠️ **reader-native-paging / paging-algorithm 已删**（2026-11-25）⭐⭐⭐
   #   ⇒ 它们钉的是**我们自己那套**分页器（`ReaderPaginator` / `PagedChapterPager`）⭐⭐⭐

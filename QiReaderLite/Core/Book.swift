@@ -28,6 +28,23 @@ struct Book: Codable, Identifiable, Hashable {
     ///      ⇒ 详情/目录请求全是 book_id=undefined ⇒ 服务器回「illegal base64」⇒ 整本书崩 ⭐
     var raw: [String: String] = [:]
 
+    /// ⭐⭐⭐⭐⭐ **站方标的「内容形态」**（2026-11-26 · 漫画阅读器）⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️ **为什么是 computed 而不是存一个字段** ⭐⭐⭐：
+    ///   `Book` 是 `Codable`（合成）⇒ **Swift 不会用属性默认值兜底** ⇒ 加一个 `var type: Int = 0`
+    ///   ⇒ **旧书架数据解码直接失败**（整库读不出来）⇒ 这就是记忆里那条「Codable 不给默认值兜底」的坑 ⭐⭐⭐
+    ///   ⇒ 而站方的 `type` 本来就**原样存在 `raw` 里**（`BookDTO.raw` 是站方返回的原始字段全留）⇒
+    ///   **现算即可，零持久化风险** ⭐⭐⭐
+    ///
+    /// ⚠️ **取值口径**（与柴阅 `Book.mediaKind(sourceType:)` 同一套规则）：
+    ///   iOS 约定：0 文字、1 音频、**2 图片**、3 视频；Legado 安卓是位标记（8 文字、32 音频、**64 图片**）⭐⭐⭐
+    var mediaType: Int {
+        for key in ["type", "bookType", "mediaType"] {
+            if let rawValue = raw[key], let value = Int(rawValue) { return value }
+        }
+        return 0
+    }
+
     /// 搜索结果还没跑过详情页时为 true，点进书架后补齐
     var detailLoaded: Bool = false
 

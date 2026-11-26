@@ -37,6 +37,11 @@ public protocol ChaiyueReaderLibrary {
     var chapterStore: ChapterStore { get }
     /// 为一本书造阅读会话（宿主自己拼 `BookContentService` + `ContentProcessor` + `BookshelfRepository`）
     func readerSession(for book: Book) -> ReaderSession
+    /// ⭐⭐⭐⭐⭐ **为一本书造【漫画会话】**（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
+    ///   柴阅的 `ComicReaderScreen` 里是 `app.library.mediaSession(for: launch.book)` ⇒
+    ///   **这个成员缺了 ⇒ 漫画阅读器连编都编不过**（`value of type 'any ChaiyueReaderLibrary' has no member 'mediaSession'`）⭐⭐⭐
+    ///   ⇒ 宿主实现它（与 `readerSession(for:)` 同一套 service/processor，只是换成 `MediaSession`）⭐⭐⭐
+    func mediaSession(for book: Book) -> MediaSession
     /// 书源事件回调（`java.*` 的回传给宿主）
     func callBack(_ event: SourceCallBackEvent, book: Book, chapter: BookChapter?)
     /// ⭐⭐⭐ **图片数据（封面 / 正文插图）**⭐⭐⭐
@@ -46,11 +51,28 @@ public protocol ChaiyueReaderLibrary {
     func imageData(_ url: String, for book: Book?) async throws -> Data
 }
 
+/// ⭐⭐⭐⭐⭐ **漫画阅读页的启动请求**（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
+///
+/// ⚠️ **搬运自柴阅 `App/Sources/App/AppModel.swift`**（上游的 `MediaLaunch`）
+///   ⇒ 上游用它管**听书 / 漫画 / 短剧**三种媒体页 ⇒ 轻阅只搬了**漫画**这一支 ⭐⭐⭐
+public struct MediaLaunch: Identifiable, Equatable {
+    public let id = UUID()
+    public var book: Book
+    public var kind: BookMediaKind
+    /// 打开时封面在屏幕上的位置，播放页从这里展开
+    public var origin: CGRect?
+
+    public init(book: Book, kind: BookMediaKind, origin: CGRect? = nil) {
+        self.book = book
+        self.kind = kind
+        self.origin = origin
+    }
+}
+
 /// 朗读时打断宿主音频播放的最小接口（柴阅用的是 `AudioBookPlayer`，那是媒体层，不在阅读器范围）
 protocol ReaderAudioPausing: AnyObject {
     func pause()
 }
-
 /// 默认实现：没有音频播放器时什么都不做
 final class ReaderAudioPauser: ReaderAudioPausing {
     init() {}
@@ -84,6 +106,10 @@ public final class AppModel {
 
     /// 打开阅读器的请求；宿主置位后呈现 `ReaderContainer`
     public var reader: ReaderLaunch?
+    /// ⭐⭐⭐⭐⭐ **漫画阅读页的启动请求**（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
+    ///   柴阅的 `MediaLaunch`（上游在 `App/Sources/App/AppModel.swift`）—— 它管听书/漫画/短剧三种媒体页
+    ///   ⇒ 轻阅只做**漫画** ⇒ 只搬这一个 kind ⇒ 听书/短剧没搬 ⇒ 那一支不存在 ⭐⭐⭐
+    public var media: MediaLaunch?
     /// 正在朗读的书（阅读器关闭后仍可回到阅读器）
     var speechBook: Book?
     /// 书源要求阅读器重新加载当前章节（`java.refreshContent`）
@@ -148,6 +174,12 @@ public final class AppModel {
     /// 关闭阅读器（由 `ReaderContainer` 在合书动画结束时调用）
     func closeReader() {
         reader = nil
+    }
+
+    /// ⭐⭐⭐⭐⭐ **关闭漫画阅读页**（2026-11-26 · 柴阅漫画阅读器 vendor）⭐⭐⭐⭐⭐
+    ///   柴阅的 `ComicReaderScreen.close()` 调它 ⇒ 漫画页收起 ⇒ 宿主跟着收摊 ⭐⭐⭐
+    public func closeMedia() {
+        media = nil
     }
 
     /// 书籍的内容形态（文字书 / 听书 / 漫画 / 短剧）

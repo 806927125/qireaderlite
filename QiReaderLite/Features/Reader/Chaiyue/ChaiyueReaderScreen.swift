@@ -42,7 +42,7 @@ struct ChaiyueReaderScreen: View {
 
     var body: some View {
         ZStack {
-            if let host, let launch {
+            if let host, let launch = host.launch {
                 // ⭐⭐⭐⭐⭐ **柴阅的阅读界面本体** ⭐⭐⭐⭐⭐
                 //   · `ReaderContainer` = 柴阅 `App/Sources/Reader/ReaderContainer.swift` 原版 ⭐⭐⭐
                 //   · `.environment(host.app)` = 柴阅的 `@Environment(AppModel.self)` ⭐⭐⭐
