@@ -9,6 +9,7 @@
 //
 // ⚠️ **不改柴阅源码**（新增扩展即可）⭐⭐⭐
 import ChaiyueEngine
+import ChaiyueModels   // ⭐⭐⭐ `ExploreKind` 在这里（CI334 实锤：cannot find type 'ExploreKind' in scope）⭐⭐⭐
 
 public extension LoginRow {
     /// 宿主侧构造一行（`style` 默认 nil ⇒ 按钮网格退回柴阅默认的两列）
