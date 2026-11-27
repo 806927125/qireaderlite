@@ -16,6 +16,7 @@
 //   ⇒ `import ChaiyueEngine` 会报 **no such module** ⇒ ⇒ 所以**必须在这里包一层 public 出口** ⭐⭐⭐
 import UIKit
 import SwiftUI
+import WebKit          // ⭐⭐⭐ `WKWebsiteDataStore` 在 WebKit 里（CI333 实证：漏 import ⇒ cannot find 'WKWebsiteDataStore' in scope）⭐⭐⭐
 import ChaiyueEngine
 
 /// 柴阅的浮层浏览器（段评 / 书源脚本触发的浮层页）+ cookie 同步
