@@ -70,67 +70,38 @@ struct SourceLoginSheet: View {
         }
     }
 
-    /// 站方的文本/密码输入框（整行，玻璃通透）
-    private var loginFields: some View {
-        ForEach(fields.filter { $0.type != "button" }) { f in
-            if f.type == "password" {
-                SecureField(f.name, text: binding(f.name))
-                    .glassField()
-            } else {
-                TextField(f.name, text: binding(f.name))
-                    .glassField()
-            }
-        }
-    }
-
-    /// 站方那 19 个按钮（两列排，栖阅登录页同款）
-    ///
-    /// ⚠️ **必须独立成一个属性** —— 埋在 body 的四层嵌套里会让 Swift 类型推断超时
-    private var actionButtonsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
-                            GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            ForEach(fields.filter { $0.type == "button" }) { f in
-                Button {
-                    run(f.action)
-                } label: {
-                    HStack(spacing: 6) {
-                        if runningAction == f.action {
-                            ProgressView().controlSize(.small)
-                        }
-                        Text(f.name)
-                            .font(.system(size: 15, weight: .medium))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .padding(.horizontal, 10)
-                }
-                // ⚠️ 栖阅登录页的按钮是**浅色玻璃 + 蓝字**（不是实心蓝块）
-                //    ⇒ 2026-10-22 改：`.bordered` → 玻璃按钮（`.plain` + `.glassCapsule()`）
-                .buttonStyle(GlassActionButtonStyle())
-                .disabled(runningAction != nil)
-            }
-        }
-    }
+    // ⭐⭐⭐⭐⭐ **旧的手写登录表单（`loginFields` + `actionButtonsGrid`）已删**（2026-11-27）⭐⭐⭐⭐⭐
+    //   ⇒ 整页现在是**柴阅的登录表单**（`ChaiyueLoginFormBridge`）⇒ 这两段已成死代码 ⭐⭐⭐
+    //   ⇒ 留着会让人误以为「两套表单都在」⇒ 而且它按 `f.name` 显示 ⇒ **会把技术名露给用户** ⭐⭐⭐
 
     struct Field: Identifiable {
         let id = UUID()
+        /// ⭐⭐⭐ **技术名（= 表单键）**⭐⭐⭐
+        ///   ⇒ 站方脚本读的 `result['xxx']` 就是这个 ⇒ **绝不能被显示名顶掉** ⭐⭐⭐
         let name: String
+        /// ⭐⭐⭐ **人话显示名**（站方可能放在 `viewName`，是表达式 ⇒ 要引擎求值）⭐⭐⭐
+        ///   ⇒ 面板上显示的是它；`name` 仍是技术名（柴阅 `LoginRow` 的 `name`/`viewName` 语义）⭐⭐⭐
+        let displayName: String
         let type: String
         let action: String
+        /// ⭐⭐ **候选项**（`toggle`/`select` 行才有 ⇒ 柴阅表单要拿它渲染下拉）⭐⭐
+        let chars: [String]
     }
 
     // MARK: - 柴阅的登录表单（数据侧）
 
-    /// ⭐⭐⭐ **宿主解析好的行 → 柴阅的 `LoginRow`** ⭐⭐⭐
-    ///   ⇒ 保住宿主「**先静态后柴阅**」的秒开策略（柴阅的 `resolveLoginRows` 对静态源可能返回预设行）
-    ///   ⇒ 且宿主的 `viewName` 已在此前求值过（`fields[].name` 就是**人话名**）⭐⭐⭐
+    /// ⭐⭐⭐⭐⭐ **行 → 柴阅的 `LoginRow`**（2026-11-27）⭐⭐⭐⭐⭐
+    ///   ⇒ **技术名进 `name`（表单键）**、**人话名进 `viewName`（显示）**⭐⭐⭐
+    ///   ⇒ 这是柴阅自己的语义（`LoginRow.name` = 键 / `LoginRow.viewName` = 显示名）⭐⭐⭐
+    ///   ⇒ ⚠️ **之前宿主把显示名当成了键** ⇒ 站方脚本收到的是「人话」而不是技术名
+    ///     ⇒ 对 `viewName` 型书源（技术名如 `jmModeN`）**登录参数全是错的** ⭐⭐⭐
     private var loginRows: [LegadoEngineHost.LoginRow] {
         fields.map { f in
             LegadoEngineHost.LoginRow(name: f.name,
-                     type: Self.loginRowKind(f.type),
-                     action: f.action.isEmpty ? nil : f.action)
+                                       type: Self.loginRowKind(f.type),
+                                       action: f.action.isEmpty ? nil : f.action,
+                                       chars: f.chars.isEmpty ? nil : f.chars,
+                                       viewName: f.displayName)
         }
     }
 
@@ -154,12 +125,6 @@ struct SourceLoginSheet: View {
                 SourceVariables.setLoginFormValues(newValue, for: source.bookSourceUrl)
             }
         )
-    }
-
-    /// 正在跑的动作对应**哪一行**（柴阅的表单按行名匹配 ⇒ 让那个按钮转圈）⭐⭐⭐
-    private var runningRowName: String? {
-        guard let runningAction else { return nil }
-        return fields.first { $0.action == runningAction }?.name
     }
 
     var body: some View {
@@ -189,10 +154,10 @@ struct SourceLoginSheet: View {
                                      title: source.name,
                                      values: formValuesBinding,
                                      busy: busy,
-                                     runningAction: runningRowName,
+                                     runningAction: runningAction,
                                      submitTitle: "登录",
-                                     onRun: { row, _ in run(row.action ?? "") },
-                                     onSubmit: { submitLogin() })
+                                     onRun: { row, _ in self.run(row.action ?? "") },
+                                     onSubmit: { self.submitLogin() })
 
                     if fields.isEmpty {
                         // ⭐⭐⭐ **说清「为什么空」+「怎么修」**（2026-10-24 真机）
@@ -786,9 +751,13 @@ struct SourceLoginSheet: View {
             fields = arr.compactMap { item in
                 guard let name = item["name"] as? String else { return nil }
                 viewExprs.append((item["viewName"] as? String) ?? "")
+                // ⭐⭐⭐ **技术名进 `name`，显示名先等于技术名**（2026-11-27 修正）⭐⭐⭐
+                //   ⇒ 下面 ③ 求值完 `viewName` 后**只改 `displayName`** ⇒ **`name`（表单键）保住** ⭐⭐⭐
                 return Field(name: name,
+                             displayName: name,
                              type: (item["type"] as? String) ?? "text",
-                             action: (item["action"] as? String) ?? "")
+                             action: (item["action"] as? String) ?? "",
+                             chars: (item["chars"] as? [String]) ?? [])
             }
             // ⭐⭐⭐ **有没有「退出登录」按钮**（柴阅同款判据）⭐⭐⭐
             hasLogoutAction = arr.contains { item in
@@ -805,8 +774,11 @@ struct SourceLoginSheet: View {
             let rows = try await SourceService.shared.loginRows(source: source)
             let mapped: [Field] = rows.compactMap { r in
                 guard !r.name.isEmpty else { return nil }
-                return Field(name: r.displayName.isEmpty ? r.name : r.displayName,
-                             type: r.type, action: r.action)
+                // ⭐⭐⭐ **技术名进 `name`（表单键）**、人话名进 `displayName`（显示）⭐⭐⭐
+                //   ⇒ 与柴阅 `LoginRow` 的 `name`/`viewName` 语义一致 ⭐⭐⭐
+                return Field(name: r.name,
+                             displayName: r.displayName.isEmpty ? r.name : r.displayName,
+                             type: r.type, action: r.action, chars: r.chars)
             }
             // ⭐⭐⭐⭐⭐ **只在【静态解析不出来】时才用柴阅的行**（2026-11-21 实证）⭐⭐⭐
             //   ⇒ 柴阅的 `resolveLoginRows` **只处理 `@js:`/`<js>`**；静态 JSON 走它的**预设行** ⭐⭐⭐
@@ -830,12 +802,16 @@ struct SourceLoginSheet: View {
         // ── ③ ⭐⭐⭐⭐⭐ **统一求值 `viewName`**（静态 / 柴阅两条路都要）⭐⭐⭐
         //   ⇒ 静态 loginUi 的行由宿主自己解析 ⇒ 但 `viewName` 是表达式 ⇒ **仍需引擎求值** ⭐⭐⭐
         //   ⇒ **一次求值一批**（静态路径不经过柴阅的 loginRows ⇒ 这里单独调一次）⭐⭐⭐
+        //   ⚠️⭐⭐⭐ **只改 `displayName`（显示），绝不改 `name`（表单键）**（2026-11-27 修正）⭐⭐⭐
+        //   ⇒ 之前改的是 `name` ⇒ 对 `viewName` 型书源（技术名 `jmModeN`）
+        //     ⇒ **表单值会用「人话」当键** ⇒ 站方脚本读 `result['jmModeN']` 读不到 ⇒ **登录参数全错** ⭐⭐⭐
         if !viewExprs.isEmpty, viewExprs.contains(where: { !$0.isEmpty }) {
             if let names = try? await SourceService.shared.loginViewNames(source: source, expressions: viewExprs),
                names.count == fields.count {
                 fields = fields.enumerated().map { idx, f in
                     let d = names[idx]
-                    return d.isEmpty ? f : Field(name: d, type: f.type, action: f.action)
+                    return d.isEmpty ? f : Field(name: f.name, displayName: d,
+                                                 type: f.type, action: f.action, chars: f.chars)
                 }
             }
         }

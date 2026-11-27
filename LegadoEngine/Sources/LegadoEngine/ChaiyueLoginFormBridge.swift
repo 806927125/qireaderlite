@@ -41,6 +41,12 @@ public struct ChaiyueLoginFormBridge: View {
         self.onSubmit = onSubmit
     }
 
+    // ⚠️⭐⭐⭐ **`body` 必须显式标 `@MainActor`**（2026-11-27）⭐⭐⭐
+    //   `ChaiyueReader` 是 **Swift 6 + `-default-isolation MainActor`** ⇒ 柴阅的 `ChaiyueLoginForm`
+    //   连它的 `init` 都是 **@MainActor 隔离**的 ⭐⭐⭐
+    //   ⇒ 本门面模块（`LegadoEngine`）是 **Swift 5、无隔离** ⇒ 从这里调它
+    //   ⇒ 必须有 **@MainActor 上下文** ⇒ 显式标注最稳（与 `ChaiyueBrowserOverlayBridge` 同款做法）⭐⭐⭐
+    @MainActor
     public var body: some View {
         ChaiyueLoginForm(rows: rows,
                          title: title,

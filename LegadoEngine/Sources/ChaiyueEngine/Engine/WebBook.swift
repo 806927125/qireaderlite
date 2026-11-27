@@ -36,6 +36,39 @@ public struct LoginRow: Codable, Hashable, Sendable {
         style = try? c.decode(ExploreKind.Style.self, forKey: .style)
         viewName = try? c.decode(String.self, forKey: .viewName)
     }
+
+    // MARK: - 移植补丁（2026-11-27）：给 `LoginRow` 加一个 **public 成员构造器**
+
+    /// ⭐⭐⭐⭐⭐ **这个 init 为什么必须写在【主声明】里、不能用 extension**（CI336 实锤）⭐⭐⭐⭐⭐
+    ///
+    /// ⚠️⚠️ **踩过的两条弯路**（别再踩）：
+    ///   ① 写在 **extension** 里 ⇒ CI336 报
+    ///      `'self' used before 'self.init' call` / `'self.init' isn't called on all paths` ⭐⭐⭐
+    ///      ⇒ **Swift 的硬规则**：`extension` 里新增的 init **不能给存储属性赋值**
+    ///      （必须调 `self.init(...)` 委托给别的 init）⇒ 而这里唯一的其它 init 是 `init(from:)`
+    ///      ⇒ 它要 decoder ⇒ ⇒ **extension 这条路根本不通** ⭐⭐⭐
+    ///   ② 以为「init 必须定义在宿主能看见的模块里」⇒ 其实**不是** ⭐⭐⭐
+    ///      `public init` 只要和类型同模块即可 ⇒ 宿主只 `import LegadoEngine`（门面）
+    ///      通过 `LegadoEngineHost.LoginRow`（typealias）**照样能调**（沙盒已用 swiftc 实测证过）⭐⭐⭐
+    ///
+    /// ⇒ 结论：**init 写在 `LoginRow` 的主声明里**（本文件）⇒ 类型与 init 同模块 ⇒ 一律可用 ⭐⭐⭐
+    ///
+    /// ⚠️ **不要动 `init(from:)`**（站方 `loginUi` 的 JSON 解码靠它 ⇒ 缺字段不炸）⭐⭐⭐
+    public init(name: String,
+                type: Kind = .text,
+                action: String? = nil,
+                chars: [String]? = nil,
+                defaultValue: String? = nil,
+                style: ExploreKind.Style? = nil,
+                viewName: String? = nil) {
+        self.name = name
+        self.type = type
+        self.action = action
+        self.chars = chars
+        self.defaultValue = defaultValue
+        self.style = style
+        self.viewName = viewName
+    }
 }
 
 /// 书源操作的对外接口。所有方法都在独立线程上同步执行规则，可安全地从任意并发上下文调用。

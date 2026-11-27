@@ -238,7 +238,7 @@ public struct ChaiyueLoginForm: View {
         let name = Self.displayName(row).withoutEmoji
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         return Button {
-            run(row, index: index)
+            run(row)
         } label: {
             HStack(spacing: 10) {
                 ZStack {
@@ -314,8 +314,22 @@ public struct ChaiyueLoginForm: View {
         values.filter { !$0.value.isEmpty }
     }
 
+    /// ⭐⭐⭐ **正在跑的动作对应哪一行**（那一行的按钮转圈）⭐⭐⭐
+    ///
+    /// ⚠️ **按 `action` 匹配，不是按行名**（2026-11-27 修正）⭐⭐⭐：
+    ///   柴阅的表单要的是**动作标识**（站方 `loginUi` 里那行的 `action`）
+    ///   ⇒ 宿主传进来的就是 action 串 ⇒ 这里反查行号 ⭐⭐⭐
+    private var running: Int? {
+        guard let runningAction else { return nil }
+        return rows.firstIndex { $0.action == runningAction }
+    }
 
-
+    /// ⭐⭐⭐ **点某个动作按钮** ⇒ 交给宿主去跑站方 JS ⭐⭐⭐
+    ///   ⇒ 宿主那套带**超时** / **番茄 sessionid 自动抓** / **站方原文收集** ⇒ 能力不丢 ⭐⭐⭐
+    ///   ⇒ 这里只负责把**当前表单值**带过去（柴阅原版语义：先存表单再跑 action）⭐⭐⭐
+    private func run(_ row: LoginRow) {
+        onRun(row, formData())
+    }
 }
 
 // MARK: - 网页登录
