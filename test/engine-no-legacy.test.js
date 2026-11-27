@@ -90,11 +90,24 @@ console.log('\n── ④ 宿主门面模块里不许混进老引擎代码 ─�
 {
   const facade = path.join(SRC, 'LegadoEngine');
   const files = fs.existsSync(facade) ? fs.readdirSync(facade).filter(n => n.endsWith('.swift')) : [];
-  ok(files.length === 2,
-     '④ `Sources/LegadoEngine/` 只剩宿主门面的两个文件（同名模块 ≠ 老引擎）',
-     `现在有 ${files.length} 个：${files.join(', ')}`);
-  ok(files.includes('LegadoEngineHost.swift') && files.includes('ChaiyueKeyValueStore.swift'),
-     '④ 门面文件是 `LegadoEngineHost.swift` + `ChaiyueKeyValueStore.swift`（宿主适配层）');
+  // ⭐⭐⭐⭐⭐ **改成【白名单】而不是【数个数】**（2026-11-27 修正）⭐⭐⭐⭐⭐
+  //   原来写死「只剩 2 个文件」⇒ build333 加了 `ChaiyueBrowserOverlayBridge`、
+  //   build334 加了 `ChaiyueLoginFormBridge` ⇒ 判据过时 ⇒ 门禁一直红（基线欠账）⭐⭐⭐
+  //   ⇒ 白名单更严：**多一个没登记的文件就红**（谁把老引擎代码搬进来 ⇒ 必红）⭐⭐⭐
+  const ALLOWED = [
+    'LegadoEngineHost.swift',          // 宿主适配入口（typealias 门面）
+    'ChaiyueKeyValueStore.swift',      // 柴阅的持久化后端接线
+    'ChaiyueBrowserOverlayBridge.swift',// 段评浮层浏览器转发（build333）
+    'ChaiyueLoginFormBridge.swift',    // 柴阅登录表单转发（build334）
+  ];
+  const extra = files.filter(f => !ALLOWED.includes(f));
+  ok(extra.length === 0,
+     '④ `Sources/LegadoEngine/` 只剩登记过的宿主门面文件（不许混进老引擎代码）',
+     `多出：${extra.join(', ')}（现有 ${files.length} 个）`);
+  const missing = ALLOWED.filter(f => !files.includes(f));
+  ok(missing.length === 0,
+     '④ 四个宿主门面文件都在（别名 / 持久化 / 浏览器转发 / 登录表单转发）',
+     `缺：${missing.join(', ')}`);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);

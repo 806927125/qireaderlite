@@ -125,3 +125,19 @@ LoginRow+PublicInit.swift:36: error: 'self.init' isn't called on all paths befor
 - `test/reader-chaiyue-login.test.js`：**22 → 42 项**（新增 ④ 表单自身站得住 / ⑤ 表单键语义）
 - ⭐⭐⭐ **新增变异对照** `test/mutation-chaiyue-login-init.sh`（**5/5**）：
   三种变异（把 init 挪回 extension / 删掉 `running` / 让显示名顶掉技术名）⇒ **门禁必须红** ⇒ 复原必须绿 ⭐⭐⭐
+
+### 7.6 CI337（run `45941151446`）：编译步骤**通过**，打包步骤失败 ⇒ 真因在编译日志里
+
+- ⚠️ **CI 的「编译」step 显示 success，实际有 3 个 failures** ⇒ 因为那步用了 `|| true`（退出码被吞）
+  ⇒ **打包 step 才暴露**：「构建产物不完整：缺可执行文件 QingYue」⭐⭐⭐
+  ⇒ ⇒ **教训：CI step 显示 success 不等于编过了 ⇒ 必须看归档的 b.log**（artifact `build-log`）⭐⭐⭐
+- 下载 b.log 后，**全部 7 条错误都在 `ChaiyueLoginForm.swift`，且是同一个根因**：
+  ```swift
+  public var onToast: (String, String, Bool) = { _, _, _ in }   // ❌ 元组型
+  public var onToast: (String, String, Bool) -> Void = { _, _, _ in }  // ✅ 函数型
+  ```
+  ⇒ 元组型 ⇒ 默认值（3 参闭包）塞不进去 ⇒ 报 `cannot convert value of type '(_, _, _) -> ()'`
+  ⇒ 且 `onToast("key", "已保存登录状态", false)` 这种**调用**写法也报
+  ⇒ **一处写错 ⇒ 7 条报错** ⇒ 容易误以为是好几个独立问题 ⭐⭐⭐
+- ⇒ **已加门禁**：`reader-chaiyue-login` ④ 扫「闭包属性/参数的类型是元组（`)` 后面没有 `->`）」⇒ Linux 就能抓 ⭐⭐⭐
+  ⇒ 变异对照新增第 4 条（把 onToast 改回元组型 ⇒ 门禁必须红）⇒ **6/6** ⭐⭐⭐

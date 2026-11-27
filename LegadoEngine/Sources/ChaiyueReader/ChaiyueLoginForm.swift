@@ -339,7 +339,15 @@ public struct ChaiyueLoginWebView: View {
     public let source: BookSource
     public let environment: SourceEnvironment
     public let url: URL
-    public var onToast: (String, String, Bool) = { _, _, _ in }
+    /// ⭐⭐⭐ **Toast 回调（图标 / 文案 / 是否危险）**⭐⭐⭐
+    ///
+    /// ⚠️⚠️⚠️ **这里必须是【函数类型】`(String, String, Bool) -> Void`**
+    ///   而不是**元组类型** `(String, String, Bool)`（CI337 实锤）⭐⭐⭐
+    ///   ⇒ 元组型 ⇒ 默认值 `{ _, _, _ in }` 会被当成「一个 3 参闭包」⇒ 类型不匹配
+    ///   ⇒ 报错 5 条：`cannot convert value of type '(_, _, _) -> ()' to specified type '(String, String, Bool)'`
+    ///   ⇒ 且 `onToast("key", "已保存登录状态", false)` 这种**调用**写法也会报
+    ///     「cannot call value of non-function type」⭐⭐⭐
+    public var onToast: (String, String, Bool) -> Void = { _, _, _ in }
     public var onClose: () -> Void
 
     @State private var webView = WKWebView(frame: .zero, configuration: {
@@ -351,7 +359,7 @@ public struct ChaiyueLoginWebView: View {
     public init(source: BookSource,
                 environment: SourceEnvironment,
                 url: URL,
-                onToast: @escaping (String, String, Bool) = { _, _, _ in },
+                onToast: @escaping (String, String, Bool) -> Void = { _, _, _ in },
                 onClose: @escaping () -> Void) {
         self.source = source
         self.environment = environment

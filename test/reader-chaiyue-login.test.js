@@ -111,6 +111,32 @@ console.log('\n── ④ 柴阅登录表单自己得站得住（这份文件此
   ok(/private func run\(_ row: LoginRow\)/.test(form), '④ 有 run（点按钮要回调宿主跑站方 JS）');
   ok(/onRun\(row, formData\(\)\)/.test(form), '④ 跑动作时把表单值带过去（柴阅语义：先存表单再跑 action）');
   ok(/rows\.firstIndex \{ \$0\.action == runningAction \}/.test(form), '④ running 按 action 匹配行号');
+
+  // ⭐⭐⭐⭐⭐ **闭包类型不能写成【元组】**（CI337 实锤 · 一处根因报 7 条）⭐⭐⭐⭐⭐
+  //   踩法：`public var onToast: (String, String, Bool) = { _, _, _ in }`
+  //   ⇒ 这个类型是**元组**不是**函数** ⇒ 默认值（3 参闭包）塞不进去 ⇒
+  //     "cannot convert value of type '(_, _, _) -> ()' to specified type '(String, String, Bool)'"
+  //   ⇒ 而且 `onToast("x", "y", false)` 这种**调用**也会报
+  //     "cannot call value of non-function type" ⇒ **一处写错 ⇒ 7 条报错** ⭐⭐⭐
+  //   ⇒ 正解：`(String, String, Bool) -> Void`（**带箭头**）⭐⭐⭐
+  //   ⇒ ⚠️ 判据：**闭包属性/参数的类型里出现 `)` 后面没有 `->`** ⇒ 就是元组型 ⇒ 红 ⭐⭐⭐
+  const tupleClosure = [];
+  const scanTupleClosure = (rel) => {
+    const src = read(rel);
+    if (!src) return;
+    const re = /\b(?:var|let)\s+\w+\s*:\s*\([^)]*\)\s*(?:=\s*\{|,\s*$)/gm;
+    let m;
+    while ((m = re.exec(src)) !== null) tupleClosure.push(`${rel}:${src.slice(0, m.index).split('\n').length}`);
+    // 参数位同理：`onToast: @escaping (A, B, C) = {`
+    const re2 = /\w+\s*:\s*@escaping\s*\([^)]*\)\s*(?:=\s*\{|,\s*$)/gm;
+    while ((m = re2.exec(src)) !== null) tupleClosure.push(`${rel}:${src.slice(0, m.index).split('\n').length}`);
+  };
+  scanTupleClosure('LegadoEngine/Sources/ChaiyueReader/ChaiyueLoginForm.swift');
+  scanTupleClosure('LegadoEngine/Sources/LegadoEngine/ChaiyueLoginFormBridge.swift');
+  ok(tupleClosure.length === 0,
+     '④ 闭包类型都写成函数型（`(A, B) -> Void`）而不是元组型（`(A, B)`）',
+     tupleClosure.join(' / '));
+  ok(/onToast: \(String, String, Bool\) -> Void/.test(form), '④ onToast 是函数型（3 参 + -> Void）');
 }
 
 console.log('\n── ⑤ 表单键必须是【技术名】，不能被显示名顶掉 ──');

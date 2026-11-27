@@ -126,8 +126,30 @@ else
 fi
 cp "$BAK_HOST" QiReaderLite/Features/Sources/SourceLoginSheet.swift
 
-# ── ⑤ 复原后必须恢复绿 ───────────────────────────────────────
-echo "▶ [⑤] 复原后必须恢复绿"
+# ── ⑤ 变异 D：把闭包类型写成【元组】（CI337 实锤 ⇒ 一处根因报 7 条）──
+echo "▶ [⑤] 变异 D：onToast 的类型写成元组（少了 -> Void）"
+BAK_FORM2="$TMP/ChaiyueLoginForm2.swift.bak"
+cp "$FORM" "$BAK_FORM2"
+python3 - <<'PY'
+p = "LegadoEngine/Sources/ChaiyueReader/ChaiyueLoginForm.swift"
+src = open(p).read()
+old = "public var onToast: (String, String, Bool) -> Void = { _, _, _ in }"
+new = "public var onToast: (String, String, Bool) = { _, _, _ in }"
+assert old in src, "没找到 onToast 声明（变异脚本与代码不同步）"
+open(p, "w").write(src.replace(old, new))
+print("     （已把 onToast 改回元组型）")
+PY
+if node "$GATE" > "$TMP/mutD.txt" 2>&1; then
+  ok 1 "⭐⭐⭐ **变异后门禁居然还是绿的 ⇒ 门禁没有牙齿（假绿）**"
+  tail -20 "$TMP/mutD.txt" | sed 's/^/     /'
+else
+  ok 0 "⭐ 变异后门禁**红了** ⇒ 「闭包类型不能写成元组」这条被钉住了"
+  grep -E "✗" "$TMP/mutD.txt" | head -3 | sed 's/^/     /'
+fi
+cp "$BAK_FORM2" "$FORM"
+
+# ── ⑥ 复原后必须恢复绿 ───────────────────────────────────────
+echo "▶ [⑥] 复原后必须恢复绿"
 restore
 if node "$GATE" > "$TMP/after.txt" 2>&1; then
   ok 0 "复原后门禁恢复绿"
