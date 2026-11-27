@@ -78,5 +78,27 @@ console.log('\n── ④ BrowserPresenter 要知道阅读器在场 ──');
   ok(/func dismissIfReading\(\)/.test(ui), '④ 有 dismissIfReading()（阅读器被关 ⇒ 收浏览器 + 回调）');
 }
 
+console.log('\n── ⑤ 段评等【浮层】必须走柴阅的轻量浮层 + cookie 同步 ──');
+{
+  // ⭐⭐⭐⭐⭐ **真机「点段评反应很慢」的真正原因**（2026-11-27）⭐⭐⭐⭐⭐
+  //   ① **cookie 同步被绕过**：柴阅把 `CookieSync.push/pull` 写在 `PlatformSourceUI.present` 里，
+  //      而宿主**自己实现了 `presentBrowser`** ⇒ **绕过了那一层** ⇒
+  //      ⇒ 段评页**没有站方登录态** ⇒ 页面在等站方/跳登录 ⇒ **用户感知 = 慢** ⭐⭐⭐
+  //   ② **浏览器太重**：宿主用完整 `BrowserSheet`（每次现建 WKWebView + NavigationStack + 地址栏），
+  //      而柴阅原版的段评是 **0.8 屏高轻量浮层** ⭐⭐⭐
+  const overlay = read('LegadoEngine/Sources/ChaiyueReader/PublicBrowserOverlay.swift');
+  const host = read('QiReaderLite/Core/ChaiyueSourceUI.swift');
+  ok(overlay.length > 0, '⑤ 包里有浮层浏览器出口（ChaiyueBrowserOverlay）');
+  ok(/CookieSync\.push/.test(overlay), '⑤ 浮层浏览器**呈现前**把引擎 cookie 推进共享罐');
+  ok(/CookieSync\.pull/.test(overlay), '⑤ 浮层浏览器**关闭后**把 cookie 拉回引擎');
+  ok(/SourcePresenter\(\)/.test(overlay) || /presenter\.presentBrowser/.test(overlay),
+     '⑤ 复用柴阅的 SourcePresenter（顶层 present + 0.8 屏高轻量浮层）');
+  ok(/case \.sheet = request\.style/.test(host),
+     '⑤ 宿主把【浮层】请求（showReadingBrowser = 段评）分流到柴阅的轻量浮层');
+  ok(/ChaiyueBrowserOverlay\.present\(/.test(host), '⑤ 宿主的段评走 ChaiyueBrowserOverlay');
+  ok(/prepareCookies|collectCookies/.test(host),
+     '⑤ 宿主自己的完整浏览器（登录等）也要同步 cookie（别再绕过柴阅那一层）');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -91,16 +91,48 @@ final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost.InteractionP
             }
             return
         }
-        // ⭐⭐⭐ **URL 场景 ⇒ 弹轻阅自己的 `BrowserSheet`**（用户可见可交互）⭐⭐⭐
-        BrowserPresenter.shared.present(url: request.url, title: request.title) { html, url, _ in
-            // ⚠️⚠️ **`waitsForResult` ⇒ 站方在等结果 ⇒ 必须回 URL 与 HTML** ⭐⭐⭐
-            //   （不等待时也给 URL，站方能用它做后续）⭐⭐⭐
-            if request.waitsForResult {
-                completion(LegadoEngineHost.BrowserResult(url: url, body: html))
-            } else {
-                completion(nil)
+        // ⭐⭐⭐⭐⭐ **【浮层】场景（`showReadingBrowser` = 段评等）⇒ 用柴阅的轻量浮层浏览器** ⭐⭐⭐⭐⭐
+        //   2026-11-27 真机：「点段评反应很慢」⇒ 原因：宿主用的是**完整 `BrowserSheet`**
+        //   （每次**现建 WKWebView** + 完整 NavigationStack/地址栏）⇒ 首帧慢 ⭐⭐⭐
+        //   ⇒ 柴阅原版的段评是 **0.8 屏高浮层 + 无地址栏** ⇒ 轻得多、快得多 ⭐⭐⭐
+        //   ⇒ 而且它用 **UIKit present 到「最顶层 VC」** ⇒ **天然浮在阅读器之上**（不用再靠 sheet 层级）⭐⭐⭐
+        if case .sheet = request.style {
+            // ⭐⭐⭐⭐⭐ **【浮层】= 段评等 ⇒ 柴阅的轻量浮层 + **cookie 同步** ⭐⭐⭐⭐⭐
+            //   ⇒ 段评页**带站方登录态** ⇒ 打开即用（不再等站方/跳登录 ⇒ 那个「很慢」）⭐⭐⭐
+            //   ⇒ 而且它 UIKit present 到**最顶层 VC** ⇒ 天然浮在阅读器之上 ⭐⭐⭐
+            ChaiyueBrowserOverlay.present(request: request,
+                                          environment: ChaiyueRuntime.environment) { result in
+                if request.waitsForResult {
+                    completion(result)
+                } else {
+                    completion(nil)
+                }
+            }
+            return
+        }
+        // ⭐⭐⭐ **其余 URL 场景（登录等完整浏览器）⇒ 弹轻阅自己的 `BrowserSheet`**（用户可见可交互）⭐⭐⭐
+        //   ⚠️⚠️ **也要同步 cookie**（2026-11-27）⭐⭐⭐：宿主自己实现 presenter ⇒ 绕过了柴阅
+        //     `PlatformSourceUI.present` 里的 cookie 同步 ⇒ 登录页/站方页**没有站方登录态**
+        //   ⇒ 现在呈现前 push、关闭后 pull ⇒ 与柴阅行为一致 ⭐⭐⭐
+        let environment = ChaiyueRuntime.environment
+        Task { @MainActor in
+            await ChaiyueBrowserOverlay.prepareCookies(url: request.url, environment: environment)
+            BrowserPresenter.shared.present(url: request.url, title: request.title) { html, url, _ in
+                Task { @MainActor in
+                    await ChaiyueBrowserOverlay.collectCookies(url: url.isEmpty ? request.url : url,
+                                                            environment: environment,
+                                                            sourceKey: request.sourceKey)
+                    // ⚠️⚠️ **站方在等结果时必须回 URL 与 HTML** ⭐⭐⭐
+                    //   （不等待时也给 URL，站方能用它做后续）⭐⭐⭐
+                    if request.waitsForResult {
+                        completion(LegadoEngineHost.BrowserResult(url: url, body: html))
+                    } else {
+                        completion(nil)
+                    }
+                }
             }
         }
+        return
     }
 
     /// ⭐⭐⭐ **验证码**（`java.getVerificationCode`）⭐⭐⭐
