@@ -141,3 +141,32 @@ LoginRow+PublicInit.swift:36: error: 'self.init' isn't called on all paths befor
   ⇒ **一处写错 ⇒ 7 条报错** ⇒ 容易误以为是好几个独立问题 ⭐⭐⭐
 - ⇒ **已加门禁**：`reader-chaiyue-login` ④ 扫「闭包属性/参数的类型是元组（`)` 后面没有 `->`）」⇒ Linux 就能抓 ⭐⭐⭐
   ⇒ 变异对照新增第 4 条（把 onToast 改回元组型 ⇒ 门禁必须红）⇒ **6/6** ⭐⭐⭐
+
+---
+
+## 8. ✅ build334 最终交付（CI `45942124260` 全绿 · commit `9500187`）
+
+### 8.1 二进制体检（实测，不是看源码）
+
+| 项 | 结果 |
+|---|---|
+| `CFBundleVersion` | **334** ✔（`com.qireaderlite.app` / `CFBundleName QingYue` / 短版本 3.6） |
+| 架构 | Mach-O 64-bit **arm64** ✔ |
+| `Assets.car` | **2,156,888 B**（与 build325/326 同级 ⇒ **柴阅图标与皮肤图真进包**）⭐⭐⭐ |
+| 悬浮栏 4 图标 | `cy.list.bullet` / `cy.headphones` / `cy.sun.max` / `cy.textformat` **全命中** ✔ |
+| 皮肤图 | `Theme-xuan` 命中 ✔ |
+| 内置主题包 | `ChaiyueThemes.bundle/Themes/` **7 个 `.chaiyuetheme` 全在**，每个都是**合法 zip**（`PK` 头）✔ |
+| 柴阅登录表单 | `ChaiyueLoginForm` 130 命中 / `ChaiyueLoginFormBridge` 117 / `ChaiyueLoginWebView` 1 ✔ |
+| 段评浮层 | `ChaiyueBrowserOverlay` 20 命中 ✔ |
+| 漫画阅读器 | `ComicReaderScreen` 4 命中 / `MediaSession` 173 ✔ |
+| 老阅读器符号 | `PagedReaderUI` / `ReaderPaginator` / `PagedChapterPager` / `ReaderLayoutConfig` / `QRSlider` / `SwiftScrollReaderView` **全部 0 命中** ✔ |
+| 已删的别名 | `LoginFormRow` **0 命中** ✔（确认没留残影） |
+| 体积 | IPA **19.48 MB** / 交付 zip **19.41 MB** |
+
+### 8.2 门禁
+
+- `test/reader-chaiyue-login.test.js`：**44 项全绿**
+- `test/mutation-chaiyue-login-init.sh`：**6/6**（4 种变异 ⇒ 门禁必须红 ⇒ 复原必须绿）
+- `test/engine-no-legacy.test.js`：6/1 → **7/0**（④ 由「数个数」改成**白名单**，比原来更严）
+- **基线对照**：与 HEAD 的干净 worktree 逐项比对 ⇒ 剩余红门禁失败项数**完全一致** ⇒ 本次改动**未引入任何新失败**
+  （那些红是历史欠账：缺 `/workspace/output/*.json` 产物、Linux 上真依赖的 ICU/libxml2 头冲突、缺 node 模块）
