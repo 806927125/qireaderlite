@@ -17,9 +17,6 @@ public enum LegadoEngineHost {
     public typealias ChapterModel = ChaiyueModels.BookChapter
     public typealias SearchResult = ChaiyueModels.SearchBook
     public typealias Kind = ChaiyueModels.ExploreKind
-    /// ⭐⭐⭐ **登录表单的行**（柴阅的 `LoginRow`）—— 宿主要造它 ⇒ 必须有别名 + public init ⭐⭐⭐
-    ///   ⚠️ 宿主**不能** import `ChaiyueReader`（`@_exported` 柴阅模型 ⇒ 与宿主 `Book` 撞名）⇒ 走这里 ⭐⭐⭐
-    public typealias LoginRow = ChaiyueEngine.LoginRow
     /// ⭐⭐⭐ **书籍变量**（`java.put/get` / `@put/@get` / `{{}}`）= 柴阅的 `[String: String]` ⭐⭐⭐
     ///   （旧引擎是自己写的 `RuleVariables` class ⇒ 现在换成柴阅的字典形态）⭐⭐⭐
     public typealias Vars = [String: String]

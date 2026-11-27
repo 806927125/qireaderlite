@@ -60,8 +60,13 @@ console.log('\n── ② 宿主走门面转发（不能直接 import ChaiyueRea
   ok(bridge.length > 0, '② 门面转发文件在（Sources/LegadoEngine/）');
   ok(/public struct ChaiyueLoginFormBridge/.test(bridge), '② 有 public 的转发组件');
   ok(/public typealias LoginRow = ChaiyueEngine\.LoginRow/.test(facade), '② LegadoEngineHost 有 LoginRow 别名');
-  ok(/public extension LoginRow/.test(read('LegadoEngine/Sources/ChaiyueEngine/Compat/LoginRow+PublicInit.swift')),
-     '② LoginRow 有 public init（宿主要自己造行）');
+  // ⚠️ **init 必须在【宿主门面模块 `LegadoEngine`】里**（CI334/335 实锤）：
+  //   public init 只有「调用方能看见定义它的模块」时才可用 ⇒ 宿主只 import LegadoEngine
+  //   ⇒ init 若定义在 ChaiyueEngine ⇒ 宿主报 "initializer is inaccessible" ⭐⭐⭐
+  const initSrc = read('LegadoEngine/Sources/LegadoEngine/LoginRow+PublicInit.swift');
+  ok(/public extension LoginRow/.test(initSrc), '② LoginRow 有 public init（宿主要自己造行）');
+  ok(/import ChaiyueModels/.test(initSrc),
+     '② init 文件 import 了 ChaiyueModels（`ExploreKind` 在那儿 ⇒ 漏了会 cannot find type）');
   // ⚠️ **不能用 `/import ChaiyueReader/`**（正则里有空格 ⇒ JS 会提前结束正则 ⇒ 语法错）⭐⭐⭐
   const importsChaiyueReader = new RegExp('^\\s*import\\s+ChaiyueReader\\s*$', 'm').test(host);
   ok(!importsChaiyueReader, '② 宿主**没有** import ChaiyueReader（会撞名）');

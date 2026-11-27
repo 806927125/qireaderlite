@@ -150,7 +150,8 @@ console.log('\n── ③ 跨模块搬文件时 import 必须跟着搬 ──');
   walkModels(MODELS);
 
   const offenders = [];
-  for (const d of ['ChaiyueEngine', 'ChaiyueReader', 'ChaiyueReaderServices', 'ChaiyueReaderKit']) {
+  // ⚠️ **要扫 `LegadoEngine`（宿主门面模块）** ⇒ 它的文件也 import 柴阅的模型 ⇒ 同样会漏 import ⭐⭐⭐
+  for (const d of ['ChaiyueEngine', 'ChaiyueReader', 'ChaiyueReaderServices', 'ChaiyueReaderKit', 'LegadoEngine']) {
     const dir = path.join(ROOT, 'LegadoEngine/Sources', d);
     const walk = (dd) => {
       let entries;

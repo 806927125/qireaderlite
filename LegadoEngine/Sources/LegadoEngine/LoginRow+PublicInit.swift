@@ -8,6 +8,12 @@
 //   ⇒ 所以：宿主自己解析出静态行 ⇒ 构造成 `LoginRow` ⇒ 交给柴阅的表单组件渲染 ⭐⭐⭐
 //
 // ⚠️ **不改柴阅源码**（新增扩展即可）⭐⭐⭐
+//
+// ⭐⭐⭐⭐⭐ **为什么放在【宿主门面模块】而不是 `ChaiyueEngine`**（2026-11-26 · CI334/335 实锤）⭐⭐⭐⭐⭐
+//   Swift 的规则：**public init 只有在「调用方能看见定义它的模块」时才可用**⭐⭐⭐
+//   ⇒ 宿主只 `import LegadoEngine`（**不能** import ChaiyueReader ⇒ 会撞名）⭐⭐⭐
+//   ⇒ ⇒ 这个 init **必须定义在 `LegadoEngine` 模块里** ⇒ 宿主才调得到 ⭐⭐⭐
+//   ⇒ （之前放在 `ChaiyueEngine` ⇒ 宿主会报 "initializer is inaccessible"）⭐⭐⭐
 import ChaiyueEngine
 import ChaiyueModels   // ⭐⭐⭐ `ExploreKind` 在这里（CI334 实锤：cannot find type 'ExploreKind' in scope）⭐⭐⭐
 
