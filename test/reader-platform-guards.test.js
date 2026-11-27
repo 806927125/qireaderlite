@@ -126,5 +126,64 @@ console.log('\n── ② `LegadoEngine` 依赖 `ChaiyueReader` ⇒ 转发文件
      bare.slice(0, 6).join(' / '));
 }
 
+console.log('\n── ③ 跨模块搬文件时 import 必须跟着搬 ──');
+{
+  // ⭐⭐⭐ **CI334 实锤**：`LoginRow+PublicInit.swift` 从 `ChaiyueReader` 模块挪到 `ChaiyueEngine` 模块时，
+  //   **import 没跟着搬** ⇒ `ExploreKind`（在 `ChaiyueModels`）找不到 ⇒
+  //   「cannot find type 'ExploreKind' in scope」⇒ **整包编译失败** ⭐⭐⭐
+  // ⇒ 判据：**引用了 ChaiyueModels 里的类型 ⇒ 该文件必须 import ChaiyueModels** ⭐⭐⭐
+  const MODELS = path.join(ROOT, 'LegadoEngine/Sources/ChaiyueModels');
+  const modelTypes = new Set();
+  const walkModels = (d) => {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { walkModels(p); continue; }
+      if (!e.name.endsWith('.swift')) continue;
+      const src = fs.readFileSync(p, 'utf8');
+      const re = /\b(?:struct|class|enum|protocol|actor)\s+([A-Z][A-Za-z0-9_]*)/g;
+      let m;
+      while ((m = re.exec(src)) !== null) modelTypes.add(m[1]);
+    }
+  };
+  walkModels(MODELS);
+
+  const offenders = [];
+  for (const d of ['ChaiyueEngine', 'ChaiyueReader', 'ChaiyueReaderServices', 'ChaiyueReaderKit']) {
+    const dir = path.join(ROOT, 'LegadoEngine/Sources', d);
+    const walk = (dd) => {
+      let entries;
+      try { entries = fs.readdirSync(dd, { withFileTypes: true }); } catch (_) { return; }
+      for (const e of entries) {
+        const p = path.join(dd, e.name);
+        if (e.isDirectory()) { walk(p); continue; }
+        if (!e.name.endsWith('.swift')) continue;
+        const src = fs.readFileSync(p, 'utf8');
+        const code = src.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+        // ⚠️ 排除【同模块自己也定义了同名类型】的（那是本地类型，不是跨模块依赖）⭐⭐⭐
+        //   例：`PlatformSourceUI.swift` 里的 `Style` 是它自己的，不是 ChaiyueModels 的 ⭐⭐⭐
+        const ownTypes = new Set();
+        const ownRe = /\b(?:struct|class|enum|protocol|actor)\s+([A-Z][A-Za-z0-9_]*)/g;
+        let om;
+        while ((om = ownRe.exec(src)) !== null) ownTypes.add(om[1]);
+        // 编译器合成的名字（`CodingKeys` 等）不算 ⭐⭐⭐
+        const SYNTH = new Set(['CodingKeys', 'CodingUserInfoKey']);
+        const uses = [...modelTypes].filter(t =>
+          !ownTypes.has(t) && !SYNTH.has(t) &&
+          new RegExp('(^|[^A-Za-z0-9_.])' + t + '([^A-Za-z0-9_]|$)').test(code));
+        if (!uses.length) continue;
+        // ⚠️ 同包内不需要 import ⇒ 只查「跨模块」的（ChaiyueModels 不是这些模块自己）
+        const importsModels = /^import ChaiyueModels\b/m.test(src);
+        if (!importsModels) offenders.push(`${d}/${path.relative(dir, p)} ⇒ ${uses.slice(0, 3).join(',')}`);
+      }
+    };
+    walk(dir);
+  }
+  ok(offenders.length === 0,
+     '③ 用了 ChaiyueModels 类型的文件都 import 了 ChaiyueModels（搬文件时 import 要跟着搬）',
+     offenders.slice(0, 6).join(' | '));
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);

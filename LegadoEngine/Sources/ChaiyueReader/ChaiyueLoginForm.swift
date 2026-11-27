@@ -24,6 +24,7 @@
 import SwiftUI
 import WebKit
 import ChaiyueEngine
+import ChaiyueModels   // ⭐⭐⭐ `BookSource` 在这里（网页登录要书源）⭐⭐⭐
 
 // MARK: - 配色
 
