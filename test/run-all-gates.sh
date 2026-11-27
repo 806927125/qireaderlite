@@ -135,6 +135,10 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **浏览器/验证码必须浮在【阅读器】之上**（2026-11-27 真机「段评要先回详情页」）⭐⭐⭐⭐⭐
   #   根 View 的 sheet 被 fullScreenCover（阅读器）压住 ⇒ 浏览器看不见 ⇒ 必须由阅读器那层承载
   "browser-on-reader:test/browser-on-reader.test.js"
+  # ⭐⭐⭐⭐⭐ **柴阅阅读器的【平台守卫】必须自洽**（2026-11-26 CI333c 实锤）⭐⭐⭐⭐⭐
+  #   `LegadoEngine` 依赖 `ChaiyueReader` ⇒ macOS/Linux 上也编该模块 ⇒
+  #   ⇒ 暴露「无守卫文件引用了有守卫文件里的类型」⇒ iOS 界面层平时看不见 ⇒ 只有静态扫描能提前抓
+  "reader-platform-guards:test/reader-platform-guards.test.js"
   "reader-chaiyue-host:test/reader-chaiyue-host.test.js"
   # ⭐⭐⭐⭐⭐ **柴阅的【图标资源】与【外观切换】必须真的能用**（2026-11-26 真机反馈）⭐⭐⭐⭐⭐
   #   ① 悬浮栏图标全没了 / 主题小页纸糊了 ⇒ 柴阅图标是**自绘资源**（`cy.*.symbolset` + `Theme-*`）

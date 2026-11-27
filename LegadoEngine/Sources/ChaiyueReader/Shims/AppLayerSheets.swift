@@ -1,3 +1,9 @@
+#if os(iOS)
+// ⭐⭐⭐⭐⭐ **【平台守卫】本文件的依赖只在 iOS 存在**（2026-11-26）⭐⭐⭐⭐⭐
+//   ⚠️ **为什么**：`LegadoEngine`（宿主门面模块）现在依赖 `ChaiyueReader`
+//     ⇒ ⇒ **macOS / Linux 上会编译 `ChaiyueReader` 模块**（以前只编 iOS ⇒ 没暴露）⭐⭐⭐
+//   ⇒ 而本文件引用的类型（ReaderChrome 等）在那些平台**不存在** ⇒ 编译失败 ⭐⭐⭐
+//   ⇒ 正解：**把本文件也圈进 iOS** ⇒ 各平台一致 ⭐⭐⭐
 import SwiftUI
 import ChaiyueModels
 
@@ -35,4 +41,5 @@ struct TxtSplitSheet: View {
     }
 }
 
+#endif  // #if os(iOS)
 #endif  // #if os(iOS)
