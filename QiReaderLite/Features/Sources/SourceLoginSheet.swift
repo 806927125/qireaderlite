@@ -1,5 +1,9 @@
 import SwiftUI
 import UIKit
+// ⭐⭐⭐ **柴阅的登录表单走门面**（2026-11-27）⭐⭐⭐
+//   ⚠️ **不能** `import ChaiyueReader`（`@_exported` 柴阅模型 ⇒ 与宿主 `Book`/`BookSource` 撞名）
+//   ⇒ 走 `LegadoEngine` 的门面转发（`ChaiyueLoginFormBridge` + `LegadoEngineHost.LoginRow`）⭐⭐⭐
+import LegadoEngine
 
 /// 书源登录界面（Legado 的 `loginUi`）
 ///
@@ -117,6 +121,47 @@ struct SourceLoginSheet: View {
         let action: String
     }
 
+    // MARK: - 柴阅的登录表单（数据侧）
+
+    /// ⭐⭐⭐ **宿主解析好的行 → 柴阅的 `LoginRow`** ⭐⭐⭐
+    ///   ⇒ 保住宿主「**先静态后柴阅**」的秒开策略（柴阅的 `resolveLoginRows` 对静态源可能返回预设行）
+    ///   ⇒ 且宿主的 `viewName` 已在此前求值过（`fields[].name` 就是**人话名**）⭐⭐⭐
+    private var loginRows: [LegadoEngineHost.LoginRow] {
+        fields.map { f in
+            LegadoEngineHost.LoginRow(name: f.name,
+                     type: Self.loginRowKind(f.type),
+                     action: f.action.isEmpty ? nil : f.action)
+        }
+    }
+
+    /// 站方的 type 字符串 → 柴阅的行类型
+    private static func loginRowKind(_ type: String) -> LegadoEngineHost.LoginRow.Kind {
+        switch type {
+        case "password": return .password
+        case "button": return .button
+        case "toggle": return .toggle
+        case "select": return .select
+        default: return .text
+        }
+    }
+
+    /// 表单值的绑定：**写值即落盘**（以前是 `binding(_:)` 逐项落盘 ⇒ 别丢这个真机修复）⭐⭐⭐
+    private var formValuesBinding: Binding<[String: String]> {
+        Binding(
+            get: { values },
+            set: { newValue in
+                values = newValue
+                SourceVariables.setLoginFormValues(newValue, for: source.bookSourceUrl)
+            }
+        )
+    }
+
+    /// 正在跑的动作对应**哪一行**（柴阅的表单按行名匹配 ⇒ 让那个按钮转圈）⭐⭐⭐
+    private var runningRowName: String? {
+        guard let runningAction else { return nil }
+        return fields.first { $0.action == runningAction }?.name
+    }
+
     var body: some View {
         // ⭐⭐ **接上 PageBackdrop**（2026-10-22 用户截图对照栖阅）
         //   栖阅那页的玻璃能透出**底下的插画** ⇒ 后面必须有高对比内容
@@ -133,9 +178,21 @@ struct SourceLoginSheet: View {
                     //   `LazyVGrid` 埋在 `ZStack>NavigationStack>ScrollView>VStack` 四层里
                     //   ⇒ Swift **类型推断超时**（the compiler is unable to type-check this expression）
                     //   ⇒ 抽出来一层就没事了 ⭐
-                    actionButtonsGrid
-                    // ⚠️ 同样抽出去（嵌套里 ForEach + switch + 输入框 ⇒ 推断负担大）
-                    loginFields
+                    // ⭐⭐⭐⭐⭐ **登录表单 = 柴阅的**（2026-11-27 用户「登录的 UI 也适配柴阅」）⭐⭐⭐⭐⭐
+                    //   柴阅的表单观感：连续输入项合成**一张卡片**（`CardGroup`）+ 行内标题 +
+                    //   行高 52；连续按钮排成**网格**（列数取站方的 `flexBasisPercent`）；
+                    //   按钮**图标按关键字映射**（退出/注册/扫码/检测/登录/后台/清空/更新/切换…）；
+                    //   底部**主按钮条**（`AccentButton`）⭐⭐⭐
+                    //   ⇒ **行的取法与执行仍在宿主手里**（宿主那套带**超时**、**番茄 sessionid 自动抓**、
+                    //     **站方原文收集**、**先静态后柴阅**的秒开策略）⇒ 观感换成柴阅、能力不丢 ⭐⭐⭐
+                    ChaiyueLoginFormBridge(rows: loginRows,
+                                     title: source.name,
+                                     values: formValuesBinding,
+                                     busy: busy,
+                                     runningAction: runningRowName,
+                                     submitTitle: "登录",
+                                     onRun: { row, _ in run(row.action ?? "") },
+                                     onSubmit: { submitLogin() })
 
                     if fields.isEmpty {
                         // ⭐⭐⭐ **说清「为什么空」+「怎么修」**（2026-10-24 真机）
@@ -172,19 +229,8 @@ struct SourceLoginSheet: View {
                     // ── ⭐⭐⭐⭐⭐ **登录 / 退出登录**（柴阅同款 · 2026-11-22 移植）⭐⭐⭐
                     //   ⇒ 「登录」跑站方 loginUrl + login()（**很多源就是直接打开登录网站**）⭐⭐⭐
                     //   ⇒ 之前只有「行按钮」那条路 ⇒ 有些书源点登录**什么都不发生** ⭐⭐⭐
+                    // ⚠️ **「登录」主按钮已由柴阅的表单底部条提供**（上面）⇒ 这里只留「退出登录」⭐⭐⭐
                     HStack(spacing: 10) {
-                        Button {
-                            submitLogin()
-                        } label: {
-                            Label("登录", systemImage: "key.fill")
-                                .font(.system(size: 13, weight: .medium))
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 12)
-                        }
-                        .buttonStyle(GlassActionButtonStyle())
-                        .tint(Theme.accent)
-                        .disabled(busy)
-
                         if hasLogoutAction {
                             Button {
                                 logoutLogin()

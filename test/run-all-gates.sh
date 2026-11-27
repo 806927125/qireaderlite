@@ -138,6 +138,10 @@ declare -a GATES=(
   # ⭐⭐⭐⭐⭐ **柴阅阅读器的【平台守卫】必须自洽**（2026-11-26 CI333c 实锤）⭐⭐⭐⭐⭐
   #   `LegadoEngine` 依赖 `ChaiyueReader` ⇒ macOS/Linux 上也编该模块 ⇒
   #   ⇒ 暴露「无守卫文件引用了有守卫文件里的类型」⇒ iOS 界面层平时看不见 ⇒ 只有静态扫描能提前抓
+  # ⭐⭐⭐⭐⭐ **登录页必须是【柴阅的登录表单】**（2026-11-27 用户「登录的 ui 也适配柴阅」）⭐⭐⭐⭐⭐
+  #   柴阅的观感（卡片化输入项 / 按钮网格 / 图标语义 / 底部主按钮 / 网页登录）+
+  #   **轻阅的真机修复一个都不能丢**（落盘 / 番茄兜底 / 退出登录 / 引擎急救 / 状态检测 / 站方原文）
+  "reader-chaiyue-login:test/reader-chaiyue-login.test.js"
   "reader-platform-guards:test/reader-platform-guards.test.js"
   "reader-chaiyue-host:test/reader-chaiyue-host.test.js"
   # ⭐⭐⭐⭐⭐ **柴阅的【图标资源】与【外观切换】必须真的能用**（2026-11-26 真机反馈）⭐⭐⭐⭐⭐
