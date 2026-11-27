@@ -85,7 +85,13 @@ let package = Package(
         // ③ 我们的适配层（宿主契约 + 状态搬运；**纯逻辑 ⇒ Linux 沙盒可编 ⇒ 门禁活着**）
         .target(
             name: "LegadoEngine",
-            dependencies: ["ChaiyueEngine", "ChaiyueModels"],
+            // ⭐⭐⭐⭐⭐ **加 `ChaiyueReader` 依赖**（2026-11-27 · 段评浮层浏览器转发）⭐⭐⭐⭐⭐
+            //   `ChaiyueBrowserOverlayBridge.swift` 要转发 `ChaiyueReader` 模块里的
+            //   `ChaiyueBrowserOverlay`（它要用柴阅的 `SourcePresenter` + `CookieSync`）⭐⭐⭐
+            //   ⇒ **不循环**：ChaiyueReader 只依赖 ChaiyueEngine/ChaiyueModels/…，不依赖 LegadoEngine ⭐⭐⭐
+            //   ⚠️ 宿主**不能**直接 import ChaiyueReader（会带进柴阅的 `Book` 等 ⇒ 与宿主同名撞名）
+            //     ⇒ 所以在**宿主门面模块**里转发一层 ⇒ 宿主只 import LegadoEngine ⇒ 不撞名 ⭐⭐⭐
+            dependencies: ["ChaiyueEngine", "ChaiyueModels", "ChaiyueReader"],
             path: "Sources/LegadoEngine",
             swiftSettings: [.swiftLanguageMode(.v5)],
         ),

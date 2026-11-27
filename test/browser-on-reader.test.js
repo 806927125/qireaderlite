@@ -95,9 +95,45 @@ console.log('\n── ⑤ 段评等【浮层】必须走柴阅的轻量浮层 + 
      '⑤ 复用柴阅的 SourcePresenter（顶层 present + 0.8 屏高轻量浮层）');
   ok(/case \.sheet = request\.style/.test(host),
      '⑤ 宿主把【浮层】请求（showReadingBrowser = 段评）分流到柴阅的轻量浮层');
-  ok(/ChaiyueBrowserOverlay\.present\(/.test(host), '⑤ 宿主的段评走 ChaiyueBrowserOverlay');
+  // ⚠️ 宿主走的是**门面转发**（`ChaiyueBrowserOverlayBridge`）⇒ 因为宿主不能 import ChaiyueReader（撞名）⭐⭐⭐
+  ok(/ChaiyueBrowserOverlayBridge\.present\(/.test(host), '⑤ 宿主的段评走门面转发（ChaiyueBrowserOverlayBridge）');
   ok(/prepareCookies|collectCookies/.test(host),
      '⑤ 宿主自己的完整浏览器（登录等）也要同步 cookie（别再绕过柴阅那一层）');
+}
+
+console.log('\n── ⑥ 包内 public 出口用 WebKit 类型必须 import WebKit ──');
+{
+  // ⭐⭐⭐ **CI333 实证**：`cannot find 'WKWebsiteDataStore' in scope` ⇒ 漏了 `import WebKit` ⭐⭐⭐
+  //   ⚠️ **Linux 沙盒编不了 WebKit** ⇒ 静态门禁也抓不到 ⇒ **只能靠静态扫描 + CI** ⇒
+  //   ⇒ 扫「用了 `WK*` 类型但没 import WebKit」⇒ 提前抓 ⭐⭐⭐
+  const overlay = read('LegadoEngine/Sources/ChaiyueReader/PublicBrowserOverlay.swift');
+  const code = overlay.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+  const usesWK = /\bWK[A-Z]/.test(code);
+  // ⚠️ **不能用 `/^import WebKit$/`**（行尾带注释就匹配不上 ⇒ 门禁自己误报）⭐⭐⭐
+  const importsWebKit = /^import WebKit\b/m.test(code);
+  ok(!usesWK || importsWebKit,
+     '⑥ 用了 WK* 类型就必须 import WebKit（CI333 实锤：漏了 ⇒ cannot find in scope）');
+}
+
+console.log('\n── ⑦ 宿主必须走【门面转发】（不能直接 import ChaiyueReader）──');
+{
+  // ⭐⭐⭐ **CI333b 实锤**：宿主文件只 `import LegadoEngine` ⇒ 看不到 `ChaiyueReader` 的 public 类型
+  //   ⇒ 「cannot find 'ChaiyueBrowserOverlay' in scope」⭐⭐⭐
+  //   ⇒ 而宿主**不能**直接 `import ChaiyueReader`（`@_exported import ChaiyueModels`
+  //     ⇒ 柴阅的 `Book`/`BookSource` 会与宿主同名撞名 ⇒ ambiguous）⭐⭐⭐
+  //   ⇒ 正解：**在宿主门面模块 `LegadoEngine` 里转发一层** ⭐⭐⭐
+  const bridge = read('LegadoEngine/Sources/LegadoEngine/ChaiyueBrowserOverlayBridge.swift');
+  const pkg = read('LegadoEngine/Package.swift');
+  ok(bridge.length > 0, '⑦ 门面转发文件在（Sources/LegadoEngine/）');
+  ok(/public enum ChaiyueBrowserOverlayBridge/.test(bridge), '⑦ 有 public 的门面出口');
+  ok(/^#if os\(iOS\)/m.test(bridge),
+     '⑦ 转发文件有 #if os(iOS) 守卫（ChaiyueReader 的内容全是 iOS 守卫 ⇒ macOS/Linux 上不存在）');
+  ok(/dependencies: \["ChaiyueEngine", "ChaiyueModels", "ChaiyueReader"\]/.test(pkg),
+     '⑦ Package.swift 的 LegadoEngine target 声明了 ChaiyueReader 依赖');
+  ok(!/import ChaiyueReader/.test(read('QiReaderLite/Core/ChaiyueSourceUI.swift')),
+     '⑦ 宿主文件**没有** import ChaiyueReader（会带进柴阅的 Book ⇒ 撞名）');
+  ok(/ChaiyueBrowserOverlayBridge\.present\(/.test(read('QiReaderLite/Core/ChaiyueSourceUI.swift')),
+     '⑦ 宿主走门面转发');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);

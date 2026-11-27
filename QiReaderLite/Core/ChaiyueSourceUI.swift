@@ -100,7 +100,7 @@ final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost.InteractionP
             // ⭐⭐⭐⭐⭐ **【浮层】= 段评等 ⇒ 柴阅的轻量浮层 + **cookie 同步** ⭐⭐⭐⭐⭐
             //   ⇒ 段评页**带站方登录态** ⇒ 打开即用（不再等站方/跳登录 ⇒ 那个「很慢」）⭐⭐⭐
             //   ⇒ 而且它 UIKit present 到**最顶层 VC** ⇒ 天然浮在阅读器之上 ⭐⭐⭐
-            ChaiyueBrowserOverlay.present(request: request,
+            ChaiyueBrowserOverlayBridge.present(request: request,
                                           environment: ChaiyueRuntime.environment) { result in
                 if request.waitsForResult {
                     completion(result)
@@ -116,10 +116,10 @@ final class ChaiyueInteractionPresenter: NSObject, LegadoEngineHost.InteractionP
         //   ⇒ 现在呈现前 push、关闭后 pull ⇒ 与柴阅行为一致 ⭐⭐⭐
         let environment = ChaiyueRuntime.environment
         Task { @MainActor in
-            await ChaiyueBrowserOverlay.prepareCookies(url: request.url, environment: environment)
+            await ChaiyueBrowserOverlayBridge.prepareCookies(url: request.url, environment: environment)
             BrowserPresenter.shared.present(url: request.url, title: request.title) { html, url, _ in
                 Task { @MainActor in
-                    await ChaiyueBrowserOverlay.collectCookies(url: url.isEmpty ? request.url : url,
+                    await ChaiyueBrowserOverlayBridge.collectCookies(url: url.isEmpty ? request.url : url,
                                                             environment: environment,
                                                             sourceKey: request.sourceKey)
                     // ⚠️⚠️ **站方在等结果时必须回 URL 与 HTML** ⭐⭐⭐
