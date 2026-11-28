@@ -89,7 +89,25 @@ else
 fi
 restore
 
-echo "▶ [⑤] 复原后必须恢复绿"
+echo "▶ [⑤] 变异 D：observer 回调用改回 Task { @MainActor in }（= 真机闪退的那一行）"
+python3 - <<'PY2'
+p = "LegadoEngine/Sources/ChaiyueReader/LocalVoiceStore.swift"
+s = open(p).read()
+old = "            DispatchQueue.main.async { self.apply(snapshot) }"
+new = "            Task { @MainActor in self.apply(snapshot) }"
+assert old in s, "没找到 observer 的回调（变异脚本与代码不同步）"
+open(p, "w").write(s.replace(old, new))
+print("     （已改回 Task { @MainActor in }）")
+PY2
+if node "$GATE" > "$TMP/mutD.txt" 2>&1; then
+  ok 1 "⭐⭐⭐ **变异后门禁还是绿的 ⇒ 门禁没牙齿（假绿）**"
+else
+  ok 0 "⭐ 变异后门禁红了 ⇒ 「并发隔离铁律」被钉住"
+  grep -E "✗" "$TMP/mutD.txt" | head -2 | sed 's/^/     /'
+fi
+restore
+
+echo "▶ [⑥] 复原后必须恢复绿"
 restore
 if node "$GATE" > "$TMP/after.txt" 2>&1; then
   ok 0 "复原后门禁恢复绿"

@@ -35,7 +35,28 @@ final class LocalVoiceStore {
         phase = Self.isReady ? .ready : .missing
         let transfer = VoicePackTransfer.shared
         transfer.observe { snapshot in
-            Task { @MainActor in self.apply(snapshot) }
+            // ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ **【定案】不能用 `Task { @MainActor in … }`**（2026-11-28）⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐
+            //
+            // ⚠️⚠️⚠️ **真机闪退的根因（.ips 已定案）** ⭐⭐⭐⭐⭐
+            //   崩溃：`.ips` 第 4 帧 = `closure #2 in VoicePackTransfer.observe(_:)`，
+            //   异常 `EXC_BREAKPOINT` / `SIGTRAP`，栈里有 `_dispatch_assert_queue_fail` ⭐⭐⭐
+            //
+            // ⚠️ **为什么会炸**：
+            //   · 这个 observer 是 **nonisolated `@Sendable`** 闭包 ⇒ 它的 body 会在
+            //     **`VoicePackTransfer` 的后台 OperationQueue** 上跑 ⭐⭐⭐
+            //   · 而 Swift 6.2+ 的 `Task { @MainActor in … }` 改成**继承当前 executor**
+            //     （不再保证切到 MainActor）⇒ ⇒ 在后台队列上创建的 Task **继承了后台队列** ⭐⭐⭐
+            //   · ⇒ `self.apply(snapshot)`（`self` 是 @MainActor 隔离的）在一个**非 MainActor**
+            //     的 executor 上执行 ⇒ ⇒ 💥 **dispatch 队列断言失败** ⇒ App 直接闪退 ⭐⭐⭐
+            //
+            // ⚠️ **为什么「文字书和漫画书都崩」**：
+            //   `AppModel(library:)` 的**默认参数**会构造 `LocalVoiceStore()` ⇒
+            //   ⇒ 每次打开阅读器都会走到这里 ⇒ 两种书都崩 ⇒ **共因就在这里** ⭐⭐⭐⭐⭐
+            //
+            // ⭐⭐⭐ **正解：用 `DispatchQueue.main.async`**（明确切主线程，**不依赖 executor 继承语义**）⭐⭐⭐
+            //   ⇒ `DispatchQueue.main.async` 的闭包是 **@MainActor 隔离**的 ⇒ `self.apply(snapshot)` 合法 ⭐⭐⭐
+            //   ⇒ 且**无论 observer 在哪个线程被调都安全** ⇒ 一处改动覆盖全部路径 ⭐⭐⭐
+            DispatchQueue.main.async { self.apply(snapshot) }
         }
         transfer.connect()
     }

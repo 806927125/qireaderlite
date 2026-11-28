@@ -96,5 +96,40 @@ console.log('\n── ⑥ 阅读器启动链必须有分段日志（取证）─
   ok(/ChaiyueLogBridge\.log\("① 漫画页开始启动/.test(comicScreen), '⑥ 柴阅漫画屏有启动分段日志');
 }
 
+console.log('\n── ⑦⑧ 【并发隔离铁律】nonisolated `@Sendable` 闭包里不许用 `Task { @MainActor in }` ──');
+{
+  // ⭐⭐⭐⭐⭐ **这条是 build335 的【真凶】**（真机 .ips 定案）⭐⭐⭐⭐⭐
+  //   崩溃：`EXC_BREAKPOINT` / `SIGTRAP`，栈里有 `_dispatch_assert_queue_fail`，
+  //   第 4 帧 = `closure #2 in VoicePackTransfer.observe(_:)` ⇒ **点开始阅读就闪退** ⭐⭐⭐
+  //
+  // ⚠️ **为什么**：
+  //   · `VoicePackTransfer` 的 observer 是 **nonisolated `@Sendable`** 闭包
+  //     ⇒ body 会在**后台 OperationQueue** 上跑 ⭐⭐⭐
+  //   · 而 Swift 6.2+ 的 `Task { @MainActor in … }` 是**继承当前 executor**
+  //     （不再保证切到 MainActor）⇒ ⇒ 在后台队列创建的 Task **继承了后台队列** ⭐⭐⭐
+  //   · ⇒ `self.apply(snapshot)`（@MainActor 隔离的对象）跑在非 MainActor 的 executor 上
+  //     ⇒ ⇒ 💥 **dispatch 队列断言失败** ⇒ App 直接闪退 ⭐⭐⭐
+  //
+  // ⭐⭐⭐ **正解**：用 `DispatchQueue.main.async`（明确切主线程，**不依赖 executor 继承语义**）⭐⭐⭐
+  const voice = read('LegadoEngine/Sources/ChaiyueReader/LocalVoiceStore.swift');
+  ok(/DispatchQueue\.main\.async \{ self\.apply\(snapshot\) \}/.test(voice),
+     '⑦ 语音包 observer 回调用 DispatchQueue.main.async（明确切主线程）');
+  const init = (voice.match(/init\(\) \{[\s\S]*?\n    \}/) || [''])[0];
+  // ⚠️⭐⭐⭐ **判据必须剥注释**（项目纪律）：注释里写「不能用 `Task { @MainActor in }`」是**说明**，
+  //   不是**代码** ⇒ 不该判红 ⇒ 只看非注释行 ⭐⭐⭐
+  const initCode = init.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  ok(!/Task \{ @MainActor in/.test(initCode),
+     '⑦ observer 闭包里不许再用 `Task { @MainActor in }`（继承后台队列 ⇒ 断言炸）');
+
+  // 同一形态在 SpeechController 里有 7 处（AVSpeech/AVAudioPlayer 的 delegate 回调
+  // ⇒ **可能在任意线程** ⇒ 同一个坑）⇒ 全部改成 DispatchQueue.main.async
+  const speech = read('LegadoEngine/Sources/ChaiyueReader/SpeechController.swift');
+  ok(speech.length > 0, '⑧ SpeechController.swift 在');
+  ok(!/Task \{ @MainActor in/.test(speech),
+     '⑧ SpeechController 里不再有 `Task { @MainActor in }`（7 处 @Sendable 回调）');
+  ok((speech.match(/DispatchQueue\.main\.async/g) || []).length >= 7,
+     '⑧ 7 处 @Sendable 回调都改成了 DispatchQueue.main.async');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 通过 ${pass} / 失败 ${fail}\n`);
 process.exit(fail === 0 ? 0 : 1);

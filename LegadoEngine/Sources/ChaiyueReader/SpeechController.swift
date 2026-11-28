@@ -85,10 +85,10 @@ final class SpeechController {
 
     init() {
         synthesizer.delegate = proxy
-        proxy.onStart = { [weak self] id in Task { @MainActor in self?.didStart(id) } }
-        proxy.onFinish = { [weak self] id in Task { @MainActor in self?.didFinish(id) } }
-        playerProxy.onFinish = { [weak self] id in Task { @MainActor in self?.playerFinished(id) } }
-        playerProxy.onError = { [weak self] id in Task { @MainActor in self?.playerFailed(id) } }
+        proxy.onStart = { [weak self] id in DispatchQueue.main.async { self?.didStart(id) } }
+        proxy.onFinish = { [weak self] id in DispatchQueue.main.async { self?.didFinish(id) } }
+        playerProxy.onFinish = { [weak self] id in DispatchQueue.main.async { self?.playerFinished(id) } }
+        playerProxy.onError = { [weak self] id in DispatchQueue.main.async { self?.playerFailed(id) } }
     }
 
     func speak(text: String, from offset: Int, chapterIndex: Int, title: String, book: String, rate: Double, voiceID: String?,
@@ -340,15 +340,15 @@ final class SpeechController {
         commandsInstalled = true
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { @Sendable [weak self] _ in
-            Task { @MainActor in self?.resume() }
+            DispatchQueue.main.async { self?.resume() }
             return .success
         }
         center.pauseCommand.addTarget { @Sendable [weak self] _ in
-            Task { @MainActor in self?.pause() }
+            DispatchQueue.main.async { self?.pause() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { @Sendable [weak self] _ in
-            Task { @MainActor in self?.toggle() }
+            DispatchQueue.main.async { self?.toggle() }
             return .success
         }
     }
