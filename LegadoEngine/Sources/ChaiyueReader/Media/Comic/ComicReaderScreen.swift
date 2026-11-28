@@ -70,10 +70,17 @@ public struct ComicReaderScreen: View {
 
     private func start() {
         guard model == nil else { return }
+        // ⭐⭐⭐⭐⭐ **启动分段日志**（2026-11-28 · 真机「点开始阅读闪退」取证）⭐⭐⭐⭐⭐
+        //   ⇒ 与文字阅读器同一套编号 ⇒ 日志最后一条 = 崩在哪一步（宿主写进「引擎日志」面板）⭐⭐⭐
+        ChaiyueLogBridge.log("① 漫画页开始启动 · 书=\(launch.book.name) · 进度章=\(launch.book.durChapterIndex)")
         let model = ComicModel(session: app.library.mediaSession(for: launch.book))
+        ChaiyueLogBridge.log("② 漫画会话已拿到 · 目录章数=\(model.session.chapters.count)")
         self.model = model
         flight = validFrame(launch.origin)
-        Task { await model.start() }
+        Task {
+            await model.start()
+            ChaiyueLogBridge.log("③ 漫画首屏加载完成 · 目录章数=\(model.session.chapters.count) · 状态=\(model.session.tocState)")
+        }
         withAnimation(.timingCurve(0.62, 0, 0.22, 1, duration: flight == nil ? 0.38 : 0.72)) {
             progress = 1
         }

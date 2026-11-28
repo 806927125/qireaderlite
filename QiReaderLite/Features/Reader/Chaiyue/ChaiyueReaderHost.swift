@@ -217,7 +217,15 @@ final class ChaiyueReaderHost {
         self.mode = mode
         self.qiBook = book
         self.qiChapters = chapters
+        // ⭐⭐⭐⭐⭐ **注入包内日志出口**（2026-11-28 · 真机「点开始阅读闪退」取证）⭐⭐⭐⭐⭐
+        //   ⇒ 包内（柴阅阅读器）打的日志 ⇒ 落到宿主的「引擎日志」面板 ⇒ **App 内就能看**
+        //     ⇒ 不需要用户去导 .ips ⇒ 下一轮就能定位到崩在哪一步 ⭐⭐⭐
+        ChaiyueLogBridge.sink = { message in
+            engineLog("[柴阅阅读器] \(message)")
+        }
+        engineLog("[柴阅阅读器] 准备 host · 书=\(book.name) · 目录=\(chapters.count) 章 · 模式=\(mode) · 轻阅进度=\(progressIndex)")
         self.library = ChaiyueHostLibrary()
+        engineLog("[柴阅阅读器] host 的仓已建（书架/书源/章节缓存/图片缓存）")
 
         // ── ① 书源：轻阅的源 → 柴阅的源（写进柴阅的书源仓）─────────────
         //    ⚠️ 必须先写进去 ⇒ 阅读页的「登录」按钮（`sources.source(for:)`）才认得这个源 ⭐⭐⭐
@@ -247,7 +255,11 @@ final class ChaiyueReaderHost {
         //      ⇒ 所以：**书架仓里已有的进度优先** ⇒ 只有新书才用轻阅的进度播种 ⭐⭐⭐
         for item in libraryItems {
             // ⚠️ 轻阅的 `lastChapterIndex` 是**正章节下标** ⇒ 换算成柴阅的整表下标 ⭐⭐⭐
-            let whole = plainToWhole[safe: item.lastChapterIndex] ?? item.lastChapterIndex
+            // ⚠️⭐⭐⭐ **[改造] 换算失败一律回 0，绝不落原值**（2026-11-28）⭐⭐⭐
+            //   ⇒ 柴阅的书架仓是**持久化到磁盘**的 ⇒ 一个越界章号落进去 ⇒
+            //     ⇒ 下次打开这本书时 `startIndex` 直接越界 ⇒ **反复毒化** ⇒ 每次点都崩 ⭐⭐⭐
+            //   ⇒ 兜底 0 = 回到第一章（安全）⇒ 比「越界 ⇒ 空白页/崩」好得多 ⭐⭐⭐
+            let whole = plainToWhole[safe: item.lastChapterIndex] ?? 0
             // ⚠️ 书架镜像只为了**进度**，形态用不上 ⇒ `sourceType` 传 0（拿不到那本书的书源对象）⭐⭐⭐
             var mirrored = ChaiyueReaderAdapter.book(item.book, sourceName: item.book.sourceName,
                                                       chapterIndex: whole)
@@ -275,13 +287,23 @@ final class ChaiyueReaderHost {
             }
         }
         if startIndex < 0 {
-            // 没显式选 ⇒ 用**书架仓里的进度**（崩溃保护：上次没写回 App 也不丢位置）⭐⭐⭐
-            startIndex = library.shelf.book(book.cleanBookUrl)?.durChapterIndex ?? -1
-        }
-        if startIndex < 0 {
-            // 兜底用轻阅存的进度 ⇒ ⚠️ **它是「正章节下标」** ⇒ 必须换算成柴阅的「整表下标」⭐⭐⭐
+            // ⚠️⭐⭐⭐ **[改造] 轻阅自己的进度优先**（2026-11-28）⭐⭐⭐
+            //   ⇒ 轻阅的书库才是**主数据**（柴阅的进度每次退出阅读器都会写回轻阅）
+            //   ⇒ 而柴阅书架仓里那份是**镜像/旧值** ⇒ 优先用它 ⇒ 「开始阅读」会停在错误的章 ⭐⭐⭐
+            //   ⇒ 轻阅的 `lastChapterIndex` 是「正章节下标」⇒ 必须换算成整表下标 ⭐⭐⭐
             startIndex = plainToWhole[safe: progressIndex] ?? -1
         }
+        if startIndex < 0 {
+            // 没显式选、也没轻阅进度 ⇒ 用**书架仓里的**（崩溃保护：上次没写回 App 也不丢位置）⭐⭐⭐
+            // ⚠️⭐⭐⭐ **必须夹紧**（2026-11-28）⭐⭐⭐
+            //   ⇒ 柴阅书架仓是**持久化**的 ⇒ 里面可能是**越界/脏**章号（换源后目录变短、旧版遗留）
+            //   ⇒ 越界 ⇒ `durChapterIndex` 越界 ⇒ 柴阅那边指针越界 ⇒ **空白页甚至崩** ⭐⭐⭐
+            let stored = library.shelf.book(book.cleanBookUrl)?.durChapterIndex ?? -1
+            startIndex = chapters.indices.contains(stored) ? stored : -1
+        }
+        // ⚠️ 最后一道夹紧：起始章号必须在合法范围内（2026-11-28）
+        if !chapters.indices.contains(startIndex) { startIndex = chapters.isEmpty ? -1 : 0 }
+        engineLog("[柴阅阅读器] 起始章号 = \(startIndex)（整表口径，共 \(chapters.count) 章）")
 
         // ── ⑤ 书：轻阅的书 → 柴阅的书（带上进度）──────────────────────
         //    ⚠️ **必须是 `var`**：下面还要写 `totalChapterNum` / `durChapterTitle`（CI28 实锤）⭐⭐⭐

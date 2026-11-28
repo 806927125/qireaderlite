@@ -82,19 +82,26 @@ public struct ReaderContainer: View {
 
     private func start() {
         guard model == nil else { return }
+        // ⭐⭐⭐⭐⭐ **启动分段日志**（2026-11-28 · 真机「点开始阅读闪退」取证）⭐⭐⭐⭐⭐
+        //   ⇒ 崩在哪一步，日志的最后一条就是答案（宿主把它写进「引擎日志」面板 ⇒ App 内可见）⭐⭐⭐
+        ChaiyueLogBridge.log("① 阅读器开始启动 · 书=\(launch.book.name) · 进度章=\(launch.book.durChapterIndex)")
         let session = app.library.readerSession(for: launch.book)
+        ChaiyueLogBridge.log("② 会话已拿到 · 目录章数=\(session.chapters.count) · 位置章=\(session.position.chapterIndex)")
         session.preloadCount = app.settings.preloadCount
         let model = ReaderModel(session: session, settings: app.settings, theme: app.settings.theme(for: scheme))
+        ChaiyueLogBridge.log("③ ReaderModel 已建 · 指针章=\(model.pointer.chapter)")
         self.model = model
         flight = validFrame(launch.origin)
         Task {
             await session.open()
+            ChaiyueLogBridge.log("④ 目录加载完成 · 章数=\(session.chapters.count) · 位置章=\(session.position.chapterIndex)")
             if app.mediaKind(of: session.book) != .text {
                 app.openReader(session.book)
                 app.closeReader()
                 return
             }
             model.sessionOpened()
+            ChaiyueLogBridge.log("⑤ 定位完成 · 指针章=\(model.pointer.chapter) · 状态=\(session.tocState)")
             app.library.callBack(.startRead, book: session.book, chapter: currentChapter)
             #if DEBUG
             if let chapter = DebugLaunch.flag("chapter").flatMap(Int.init) { model.jump(chapter: chapter) }

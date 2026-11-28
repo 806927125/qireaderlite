@@ -152,7 +152,11 @@ final class VerticalController: UIViewController, UICollectionViewDataSource, UI
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "strip", for: indexPath) as! StripCell
+        // ⚠️⭐⭐⭐ **[改造] 去掉 `as!` 强制转换**（2026-11-28 · 真机「点开始阅读闪退」排查）⭐⭐⭐
+        //   ⇒ `as!` 一旦类型不符就是 💥 **必崩**（而且是用户数据/复用池决定的 ⇒ 没法预测）⭐⭐⭐
+        //   ⇒ 正解：`as?` + 兜底新建（注册类保证拿到的一定是 StripCell ⇒ 行为不变）⭐⭐⭐
+        let cell = (collectionView.dequeueReusableCell(withReuseIdentifier: "strip", for: indexPath) as? StripCell)
+            ?? StripCell(frame: .zero)
         let chapter = chapters[indexPath.section]
         let pointer = PagePointer(chapter: chapter, page: indexPath.item)
         let isLast = indexPath.item == items(in: chapter) - 1 && chapter + 1 < model.chapterCount

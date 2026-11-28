@@ -130,7 +130,11 @@ nonisolated final class VoicePackTransfer: NSObject, URLSessionDownloadDelegate,
     private static let prefix = "com.linchengbo.chaiyue.voicepack."
 
     static var directory: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        // ⚠️⭐⭐⭐ **[改造] 去掉 `[0]` 强下标**（2026-11-28 · 真机「点开始阅读闪退」排查）⭐⭐⭐
+        //   ⇒ `urls(for:)` 在极少数情况下会返回**空数组** ⇒ `[0]` ⇒ 💥 **Index out of range** ⇒ 闪退
+        //   ⇒ 正解：`first` + 兜底目录 ⇒ 永不越界 ⭐⭐⭐
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         return support.appendingPathComponent("Kokoro", isDirectory: true)
     }
 
@@ -178,18 +182,21 @@ nonisolated final class VoicePackTransfer: NSObject, URLSessionDownloadDelegate,
     }
 
     /// 重建后台会话以接回系统里仍在进行或已完成的任务
+    ///
+    /// ⚠️⭐⭐⭐ **[改造] 没有下载计划就【不建】background session**（2026-11-28）⭐⭐⭐
+    ///   **为什么**（真机「点开始阅读闪退」排查）：
+    ///   · `AppModel(library:)` 的默认参数会构造 `LocalVoiceStore()` ⇒
+    ///     ⇒ **每次打开阅读器都会走到这里**（文字书/漫画书都一样 ⇒ 两种都崩）⭐⭐⭐
+    ///   · 这里原本**无条件**建 4 个 `URLSessionConfiguration.background(withIdentifier:)`
+    ///     ⇒ ① **同一 identifier 重复创建 = 系统未定义行为**（Apple：「You must create exactly
+    ///       one session per identifier」）⭐⭐⭐；② 每次开阅读器白起 4 条系统会话 + 一次网络探测 ⭐⭐⭐
+    ///   ⇒ **正解**：只有**磁盘上真的有过下载计划**（= 用户点过「下载语音包」）才建 session
+    ///     ⇒ 轻阅默认从没下过 ⇒ **打开阅读器不再碰 background session** ⇒ 风险与开销都没了 ⭐⭐⭐
+    ///   ⇒ 真正开始下载时由 `start(base:manifest:)` 调 `ensureSessions()` ⇒ **功能不丢** ⭐⭐⭐
     func connect() {
-        let created = lock.withLock {
-            guard sessions.isEmpty else { return false }
-            sessions = (0..<Self.lanes).map { lane in
-                let config = URLSessionConfiguration.background(withIdentifier: Self.prefix + "\(lane)")
-                config.sessionSendsLaunchEvents = true
-                config.isDiscretionary = false
-                config.httpMaximumConnectionsPerHost = 2
-                return URLSession(configuration: config, delegate: self, delegateQueue: queue)
-            }
-            return true
-        }
+        // ⚠️ 没有计划 ⇒ 说明用户从没开始下载 ⇒ 建 session 毫无意义 ⇒ 直接跳过 ⭐⭐⭐
+        guard FileManager.default.fileExists(atPath: Self.planURL.path) else { return }
+        let created = ensureSessions()
         guard created else { return }
         queue.addOperation { [self] in
             if let data = try? Data(contentsOf: Self.planURL), let plan = try? JSONDecoder().decode(Plan.self, from: data) {
@@ -200,6 +207,23 @@ nonisolated final class VoicePackTransfer: NSObject, URLSessionDownloadDelegate,
                 if !tasks.isEmpty, state == .idle { state = .running }
                 notify(force: true)
             }
+        }
+    }
+
+    /// ⭐⭐⭐ **建后台会话（幂等）**（2026-11-28 拆出，供 `connect` 与 `start` 共用）⭐⭐⭐
+    /// - Returns: 本次是否**新建**了（false = 已存在）
+    @discardableResult
+    private func ensureSessions() -> Bool {
+        lock.withLock {
+            guard sessions.isEmpty else { return false }
+            sessions = (0..<Self.lanes).map { lane in
+                let config = URLSessionConfiguration.background(withIdentifier: Self.prefix + "\(lane)")
+                config.sessionSendsLaunchEvents = true
+                config.isDiscretionary = false
+                config.httpMaximumConnectionsPerHost = 2
+                return URLSession(configuration: config, delegate: self, delegateQueue: queue)
+            }
+            return true
         }
     }
 
@@ -214,7 +238,9 @@ nonisolated final class VoicePackTransfer: NSObject, URLSessionDownloadDelegate,
 
     @discardableResult
     func start(base: URL, manifest: Manifest) -> Int {
-        connect()
+        // ⚠️⭐⭐⭐ **[改造] 真正开始下载时才建后台会话**（2026-11-28）⭐⭐⭐
+        //   ⇒ `connect()` 改成「无计划不建」后，这里必须显式建一次，否则下载没有 session 可用 ⭐⭐⭐
+        ensureSessions()
         let epoch = bump()
         queue.addOperation { [self] in
             let plan = Plan(base: base, manifest: manifest)

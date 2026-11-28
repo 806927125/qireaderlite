@@ -142,6 +142,8 @@ declare -a GATES=(
   #   柴阅的观感（卡片化输入项 / 按钮网格 / 图标语义 / 底部主按钮 / 网页登录）+
   #   **轻阅的真机修复一个都不能丢**（落盘 / 番茄兜底 / 退出登录 / 引擎急救 / 状态检测 / 站方原文）
   "reader-chaiyue-login:test/reader-chaiyue-login.test.js"
+  # ⭐⭐⭐⭐⭐ **阅读器启动链不许有「必崩写法」**（2026-11-28 · 真机「点开始阅读闪退」）⭐⭐⭐⭐⭐
+  "reader-launch-hardening:test/reader-launch-hardening.test.js"
   "reader-platform-guards:test/reader-platform-guards.test.js"
   "reader-chaiyue-host:test/reader-chaiyue-host.test.js"
   # ⭐⭐⭐⭐⭐ **柴阅的【图标资源】与【外观切换】必须真的能用**（2026-11-26 真机反馈）⭐⭐⭐⭐⭐

@@ -89,8 +89,12 @@ struct ChaiyueReaderScreen: View {
     @MainActor
     private func prepare() {
         guard host == nil, errorText == nil else { return }
+        // ⭐⭐⭐⭐⭐ **准备阶段日志**（2026-11-28 · 真机「点开始阅读闪退」取证）⭐⭐⭐⭐⭐
+        //   ⇒ 日志最后一条 = 崩在哪一步 ⇒ 宿主写进「引擎日志」面板 ⇒ App 内可见 ⭐⭐⭐
+        engineLog("[柴阅阅读器] prepare 开始 · 书=\(book.name) · 目录=\(chapters.count) 章")
         let source = sources.source(id: book.origin)
         let progress = library.item(for: book.id)?.lastChapterIndex ?? 0
+        engineLog("[柴阅阅读器] 取到源=\(source?.bookSourceName ?? "(无)") · 轻阅进度章=\(progress)")
         let h = ChaiyueReaderHost(book: book,
                                   chapters: chapters,
                                   start: start,
@@ -105,6 +109,7 @@ struct ChaiyueReaderScreen: View {
         }
         host = h
         launch = h.launch
+        engineLog("[柴阅阅读器] prepare 完成 · launch=\(h.launch == nil ? "nil(漫画)" : "有")")
     }
 
     // MARK: - 关闭
