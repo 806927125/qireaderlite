@@ -108,3 +108,25 @@ DispatchQueue.main.async { self.apply(snapshot) }
 - **真凶已定案**（.ips 栈帧直指那一行）⇒ 修复是**有据**的，不是猜的 ⭐⭐⭐
 - 但**同批还有 6 处真实隐患**（①~⑥）⇒ 一并修掉 ⇒ 即使还有别的崩点，也不会再是「无从下手」
 - ⇒ **真机请再点一次「开始阅读」** ⇒ 若还崩 ⇒ **把「书源页 → 自检 → 复制」的日志发我** ⇒ 日志最后一条 = 崩在哪一步 ⇒ 下一轮直接改那一行 ⭐⭐⭐
+
+---
+
+## 7. ✅ 二进制体检（实测 · build335）
+
+| 项 | 结果 |
+|---|---|
+| `CFBundleVersion` | **335** ✔（`com.qireaderlite.app`） |
+| 架构 | Mach-O 64-bit **arm64** ✔ |
+| `Assets.car` | **2,156,888 B**（与 build325/326 同级 ⇒ 柴阅图标与皮肤图真进包）✔ |
+| 悬浮栏 4 图标 | `cy.list.bullet` / `cy.headphones` / `cy.sun.max` / `cy.textformat` 全命中 ✔ |
+| 皮肤图 | `Theme-xuan` 命中 ✔ |
+| 内置主题包 | **7 个** `.chaiyuetheme` 全在，每个都是合法 zip（`PK` 头）✔ |
+| 柴阅登录表单 | `ChaiyueLoginForm` 130 / `ChaiyueLoginFormBridge` 117 ✔ |
+| 段评浮层 | `ChaiyueBrowserOverlay` 20 ✔ |
+| 漫画阅读器 | `ComicReaderScreen` 4 / `MediaSession` 173 ✔ |
+| ⭐ **本次修复的代码在包里** | `VoicePackTransfer` 478 / `LocalVoiceStore` 96 / `SpeechController` 245 ✔ |
+| 老阅读器符号 | `PagedReaderUI` / `ReaderPaginator` / `PagedChapterPager` / `ReaderLayoutConfig` / `QRSlider` / `SwiftScrollReaderView` **全部 0 命中** ✔ |
+| 体积 | IPA **19.48 MB** / 交付 zip **19.41 MB** |
+
+**CI**：run `46111553836`（commit `3a2759a4`）全绿
+（⚠️ 中途主动取消了两个 run：`46110878815` / `46111145544` —— 它们编的是**没修好**的版本 ⇒ 省掉两个 macOS 队列）
